@@ -10,7 +10,6 @@ mkdir -p "$work/bin"
 export XDG_CONFIG_HOME=$work/config
 export XDG_RUNTIME_DIR=$work/runtime
 export XDG_STATE_HOME=$work/state
-sed '/^case "${1:-status}" in/,$d' "$control" >"$work/functions.sh"
 
 cat >"$work/bin/busctl" <<'SH'
 #!/usr/bin/env bash
@@ -111,7 +110,7 @@ printf 'false\n' >"$MOCK_BT_DISCOVERABLE"
 # A phone advertises the A2DP Audio Source role and a headset does not, which is
 # what the receiver's fold-out section filters on. The active media transport is
 # what marks the phone as currently playing.
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+state=$("$control" bluetooth-status)
 jq -e '
   .available and .powered and (.receiver | not) and (.discoverable | not)
   and .connected == 2
@@ -129,16 +128,16 @@ jq -e '[.devices[] | .name] == ["Fixture Headset", "Fixture Phone"]' <<<"$state"
 # KeyboardDisplay is the only capability that can satisfy every association
 # model Secure Simple Pairing may pick, and a model the agent refuses is a
 # pairing that simply fails, so every handler has to be present.
-grep -qx 'CAPABILITY = "KeyboardDisplay"' "$agent"
+description=$("$agent" --describe)
+jq -e '.capability == "KeyboardDisplay"' <<<"$description" >/dev/null
 for handler in RequestConfirmation RequestAuthorization RequestPasskey RequestPinCode DisplayPasskey; do
-  grep -q "def $handler" "$agent"
+  jq -e --arg handler "$handler" '.methods | index($handler) != null' <<<"$description" >/dev/null
 done
-if grep -A 3 'def RequestPasskey' "$agent" | grep -q 'raise Rejected'; then exit 1; fi
 
 # Receiver mode carries audio; it must not open the adapter to strangers on its
 # own. Only the explicit pairing window does that.
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth receiver on
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth receiver on
+state=$("$control" bluetooth-status)
 jq -e '.receiver and (.discoverable | not)' <<<"$state" >/dev/null
 grep -qx 'seele-bt-receiver' "$MOCK_ACTIONS"
 if grep -q 'bluetoothctl discoverable on' "$MOCK_ACTIONS"; then exit 1; fi
@@ -146,8 +145,8 @@ if grep -q 'bluetoothctl pairable on' "$MOCK_ACTIONS"; then exit 1; fi
 
 # Discovery is one symmetric window: the same action that searches also makes
 # the machine answerable and registers the agent, so a phone can reach it.
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth scan on
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth scan on
+state=$("$control" bluetooth-status)
 jq -e '.discoverable' <<<"$state" >/dev/null
 # The scan itself is detached, so it records itself out of band. Both halves
 # carry the same window, or the spinner would stop while the adapter is open.
@@ -158,15 +157,15 @@ done
 grep -qx 'bluetoothctl --timeout 120 scan on' "$MOCK_ACTIONS"
 grep -qx 'seele-bt-agent window=120 restore=180' "$MOCK_ACTIONS"
 
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth scan off
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth scan off
+state=$("$control" bluetooth-status)
 jq -e '(.scanning | not) and (.discoverable | not)' <<<"$state" >/dev/null
 
 # The pairing window registers a DisplayYesNo agent, so Secure Simple Pairing
 # picks numeric comparison instead of accepting the phone silently, and BlueZ
 # retires discoverability on its own when the window expires.
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth pairing open
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth pairing open
+state=$("$control" bluetooth-status)
 jq -e '.receiver and .discoverable' <<<"$state" >/dev/null
 grep -qx 'bluetoothctl discoverable-timeout 120' "$MOCK_ACTIONS"
 grep -qx 'bluetoothctl pairable on' "$MOCK_ACTIONS"
@@ -177,32 +176,32 @@ grep -qx 'seele-bt-agent window=120 restore=180' "$MOCK_ACTIONS"
 test -s "$XDG_RUNTIME_DIR/seele-shell/bluetooth-agent.pid"
 
 # The shell answers the prompt by token, and the agent only acts on its own.
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth-pairing-answer deadbeef accept
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef accept
 grep -qx 'deadbeef accept ' "$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.answer"
 # A typed code rides back with the verdict for the passkey and PIN models.
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth-pairing-answer deadbeef accept 481625
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef accept 481625
 grep -qx 'deadbeef accept 481625' "$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.answer"
-if SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth-pairing-answer deadbeef maybe 2>/dev/null; then exit 1; fi
+if SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef maybe 2>/dev/null; then exit 1; fi
 
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth pairing close
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth pairing close
 test ! -e "$XDG_RUNTIME_DIR/seele-shell/bluetooth-agent.pid"
 test ! -e "$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.answer"
 grep -qx 'seele-shellctl -q bluetooth-pairing-dismiss' "$MOCK_ACTIONS"
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+state=$("$control" bluetooth-status)
 jq -e '.receiver and (.discoverable | not)' <<<"$state" >/dev/null
 grep -qx 'bluetoothctl discoverable off' "$MOCK_ACTIONS"
 grep -qx 'bluetoothctl pairable off' "$MOCK_ACTIONS"
 grep -qx 'bluetoothctl discoverable-timeout 180' "$MOCK_ACTIONS"
 
-SEELE_CONTROL_NO_STATUS=1 bash "$control" bluetooth receiver off
-state=$(bash -c 'source "$1"; bluetooth_state' _ "$work/functions.sh")
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth receiver off
+state=$("$control" bluetooth-status)
 jq -e '(.receiver | not) and (.discoverable | not)' <<<"$state" >/dev/null
 test ! -e "$XDG_RUNTIME_DIR/seele-shell/bluetooth-receiver.pid"
 
 # The bridge carries Bluetooth sources only, and tags its capture stream so the
 # recording indicator does not read a phone as a microphone.
 setsid bash -c 'echo $$ >"$1"; shift; exec "$@"' seele-bt-receiver-test "$work/bridge.pid" \
-  bash "$receiver" >/dev/null 2>&1 &
+  "$receiver" >/dev/null 2>&1 &
 for _ in $(seq 1 40); do
   [[ -s $MOCK_LOOPBACKS ]] && break
   sleep 0.1

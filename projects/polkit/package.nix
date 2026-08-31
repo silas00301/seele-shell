@@ -5,6 +5,7 @@
 }:
 let
   quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  tools = import ../../packages/core/tools.nix { inherit pkgs; };
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "seele-polkit";
@@ -14,7 +15,6 @@ pkgs.stdenvNoCC.mkDerivation {
   dontWrapQtApps = true;
   nativeBuildInputs = [
     pkgs.makeWrapper
-    pkgs.nodejs
     pkgs.qt6.qtdeclarative
   ];
 
@@ -26,7 +26,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
     # Same seeded generator seele-shell uses, so the grain film is the
     # identical texture rather than a second one that almost matches.
-    node ${../../packages/core/grain.js} "$out/share/seele-polkit/grain.png"
+    ${tools}/bin/seele-tools grain "$out/share/seele-polkit/grain.png"
     makeWrapper ${quickshell}/bin/quickshell "$out/bin/seele-polkit" \
       --add-flags "-p $out/share/seele-polkit"
 

@@ -73,8 +73,7 @@ JSON
 cat >"$work/state/seele-shell/agents/pi-zheuristic-$$.json" <<JSON
 {"agent":"pi","status":"input","pid":$$,"source":"heuristic"}
 JSON
-sed '/^case "${1:-status}" in/,$d' "$control" >"$work/functions.sh"
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 actual=$(jq -r '.pi.status' <<<"$result")
 source=$(jq -r '.pi.source' <<<"$result")
 [[ $actual == working && $source == native ]] || {
@@ -85,7 +84,7 @@ source=$(jq -r '.pi.source' <<<"$result")
 cat >"$work/state/seele-shell/agents/pi-native-waiting-$$.json" <<JSON
 {"agent":"pi","status":"input","pid":$$,"source":"native"}
 JSON
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 actual=$(jq -r '.pi.status' <<<"$result")
 [[ $actual == input ]] || {
   printf 'concurrent input state did not take precedence: status=%s\n' "$actual" >&2
@@ -96,7 +95,7 @@ rm -f "$work/state/seele-shell/agents/"*.json
 
 # Claude Code publishes through its settings hooks and names the session itself.
 printf '{"session_id":"abc-123","hook_event_name":"UserPromptSubmit"}' |
-  XDG_STATE_HOME="$work/state" bash "$hook" claude working
+  XDG_STATE_HOME="$work/state" "$hook" claude working
 record=$work/state/seele-shell/agents/claude-native-abc-123.json
 [[ -f $record ]] || {
   printf 'Claude hook did not publish a session record\n' >&2
@@ -105,13 +104,13 @@ record=$work/state/seele-shell/agents/claude-native-abc-123.json
 jq -e '.agent == "claude" and .status == "working" and .source == "native" and (.pid | type) == "number"' "$record" >/dev/null
 
 started=$(jq -r '.startedAt' "$record")
-printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" bash "$hook" claude input
+printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" "$hook" claude input
 jq -e --arg started "$started" '.status == "input" and .startedAt == $started' "$record" >/dev/null || {
   printf 'Claude hook lost the session start time across events\n' >&2
   exit 1
 }
 
-printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" bash "$hook" claude end
+printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" "$hook" claude end
 [[ ! -f $record ]] || {
   printf 'Claude session end did not remove its record\n' >&2
   exit 1
@@ -119,20 +118,20 @@ printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" bash "$hook" cl
 
 # Codex reports the same lifecycle through its managed hooks.
 printf '{"session_id":"t-9","hook_event_name":"UserPromptSubmit"}' |
-  XDG_STATE_HOME="$work/state" bash "$hook" codex working
+  XDG_STATE_HOME="$work/state" "$hook" codex working
 jq -e '.agent == "codex" and .status == "working" and .source == "native"' \
   "$work/state/seele-shell/agents/codex-native-t-9.json" >/dev/null || {
   printf 'Codex hook did not publish a working record\n' >&2
   exit 1
 }
-printf '{"session_id":"t-9"}' | XDG_STATE_HOME="$work/state" bash "$hook" codex end
+printf '{"session_id":"t-9"}' | XDG_STATE_HOME="$work/state" "$hook" codex end
 [[ ! -f "$work/state/seele-shell/agents/codex-native-t-9.json" ]] || {
   printf 'Codex session end did not remove its record\n' >&2
   exit 1
 }
 
 # A hook fired outside any session still names its record after the harness.
-XDG_STATE_HOME="$work/state" bash "$hook" codex input </dev/null
+XDG_STATE_HOME="$work/state" "$hook" codex input </dev/null
 [[ $(find "$work/state/seele-shell/agents" -name 'codex-native-*.json' | wc -l) == 1 ]] || {
   printf 'a hook without a session id did not publish a record\n' >&2
   exit 1
@@ -149,12 +148,12 @@ JSON
 cat >"$work/state/seele-shell/agents/codex-heuristic-recent.json" <<JSON
 {"agent":"codex","status":"finished","source":"heuristic","pid":4194303,"startedAt":"$now","updatedAt":"$now","endedAt":"$now"}
 JSON
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 [[ $(jq -r '.codex.status' <<<"$result") == finished && $(jq -r '.codex.active' <<<"$result") == false ]] || {
   printf 'a run that just finished must stay visible: %s\n' "$result" >&2
   exit 1
 }
-[[ $(jq -r 'has("pi")' <<<"$result") == false ]] || {
+[[ $(jq -r '(.pi // {} | .status) != "finished"' <<<"$result") == true ]] || {
   printf 'an abandoned record kept reporting a status: %s\n' "$result" >&2
   exit 1
 }
@@ -171,7 +170,7 @@ cp "$(command -v bash)" "$work/codex"
 harness=$!
 trap 'rm -rf "$work"; kill "$harness" 2>/dev/null || true' EXIT
 
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 [[ $(jq -r '.codex.active' <<<"$result") == true ]] || {
   printf 'a running harness was not detected: %s\n' "$result" >&2
   exit 1
@@ -180,7 +179,7 @@ result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$wo
 sample=$work/state/seele-shell/agents/.cpu-sample.json
 jq --argjson now "$(date +%s)" 'to_entries | map(.value.at = ($now - 25)) | from_entries' "$sample" >"$sample.aged"
 mv "$sample.aged" "$sample"
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 [[ $(jq -r '.codex.status' <<<"$result") == input ]] || {
   printf 'a quiet harness was not reported as waiting: %s\n' "$result" >&2
   exit 1
@@ -190,7 +189,7 @@ result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$wo
 cat >"$work/state/seele-shell/agents/codex-native-t-1.json" <<JSON
 {"agent":"codex","status":"working","source":"native","pid":$harness,"startedAt":"$now","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
-result=$(XDG_STATE_HOME="$work/state" bash -c 'source "$1"; agent_states' _ "$work/functions.sh")
+result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
 [[ $(jq -r '.codex.status' <<<"$result") == working ]] || {
   printf 'a hook record was overruled by a quiet CPU sample: %s\n' "$result" >&2
   exit 1

@@ -54,7 +54,7 @@ XDG_STATE_HOME="$work/state" \
 FAKE_CODEXBAR_STATE="$work" \
 SEELE_SHELL_CODEXBAR="$work/codexbar" \
 SEELE_SHELL_TODAY="2026-08-29" \
-  bash "$agent_state" >"$work/result.json"
+  "$agent_state" >"$work/result.json"
 
 jq -e '
   .local.periods.day.totalTokens == 90

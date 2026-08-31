@@ -5,6 +5,7 @@
 }:
 let
   quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  tools = import ../../packages/core/tools.nix { inherit pkgs; };
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "seele-greeter";
@@ -13,7 +14,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontUnpack = true;
   dontWrapQtApps = true;
   nativeBuildInputs = [
-    pkgs.nodejs
+    pkgs.makeWrapper
     pkgs.qt6.qtdeclarative
   ];
 
@@ -23,12 +24,12 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/bin" "$out/share/seele-greeter"
     substitute ${./shell.qml} "$out/share/seele-greeter/shell.qml" \
       --replace-fail '@SYSTEMCTL@' '${pkgs.systemd}/bin/systemctl'
-    node ${../../packages/core/grain.js} "$out/share/seele-greeter/grain.png"
-    substitute ${./greeter.sh} "$out/bin/seele-greeter" \
-      --replace-fail '@QUICKSHELL@' '${quickshell}/bin/quickshell' \
-      --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl' \
-      --replace-fail '@CONFIG@' "$out/share/seele-greeter"
-    chmod 755 "$out/bin/seele-greeter"
+    ${tools}/bin/seele-tools grain "$out/share/seele-greeter/grain.png"
+    makeWrapper ${tools}/bin/seele-tools "$out/bin/seele-greeter" \
+      --add-flags greeter-run \
+      --set SEELE_QUICKSHELL '${quickshell}/bin/quickshell' \
+      --set SEELE_HYPRCTL '${pkgs.hyprland}/bin/hyprctl' \
+      --set SEELE_CONFIG "$out/share/seele-greeter"
 
     runHook postInstall
   '';
@@ -41,7 +42,6 @@ pkgs.stdenvNoCC.mkDerivation {
     test -s "$out/share/seele-greeter/grain.png"
     head -c 8 "$out/share/seele-greeter/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     test -x "$out/bin/seele-greeter"
-    bash -n "$out/bin/seele-greeter"
     "$out/bin/seele-greeter" --help >/dev/null
     ${quickshell}/bin/quickshell --private-check-compat
     qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-greeter/shell.qml"

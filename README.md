@@ -5,12 +5,9 @@ the main shell plus separate greeter, lock-screen, and polkit packages.
 
 ## Layout
 
-- `packages/core/`: shared build assets and local upstream patches.
-- `projects/shell/`: main Quickshell UI, helpers, agent integrations, and package definition.
-- `projects/agents/`: agent launchers, lifecycle hooks, and usage-state helpers.
-- `projects/bluetooth/`: Bluetooth receiver and pairing agent.
-- `projects/audio/`: microphone synchronization daemon.
-- `projects/system/`: shell control, clock, session, and YubiKey commands.
+- `packages/core/`: shared Rust package definition and local upstream patches.
+- `projects/shell/`: main Quickshell UI, agent integrations, and package definition.
+- `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, and shell-control commands.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
 - `tests/`: package install checks and focused behavior tests.

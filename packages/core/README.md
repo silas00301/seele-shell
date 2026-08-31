@@ -5,5 +5,5 @@ entrypoint. Projects should use these files instead of keeping copies.
 
 It currently contains:
 
-- `grain.js`, which generates the texture used by each Quickshell surface.
+- `tools.nix`, which builds the shared Rust runtime and texture generator.
 - `patches/`, which contains local patches for third-party inputs.

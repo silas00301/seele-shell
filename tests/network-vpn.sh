@@ -8,7 +8,6 @@ mkdir -p "$work/bin"
 export XDG_CONFIG_HOME=$work/config
 export XDG_RUNTIME_DIR=$work/runtime
 export XDG_STATE_HOME=$work/state
-sed '/^case "${1:-status}" in/,$d' "$control" >"$work/functions.sh"
 
 cat >"$work/bin/tailscale" <<'SH'
 #!/usr/bin/env bash
@@ -112,33 +111,33 @@ export MOCK_NMCLI='wireguard:Proton VPN DE#1'
 
 printf '%s\n' open >"$MOCK_VICINAE_STATE"
 printf '%s\n' active >"$MOCK_SSH_STATE"
-bash -c 'source "$1"; launcher_toggle' _ "$work/functions.sh"
+SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx closed "$MOCK_VICINAE_STATE"
-bash -c 'source "$1"; launcher_toggle' _ "$work/functions.sh"
+SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx open "$MOCK_VICINAE_STATE"
 
-state=$(bash -c 'source "$1"; tailscale_state' _ "$work/functions.sh")
+state=$("$control" status | jq '.tailscale')
 jq -e '
   .available and .connected and (.needsLogin | not)
   and .name == "fixture-host" and .ip == "100.64.0.1"
   and .tailnet == "fixture.ts.net" and .peers == 2 and .onlinePeers == 1
 ' <<<"$state" >/dev/null
 
-state=$(bash -c 'source "$1"; proton_vpn_state' _ "$work/functions.sh")
+state=$("$control" status | jq '.protonVpn')
 jq -e '.available and .connected and .connection == "Proton VPN DE#1"' <<<"$state" >/dev/null
 
-state=$(bash -c 'source "$1"; ssh_server_state' _ "$work/functions.sh")
+state=$("$control" status | jq '.sshServer')
 jq -e '.available and .running' <<<"$state" >/dev/null
 
-state=$(bash -c 'source "$1"; openlogi_batteries' _ "$work/functions.sh")
+state=$("$control" status | jq '[.batteries[] | select(.kind == "logitech")]')
 jq -e '. == [{kind:"logitech",name:"MX Master 3S",percent:73,status:"Discharging",icon:"input-mouse"}]' <<<"$state" >/dev/null
 
 export MOCK_TAILSCALE_JSON='{"BackendState":"NeedsLogin"}'
-state=$(bash -c 'source "$1"; tailscale_state' _ "$work/functions.sh")
+state=$("$control" status | jq '.tailscale')
 jq -e '.available and (.connected | not) and .needsLogin' <<<"$state" >/dev/null
 
 export MOCK_NMCLI=''
-state=$(bash -c 'source "$1"; proton_vpn_state' _ "$work/functions.sh")
+state=$("$control" status | jq '.protonVpn')
 jq -e '.available and (.connected | not) and .connection == ""' <<<"$state" >/dev/null
 
 # An offline NetworkManager state is normal. It must not make `set -e` abort
@@ -147,7 +146,7 @@ jq -e '.available and (.connected | not) and .connection == ""' <<<"$state" >/de
 export MOCK_NMCLI_EXIT=10
 mkdir -p "$XDG_STATE_HOME/seele-shell"
 : >"$XDG_STATE_HOME/seele-shell/notification-times.json"
-state=$(bash -c 'source "$1"; status' _ "$work/functions.sh")
+state=$("$control" status)
 jq -e '
   .connection == "Disconnected"
   and .audioDevices != null
@@ -157,17 +156,17 @@ jq -e '
   and .cameraDevices == [{name:"Fixture Camera",device:"/dev/video0"}]
 ' <<<"$state" >/dev/null
 
-SEELE_CONTROL_NO_STATUS=1 bash "$control" tailscale down
-SEELE_CONTROL_NO_STATUS=1 bash "$control" proton-vpn connect
-SEELE_CONTROL_NO_STATUS=1 bash "$control" proton-vpn disconnect
-SEELE_CONTROL_NO_STATUS=1 bash "$control" ssh-server stop
-SEELE_CONTROL_NO_STATUS=1 bash "$control" ssh-server start
+SEELE_CONTROL_NO_STATUS=1 "$control" tailscale down
+SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect
+SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn disconnect
+SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server stop
+SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server start
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"
-SEELE_CONTROL_NO_STATUS=1 bash "$control" camera-settings /dev/video0
+SEELE_CONTROL_NO_STATUS=1 "$control" camera-settings /dev/video0
 grep -qx 'selected_device = "camera:046d:0944:serial:camera-fixture"' "$XDG_CONFIG_HOME/openlogi/config.toml"
 grep -qx 'check_for_updates = false' "$XDG_CONFIG_HOME/openlogi/config.toml"
-speedtest=$(SEELE_CONTROL_NO_STATUS=1 bash "$control" speedtest 2>/dev/null)
+speedtest=$(SEELE_CONTROL_NO_STATUS=1 "$control" speedtest 2>/dev/null)
 jq -s -e '
   any(.[]; .phase == "ping")
   and any(.[]; .phase == "download" and .download == 456.78)

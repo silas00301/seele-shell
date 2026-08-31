@@ -49,9 +49,11 @@
               esbuild
               jq
               nodejs
-              python3
               qt6.qtdeclarative
               cargo
+              dbus.dev
+              pkg-config
+              stdenv.cc
               clippy
               rust-analyzer
               rustc
@@ -63,6 +65,10 @@
               {
                 name = "RUST_SRC_PATH";
                 value = pkgs.rustPlatform.rustLibSrc;
+              }
+              {
+                name = "PKG_CONFIG_PATH";
+                value = "${pkgs.dbus.dev}/lib/pkgconfig";
               }
             ];
 
@@ -79,13 +85,12 @@
               }
               {
                 name = "test-shell";
-                help = "Run the focused JavaScript and script tests";
+                help = "Run the Rust and JavaScript tests";
                 command = ''
                   set -e
+                  cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/time.js projects/shell/time.js
-                  bash -n projects/agents/*.sh projects/bluetooth/*.sh projects/system/*.sh
-                  python3 -m py_compile projects/bluetooth/bt-agent.py projects/audio/mic-sync.py
                 '';
               }
             ];
