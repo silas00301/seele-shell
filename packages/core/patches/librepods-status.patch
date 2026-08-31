@@ -1,0 +1,96 @@
+--- a/librepods-ctl.cpp
++++ b/librepods-ctl.cpp
+@@ -11,7 +11,8 @@
+                             << "  noise:off           Disable noise control\n"
+                             << "  noise:anc           Enable Active Noise Cancellation\n"
+                             << "  noise:transparency  Enable Transparency mode\n"
+-                            << "  noise:adaptive      Enable Adaptive mode\n";
++                            << "  noise:adaptive      Enable Adaptive mode\n"
++                            << "  status              Print connection and battery state as JSON\n";
+         return 1;
+     }
+ 
+@@ -26,6 +27,15 @@
+     socket.write(QByteArray(argv[1]));
+     socket.flush();
+     socket.waitForBytesWritten(200);
++
++    if (QByteArray(argv[1]) == "status") {
++        if (!socket.waitForReadyRead(500)) {
++            QTextStream(stderr) << "librepods did not return its status\n";
++            return 1;
++        }
++        QTextStream(stdout) << socket.readAll();
++    }
++
+     socket.disconnectFromServer();
+     return 0;
+ }
+--- a/main.cpp
++++ b/main.cpp
+@@ -10,6 +10,9 @@
+ #include <QLoggingCategory>
+ #include <QThread>
+ #include <QTimer>
++#include <QJsonArray>
++#include <QJsonDocument>
++#include <QJsonObject>
+ #include <QProcess>
+ #include <QRegularExpression>
+ #include <QTranslator>
+@@ -60,7 +63,7 @@
+ 
+         // Initialize tray icon and connect signals
+         trayManager = new TrayIconManager(this);
+-        trayManager->setNotificationsEnabled(loadNotificationsEnabled());
++        trayManager->setNotificationsEnabled(false);
+         connect(trayManager, &TrayIconManager::trayClicked, this, &AirPodsTrayApp::onTrayIconActivated);
+         connect(trayManager, &TrayIconManager::openApp, this, &AirPodsTrayApp::onOpenApp);
+         connect(trayManager, &TrayIconManager::openSettings, this, &AirPodsTrayApp::onOpenSettings);
+@@ -1101,6 +1104,32 @@
+             else if (msg == "noise:adaptive") {
+                 trayApp->setNoiseControlModeInt(3);
+             }
++            else if (msg == "status") {
++                Battery *battery = trayApp->deviceInfo()->getBattery();
++                QJsonArray batteries;
++                auto appendBattery = [&batteries](const QString &name, quint8 level, bool charging, bool available) {
++                    if (!available)
++                        return;
++                    batteries.append(QJsonObject{
++                        {"name", name},
++                        {"percent", static_cast<int>(level)},
++                        {"status", charging ? "Charging" : "Discharging"}
++                    });
++                };
++
++                appendBattery("AirPods left", battery->getLeftPodLevel(), battery->isLeftPodCharging(), battery->isLeftPodAvailable());
++                appendBattery("AirPods right", battery->getRightPodLevel(), battery->isRightPodCharging(), battery->isRightPodAvailable());
++                appendBattery("AirPods case", battery->getCaseLevel(), battery->isCaseCharging(), battery->isCaseAvailable());
++                appendBattery("AirPods", battery->getHeadsetLevel(), battery->isHeadsetCharging(), battery->isHeadsetAvailable());
++
++                QJsonObject status{
++                    {"connected", trayApp->areAirpodsConnected()},
++                    {"batteries", batteries}
++                };
++                socket->write(QJsonDocument(status).toJson(QJsonDocument::Compact));
++                socket->flush();
++                socket->waitForBytesWritten(200);
++            }
+             else
+             {
+                 LOG_ERROR("Unknown message received: " << msg);
+--- a/trayiconmanager.cpp
++++ b/trayiconmanager.cpp
+@@ -29,9 +29,8 @@
+ 
+ void TrayIconManager::showNotification(const QString &title, const QString &message)
+ {
+-    if (!m_notificationsEnabled)
+-        return;
+-    trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 3000);
++    Q_UNUSED(title);
++    Q_UNUSED(message);
+ }
+ 
+ void TrayIconManager::TrayIconManager::updateBatteryStatus(const QString &status)

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "seele-shell",
+  "title": "Seele Shell",
+  "description": "Desktop controls and searchable Hyprland keybindings",
+  "icon": "seele.svg",
+  "author": "seele",
+  "categories": ["System", "Productivity"],
+  "license": "MIT",
+  "dependencies": {
+    "@raycast/api": "^1.103.6",
+    "react": "^19.2.0"
+  },
+  "commands": [
+    {
+      "name": "seele",
+      "title": "Seele Controls",
+      "description": "Open agents and desktop controls",
+      "mode": "view"
+    },
+    {
+      "name": "keybindings",
+      "title": "Search Keybindings",
+      "description": "Search active Hyprland keybindings",
+      "mode": "view"
+    }
+  ]
+}
