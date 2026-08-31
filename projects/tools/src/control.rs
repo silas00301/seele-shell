@@ -584,14 +584,13 @@ fn status_value() -> Value {
         ["-t", "-f", "TYPE,NAME", "connection", "show", "--active"],
     )
     .unwrap_or_default();
-    let connection = connections.lines().find(|line| {
-        matches!(
-            line.split(':').next(),
-            Some("wireless" | "ethernet" | "wifi")
-        )
-    });
-    let (connection_type, connection_name) = connection
-        .and_then(|line| line.split_once(':'))
+    let wired = |kind: &str| kind.contains("ethernet");
+    let wireless = |kind: &str| kind.contains("wireless") || kind == "wifi";
+    let (connection_type, connection_name) = connections
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(kind, _)| wired(kind) || wireless(kind))
+        .min_by_key(|(kind, _)| u8::from(!wired(kind)))
         .unwrap_or(("", "Disconnected"));
     let wifi_available = output("nmcli", ["-t", "-f", "TYPE", "device"])
         .unwrap_or_default()
