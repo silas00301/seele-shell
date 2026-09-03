@@ -13,6 +13,14 @@ Item {
   // can keep a placeholder in place while the device warms up.
   property bool ready: false
 
+  onDeviceChanged: {
+    preview.ready = false
+    if (preview.active) {
+      preview.cameraRunning = false
+      startTimer.restart()
+    }
+  }
+
   onActiveChanged: {
     if (active) startTimer.restart()
     else {

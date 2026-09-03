@@ -13,6 +13,14 @@ cat >"$work/bin/tailscale" <<'SH'
 #!/usr/bin/env bash
 if [[ ${1:-} == status && ${2:-} == --json ]]; then
   printf '%s\n' "$MOCK_TAILSCALE_JSON"
+elif [[ ${1:-} == debug && ${2:-} == prefs ]]; then
+  cat "$MOCK_TAILSCALE_PREFS"
+elif [[ ${1:-} == set && ${2:-} == --ssh=true ]]; then
+  printf '{"RunSSH":true}\n' >"$MOCK_TAILSCALE_PREFS"
+  printf 'tailscale %s\n' "$*" >>"$MOCK_ACTIONS"
+elif [[ ${1:-} == set && ${2:-} == --ssh=false ]]; then
+  printf '{"RunSSH":false}\n' >"$MOCK_TAILSCALE_PREFS"
+  printf 'tailscale %s\n' "$*" >>"$MOCK_ACTIONS"
 else
   printf 'tailscale %s\n' "$*" >>"$MOCK_ACTIONS"
 fi
@@ -110,11 +118,13 @@ export PATH="$work/bin:$PATH"
 export MOCK_ACTIONS="$work/actions"
 export MOCK_VICINAE_STATE="$work/vicinae-state"
 export MOCK_SSH_STATE="$work/ssh-state"
+export MOCK_TAILSCALE_PREFS="$work/tailscale-prefs.json"
 export MOCK_TAILSCALE_JSON='{"BackendState":"Running","Self":{"HostName":"fixture-host","TailscaleIPs":["100.64.0.1"]},"CurrentTailnet":{"Name":"fixture.ts.net"},"Peer":{"one":{"Online":true},"two":{"Online":false}}}'
 export MOCK_NMCLI='wireguard:Proton VPN DE#1'
 
 printf '%s\n' open >"$MOCK_VICINAE_STATE"
 printf '%s\n' active >"$MOCK_SSH_STATE"
+printf '{"RunSSH":true}\n' >"$MOCK_TAILSCALE_PREFS"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx closed "$MOCK_VICINAE_STATE"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
@@ -164,7 +174,11 @@ SEELE_CONTROL_NO_STATUS=1 "$control" tailscale down
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn disconnect
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server stop
+state=$("$control" status | jq '.sshServer')
+jq -e '.available and (.running | not)' <<<"$state" >/dev/null
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server start
+state=$("$control" status | jq '.sshServer')
+jq -e '.available and .running' <<<"$state" >/dev/null
 SEELE_CONTROL_NO_STATUS=1 "$control" outages
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"
@@ -184,8 +198,8 @@ jq -e '
 grep -qx 'tailscale down' "$MOCK_ACTIONS"
 grep -qx 'protonvpn connect' "$MOCK_ACTIONS"
 grep -qx 'protonvpn disconnect' "$MOCK_ACTIONS"
-grep -qx 'systemctl stop sshd.service' "$MOCK_ACTIONS"
-grep -qx 'systemctl start sshd.service' "$MOCK_ACTIONS"
+grep -qx 'tailscale set --ssh=false' "$MOCK_ACTIONS"
+grep -qx 'tailscale set --ssh=true' "$MOCK_ACTIONS"
 for _ in {1..20}; do
   grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS" && break
   sleep 0.05

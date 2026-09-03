@@ -311,14 +311,12 @@ fn proton_state() -> Value {
     json!({"available":true,"connected":!line.is_empty(),"connection":line.split_once(':').map(|(_,name)|name).unwrap_or("")})
 }
 fn ssh_state() -> Value {
-    let loaded = output(
-        "systemctl",
-        ["show", "--property=LoadState", "--value", "sshd.service"],
-    )
-    .unwrap_or_default()
-    .trim()
-        == "loaded";
-    json!({"available":loaded,"running":loaded&&status("systemctl",["is-active","--quiet","sshd.service"])})
+    let Some(prefs) = output("tailscale", ["debug", "prefs"])
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    else {
+        return json!({"available":false,"running":false});
+    };
+    json!({"available":true,"running":prefs["RunSSH"].as_bool()==Some(true)})
 }
 fn openlogi_batteries() -> Vec<Value> {
     let cache = runtime_file("openlogi-batteries.json");
@@ -1026,7 +1024,7 @@ pub fn run(arguments: &[String]) -> Result {
         "ssh-server" => {
             let mut action = arg(1);
             if action.is_empty() || action == "toggle" {
-                action = if status("systemctl", ["is-active", "--quiet", "sshd.service"]) {
+                action = if ssh_state()["running"].as_bool() == Some(true) {
                     "stop"
                 } else {
                     "start"
@@ -1035,7 +1033,17 @@ pub fn run(arguments: &[String]) -> Result {
             if !matches!(action, "start" | "stop") {
                 return Err("invalid SSH action".into());
             }
-            status("systemctl", [action, "sshd.service"]);
+            status(
+                "tailscale",
+                [
+                    "set",
+                    if action == "start" {
+                        "--ssh=true"
+                    } else {
+                        "--ssh=false"
+                    },
+                ],
+            );
         }
         "airpods" => match arg(1) {
             "off" | "anc" | "transparency" | "adaptive" => {

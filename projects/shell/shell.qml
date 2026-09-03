@@ -102,6 +102,7 @@ ShellRoot {
   readonly property bool trayExpanded: trayPinned
   property int volumeDrag: -1
   property int microphoneDrag: -1
+  property string cameraPreviewDevice: ""
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
   property string agentMetricPeriod: "day"
@@ -1088,6 +1089,17 @@ ShellRoot {
     var devices = root.systemData.cameraDevices || []
     if (devices.length === 0) return "No camera"
     return String(devices[0].name || "Ready")
+  }
+
+  function previewCamera() {
+    var devices = root.systemData.cameraDevices || []
+    for (var i = 0; i < devices.length; i++) {
+      if (String(devices[i].device || "") === root.cameraPreviewDevice) return devices[i]
+    }
+    for (var j = 0; j < devices.length; j++) {
+      if (String(devices[j].device || "") === String(root.systemData.cameraDevice || "")) return devices[j]
+    }
+    return devices.length > 0 ? devices[0] : null
   }
 
   function airpodsDetail() {
@@ -5498,8 +5510,8 @@ ShellRoot {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 82
                 spacing: 3
-                Text { text: "SSH Server"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-                Text { width: parent.width; text: sshServerCard.failed ? "Action failed" : sshServerCard.state.running ? "Allowed via Tailscale · public keys only" : "Stopped · public keys only"; elide: Text.ElideRight; color: sshServerCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 8 }
+                Text { text: "Tailscale SSH"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+                Text { width: parent.width; text: sshServerCard.failed ? "Action failed" : sshServerCard.state.running ? "Allowed by tailnet policy" : "Off"; elide: Text.ElideRight; color: sshServerCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 8 }
               }
               ControlSwitch {
                 anchors.verticalCenter: parent.verticalCenter
@@ -6203,19 +6215,25 @@ ShellRoot {
       id: cameraWindow
 
       required property var modelData
+      readonly property var camera: root.previewCamera()
+      readonly property int deviceCount: (root.systemData.cameraDevices || []).length
       screen: modelData
       visible: root.controlPanel === "camera" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 360
-      implicitHeight: 344
+      implicitHeight: cameraContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-camera"
 
       PanelSurface {
+        id: cameraSurface
+
         Column {
+          id: cameraContent
+
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           Row {
             width: parent.width
@@ -6223,8 +6241,42 @@ ShellRoot {
             PanelGlyph { text: "󰄀" }
             Text { anchors.verticalCenter: parent.verticalCenter; text: "Camera"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
           }
-          Text { text: root.systemData.cameraActive ? "Camera is in use" : root.systemData.cameraDevices.length + " camera device" + (root.systemData.cameraDevices.length === 1 ? "" : "s"); color: root.systemData.cameraActive ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
-          Text { width: parent.width; text: root.systemData.cameraDevices.length > 0 ? root.systemData.cameraDevices[0].name : "No camera detected"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+          Text { text: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s"); color: root.systemData.cameraActive ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
+          Text { text: "PREVIEW DEVICE"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+          SeeleListView {
+            width: parent.width
+            height: Math.max(1, Math.min(4, cameraWindow.deviceCount)) * 32
+            spacing: 4
+            clip: true
+            model: root.systemData.cameraDevices || []
+            delegate: Rectangle {
+              required property var modelData
+              readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
+              width: ListView.view.width; height: 28; radius: root.radius
+              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoverColor : root.alpha(root.surface, 0.5)
+              Row {
+                anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
+                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 12 }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+              }
+              MouseArea {
+                id: cameraDeviceMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.cameraPreviewDevice = String(parent.modelData.device || "")
+              }
+            }
+            Text {
+              visible: cameraWindow.deviceCount === 0
+              anchors.centerIn: parent
+              text: "No camera detected"
+              color: root.overlay
+              font.family: root.fontFamily
+              font.pixelSize: 10
+            }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: cameraSurface.hovered }
+          }
           ClippingRectangle {
             z: 2
             width: parent.width; height: 176; radius: root.radius; color: root.mantle
@@ -6238,7 +6290,7 @@ ShellRoot {
             Binding {
               target: cameraPreviewLoader.item
               property: "device"
-              value: root.systemData.cameraDevice
+              value: cameraWindow.camera ? String(cameraWindow.camera.device || "") : ""
               when: cameraPreviewLoader.status === Loader.Ready
             }
             Binding {
@@ -6262,9 +6314,10 @@ ShellRoot {
               model: [{label:"Preview window", action:"camera-preview"}, {label:"OpenLogi settings", action:"camera-settings"}]
               Rectangle {
                 required property var modelData
-                readonly property bool busy: root.controlBusy(modelData.action, root.systemData.cameraDevice)
-                readonly property bool complete: root.controlCompleted(modelData.action, root.systemData.cameraDevice)
-                readonly property bool failed: root.controlFailed(modelData.action, root.systemData.cameraDevice)
+                readonly property string device: cameraWindow.camera ? String(cameraWindow.camera.device || "") : ""
+                readonly property bool busy: root.controlBusy(modelData.action, device)
+                readonly property bool complete: root.controlCompleted(modelData.action, device)
+                readonly property bool failed: root.controlFailed(modelData.action, device)
                 width: (parent.width - 8) / 2; height: 42; radius: root.radius
                 color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoverColor : root.surface
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
@@ -6275,8 +6328,8 @@ ShellRoot {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: {
-                    if (parent.modelData.action === "camera-preview") root.openCameraPreview(root.systemData.cameraDevice)
-                    else root.openCameraSettings(root.systemData.cameraDevice)
+                    if (parent.modelData.action === "camera-preview") root.openCameraPreview(parent.device)
+                    else root.openCameraSettings(parent.device)
                   }
                 }
               }
