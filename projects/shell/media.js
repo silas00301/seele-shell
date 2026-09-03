@@ -128,3 +128,15 @@ function activePlayer(players) {
   }
   return null
 }
+
+// The bar holds an entry through a pause, and a client that quits takes its
+// player object with it, so a held reference is only worth showing while the
+// player it names is still on the bus.
+function presentPlayer(players, player) {
+  players = players || []
+  if (!player) return null
+  for (var i = 0; i < players.length; i++) {
+    if (players[i] === player) return player
+  }
+  return null
+}

@@ -521,11 +521,11 @@ ShellRoot {
   }
 
   function spotifyPlayer() {
-    return Media.spotifyPlayer(Mpris.players.values || [])
+    return spotifyMediaSlot.player
   }
 
   function devicePlayer() {
-    return Media.devicePlayer(Mpris.players.values || [])
+    return deviceMediaSlot.player
   }
 
   function mediaLabel(player) {
@@ -1610,6 +1610,18 @@ ShellRoot {
         Qt.callLater(function() { root.runBluetooth("scan", scan ? "on" : "off") })
       }
     }
+  }
+
+  MediaSlot {
+    id: spotifyMediaSlot
+
+    playing: Media.spotifyPlayer(Mpris.players.values || [])
+  }
+
+  MediaSlot {
+    id: deviceMediaSlot
+
+    playing: Media.devicePlayer(Mpris.players.values || [])
   }
 
   Timer {
@@ -3171,6 +3183,90 @@ ShellRoot {
     }
   }
 
+  // A menu bar media entry outlives the track it is showing. A pause is usually
+  // a short interruption, so the slot keeps the player it last saw playing for
+  // a minute rather than collapsing mid-track and reflowing every entry beside
+  // it. The held player is checked against the bus on every read, because a
+  // client that quits takes its player object with it.
+  component MediaSlot: QtObject {
+    id: mediaSlot
+
+    property var playing: null
+    property var held: null
+    property Timer hold: Timer {
+      interval: 60000
+      onTriggered: mediaSlot.held = null
+    }
+
+    readonly property var player: mediaSlot.playing || Media.presentPlayer(Mpris.players.values || [], mediaSlot.held)
+
+    onPlayingChanged: {
+      if (mediaSlot.playing) {
+        mediaSlot.held = mediaSlot.playing
+        mediaSlot.hold.stop()
+      } else if (mediaSlot.held) {
+        mediaSlot.hold.restart()
+      }
+    }
+  }
+
+  // Artwork for a menu bar media entry. Playback state belongs to the entry as
+  // much as the track does, so a held player dims its artwork behind a pause
+  // glyph, and one without artwork shows that glyph in place of its icon.
+  component BarMediaArt: Item {
+    id: barMediaArt
+
+    property var player: null
+    property string icon: ""
+    property color iconColor: root.accent
+    readonly property bool paused: !!barMediaArt.player && !barMediaArt.player.isPlaying
+    readonly property bool hasArt: barMediaArtImage.status === Image.Ready
+
+    width: 16
+    height: 16
+
+    Image {
+      id: barMediaArtImage
+
+      anchors.fill: parent
+      visible: false
+      source: barMediaArt.player ? String(barMediaArt.player.trackArtUrl || "") : ""
+      fillMode: Image.PreserveAspectCrop
+      sourceSize.width: width * 4
+      sourceSize.height: height * 4
+      smooth: true
+      mipmap: true
+      asynchronous: true
+      cache: true
+    }
+
+    RoundedSource {
+      anchors.fill: parent
+      source: barMediaArtImage
+      radius: root.radiusSmall
+      visible: barMediaArt.hasArt
+      opacity: barMediaArt.paused ? 0.4 : 1
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: !barMediaArt.hasArt && !barMediaArt.paused
+      text: barMediaArt.icon
+      color: barMediaArt.iconColor
+      font.family: root.fontFamily
+      font.pixelSize: 13
+    }
+
+    Text {
+      anchors.centerIn: parent
+      visible: barMediaArt.paused
+      text: "󰏤"
+      color: barMediaArt.hasArt ? root.text : root.mutedText
+      font.family: root.fontFamily
+      font.pixelSize: barMediaArt.hasArt ? 11 : 13
+    }
+  }
+
   component MediaButton: Rectangle {
     id: mediaButton
 
@@ -3648,36 +3744,11 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 5
-              Item {
+              BarMediaArt {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 16; height: 16
-                Image {
-                  id: deviceMediaArt
-                  anchors.fill: parent
-                  visible: false
-                  source: deviceMediaItem.player ? String(deviceMediaItem.player.trackArtUrl || "") : ""
-                  fillMode: Image.PreserveAspectCrop
-                  sourceSize.width: width * 4
-                  sourceSize.height: height * 4
-                  smooth: true
-                  mipmap: true
-                  asynchronous: true
-                  cache: true
-                }
-                RoundedSource {
-                  anchors.fill: parent
-                  source: deviceMediaArt
-                  radius: root.radiusSmall
-                  visible: deviceMediaArt.status === Image.Ready
-                }
-                Text {
-                  anchors.centerIn: parent
-                  visible: deviceMediaArt.status !== Image.Ready
-                  text: "󰎆"
-                  color: root.accent
-                  font.family: root.fontFamily
-                  font.pixelSize: 13
-                }
+                player: deviceMediaItem.player
+                icon: "󰎆"
+                iconColor: root.accent
               }
               BarLabel {
                 anchors.verticalCenter: parent.verticalCenter
@@ -3704,36 +3775,11 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 5
-              Item {
+              BarMediaArt {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 16; height: 16
-                Image {
-                  id: spotifyMediaArt
-                  anchors.fill: parent
-                  visible: false
-                  source: spotifyMediaItem.player ? String(spotifyMediaItem.player.trackArtUrl || "") : ""
-                  fillMode: Image.PreserveAspectCrop
-                  sourceSize.width: width * 4
-                  sourceSize.height: height * 4
-                  smooth: true
-                  mipmap: true
-                  asynchronous: true
-                  cache: true
-                }
-                RoundedSource {
-                  anchors.fill: parent
-                  source: spotifyMediaArt
-                  radius: root.radiusSmall
-                  visible: spotifyMediaArt.status === Image.Ready
-                }
-                Text {
-                  anchors.centerIn: parent
-                  visible: spotifyMediaArt.status !== Image.Ready
-                  text: "󰓇"
-                  color: root.green
-                  font.family: root.fontFamily
-                  font.pixelSize: 13
-                }
+                player: spotifyMediaItem.player
+                icon: "󰓇"
+                iconColor: root.green
               }
               BarLabel {
                 anchors.verticalCenter: parent.verticalCenter

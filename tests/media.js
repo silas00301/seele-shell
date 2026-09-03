@@ -122,4 +122,8 @@ assert(media.liveStream(liveStream), "the Firefox signed 64-bit duration sentine
 assert(media.timelineAvailable(liveStream), "a live stream must expose its non-interactive live bar");
 assert(!media.liveStream({ length: 86400, metadata: {} }), "ordinary long-form media must keep a seekable timeline");
 
+assert(media.presentPlayer([device, spotify], spotify) === spotify, "a held player still on the bus must keep its bar entry");
+assert(media.presentPlayer([device], spotify) === null, "a held player whose client quit must lose its bar entry");
+assert(media.presentPlayer([device], null) === null, "an empty hold must not resolve to a player");
+
 console.log("media normalization checks passed");
