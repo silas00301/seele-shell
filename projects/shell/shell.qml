@@ -98,11 +98,8 @@ ShellRoot {
   // otherwise leave it — and lose the grab — before it applied.
   property string barPressModule: ""
   property bool trayMenuOpen: false
-  // Hovering the group reveals it; the click pins it so it survives the pointer
-  // leaving.
   property bool trayPinned: false
-  property bool trayHovering: false
-  readonly property bool trayExpanded: trayPinned || trayHovering
+  readonly property bool trayExpanded: trayPinned
   property int volumeDrag: -1
   property int microphoneDrag: -1
   property bool agentUsageOpen: false
@@ -2935,6 +2932,7 @@ ShellRoot {
           width: parent.width
           height: 40
           module: "bluetooth"
+          visible: root.systemData.bluetoothAvailable
           icon: root.systemData.bluetoothPowered ? "󰂯" : "󰂲"
           label: "Bluetooth"
           detail: !root.systemData.bluetoothAvailable ? "Unavailable"
@@ -3802,10 +3800,6 @@ ShellRoot {
             anchors.verticalCenter: parent.verticalCenter
             height: root.barHeight
             spacing: 0
-
-            // Revealing on hover costs nothing to undo, so the click is left to
-            // pin the tray open rather than being the only way to look at it.
-            HoverHandler { onHoveredChanged: root.trayHovering = hovered }
 
           Repeater {
             model: root.trayItems()
@@ -4978,14 +4972,6 @@ ShellRoot {
               }
             }
 
-            Text {
-              width: parent.width
-              text: "Usage is read locally through CodexBar. Credentials and account identity never enter the shell state."
-              color: root.overlay
-              font.family: root.fontFamily
-              font.pixelSize: 9
-              wrapMode: Text.WordWrap
-            }
           }
         }
       }
@@ -5400,14 +5386,15 @@ ShellRoot {
             Repeater {
               model: [
                 {label:"Copy IP", action:"copy-ip", value:""},
-                {label:"Settings", action:"network-settings", value:""}
+                {label:"Settings", action:"network-settings", value:""},
+                {label:"Allestörungen", action:"outages", value:""}
               ]
               Rectangle {
                 required property var modelData
                 readonly property bool busy: root.controlBusy(modelData.action, modelData.value)
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
-                width: (parent.width - 8) / 2; height: 38; radius: root.radius
+                width: (parent.width - 16) / 3; height: 38; radius: root.radius
                 color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoverColor : root.surface
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: 13 }

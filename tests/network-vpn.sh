@@ -51,6 +51,10 @@ cat >"$work/bin/openlogi-gui" <<'SH'
 #!/usr/bin/env bash
 printf 'openlogi-gui\n' >>"$MOCK_ACTIONS"
 SH
+cat >"$work/bin/xdg-open" <<'SH'
+#!/usr/bin/env bash
+printf 'xdg-open %s\n' "$*" >>"$MOCK_ACTIONS"
+SH
 cat >"$work/bin/pgrep" <<'SH'
 #!/usr/bin/env bash
 exit 1
@@ -161,6 +165,7 @@ SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn disconnect
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server stop
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server start
+SEELE_CONTROL_NO_STATUS=1 "$control" outages
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"
 SEELE_CONTROL_NO_STATUS=1 "$control" camera-settings /dev/video0
@@ -181,6 +186,11 @@ grep -qx 'protonvpn connect' "$MOCK_ACTIONS"
 grep -qx 'protonvpn disconnect' "$MOCK_ACTIONS"
 grep -qx 'systemctl stop sshd.service' "$MOCK_ACTIONS"
 grep -qx 'systemctl start sshd.service' "$MOCK_ACTIONS"
+for _ in {1..20}; do
+  grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS" && break
+  sleep 0.05
+done
+grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS"
 grep -qx 'openlogi-gui' "$MOCK_ACTIONS"
 if grep -q '^pkill ' "$MOCK_ACTIONS"; then exit 1; fi
 grep -qx 'speedtest --accept-license --accept-gdpr --format=jsonl --progress=yes --progress-update-interval=250' "$MOCK_ACTIONS"

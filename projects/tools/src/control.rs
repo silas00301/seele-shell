@@ -1167,6 +1167,10 @@ pub fn run(arguments: &[String]) -> Result {
             status("makoctl", ["mode", "-t", "do-not-disturb"]);
         }
         "network-settings" => detached("nm-connection-editor", &[])?,
+        "outages" => detached(
+            "xdg-open",
+            &["https://xn--allestrungen-9ib.de/".to_owned()],
+        )?,
         "copy-ip" => {
             let ip = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]))
                 .pointer("/0/prefsrc")

@@ -43,6 +43,7 @@ let
     pkgs.voxtype-vulkan
     pkgs.wireplumber
     pkgs.wl-clipboard
+    pkgs.xdg-utils
     quickshell
   ];
 in
