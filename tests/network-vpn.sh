@@ -119,6 +119,14 @@ Fixture Camera (usb-0000:00:14.0-7):
         /dev/video0
 OUT
 SH
+cat >"$work/bin/wpctl" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == get-volume ]]; then
+  printf 'Volume: 1.00\n'
+else
+  printf 'wpctl %s\n' "$*" >>"$MOCK_ACTIONS"
+fi
+SH
 for mock in "$work/bin/"*; do
   sed -i "1c#!$BASH" "$mock"
 done
@@ -207,6 +215,11 @@ SEELE_CONTROL_NO_STATUS=1 "$control" headphones anc
 test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = anc
 SEELE_CONTROL_NO_STATUS=1 "$control" headphones adaptive
 test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = adaptive
+SEELE_CONTROL_NO_STATUS=1 "$control" volume up
+SEELE_CONTROL_NO_STATUS=1 "$control" volume 150
+SEELE_CONTROL_NO_STATUS=1 "$control" microphone up
+if SEELE_CONTROL_NO_STATUS=1 "$control" volume 151 2>/dev/null; then exit 1; fi
+if SEELE_CONTROL_NO_STATUS=1 "$control" microphone 101 2>/dev/null; then exit 1; fi
 SEELE_CONTROL_NO_STATUS=1 "$control" outages
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"
@@ -230,6 +243,9 @@ grep -qx 'tailscale set --ssh=false' "$MOCK_ACTIONS"
 grep -qx 'tailscale set --ssh=true' "$MOCK_ACTIONS"
 grep -qx 'systemctl stop sshd.service' "$MOCK_ACTIONS"
 grep -qx 'systemctl start sshd.service' "$MOCK_ACTIONS"
+grep -qx 'wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+' "$MOCK_ACTIONS"
+grep -qx 'wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 150%' "$MOCK_ACTIONS"
+grep -qx 'wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ 5%+' "$MOCK_ACTIONS"
 for _ in {1..20}; do
   grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS" && break
   sleep 0.05

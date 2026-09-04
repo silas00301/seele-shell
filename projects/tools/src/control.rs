@@ -917,14 +917,14 @@ pub fn run(arguments: &[String]) -> Result {
             status("timeout", ["20", "bluetoothctl", "connect", arg(1)]);
         }
         "volume" | "microphone" => {
-            let target = if command == "volume" {
-                "@DEFAULT_AUDIO_SINK@"
+            let (target, maximum, limit) = if command == "volume" {
+                ("@DEFAULT_AUDIO_SINK@", 150, "1.5")
             } else {
-                "@DEFAULT_AUDIO_SOURCE@"
+                ("@DEFAULT_AUDIO_SOURCE@", 100, "1.0")
             };
             match arg(1) {
                 "up" => {
-                    status("wpctl", ["set-volume", "-l", "1.0", target, "5%+"]);
+                    status("wpctl", ["set-volume", "-l", limit, target, "5%+"]);
                 }
                 "down" => {
                     status("wpctl", ["set-volume", target, "5%-"]);
@@ -932,10 +932,10 @@ pub fn run(arguments: &[String]) -> Result {
                 "mute" => {
                     status("wpctl", ["set-mute", target, "toggle"]);
                 }
-                value if value.parse::<u8>().is_ok() => {
+                value if value.parse::<u8>().is_ok_and(|value| value <= maximum) => {
                     status(
                         "wpctl",
-                        ["set-volume", "-l", "1.0", target, &format!("{value}%")],
+                        ["set-volume", "-l", limit, target, &format!("{value}%")],
                     );
                 }
                 _ => return Err("invalid audio value".into()),

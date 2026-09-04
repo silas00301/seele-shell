@@ -102,6 +102,7 @@ ShellRoot {
   readonly property bool trayExpanded: trayPinned
   property int volumeDrag: -1
   property int microphoneDrag: -1
+  readonly property int outputVolumeMaximum: 150
   property string cameraPreviewDevice: ""
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
@@ -1360,7 +1361,8 @@ ShellRoot {
     var dragged = microphone ? root.microphoneDrag : root.volumeDrag
     var reported = Number(microphone ? root.systemData.microphoneVolume : root.systemData.volume)
     var current = dragged >= 0 ? dragged : isNaN(reported) ? 0 : reported
-    var adjusted = Math.max(0, Math.min(100, Math.round(current + steps * 5)))
+    var maximum = microphone ? 100 : root.outputVolumeMaximum
+    var adjusted = Math.max(0, Math.min(maximum, Math.round(current + steps * 5)))
     if (microphone) {
       root.microphoneDrag = adjusted
       if (!microphoneDragTimer.running) microphoneDragTimer.start()
@@ -2407,6 +2409,7 @@ ShellRoot {
     readonly property int shown: audioLevelRow.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
+    readonly property int maximum: audioLevelRow.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: audioLevelRow.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
 
     spacing: 8
@@ -2419,10 +2422,18 @@ ShellRoot {
       clip: true
 
       Rectangle {
-        width: parent.width * Math.max(0, Math.min(1, audioLevelRow.shown / 100))
+        width: parent.width * Math.max(0, Math.min(1, audioLevelRow.shown / audioLevelRow.maximum))
         radius: parent.radius
         height: parent.height
         color: audioLevelRow.muted ? root.fillDanger : root.fillColor
+      }
+
+      Rectangle {
+        visible: !audioLevelRow.microphone
+        x: parent.width * 100 / audioLevelRow.maximum
+        width: 1
+        height: parent.height
+        color: root.alpha(root.text, 0.25)
       }
 
       Row {
@@ -2452,7 +2463,7 @@ ShellRoot {
       MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        function valueAt(x) { return Math.max(0, Math.min(100, Math.round(x / width * 100))) }
+        function valueAt(x) { return Math.max(0, Math.min(audioLevelRow.maximum, Math.round(x / width * audioLevelRow.maximum))) }
         onPressed: function(mouse) {
           if (audioLevelRow.microphone) {
             root.microphoneDrag = valueAt(mouse.x)
@@ -2530,8 +2541,9 @@ ShellRoot {
     readonly property int shown: controlLevel.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
+    readonly property int maximum: controlLevel.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: controlLevel.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
-    readonly property real fillRatio: Math.max(0, Math.min(1, controlLevel.shown / 100))
+    readonly property real fillRatio: Math.max(0, Math.min(1, controlLevel.shown / controlLevel.maximum))
 
     radius: root.radius
     color: root.alpha(root.base, 0.52)
@@ -2542,6 +2554,14 @@ ShellRoot {
       height: parent.height
       radius: parent.radius
       color: controlLevel.muted ? root.fillDanger : root.fillColor
+    }
+
+    Rectangle {
+      visible: !controlLevel.microphone
+      x: parent.width * 100 / controlLevel.maximum
+      width: 1
+      height: parent.height
+      color: root.alpha(root.text, 0.25)
     }
 
     Text {
@@ -2559,7 +2579,7 @@ ShellRoot {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      function valueAt(x) { return Math.max(0, Math.min(100, Math.round(x / width * 100))) }
+      function valueAt(x) { return Math.max(0, Math.min(controlLevel.maximum, Math.round(x / width * controlLevel.maximum))) }
       function updateValue(value) {
         if (controlLevel.microphone) {
           root.microphoneDrag = value
@@ -6501,12 +6521,14 @@ ShellRoot {
           readonly property int level: microphone
             ? Number(root.microphoneDrag >= 0 ? root.microphoneDrag : root.systemData.microphoneVolume)
             : Number(root.volumeDrag >= 0 ? root.volumeDrag : root.systemData.volume)
+          readonly property int maximum: microphone ? 100 : root.outputVolumeMaximum
           visible: microphone || root.osdKind === "volume"
           anchors.fill: parent; anchors.margins: 14; spacing: 12
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.microphone ? (levelOsd.muted ? "󰍭" : "󰍬") : (levelOsd.muted ? "󰝟" : "󰕾"); color: levelOsd.muted ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: 20 }
           Rectangle {
             width: 205; height: 8; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: root.surface
-            Rectangle { width: parent.width * Math.max(0, Math.min(1, levelOsd.level / 100)); height: parent.height; radius: 4; color: root.accent }
+            Rectangle { width: parent.width * Math.max(0, Math.min(1, levelOsd.level / levelOsd.maximum)); height: parent.height; radius: 4; color: root.accent }
+            Rectangle { visible: !levelOsd.microphone; x: parent.width * 100 / levelOsd.maximum; width: 1; height: parent.height; color: root.alpha(root.text, 0.35) }
           }
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
         }
