@@ -20,6 +20,10 @@ ShellRoot {
   // Seele's native desktop shell.
   property color base: "#1e1e2e"
   property color mantle: "#181825"
+  // The darkest step in the palette. Chrome is cut out of the wallpaper with
+  // it, wells are cut back to it, and every surface is grounded on it, so the
+  // shell's depth comes from ink rather than from grey.
+  property color crust: "#11111b"
   property color surface: "#313244"
   property color overlay: "#6c7086"
   property color text: "#cdd6f4"
@@ -82,8 +86,11 @@ ShellRoot {
   readonly property int weightMedium: Font.Medium
   readonly property int weightStrong: Font.DemiBold
   readonly property int weightLight: Font.Light
-  // Uppercase section labels are the one place tracking earns its width.
-  readonly property real trackingLabel: 0.9
+  // Uppercase section labels are the one place tracking earns its width, and
+  // they earn more of it than a run of capitals at ordinary spacing would: a
+  // rule reads as a rule, rather than as a shouted word, once the letters are
+  // far enough apart to be seen individually.
+  readonly property real trackingLabel: 1.4
   // Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`.
   readonly property int spaceTight: 4
   readonly property int spaceSmall: 6
@@ -100,15 +107,27 @@ ShellRoot {
   readonly property color mutedText: subtext
   // Textured chrome. Surfaces stay translucent so the compositor's blur
   // shows through, a quiet vertical wash gives them depth, and a fixed grain
-  // film keeps a large panel from reading as flat plastic.
+  // film keeps a large panel from reading as flat plastic. The film is fine
+  // and clumped rather than raw noise, so it carries further before it is
+  // seen: it is laid on a little heavier than a coarse one could be.
   readonly property string grain: "grain.png"
-  readonly property real grainOpacity: 0.05
-  readonly property color panelColor: alpha(base, 0.86)
-  readonly property color panelBorder: alpha(accent, 0.65)
-  readonly property color hoverColor: alpha(accent, 0.18)
-  readonly property color pressColor: alpha(accent, 0.42)
-  readonly property color selectedColor: alpha(accent, 0.24)
-  readonly property color activeTint: alpha(accent, 0.14)
+  readonly property real grainOpacity: 0.07
+  readonly property color panelColor: alpha(mantle, 0.88)
+  // Edges. A surface is cut out of the wallpaper by a grounding ring in the
+  // palette's darkest ink, and lit again on the inside by a hairline that is
+  // brightest along the top, where light would actually land. Neither edge
+  // carries the accent: outlining every panel in lavender spends the accent
+  // on chrome, and it is worth more kept for state.
+  readonly property color panelBorder: alpha(crust, 0.9)
+  readonly property color edgeLight: alpha(text, 0.08)
+  readonly property color edgeCrown: alpha(text, 0.16)
+  // Interaction. The pointer is reported in neutral light and the commit is
+  // reported in accent, so hovering the shell does not set it glowing and a
+  // press still reads as something having been asked for.
+  readonly property color hoverColor: alpha(text, 0.07)
+  readonly property color pressColor: alpha(accent, 0.3)
+  readonly property color selectedColor: alpha(accent, 0.2)
+  readonly property color activeTint: alpha(accent, 0.12)
   readonly property color fillColor: alpha(accent, 0.45)
   readonly property color fillDanger: alpha(red, 0.45)
   readonly property color successColor: alpha(green, 0.25)
@@ -117,15 +136,15 @@ ShellRoot {
   readonly property color dangerPress: alpha(red, 0.48)
   // Elevation. A panel is translucent, so a card on it is a tint of the same
   // material rather than an opaque block, a row inside that card is a lighter
-  // tint again, and a track or well is cut back toward the base. Depth then
+  // tint again, and a track or well is cut back to the ink. Depth then
   // comes from how much of the wallpaper each layer still lets through instead
   // of from a stack of flat greys. `floatColor` is the one nearly solid step,
   // for a control that overlaps a row whose own fill moves under the pointer.
-  readonly property color cardColor: alpha(surface, 0.55)
-  readonly property color rowColor: alpha(surface, 0.32)
-  readonly property color wellColor: alpha(base, 0.52)
+  readonly property color cardColor: alpha(surface, 0.5)
+  readonly property color rowColor: alpha(surface, 0.3)
+  readonly property color wellColor: alpha(crust, 0.62)
   readonly property color floatColor: alpha(surface, 0.92)
-  readonly property color cardBorder: alpha(text, 0.07)
+  readonly property color cardBorder: alpha(text, 0.06)
   readonly property color separatorColor: alpha(text, 0.09)
   // Motion. Only in-surface state changes animate, and they share one pair of
   // durations so the whole shell settles at the same speed.
@@ -1518,6 +1537,7 @@ ShellRoot {
         var theme = JSON.parse(text())
         root.base = theme.base || root.base
         root.mantle = theme.mantle || root.mantle
+        root.crust = theme.crust || root.crust
         root.surface = theme.surface || root.surface
         root.overlay = theme.overlay || root.overlay
         root.text = theme.text || root.text
@@ -1937,11 +1957,18 @@ ShellRoot {
     implicitHeight: 22
     opacity: enabled ? 1 : 0.42
     radius: height / 2
-    color: switchMouse.pressed ? root.alpha(control.checked ? root.accent : root.text, 0.72) : control.checked ? root.accent : root.alpha(root.overlay, 0.4)
+    antialiasing: true
+    // Off, the track is a well cut into the surface rather than a grey pill,
+    // so an unset switch is quiet and a set one is the only lit thing in the
+    // row.
+    color: switchMouse.pressed ? root.alpha(control.checked ? root.accent : root.text, 0.6) : control.checked ? root.accent : root.wellColor
     border.width: 1
-    border.color: control.busy ? root.accent : switchMouse.pressed ? root.text : switchMouse.containsMouse ? root.accent : "transparent"
+    border.color: control.busy ? root.accent
+      : switchMouse.containsMouse ? root.alpha(root.accent, 0.55)
+      : control.checked ? "transparent" : root.edgeLight
 
     Behavior on color { ColorAnimation { duration: root.durationFast } }
+    Behavior on border.color { ColorAnimation { duration: root.durationFast } }
 
     Rectangle {
       visible: !control.busy
@@ -1950,9 +1977,11 @@ ShellRoot {
       radius: width / 2
       y: 3
       x: control.checked ? control.width - width - 3 : 3
-      color: control.checked ? root.base : root.text
+      color: control.checked ? root.crust : root.alpha(root.text, 0.82)
+      antialiasing: true
 
       Behavior on x { NumberAnimation { duration: root.durationFast; easing.type: Easing.OutCubic } }
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
     }
 
     RefreshGlyph {
@@ -1961,7 +1990,7 @@ ShellRoot {
       width: 16
       height: 16
       spinning: visible
-      color: control.checked ? root.base : root.text
+      color: control.checked ? root.crust : root.text
       font.pixelSize: root.textBody
     }
 
@@ -2000,24 +2029,63 @@ ShellRoot {
     }
   }
 
-  // Depth wash, drawn under a surface's content and inside its border.
+  // Depth wash, drawn under a surface's content and inside its border. The
+  // light gathers along the top edge, thins out across the middle, and the
+  // surface settles into ink at the bottom, so a tall panel is lit rather
+  // than merely tinted.
   component SurfaceWash: Rectangle {
     anchors.fill: parent
     anchors.margins: 1
     color: "transparent"
 
     gradient: Gradient {
-      GradientStop { position: 0.0; color: root.alpha(root.text, 0.06) }
-      GradientStop { position: 0.55; color: "transparent" }
-      GradientStop { position: 1.0; color: root.alpha(root.mantle, 0.45) }
+      GradientStop { position: 0.0; color: root.alpha(root.text, 0.075) }
+      GradientStop { position: 0.28; color: root.alpha(root.text, 0.02) }
+      GradientStop { position: 0.6; color: "transparent" }
+      GradientStop { position: 1.0; color: root.alpha(root.crust, 0.5) }
     }
   }
 
-  // Grain film and edge highlight, drawn over a surface's content so the
-  // texture is even across the panel and the cards inside it. Neither layer
-  // accepts input, so everything underneath stays clickable. A tiled image
-  // cannot follow a rounded corner, so `inset` pulls the film inside the arc:
-  // anything past radius * (1 - 1 / sqrt(2)) stays within the surface.
+  // The light on a surface's inside edge. The grounding ring outside is what
+  // cuts the panel out of the wallpaper; this is what keeps the cut reading as
+  // glass rather than as a hole. A hairline runs the whole perimeter and a
+  // brighter crown sits along the top, held clear of the corner arcs, because
+  // a straight line drawn into a rounded corner reads as a nick in it.
+  component SurfaceEdge: Item {
+    id: surfaceEdge
+
+    property real radius: root.radius - 1
+
+    anchors.fill: parent
+    z: 1
+
+    Rectangle {
+      anchors.fill: parent
+      anchors.margins: 1
+      radius: surfaceEdge.radius
+      color: "transparent"
+      border.width: 1
+      border.color: root.edgeLight
+      antialiasing: true
+    }
+
+    Rectangle {
+      anchors.top: parent.top
+      anchors.topMargin: 1
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: surfaceEdge.radius
+      anchors.rightMargin: surfaceEdge.radius
+      height: 1
+      color: root.edgeCrown
+    }
+  }
+
+  // Grain film, drawn over a surface's content so the texture is even across
+  // the panel and the cards inside it. It accepts no input, so everything
+  // underneath stays clickable. A tiled image cannot follow a rounded corner,
+  // so `inset` pulls the film inside the arc: anything past
+  // radius * (1 - 1 / sqrt(2)) stays within the surface.
   component SurfaceGrain: Item {
     id: grainLayer
 
@@ -2033,17 +2101,6 @@ ShellRoot {
       fillMode: Image.Tile
       opacity: root.grainOpacity
       smooth: false
-    }
-
-    Rectangle {
-      anchors.top: parent.top
-      anchors.topMargin: 1
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.leftMargin: grainLayer.inset * 3
-      anchors.rightMargin: grainLayer.inset * 3
-      height: 1
-      color: root.alpha(root.text, 0.1)
     }
   }
 
@@ -2091,6 +2148,9 @@ ShellRoot {
       border.color: root.panelBorder
       border.width: 1
 
+      SurfaceWash { radius: root.radiusSmall - 1 }
+      SurfaceEdge { radius: root.radiusSmall - 1 }
+
       Text {
         id: hoverTipLabel
         anchors.centerIn: parent
@@ -2133,9 +2193,9 @@ ShellRoot {
     }
   }
 
-  // Every panel introduces itself the same way: one accent glyph, the panel's
-  // name, an optional line of context beneath it, and a trailing slot for
-  // whatever that panel keeps beside its title. Panels used to assemble this
+  // Every panel introduces itself the same way: its mark in a tinted well, the
+  // panel's name, an optional line of context beneath it, and a trailing slot
+  // for whatever that panel keeps beside its title. Panels used to assemble this
   // row by hand and had drifted apart on glyph size, header height and
   // baseline, so the header is a component and the drift has nowhere to live.
   component PanelHeader: Item {
@@ -2152,13 +2212,23 @@ ShellRoot {
 
     height: panelHeader.detail !== "" ? 42 : root.panelHeaderHeight
 
-    Item {
+    // The panel's mark sits in a tinted well rather than loose on the
+    // material. The well is what carries the weight in the row, so the glyph
+    // inside it takes a step below the title instead of the step above it a
+    // glyph beside text would take, and a panel whose subject is drawn rather
+    // than typed lands in the same well.
+    Rectangle {
       id: panelHeaderGlyph
 
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
-      width: 30
-      height: parent.height
+      width: root.chipHeight - 2
+      height: width
+      radius: root.radiusSmall
+      color: root.alpha(root.accent, 0.1)
+      border.width: 1
+      border.color: root.alpha(root.accent, 0.22)
+      antialiasing: true
 
       Text {
         visible: panelHeader.mark === null
@@ -2166,20 +2236,20 @@ ShellRoot {
         text: panelHeader.glyph
         color: root.accent
         font.family: root.fontFamily
-        font.pixelSize: root.textDisplay
-        horizontalAlignment: Text.AlignLeft
+        font.pixelSize: root.textSubhead
+        horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
       }
 
       Loader {
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.centerIn: parent
         sourceComponent: panelHeader.mark
       }
     }
 
     Column {
       anchors.left: panelHeaderGlyph.right
+      anchors.leftMargin: root.spaceMedium
       anchors.right: panelHeaderTrailing.left
       anchors.rightMargin: panelHeaderTrailing.width > 0 ? root.spaceLarge : 0
       anchors.verticalCenter: parent.verticalCenter
@@ -2221,7 +2291,7 @@ ShellRoot {
   component SectionLabel: Text {
     color: root.overlay
     font.family: root.fontFamily
-    font.pixelSize: root.textLabel
+    font.pixelSize: root.textCaption
     font.weight: root.weightMedium
     font.letterSpacing: root.trackingLabel
   }
@@ -2238,25 +2308,52 @@ ShellRoot {
     implicitHeight: 7
     radius: height / 2
     color: root.wellColor
+    border.width: 1
+    border.color: root.alpha(root.text, 0.05)
+    antialiasing: true
 
+    // The filled part is graded along its length rather than laid down flat,
+    // so a full meter still reads as a lit instrument instead of a block of
+    // colour.
     Rectangle {
       width: parent.width * Math.max(0, Math.min(1, meterBar.ratio))
       height: parent.height
       radius: parent.radius
-      color: meterBar.fill
+      antialiasing: true
+
+      gradient: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0.0; color: root.alpha(meterBar.fill, 0.62) }
+        GradientStop { position: 1.0; color: meterBar.fill }
+      }
     }
   }
 
-  // The hairline that lifts a card off the panel material behind it. Drawn as
-  // a child rather than as the card's own border, so a card whose fill already
-  // tracks hover and press state keeps that binding and still gets the edge.
+  // The hairline that lifts a card off the panel material behind it, and the
+  // light along its top edge -- the same two-part edge a panel is framed with,
+  // one step quieter. Drawn as a child rather than as the card's own border,
+  // so a card whose fill already tracks hover and press state keeps that
+  // binding and still gets the edge.
   component CardEdge: Rectangle {
+    id: cardEdge
+
     anchors.fill: parent
     radius: root.radius
     color: "transparent"
     border.width: 1
     border.color: root.cardBorder
     antialiasing: true
+
+    Rectangle {
+      anchors.top: parent.top
+      anchors.topMargin: 1
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: cardEdge.radius
+      anchors.rightMargin: cardEdge.radius
+      height: 1
+      color: root.edgeLight
+    }
   }
 
   component SpeedGauge: Rectangle {
@@ -2272,7 +2369,7 @@ ShellRoot {
     property real displayedRatio: ratio
 
     radius: root.radius
-    color: root.mantle
+    color: root.wellColor
 
     Behavior on displayedRatio {
       NumberAnimation { duration: 520; easing.type: Easing.OutCubic }
@@ -2375,6 +2472,7 @@ ShellRoot {
     antialiasing: true
 
     SurfaceWash { radius: root.radius - 1 }
+    SurfaceEdge {}
     SurfaceGrain { inset: 3 }
     HoverHandler { id: panelHover }
   }
@@ -2405,7 +2503,7 @@ ShellRoot {
       implicitWidth: root.scrollGutter - 4
       radius: width / 2
       opacity: 1
-      color: root.alpha(root.overlay, scrollBar.pressed ? 1 : 0.75)
+      color: root.alpha(root.text, scrollBar.pressed ? 0.6 : 0.32)
     }
   }
 
@@ -2788,7 +2886,7 @@ ShellRoot {
       width: 30
       height: 30
       radius: width / 2
-      color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoverColor : root.alpha(root.base, 0.72)
+      color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoverColor : root.alpha(root.crust, 0.7)
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
@@ -2850,14 +2948,17 @@ ShellRoot {
       height: 30
       radius: width / 2
       opacity: connectivityRow.toggleEnabled ? 1 : 0.42
-      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoverColor : root.alpha(root.overlay, 0.35)
+      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoverColor : root.wellColor
+      border.width: connectivityRow.active ? 0 : 1
+      border.color: root.edgeLight
+      antialiasing: true
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
         visible: !connectivityRow.busy
         anchors.centerIn: parent
         text: connectivityRow.icon
-        color: connectivityRow.active ? root.base : root.text
+        color: connectivityRow.active ? root.crust : root.text
         font.family: root.fontFamily
         font.pixelSize: root.textSubhead
       }
@@ -2868,7 +2969,7 @@ ShellRoot {
         width: 16
         height: 16
         spinning: visible
-        color: connectivityRow.active ? root.base : root.text
+        color: connectivityRow.active ? root.crust : root.text
         font.pixelSize: root.textBody
       }
 
@@ -3045,7 +3146,7 @@ ShellRoot {
           anchors.fill: parent
           visible: controlCenterMediaArt.status !== Image.Ready
           radius: root.radiusSmall
-          color: root.mantle
+          color: root.wellColor
           Text {
             anchors.centerIn: parent
             text: "󰎆"
@@ -3517,7 +3618,7 @@ ShellRoot {
     height: mediaButton.flat ? 32 : 28
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
-    color: mediaButtonMouse.pressed ? root.pressColor : mediaButtonMouse.containsMouse ? root.hoverColor : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.mantle
+    color: mediaButtonMouse.pressed ? root.pressColor : mediaButtonMouse.containsMouse ? root.hoverColor : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     Text {
@@ -3565,13 +3666,22 @@ ShellRoot {
         anchors.verticalCenter: parent.verticalCenter
         height: 5
         radius: height / 2
-        color: root.alpha(root.overlay, 0.4)
+        color: root.wellColor
+        border.width: 1
+        border.color: root.alpha(root.text, 0.05)
+        antialiasing: true
 
         Rectangle {
           width: parent.width * (mediaTimeline.length > 0 ? mediaTimeline.shownPosition / mediaTimeline.length : 0)
           height: parent.height
           radius: parent.radius
-          color: root.accent
+          antialiasing: true
+
+          gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: root.alpha(root.accent, 0.62) }
+            GradientStop { position: 1.0; color: root.accent }
+          }
         }
       }
 
@@ -3626,7 +3736,7 @@ ShellRoot {
         anchors.verticalCenter: parent.verticalCenter
         height: 5
         radius: height / 2
-        color: root.overlay
+        color: root.alpha(root.text, 0.24)
       }
 
       Rectangle {
@@ -3637,7 +3747,7 @@ ShellRoot {
         anchors.verticalCenter: parent.verticalCenter
         height: 5
         radius: height / 2
-        color: root.overlay
+        color: root.alpha(root.text, 0.24)
       }
     }
 
@@ -3727,7 +3837,12 @@ ShellRoot {
         id: barSurface
         anchors { top: parent.top; left: parent.left; right: parent.right }
         height: root.barHeight
-        color: root.alpha(root.mantle, 0.9)
+        // The strip is the one surface that is always on screen, so it is the
+        // darkest material in the shell and the quietest: ink the wallpaper
+        // shows through, and it closes on a hairline rather than on a coloured
+        // rule. Nothing lights its top edge, because there is no wallpaper
+        // above the screen for that edge to be lit against.
+        color: root.alpha(root.crust, 0.86)
 
         SurfaceWash {}
 
@@ -3778,21 +3893,26 @@ ShellRoot {
                 height: root.barItemHeight
                 anchors.centerIn: parent
                 radius: root.radius
-                color: parent.active ? root.accent : workspaceMouse.containsMouse ? root.alpha(root.accent, 0.55) : parent.occupied ? root.alpha(root.subtext, 0.65) : root.alpha(root.subtext, 0.3)
+                // Three steps, and only the top one is lit: the workspace in
+                // front of the user is accent, one holding windows is a tint of
+                // the strip's own light, and an empty one is barely there.
+                color: parent.active ? root.accent
+                  : workspaceMouse.containsMouse ? root.alpha(root.accent, 0.5)
+                  : parent.occupied ? root.alpha(root.text, 0.16)
+                  : root.alpha(root.text, 0.07)
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
 
                 Behavior on width {
                   NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic }
                 }
 
-                Behavior on color {
-                  ColorAnimation { duration: root.durationFast }
-                }
-
                 Text {
                   anchors.centerIn: parent
                   text: String(parent.parent.modelData)
-                  color: root.base
+                  color: parent.parent.active ? root.crust
+                    : workspaceMouse.containsMouse ? root.crust
+                    : parent.parent.occupied ? root.text
+                    : root.alpha(root.text, 0.45)
                   font.family: root.fontFamily
                   font.pixelSize: root.textLabel
                   font.weight: parent.parent.active ? root.weightStrong : root.weightRegular
@@ -4433,7 +4553,7 @@ ShellRoot {
           visible: root.dragModule !== ""
           anchors.fill: parent
           z: 1
-          color: root.dragOverBar ? root.selectedColor : root.hoverColor
+          color: root.dragOverBar ? root.selectedColor : root.activeTint
 
           Behavior on color { ColorAnimation { duration: root.durationFast } }
         }
@@ -4443,7 +4563,7 @@ ShellRoot {
           width: parent.width
           height: root.dragModule !== "" ? 2 : 1
           z: 1
-          color: root.dragModule !== "" ? root.accent : root.alpha(root.accent, 0.2)
+          color: root.dragModule !== "" ? root.accent : root.alpha(root.crust, 0.85)
         }
       }
     }
@@ -4513,6 +4633,7 @@ ShellRoot {
           spacing: root.panelSpacing
 
           PanelHeader {
+            id: calendarHeader
             width: parent.width
             glyph: "󰃭"
             title: Qt.formatDate(root.now, "dddd")
@@ -4533,7 +4654,10 @@ ShellRoot {
           SeeleListView {
             id: calendarMonths
             width: parent.width
-            height: parent.height - 52
+            // The list takes whatever the header and the gap under it leave,
+            // so a change to either cannot quietly clip the last week of a
+            // month or reserve a strip nothing draws in.
+            height: parent.height - calendarHeader.height - root.panelSpacing
             model: 121
             spacing: 8
             clip: true
@@ -4607,7 +4731,7 @@ ShellRoot {
                         anchors.centerIn: parent
                         text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
                           : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
-                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.base : root.text
+                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.crust : root.text
                         font.family: root.fontFamily
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
@@ -4655,6 +4779,7 @@ ShellRoot {
           spacing: root.panelSpacing
 
           PanelHeader {
+            id: clockHeader
             width: parent.width
             glyph: "󰥔"
             title: "World clock"
@@ -4690,7 +4815,7 @@ ShellRoot {
           SeeleListView {
             id: timezoneList
             width: parent.width
-            height: parent.height - 100
+            height: parent.height - clockHeader.height - timezoneSearch.height - root.panelSpacing * 2
             model: root.filteredTimezones(timezoneSearch.text)
             spacing: 4
             clip: true
@@ -4731,7 +4856,7 @@ ShellRoot {
                 id: pinTimezoneButton
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 38; height: 30; radius: root.radius
-                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoverColor : root.mantle
+                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoverColor : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: pinTimezoneMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pinTimezone(timezoneRow.modelData.id) }
@@ -4986,10 +5111,13 @@ ShellRoot {
 
             Rectangle {
               width: parent.width; height: 48; radius: root.radius
-              color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.hoverColor : root.cardColor
+              // The one action on this panel that changes the machine, so it
+              // is the one card that arrives already lit.
+              color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.selectedColor : root.activeTint
               Behavior on color { ColorAnimation { duration: root.durationFast } }
-              border.color: root.alpha(root.accent, 0.45)
-              border.width: 1
+
+              CardEdge { border.color: root.alpha(root.accent, 0.28) }
+
               Row {
                 anchors.fill: parent
                 anchors.leftMargin: 14
@@ -5021,7 +5149,7 @@ ShellRoot {
                   width: (parent.width - 8) / 2; height: 68; radius: root.radius
                   color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoverColor : root.cardColor
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
-                  border.color: status === "input" ? root.yellow : status === "working" ? root.accent : status === "finished" ? root.green : root.alpha(root.overlay, 0.35)
+                  border.color: status === "input" ? root.yellow : status === "working" ? root.accent : status === "finished" ? root.green : root.cardBorder
                   border.width: status === "idle" ? 1 : 2
                   Column {
                     anchors.centerIn: parent
@@ -5122,8 +5250,8 @@ ShellRoot {
                       : metricPeriodMouse.containsMouse
                         ? root.hoverColor
                         : root.cardColor
-                  border.width: root.agentMetricPeriod === modelData.id ? 1 : 0
-                  border.color: root.alpha(root.accent, 0.55)
+                  border.width: 1
+                  border.color: root.agentMetricPeriod === modelData.id ? root.alpha(root.accent, 0.4) : root.cardBorder
 
                   Text {
                     anchors.centerIn: parent
@@ -5358,7 +5486,7 @@ ShellRoot {
                 anchors.fill: parent
                 visible: mediaPanelArt.status !== Image.Ready
                 radius: root.radius
-                color: root.mantle
+                color: root.wellColor
                 Text {
                   anchors.centerIn: parent
                   text: "󰎆"
@@ -5474,7 +5602,7 @@ ShellRoot {
               readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
               readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
               width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
+              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 visible: !parent.busy
@@ -5498,7 +5626,7 @@ ShellRoot {
               readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
               readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
               width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : inputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
+              color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : inputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 visible: !parent.busy
@@ -5621,7 +5749,7 @@ ShellRoot {
                 Rectangle {
                   anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                   width: 64; height: 24; radius: root.radius
-                  color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoverColor : root.mantle
+                  color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoverColor : root.cardColor
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                   Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                   RefreshGlyph { visible: speedtestProcess.running; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
@@ -5793,7 +5921,7 @@ ShellRoot {
                     readonly property bool busy: root.controlBusy("ssh-server", modelData.mode)
                     width: (parent.width - 12) / 3; height: root.chipHeight; radius: root.radius
                     opacity: modelData.available ? 1 : 0.42
-                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoverColor : root.mantle
+                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoverColor : root.cardColor
                     Behavior on color { ColorAnimation { duration: root.durationFast } }
                     Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                     RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
@@ -5833,7 +5961,7 @@ ShellRoot {
               Rectangle {
                 width: 32; height: 32; radius: root.radius
                 anchors.verticalCenter: parent.verticalCenter
-                color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoverColor : root.mantle
+                color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoverColor : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "󰏌"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
                 MouseArea { id: protonAppMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("proton-vpn", "open") }
@@ -6236,7 +6364,7 @@ ShellRoot {
 
           PanelHeader {
             width: parent.width
-            mark: HeadphonesIcon { width: 22; height: 22; kind: String(headphones.kind || "airpods"); tint: root.accent }
+            mark: HeadphonesIcon { width: 16; height: 16; kind: String(headphones.kind || "airpods"); tint: root.accent }
             title: headphones.name || "Headphones"
             detail: root.headphonesBatteryText() || "Connected"
           }
@@ -6590,7 +6718,7 @@ ShellRoot {
           }
           ClippingRectangle {
             z: 2
-            width: parent.width; height: 176; radius: root.radius; color: root.mantle
+            width: parent.width; height: 176; radius: root.radius; color: root.wellColor
             Loader {
               id: cameraPreviewLoader
               anchors.fill: parent

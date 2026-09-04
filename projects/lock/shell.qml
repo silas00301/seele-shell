@@ -11,6 +11,9 @@ ShellRoot {
 
   property color base: "#1e1e2e"
   property color mantle: "#181825"
+  // The palette's darkest ink. Chrome is cut out of the wallpaper with it and
+  // wells are cut back to it, the same way Seele Shell builds its depth.
+  property color crust: "#11111b"
   property color surface: "#313244"
   property color overlay: "#6c7086"
   property color text: "#cdd6f4"
@@ -43,11 +46,17 @@ ShellRoot {
   readonly property int weightLight: Font.Light
   readonly property int durationFast: 110
   readonly property string grain: "grain.png"
-  readonly property real grainOpacity: 0.05
-  readonly property color panelColor: alpha(base, 0.86)
-  readonly property color panelBorder: alpha(accent, 0.65)
-  readonly property color hoverColor: alpha(accent, 0.18)
-  readonly property color pressColor: alpha(accent, 0.42)
+  readonly property real grainOpacity: 0.07
+  readonly property color panelColor: alpha(mantle, 0.88)
+  // The same two-part edge Seele Shell frames a panel with: a grounding ring
+  // in ink outside, a hairline of light inside, and the accent kept for state.
+  readonly property color panelBorder: alpha(crust, 0.9)
+  readonly property color edgeLight: alpha(text, 0.08)
+  readonly property color edgeCrown: alpha(text, 0.16)
+  readonly property color markBorder: alpha(accent, 0.38)
+  readonly property color hoverColor: alpha(text, 0.07)
+  readonly property color selectedColor: alpha(accent, 0.2)
+  readonly property color pressColor: alpha(accent, 0.3)
   readonly property color dangerTint: alpha(red, 0.14)
   readonly property color dangerColor: alpha(red, 0.28)
   readonly property color dangerPress: alpha(red, 0.48)
@@ -56,8 +65,8 @@ ShellRoot {
   readonly property string displayName: Quickshell.env("SEELE_LOCK_NAME") || titleCase(userName)
   readonly property bool secure: sessionLock.secure
   readonly property bool authenticating: pam.active
-  readonly property color cardColor: alpha(surface, 0.55)
-  readonly property color cardBorder: alpha(text, 0.07)
+  readonly property color cardColor: alpha(surface, 0.5)
+  readonly property color cardBorder: alpha(text, 0.06)
 
   property date now: new Date()
   property string passwordText: ""
@@ -253,9 +262,41 @@ ShellRoot {
     color: "transparent"
 
     gradient: Gradient {
-      GradientStop { position: 0.0; color: root.alpha(root.text, 0.06) }
-      GradientStop { position: 0.55; color: "transparent" }
-      GradientStop { position: 1.0; color: root.alpha(root.mantle, 0.45) }
+      GradientStop { position: 0.0; color: root.alpha(root.text, 0.075) }
+      GradientStop { position: 0.28; color: root.alpha(root.text, 0.02) }
+      GradientStop { position: 0.6; color: "transparent" }
+      GradientStop { position: 1.0; color: root.alpha(root.crust, 0.5) }
+    }
+  }
+
+  // The light on a surface's inside edge, drawn inside the grounding ring.
+  component SurfaceEdge: Item {
+    id: surfaceEdge
+
+    property real radius: root.radius - 1
+
+    anchors.fill: parent
+    z: 1
+
+    Rectangle {
+      anchors.fill: parent
+      anchors.margins: 1
+      radius: surfaceEdge.radius
+      color: "transparent"
+      border.width: 1
+      border.color: root.edgeLight
+      antialiasing: true
+    }
+
+    Rectangle {
+      anchors.top: parent.top
+      anchors.topMargin: 1
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: surfaceEdge.radius
+      anchors.rightMargin: surfaceEdge.radius
+      height: 1
+      color: root.edgeCrown
     }
   }
 
@@ -275,17 +316,6 @@ ShellRoot {
       opacity: root.grainOpacity
       smooth: false
     }
-
-    Rectangle {
-      anchors.top: parent.top
-      anchors.topMargin: 1
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.leftMargin: grainLayer.inset * 3
-      anchors.rightMargin: grainLayer.inset * 3
-      height: 1
-      color: root.alpha(root.text, 0.1)
-    }
   }
 
   FileView {
@@ -298,6 +328,7 @@ ShellRoot {
         var theme = JSON.parse(text())
         root.base = theme.base || root.base
         root.mantle = theme.mantle || root.mantle
+        root.crust = theme.crust || root.crust
         root.surface = theme.surface || root.surface
         root.overlay = theme.overlay || root.overlay
         root.text = theme.text || root.text
@@ -505,7 +536,7 @@ ShellRoot {
               radius: width / 2
               color: root.panelColor
               border.width: 1
-              border.color: root.panelBorder
+              border.color: root.markBorder
 
               SurfaceWash { radius: parent.radius - 1 }
 
@@ -655,6 +686,7 @@ ShellRoot {
           border.color: root.panelBorder
 
           SurfaceWash { radius: root.radius - 1 }
+          SurfaceEdge {}
           SurfaceGrain { inset: 3 }
 
           MouseArea { anchors.fill: parent }
@@ -727,7 +759,8 @@ ShellRoot {
           radius: width / 2
           color: powerMenuMouse.pressed
             ? root.pressColor
-            : powerMenuMouse.containsMouse || root.powerMenuOpen ? root.hoverColor : root.cardColor
+            : root.powerMenuOpen ? root.selectedColor
+            : powerMenuMouse.containsMouse ? root.hoverColor : root.cardColor
           border.width: root.powerMenuOpen ? 1 : 0
           border.color: root.accent
 
