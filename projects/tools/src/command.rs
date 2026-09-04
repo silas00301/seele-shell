@@ -33,6 +33,18 @@ where
         .unwrap_or(false)
 }
 
+pub fn require_status<I, S>(program: &str, arguments: I) -> Result
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    if status(program, arguments) {
+        Ok(())
+    } else {
+        Err(format!("{program} failed").into())
+    }
+}
+
 pub fn detached(program: &str, arguments: &[String]) -> Result {
     let mut command = Command::new(program);
     command

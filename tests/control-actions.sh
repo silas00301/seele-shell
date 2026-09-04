@@ -37,3 +37,25 @@ if MOCK_SYSTEMCTL_EXIT=1 "$control" lock-suspend; then
   echo "failed suspend reported success" >&2
   exit 1
 fi
+
+for name in wpctl tailscale protonvpn bluetoothctl timeout; do
+  cat >"$work/bin/$name" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s\n' "${0##*/}" "$*" >>"$MOCK_ACTIONS"
+exit 1
+SH
+  sed -i "1c#!$BASH" "$work/bin/$name"
+  chmod +x "$work/bin/$name"
+done
+for action in 'volume up' 'microphone mute' 'tailscale up' 'proton-vpn connect' 'audio-device 3' 'bluetooth-pair-worker AA:BB:CC:DD:EE:FF'; do
+  : >"$MOCK_ACTIONS"
+  read -r -a args <<<"$action"
+  if "$control" "${args[@]}"; then
+    echo "failed action reported success: $action" >&2
+    exit 1
+  fi
+  test "$(wc -l <"$MOCK_ACTIONS")" -eq 1
+done
+: >"$MOCK_ACTIONS"
+if "$control" audio-device; then exit 1; fi
+test ! -s "$MOCK_ACTIONS"
