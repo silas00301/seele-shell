@@ -6,6 +6,7 @@ mod control;
 mod grain;
 mod launch;
 mod mic_sync;
+mod nothing;
 mod receiver;
 mod session;
 mod shellctl;
@@ -38,6 +39,7 @@ fn run() -> Result {
         "seele-bt-receiver" => Some("bt-receiver"),
         "seele-bt-agent" => Some("bt-agent"),
         "seele-mic-sync" => Some("mic-sync"),
+        "seele-nothing-headphones" => Some("nothing-headphones"),
         "seele-os-session" => Some("os-session"),
         "seele-shellctl" => Some("shellctl"),
         "seele-clock" => Some("clock"),
@@ -65,6 +67,7 @@ fn run() -> Result {
         "bt-receiver" => receiver::run(),
         "bt-agent" => bluetooth::agent(&arguments),
         "mic-sync" => mic_sync::run(&arguments),
+        "nothing-headphones" => nothing::run(&arguments),
         "os-session" => session::run(&arguments),
         "shellctl" => shellctl::run(&arguments),
         "clock" => clock::run(&arguments),

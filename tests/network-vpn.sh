@@ -43,6 +43,16 @@ case "${1:-}" in
   *) exit 2 ;;
 esac
 SH
+cat >"$work/bin/busctl" <<'SH'
+#!/usr/bin/env bash
+if [[ $* == *GetManagedObjects* ]]; then
+  cat <<'JSON'
+{"type":"a{oa{sa{sv}}}","data":[{"/org/bluez/hci0":{"org.bluez.Adapter1":{"Powered":{"type":"b","data":true},"Discoverable":{"type":"b","data":false}}},"/org/bluez/hci0/dev_11_22_33_44_55_66":{"org.bluez.Device1":{"Address":{"type":"s","data":"11:22:33:44:55:66"},"Alias":{"type":"s","data":"Nothing Headphone (1)"},"Paired":{"type":"b","data":true},"Trusted":{"type":"b","data":true},"Connected":{"type":"b","data":true},"Icon":{"type":"s","data":"audio-headphones"},"UUIDs":{"type":"as","data":["0000110b-0000-1000-8000-00805f9b34fb"]}},"org.bluez.Battery1":{"Percentage":{"type":"y","data":71}}}}]}
+JSON
+else
+  exit 2
+fi
+SH
 cat >"$work/bin/nmcli" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "${MOCK_NMCLI:-}"
@@ -121,10 +131,13 @@ export MOCK_SSH_STATE="$work/ssh-state"
 export MOCK_TAILSCALE_PREFS="$work/tailscale-prefs.json"
 export MOCK_TAILSCALE_JSON='{"BackendState":"Running","Self":{"HostName":"fixture-host","TailscaleIPs":["100.64.0.1"]},"CurrentTailnet":{"Name":"fixture.ts.net"},"Peer":{"one":{"Online":true},"two":{"Online":false}}}'
 export MOCK_NMCLI='wireguard:Proton VPN DE#1'
+export SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON=1
 
 printf '%s\n' open >"$MOCK_VICINAE_STATE"
 printf '%s\n' active >"$MOCK_SSH_STATE"
 printf '{"RunSSH":true}\n' >"$MOCK_TAILSCALE_PREFS"
+mkdir -p "$XDG_RUNTIME_DIR/seele-shell"
+printf '%s\n' '{"address":"11:22:33:44:55:66","battery":74,"controls":true,"noiseMode":"adaptive","updatedAt":1}' >"$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx closed "$MOCK_VICINAE_STATE"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
@@ -142,6 +155,12 @@ jq -e '.available and .connected and .connection == "Proton VPN DE#1"' <<<"$stat
 
 state=$("$control" status | jq '.sshServer')
 jq -e '.available and .tailscaleAvailable and .sshAvailable and .mode == "mixed"' <<<"$state" >/dev/null
+
+state=$("$control" status | jq '.headphones')
+jq -e '. == {connected:true,name:"Nothing Headphone (1)",kind:"nothing",battery:74,controls:true,noiseMode:"adaptive"}' <<<"$state" >/dev/null
+
+state=$("$control" status | jq '[.batteries[] | select(.name == "Nothing Headphone (1)")]')
+jq -e '. == [{kind:"device",name:"Nothing Headphone (1)",percent:71,status:"",icon:"audio-headphones"}]' <<<"$state" >/dev/null
 
 state=$("$control" status | jq '[.batteries[] | select(.kind == "logitech")]')
 jq -e '. == [{kind:"logitech",name:"MX Master 3S",percent:73,status:"Discharging",icon:"input-mouse"}]' <<<"$state" >/dev/null
@@ -182,6 +201,12 @@ jq -e '.available and .mode == "tailscale"' <<<"$state" >/dev/null
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server ssh
 state=$("$control" status | jq '.sshServer')
 jq -e '.available and .mode == "ssh"' <<<"$state" >/dev/null
+SEELE_CONTROL_NO_STATUS=1 "$control" headphones transparency
+test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = transparency
+SEELE_CONTROL_NO_STATUS=1 "$control" headphones anc
+test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = anc
+SEELE_CONTROL_NO_STATUS=1 "$control" headphones adaptive
+test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = adaptive
 SEELE_CONTROL_NO_STATUS=1 "$control" outages
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"

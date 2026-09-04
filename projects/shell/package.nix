@@ -64,7 +64,7 @@ pkgs.stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/libexec/seele-shell" "$out/bin"
+    mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/share/licenses/seele-shell" "$out/libexec/seele-shell" "$out/bin"
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude-code.svg} "$out/share/seele-shell/claude-code.svg"
@@ -74,6 +74,7 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
     install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
     install -m644 ${./pi-status.ts} "$out/share/seele-shell/pi-status.ts"
+    install -m644 ${../tools/LICENSES/Something-X.txt} "$out/share/licenses/seele-shell/Something-X.txt"
 
     cp ${../vicinae/package.json} "$out/share/vicinae/extensions/seele-shell/package.json"
     cp ${../vicinae/seele.svg} "$out/share/vicinae/extensions/seele-shell/assets/seele.svg"
@@ -90,7 +91,7 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix QT_PLUGIN_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/plugins" \
       --prefix PATH : "$out/bin:${runtimePath}"
     install -m755 ${tools}/bin/seele-tools "$out/libexec/seele-shell/seele-tools"
-    for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-mic-sync seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-mic-sync seele-nothing-headphones seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       ln -s seele-tools "$out/libexec/seele-shell/$name"
     done
     makeTool() {
@@ -107,6 +108,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-control
     makeTool seele-bt-receiver
     makeTool seele-mic-sync
+    makeTool seele-nothing-headphones
     makeTool seele-bt-agent
     makeTool seele-os-session
     makeTool seele-shellctl --set SEELE_SHELL_PATH "$out/share/seele-shell"
@@ -116,7 +118,9 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
-  passthru.librepods = librepods;
+  passthru = {
+    inherit librepods;
+  };
 
   doInstallCheck = true;
   installCheckPhase = ''
@@ -132,12 +136,13 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/seele-shell/CameraPreview.qml"
     test -f "$out/share/seele-shell/opencode-status.ts"
     test -f "$out/share/seele-shell/pi-status.ts"
+    test -f "$out/share/licenses/seele-shell/Something-X.txt"
     test -f "$out/share/vicinae/extensions/seele-shell/package.json"
     test -f "$out/share/vicinae/extensions/seele-shell/seele.js"
     test -f "$out/share/vicinae/extensions/seele-shell/keybindings.js"
     ${quickshell}/bin/quickshell --private-check-compat
     qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml"
-    for command in seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null

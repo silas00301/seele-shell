@@ -11,7 +11,7 @@ function run(args: string[]) {
 }
 
 const commands = [
-  { title: "Control Center", subtitle: "Network, Bluetooth, camera, AirPods, sound, and now playing", icon: Icon.Gauge, args: ["center"] },
+  { title: "Control Center", subtitle: "Network, Bluetooth, camera, headphones, sound, and now playing", icon: Icon.Gauge, args: ["center"] },
   { title: "AI Cockpit", subtitle: "Usage, limits, and agents", icon: Icon.Stars, args: ["agents"] },
   { title: "Launch Pi", subtitle: "Primary coding agent", icon: Icon.Terminal, args: ["agent", "pi"] },
   { title: "Launch OpenCode", subtitle: "Coding agent", icon: Icon.Code, args: ["agent", "opencode"] },
@@ -21,7 +21,7 @@ const commands = [
   { title: "Network Controls", subtitle: "Connection status and settings", icon: Icon.Wifi, args: ["control", "network"] },
   { title: "VPN", subtitle: "Tailscale and Proton VPN", icon: Icon.Lock, args: ["control", "vpn"] },
   { title: "Bluetooth Controls", subtitle: "Devices, pairing, and autoconnect", icon: Icon.Bluetooth, args: ["control", "bluetooth"] },
-  { title: "AirPods", subtitle: "Noise control and auto play", icon: Icon.Headphones, args: ["control", "airpods"] },
+  { title: "Headphones", subtitle: "Nothing or AirPods noise control", icon: Icon.Headphones, args: ["control", "airpods"] },
   { title: "Batteries", subtitle: "This device and connected gear", icon: Icon.Battery, args: ["control", "battery"] },
   { title: "Notifications", subtitle: "History and Do Not Disturb", icon: Icon.Bell, args: ["control", "notifications"] },
   { title: "Webcam", subtitle: "Preview and camera controls", icon: Icon.Video, args: ["control", "camera"] },

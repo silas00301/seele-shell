@@ -2,6 +2,7 @@ use crate::agents;
 use crate::command::{
     atomic_write, config_home, detached, json_output, output, process_alive, runtime_home, status,
 };
+use crate::nothing;
 use crate::Result;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -31,6 +32,7 @@ fn bool_data(value: Option<&Value>) -> bool {
 fn string_data(value: Option<&Value>) -> String {
     data(value).and_then(Value::as_str).unwrap_or("").to_owned()
 }
+
 fn pid(path: &Path) -> Option<u32> {
     fs::read_to_string(path).ok()?.trim().parse().ok()
 }
@@ -96,6 +98,39 @@ fn start_daemon(
         thread::sleep(Duration::from_millis(50));
     }
     Ok(())
+}
+
+fn nothing_headphones_stop() {
+    stop_daemon(
+        &runtime_file("nothing-headphones.pid"),
+        "nothing-headphones",
+    );
+    let _ = fs::remove_file(nothing::state_path());
+    let _ = fs::remove_file(nothing::command_path());
+}
+
+fn nothing_headphones_active(address: &str) -> bool {
+    pid(&runtime_file("nothing-headphones.pid"))
+        .map(|pid| {
+            process_alive(pid)
+                && cmdline_contains(pid, "nothing-headphones")
+                && cmdline_contains(pid, address)
+        })
+        .unwrap_or(false)
+}
+
+fn nothing_headphones_start(address: &str) -> Result {
+    if nothing_headphones_active(address) {
+        return Ok(());
+    }
+    nothing_headphones_stop();
+    start_daemon(
+        &runtime_file("nothing-headphones.pid"),
+        "seele-nothing-headphones",
+        &[address],
+        &[],
+        Some(&runtime_file("nothing-headphones.log")),
+    )
 }
 
 fn bluetooth_scan_active() -> bool {
@@ -199,7 +234,7 @@ fn bluetooth_state() -> Value {
         .and_then(|value| value.pointer("/data/0"))
         .and_then(Value::as_object)
     else {
-        return json!({"available":false,"powered":false,"scanning":false,"receiver":false,"discoverable":false,"connected":0,"devices":[],"airpodsConnected":false,"airpodsName":""});
+        return json!({"available":false,"powered":false,"scanning":false,"receiver":false,"discoverable":false,"connected":0,"devices":[]});
     };
     let mut available = false;
     let mut powered = false;
@@ -250,7 +285,7 @@ fn bluetooth_state() -> Value {
             .and_then(|battery| data(battery.get("Percentage")))
             .cloned()
             .unwrap_or(Value::Null);
-        devices.push(json!({"address":address,"name":name,"icon":string_data(device.get("Icon")),"paired":paired,"trusted":bool_data(device.get("Trusted")),"connected":connected,"rssi":data(device.get("RSSI")).cloned().unwrap_or(Value::Null),"source":source,"streaming":transports.contains(path),"battery":battery}));
+        devices.push(json!({"path":path,"address":address,"name":name,"icon":string_data(device.get("Icon")),"paired":paired,"trusted":bool_data(device.get("Trusted")),"connected":connected,"rssi":data(device.get("RSSI")).cloned().unwrap_or(Value::Null),"source":source,"streaming":transports.contains(path),"battery":battery}));
     }
     devices.sort_by(|left, right| {
         let left_key = (
@@ -265,13 +300,64 @@ fn bluetooth_state() -> Value {
         );
         left_key.cmp(&right_key)
     });
-    let airpods = devices.iter().find(|device| {
-        device["connected"].as_bool() == Some(true) && {
-            let name = device["name"].as_str().unwrap_or("").to_ascii_lowercase();
-            name.contains("airpods") || name.contains("beats")
+    json!({"available":available,"powered":powered,"scanning":bluetooth_scan_active(),"receiver":bluetooth_receiver_active(),"discoverable":discoverable,"connected":devices.iter().filter(|device|device["connected"].as_bool()==Some(true)).count(),"devices":devices})
+}
+
+fn headphone_kind(name: &str) -> Option<&'static str> {
+    let name = name.to_ascii_lowercase();
+    if name.contains("airpods") || name.contains("beats") {
+        Some("airpods")
+    } else if name.ends_with("nothing headphone (1)") {
+        Some("nothing")
+    } else {
+        None
+    }
+}
+
+fn connected_headphone(bluetooth: &Value) -> Option<&Value> {
+    bluetooth["devices"].as_array()?.iter().find(|device| {
+        device["connected"].as_bool() == Some(true)
+            && device["name"].as_str().and_then(headphone_kind).is_some()
+    })
+}
+
+fn headphone_state(bluetooth: &Value) -> Value {
+    let Some(device) = connected_headphone(bluetooth) else {
+        if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref() != Ok("1") {
+            nothing_headphones_stop();
         }
-    });
-    json!({"available":available,"powered":powered,"scanning":bluetooth_scan_active(),"receiver":bluetooth_receiver_active(),"discoverable":discoverable,"connected":devices.iter().filter(|device|device["connected"].as_bool()==Some(true)).count(),"devices":devices,"airpodsConnected":airpods.is_some(),"airpodsName":airpods.and_then(|device|device["name"].as_str()).unwrap_or("")})
+        return json!({"connected":false,"name":"","kind":"","battery":Value::Null,"controls":false,"noiseMode":""});
+    };
+    let name = device["name"].as_str().unwrap_or("");
+    let kind = headphone_kind(name).unwrap_or("");
+    let details = if kind == "nothing" {
+        let address = device["address"].as_str().unwrap_or("");
+        if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref() != Ok("1") {
+            let _ = nothing_headphones_start(address);
+        }
+        nothing::state(address)
+            .map(|state| {
+                json!({
+                    "battery":state.battery.map(Value::from).unwrap_or_else(||device["battery"].clone()),
+                    "controls":state.controls,
+                    "noiseMode":state.noise_mode
+                })
+            })
+            .unwrap_or_else(|| json!({"battery":device["battery"],"controls":false,"noiseMode":""}))
+    } else {
+        if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref() != Ok("1") {
+            nothing_headphones_stop();
+        }
+        json!({"battery":device["battery"],"controls":true,"noiseMode":""})
+    };
+    json!({
+        "connected": true,
+        "name": name,
+        "kind": kind,
+        "battery": details["battery"],
+        "controls": details["controls"],
+        "noiseMode": details["noiseMode"]
+    })
 }
 
 fn tailscale_state() -> Value {
@@ -322,8 +408,8 @@ fn ssh_state() -> Value {
         ["show", "--property=LoadState", "--value", "sshd.service"],
     )
     .is_some_and(|state| state.trim() == "loaded");
-    let ssh_running = ssh_available
-        && status("systemctl", ["is-active", "--quiet", "sshd.service"]);
+    let ssh_running =
+        ssh_available && status("systemctl", ["is-active", "--quiet", "sshd.service"]);
     let mode = match (tailscale_running, ssh_running) {
         (false, false) => "off",
         (true, false) => "tailscale",
@@ -619,6 +705,7 @@ fn status_value() -> Value {
         == "enabled";
     let route = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]));
     let bluetooth = bluetooth_state();
+    let headphones = headphone_state(&bluetooth);
     let mut batteries = system_batteries();
     batteries.extend(openlogi_batteries());
     for device in bluetooth["devices"]
@@ -630,6 +717,9 @@ fn status_value() -> Value {
         })
     {
         batteries.push(json!({"kind":"device","name":device["name"],"percent":device["battery"],"status":"","icon":device["icon"]}));
+    }
+    if headphones["connected"].as_bool() == Some(true) && !headphones["battery"].is_null() {
+        batteries.push(json!({"kind":"device","name":headphones["name"],"percent":headphones["battery"],"status":"","icon":"audio-headphones"}));
     }
     let mut names = HashSet::new();
     batteries.retain(|value| names.insert(value["name"].as_str().unwrap_or("").to_owned()));
@@ -664,7 +754,7 @@ fn status_value() -> Value {
     let tailscale = tailscale_state();
     let proton = proton_state();
     let ssh = ssh_state();
-    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"airpodsConnected":bluetooth["airpodsConnected"],"airpodsName":bluetooth["airpodsName"],"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":audio_devices(&dump),"agentStates":agents::aggregate_states(),"notifications":notification_state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
+    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":audio_devices(&dump),"agentStates":agents::aggregate_states(),"notifications":notification_state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
 }
 fn print_status() {
     if !no_status() {
@@ -1055,10 +1145,7 @@ pub fn run(arguments: &[String]) -> Result {
             {
                 return Err("could not disable Tailscale SSH".into());
             }
-            if mode != "ssh"
-                && ssh_available
-                && !status("systemctl", ["stop", "sshd.service"])
-            {
+            if mode != "ssh" && ssh_available && !status("systemctl", ["stop", "sshd.service"]) {
                 return Err("could not stop OpenSSH".into());
             }
 
@@ -1076,20 +1163,39 @@ pub fn run(arguments: &[String]) -> Result {
                 _ => {}
             }
         }
-        "airpods" => match arg(1) {
-            "off" | "anc" | "transparency" | "adaptive" => {
-                status("librepods-ctl", [&format!("noise:{}", arg(1))]);
-            }
-            "ear-detection" => {
-                set_airpods_ear_detection(if arg(2).is_empty() { "toggle" } else { arg(2) })?
-            }
-            "open" => {
-                if !status("librepods-ctl", ["reopen"]) {
-                    detached("librepods", &[])?;
+        "headphones" | "airpods" => {
+            let bluetooth = bluetooth_state();
+            let device =
+                connected_headphone(&bluetooth).ok_or("no supported headphones connected")?;
+            let kind = headphone_kind(device["name"].as_str().unwrap_or(""))
+                .ok_or("unsupported headphones")?;
+            match (kind, arg(1)) {
+                ("airpods", "off" | "anc" | "transparency" | "adaptive") => {
+                    status("librepods-ctl", [&format!("noise:{}", arg(1))]);
                 }
+                ("airpods", "ear-detection") => {
+                    set_airpods_ear_detection(if arg(2).is_empty() { "toggle" } else { arg(2) })?
+                }
+                ("airpods", "open") => {
+                    if !status("librepods-ctl", ["reopen"]) {
+                        detached("librepods", &[])?;
+                    }
+                }
+                ("nothing", "off" | "anc" | "transparency" | "adaptive") => {
+                    let address = device["address"]
+                        .as_str()
+                        .ok_or("Bluetooth address missing")?;
+                    if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref()
+                        != Ok("1")
+                        && !nothing_headphones_active(address)
+                    {
+                        nothing_headphones_start(address)?;
+                    }
+                    nothing::queue_noise(address, arg(1))?
+                }
+                _ => return Err("invalid headphone action".into()),
             }
-            _ => return Err("invalid AirPods action".into()),
-        },
+        }
         "bar" => {
             let path = config_file("bar.json");
             let mut modules = bar_modules().as_object().cloned().unwrap_or_default();
@@ -1206,10 +1312,7 @@ pub fn run(arguments: &[String]) -> Result {
             status("makoctl", ["mode", "-t", "do-not-disturb"]);
         }
         "network-settings" => detached("nm-connection-editor", &[])?,
-        "outages" => detached(
-            "xdg-open",
-            &["https://xn--allestrungen-9ib.de/".to_owned()],
-        )?,
+        "outages" => detached("xdg-open", &["https://xn--allestrungen-9ib.de/".to_owned()])?,
         "copy-ip" => {
             let ip = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]))
                 .pointer("/0/prefsrc")

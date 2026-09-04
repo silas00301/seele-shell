@@ -121,8 +121,9 @@ ShellRoot {
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
-  property bool airpodsOsdConnected: false
-  property string airpodsOsdName: "AirPods"
+  property bool headphonesOsdConnected: false
+  property string headphonesOsdName: "Headphones"
+  property string headphonesOsdKind: "airpods"
   property var yubikeyTouchSources: ({})
   property bool yubikeyTouchRequired: false
   property bool polkitPrompting: false
@@ -172,8 +173,7 @@ ShellRoot {
     bluetoothReceiver: false,
     bluetoothDiscoverable: false,
     bluetoothDevices: [],
-    airpodsConnected: false,
-    airpodsName: "",
+    headphones: { connected: false, name: "", kind: "", battery: null, controls: false, noiseMode: "" },
     voxtypeStatus: "unavailable",
     cameraDevices: [],
     cameraDevice: "",
@@ -334,9 +334,12 @@ ShellRoot {
     try {
       var parsed = JSON.parse(String(output || ""))
       if (parsed) {
-        if (root.statusInitialized && !!parsed.airpodsConnected !== !!root.systemData.airpodsConnected) {
-          root.airpodsOsdConnected = !!parsed.airpodsConnected
-          root.airpodsOsdName = String(parsed.airpodsName || root.systemData.airpodsName || "AirPods")
+        var nextHeadphones = parsed.headphones || ({})
+        var currentHeadphones = root.systemData.headphones || ({})
+        if (root.statusInitialized && !!nextHeadphones.connected !== !!currentHeadphones.connected) {
+          root.headphonesOsdConnected = !!nextHeadphones.connected
+          root.headphonesOsdName = String(nextHeadphones.name || currentHeadphones.name || "Headphones")
+          root.headphonesOsdKind = String(nextHeadphones.kind || currentHeadphones.kind || "airpods")
           root.showTimedOsd("airpods")
         }
         var previousNotifications = (root.systemData.notifications || {}).items || []
@@ -376,9 +379,7 @@ ShellRoot {
         bluetoothReceiver: !!parsed.receiver,
         bluetoothDiscoverable: !!parsed.discoverable,
         bluetoothConnected: Number(parsed.connected || 0),
-        bluetoothDevices: parsed.devices || [],
-        airpodsConnected: !!parsed.airpodsConnected,
-        airpodsName: String(parsed.airpodsName || "")
+        bluetoothDevices: parsed.devices || []
       })
       root.reconcileBluetoothScanIntent(!!parsed.scanning)
       root.reconcileBluetoothReceiverIntent(!!parsed.receiver)
@@ -930,7 +931,11 @@ ShellRoot {
     return root.text
   }
 
-  function airpodsBatteryText() {
+  function headphonesBatteryText() {
+    var headphones = root.systemData.headphones || ({})
+    if (headphones.kind === "nothing" && headphones.battery !== null && headphones.battery !== undefined) {
+      return Number(headphones.battery) + "%"
+    }
     var entries = root.batteryEntries()
     var values = []
     for (var i = 0; i < entries.length; i++) {
@@ -986,7 +991,7 @@ ShellRoot {
       vpn: "VPN",
       bluetooth: "Bluetooth",
       camera: "Camera",
-      airpods: "AirPods",
+      airpods: "Headphones",
       audio: "Sound",
       media: "Now Playing"
     }
@@ -1102,9 +1107,10 @@ ShellRoot {
     return devices.length > 0 ? devices[0] : null
   }
 
-  function airpodsDetail() {
-    if (!root.systemData.airpodsConnected) return "Not connected"
-    return root.airpodsBatteryText() || "Connected"
+  function headphonesDetail() {
+    var headphones = root.systemData.headphones || ({})
+    if (!headphones.connected) return "Not connected"
+    return root.headphonesBatteryText() || "Connected"
   }
 
   function startSpeedtest() {
@@ -1893,24 +1899,35 @@ ShellRoot {
     MouseArea { id: switchMouse; anchors.fill: parent; enabled: control.enabled && !control.busy; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: control.toggled() }
   }
 
-  component AirpodsIcon: Item {
-    id: airpodsIcon
+  component HeadphonesIcon: Item {
+    id: headphonesIcon
 
     property color tint: root.text
+    property string kind: "airpods"
 
     implicitWidth: 16
     implicitHeight: 16
 
     Repeater {
+      visible: headphonesIcon.kind === "airpods"
       model: [0, 1]
       Item {
         required property int modelData
         width: 6
-        height: airpodsIcon.height
-        x: modelData === 0 ? 1 : airpodsIcon.width - width - 1
-        Rectangle { width: 6; height: 6; radius: 3; y: 2; color: airpodsIcon.tint }
-        Rectangle { width: 2.4; height: 7; radius: 1.2; x: 1.8; y: 7.5; color: airpodsIcon.tint }
+        height: headphonesIcon.height
+        x: modelData === 0 ? 1 : headphonesIcon.width - width - 1
+        Rectangle { width: 6; height: 6; radius: 3; y: 2; color: headphonesIcon.tint }
+        Rectangle { width: 2.4; height: 7; radius: 1.2; x: 1.8; y: 7.5; color: headphonesIcon.tint }
       }
+    }
+
+    Text {
+      visible: headphonesIcon.kind !== "airpods"
+      anchors.centerIn: parent
+      text: "󰋋"
+      color: headphonesIcon.tint
+      font.family: root.fontFamily
+      font.pixelSize: Math.min(parent.width, parent.height)
     }
   }
 
@@ -2712,8 +2729,8 @@ ShellRoot {
     }
   }
 
-  // A Control Center module tile. The glyph is a component slot because AirPods
-  // are drawn by `AirpodsIcon` while every other module has a font glyph.
+  // A Control Center module tile. The glyph is a component slot because each
+  // supported headphone family has its own silhouette.
   component ControlTile: Rectangle {
     id: controlTile
 
@@ -3012,7 +3029,7 @@ ShellRoot {
 
     ControlTile {
       y: controlGrid.devicesY
-      width: root.systemData.airpodsConnected ? controlGrid.mediaSize : controlGrid.width
+      width: (root.systemData.headphones || {}).connected ? controlGrid.mediaSize : controlGrid.width
       height: controlGrid.smallTileHeight
       module: "camera"
       label: "Camera"
@@ -3028,16 +3045,16 @@ ShellRoot {
     }
 
     ControlTile {
-      visible: root.systemData.airpodsConnected
+      visible: !!(root.systemData.headphones || {}).connected
       x: controlGrid.mediaSize + controlGrid.gap
       y: controlGrid.devicesY
       width: controlGrid.mediaSize
       height: controlGrid.smallTileHeight
       module: "airpods"
-      label: root.systemData.airpodsName || "AirPods"
-      detail: root.airpodsDetail()
+      label: (root.systemData.headphones || {}).name || "Headphones"
+      detail: root.headphonesDetail()
       active: true
-      glyph: AirpodsIcon { tint: root.accent }
+      glyph: HeadphonesIcon { kind: String((root.systemData.headphones || {}).kind || "airpods"); tint: root.accent }
       onActivated: root.toggleControl("airpods", controlGrid.screenName)
     }
   }
@@ -3998,13 +4015,13 @@ ShellRoot {
 
           BarItem {
             module: "airpods"
-            visible: root.systemData.airpodsConnected && root.barModulePinned("airpods")
+            visible: !!(root.systemData.headphones || {}).connected && root.barModulePinned("airpods")
             width: 30
             hovered: airpodsMouse.containsMouse
             active: root.panelHere("airpods", barWindow.modelData)
-            AirpodsIcon { anchors.centerIn: parent; tint: root.accent }
+            HeadphonesIcon { anchors.centerIn: parent; kind: String((root.systemData.headphones || {}).kind || "airpods"); tint: root.accent }
             BarModuleArea { id: airpodsMouse; module: "airpods"; onActivated: root.toggleControl("airpods", barWindow.modelData.name) }
-            HoverTip { mouse: airpodsMouse; text: root.systemData.airpodsName || "AirPods" }
+            HoverTip { mouse: airpodsMouse; text: (root.systemData.headphones || {}).name || "Headphones" }
           }
 
           BarItem {
@@ -5937,17 +5954,19 @@ ShellRoot {
     }
   }
 
-  // AirPods controls -----------------------------------------------------------
+  // Headphone controls ---------------------------------------------------------
   Variants {
     model: Quickshell.screens
     PanelWindow {
       required property var modelData
+      readonly property var headphones: root.systemData.headphones || ({})
+      readonly property bool nothingHeadphones: headphones.kind === "nothing"
       screen: modelData
       visible: root.controlPanel === "airpods" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 340
-      implicitHeight: 252
+      implicitHeight: nothingHeadphones ? 150 : 252
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -5958,23 +5977,31 @@ ShellRoot {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           Row {
             width: parent.width; spacing: 8
-            AirpodsIcon { anchors.verticalCenter: parent.verticalCenter; width: 22; height: 22; tint: root.accent }
+            HeadphonesIcon { anchors.verticalCenter: parent.verticalCenter; width: 22; height: 22; kind: String(headphones.kind || "airpods"); tint: root.accent }
             Column {
               width: parent.width - 32
               anchors.verticalCenter: parent.verticalCenter
               spacing: 2
-              Text { text: root.systemData.airpodsName || "AirPods"; elide: Text.ElideRight; width: parent.width; color: root.text; font.family: root.fontFamily; font.pixelSize: 16; font.bold: true }
+              Text { text: headphones.name || "Headphones"; elide: Text.ElideRight; width: parent.width; color: root.text; font.family: root.fontFamily; font.pixelSize: 16; font.bold: true }
               Text {
-                text: root.airpodsBatteryText() || "Connected"
+                text: root.headphonesBatteryText() || "Connected"
                 color: root.subtext
                 font.family: root.fontFamily
                 font.pixelSize: 11
               }
             }
           }
-          Text { text: "NOISE CONTROL"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+          Text {
+            text: "NOISE CONTROL" + (nothingHeadphones && !headphones.controls ? " · CONNECTING" : "")
+            color: root.overlay
+            font.family: root.fontFamily
+            font.pixelSize: 9
+            font.bold: true
+          }
           Row {
-            width: parent.width; spacing: 6
+            width: parent.width
+            spacing: 6
+            opacity: nothingHeadphones && !headphones.controls ? 0.42 : 1
             Repeater {
               model: [{label:"Off", mode:"off"}, {label:"ANC", mode:"anc"}, {label:"Aware", mode:"transparency"}, {label:"Adaptive", mode:"adaptive"}]
               Rectangle {
@@ -5982,15 +6009,17 @@ ShellRoot {
                 readonly property bool busy: root.controlBusy("airpods", modelData.mode)
                 readonly property bool complete: root.controlCompleted("airpods", modelData.mode)
                 readonly property bool failed: root.controlFailed("airpods", modelData.mode)
+                readonly property bool selected: headphones.noiseMode === modelData.mode
                 width: (parent.width - 18) / 4; height: 40; radius: root.radius
-                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoverColor : root.surface
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoverColor : root.surface
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
-                MouseArea { id: airpodsModeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("airpods", parent.modelData.mode) }
+                MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", parent.modelData.mode) }
               }
             }
           }
           Row {
+            visible: !nothingHeadphones
             width: parent.width; spacing: 8
             Column {
               width: parent.width - 48
@@ -6003,18 +6032,19 @@ ShellRoot {
               anchors.verticalCenter: parent.verticalCenter
               checked: root.systemData.airpodsEarDetection
               busy: root.controlBusy("airpods", "ear-detection", "toggle")
-              onToggled: if (root.runControl("airpods", "ear-detection", "toggle")) root.patchSystemData({ airpodsEarDetection: !root.systemData.airpodsEarDetection })
+              onToggled: if (root.runControl("headphones", "ear-detection", "toggle")) root.patchSystemData({ airpodsEarDetection: !root.systemData.airpodsEarDetection })
             }
           }
           Rectangle {
+            visible: !nothingHeadphones
             readonly property bool busy: root.controlBusy("airpods", "open")
             readonly property bool complete: root.controlCompleted("airpods", "open")
             readonly property bool failed: root.controlFailed("airpods", "open")
             width: parent.width; height: 38; radius: root.radius
             color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoverColor : root.surface
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : nothingHeadphones ? "More Nothing controls" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
-            MouseArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("airpods", "open") }
+            MouseArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("headphones", "open") }
           }
         }
       }
@@ -6483,13 +6513,13 @@ ShellRoot {
         Row {
           visible: root.osdKind === "airpods"
           anchors.fill: parent; anchors.margins: 14; spacing: 12
-          AirpodsIcon { anchors.verticalCenter: parent.verticalCenter; width: 22; height: 22; tint: root.airpodsOsdConnected ? root.accent : root.subtext }
+          HeadphonesIcon { anchors.verticalCenter: parent.verticalCenter; width: 22; height: 22; kind: root.headphonesOsdKind; tint: root.headphonesOsdConnected ? root.accent : root.subtext }
           Column {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 34
             spacing: 2
-            Text { width: parent.width; text: root.airpodsOsdName; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 12; font.bold: true }
-            Text { text: root.airpodsOsdConnected ? (root.airpodsBatteryText() || "Connected") : "Disconnected"; color: root.airpodsOsdConnected ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+            Text { width: parent.width; text: root.headphonesOsdName; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 12; font.bold: true }
+            Text { text: root.headphonesOsdConnected ? (root.headphonesBatteryText() || "Connected") : "Disconnected"; color: root.headphonesOsdConnected ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
           }
         }
         // This and the Seele Polkit dialog ask for the same thing, so they are
