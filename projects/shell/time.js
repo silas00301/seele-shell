@@ -16,22 +16,37 @@ function isoWeek(date) {
   return Math.ceil((((value - yearStart) / 86400000) + 1) / 7)
 }
 
-// Six Monday-first rows keep every month the same height and make scrolling stable.
+// The Monday-first rows a month actually occupies: four when it is February
+// starting on a Monday, six when a long month starts on a Sunday.
+function calendarWeeks(now, offset) {
+  var month = monthDate(now, offset)
+  var mondayOffset = (month.getDay() + 6) % 7
+  var days = new Date(month.getFullYear(), month.getMonth() + 1, 0, 12).getDate()
+  return Math.ceil((mondayOffset + days) / 7)
+}
+
+// A month's section carries that month's days and nothing else. The days on
+// either side of it belong to the sections above and below, so their cells are
+// left empty rather than filled in to square the block off, and a month that
+// needs four rows is drawn four rows tall.
 function calendarCells(now, offset) {
   var month = monthDate(now, offset)
   var mondayOffset = (month.getDay() + 6) % 7
+  var weeks = calendarWeeks(now, offset)
   var cursor = new Date(month.getFullYear(), month.getMonth(), 1 - mondayOffset, 12)
   var cells = []
 
-  for (var week = 0; week < 6; week++) {
+  for (var week = 0; week < weeks; week++) {
     cells.push({ week: true, label: isoWeek(cursor) })
     for (var day = 0; day < 7; day++) {
       var value = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + day, 12)
+      var inMonth = value.getMonth() === month.getMonth()
+        && value.getFullYear() === month.getFullYear()
       cells.push({
         week: false,
-        day: value.getDate(),
-        inMonth: value.getMonth() === month.getMonth(),
-        today: sameDay(value, now)
+        inMonth: inMonth,
+        day: inMonth ? value.getDate() : 0,
+        today: inMonth && sameDay(value, now)
       })
     }
     cursor.setDate(cursor.getDate() + 7)

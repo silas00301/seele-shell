@@ -158,6 +158,12 @@ ShellRoot {
   property int volumeDrag: -1
   property int microphoneDrag: -1
   readonly property int outputVolumeMaximum: 150
+  // Every level track runs to 100%, so a full bar means full volume on the
+  // output as well as the microphone. Output gain goes further than that, but a
+  // bar cannot draw more than full, so above 100% only the number moves.
+  // Dragging maps across the same 100; the boost above it belongs to the wheel
+  // and the volume keys, which clamp at `outputVolumeMaximum` instead.
+  readonly property int audioTrackMaximum: 100
   property string cameraPreviewDevice: ""
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
@@ -1410,6 +1416,12 @@ ShellRoot {
     return pixels === 0 ? 0 : pixels > 0 ? 1 : -1
   }
 
+  function audioFillRatio(value) {
+    var level = Number(value)
+    if (isNaN(level)) return 0
+    return Math.max(0, Math.min(1, level / root.audioTrackMaximum))
+  }
+
   function adjustAudioFromWheel(wheel, microphone) {
     var steps = root.audioWheelSteps(wheel)
     if (steps === 0) return
@@ -2585,7 +2597,6 @@ ShellRoot {
     readonly property int shown: audioLevelRow.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
-    readonly property int maximum: audioLevelRow.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: audioLevelRow.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
 
     spacing: 8
@@ -2598,18 +2609,10 @@ ShellRoot {
       clip: true
 
       Rectangle {
-        width: parent.width * Math.max(0, Math.min(1, audioLevelRow.shown / audioLevelRow.maximum))
+        width: parent.width * root.audioFillRatio(audioLevelRow.shown)
         radius: parent.radius
         height: parent.height
         color: audioLevelRow.muted ? root.fillDanger : root.fillColor
-      }
-
-      Rectangle {
-        visible: !audioLevelRow.microphone
-        x: parent.width * 100 / audioLevelRow.maximum
-        width: 1
-        height: parent.height
-        color: root.alpha(root.text, 0.25)
       }
 
       Row {
@@ -2639,7 +2642,7 @@ ShellRoot {
       MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        function valueAt(x) { return Math.max(0, Math.min(audioLevelRow.maximum, Math.round(x / width * audioLevelRow.maximum))) }
+        function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
         onPressed: function(mouse) {
           if (audioLevelRow.microphone) {
             root.microphoneDrag = valueAt(mouse.x)
@@ -2719,9 +2722,8 @@ ShellRoot {
     readonly property int shown: controlLevel.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
-    readonly property int maximum: controlLevel.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: controlLevel.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
-    readonly property real fillRatio: Math.max(0, Math.min(1, controlLevel.shown / controlLevel.maximum))
+    readonly property real fillRatio: root.audioFillRatio(controlLevel.shown)
 
     radius: root.radius
     color: root.wellColor
@@ -2732,14 +2734,6 @@ ShellRoot {
       height: parent.height
       radius: parent.radius
       color: controlLevel.muted ? root.fillDanger : root.fillColor
-    }
-
-    Rectangle {
-      visible: !controlLevel.microphone
-      x: parent.width * 100 / controlLevel.maximum
-      width: 1
-      height: parent.height
-      color: root.alpha(root.text, 0.25)
     }
 
     Text {
@@ -2757,7 +2751,7 @@ ShellRoot {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      function valueAt(x) { return Math.max(0, Math.min(controlLevel.maximum, Math.round(x / width * controlLevel.maximum))) }
+      function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
       function updateValue(value) {
         if (controlLevel.microphone) {
           root.microphoneDrag = value
@@ -4548,12 +4542,19 @@ ShellRoot {
               required property int modelData
               readonly property int monthOffset: modelData - 60
               readonly property date month: Time.monthDate(root.now, monthOffset)
+              // A month occupies four, five or six Monday-first rows, and is
+              // drawn at the height it needs rather than padded out to a fixed
+              // block with the neighbouring months' days.
+              readonly property int weeks: Time.calendarWeeks(root.now, monthOffset)
+              readonly property int weekdayHeight: 22
+              readonly property int cellHeight: 33
               width: ListView.view.width
-              height: 258
+              height: root.chipHeight + root.spaceSmall + weekdayHeight
+                + root.spaceSmall + weeks * cellHeight
 
               Column {
                 anchors.fill: parent
-                spacing: 6
+                spacing: root.spaceSmall
                 Text {
                   width: parent.width
                   height: root.chipHeight
@@ -4566,14 +4567,14 @@ ShellRoot {
                 }
                 Grid {
                   width: parent.width
-                  height: 22
+                  height: monthDelegate.weekdayHeight
                   columns: 8
                   Repeater {
                     model: ["Wk", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
                     Text {
                       required property string modelData
                       width: parent.width / 8
-                      height: 22
+                      height: monthDelegate.weekdayHeight
                       text: modelData
                       color: root.mutedText
                       font.family: root.fontFamily
@@ -4587,7 +4588,7 @@ ShellRoot {
                 Grid {
                   id: monthGrid
                   width: parent.width
-                  height: 198
+                  height: monthDelegate.weeks * monthDelegate.cellHeight
                   columns: 8
                   Repeater {
                     model: Time.calendarCells(root.now, monthDelegate.monthOffset)
@@ -4595,7 +4596,7 @@ ShellRoot {
                       id: calendarCell
                       required property var modelData
                       width: monthGrid.width / 8
-                      height: 33
+                      height: monthDelegate.cellHeight
                       Rectangle {
                         visible: !calendarCell.modelData.week && calendarCell.modelData.today
                         anchors.centerIn: parent
@@ -4604,9 +4605,9 @@ ShellRoot {
                       }
                       Text {
                         anchors.centerIn: parent
-                        text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label : calendarCell.modelData.day
-                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.base : calendarCell.modelData.inMonth ? root.text : root.mutedText
-                        opacity: calendarCell.modelData.week || calendarCell.modelData.inMonth || calendarCell.modelData.today ? 1 : 0.72
+                        text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
+                          : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
+                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.base : root.text
                         font.family: root.fontFamily
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
@@ -6751,7 +6752,6 @@ ShellRoot {
           readonly property int level: microphone
             ? Number(root.microphoneDrag >= 0 ? root.microphoneDrag : root.systemData.microphoneVolume)
             : Number(root.volumeDrag >= 0 ? root.volumeDrag : root.systemData.volume)
-          readonly property int maximum: microphone ? 100 : root.outputVolumeMaximum
           visible: microphone || root.osdKind === "volume"
           anchors.fill: parent; anchors.margins: 14; spacing: 12
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.microphone ? (levelOsd.muted ? "󰍭" : "󰍬") : (levelOsd.muted ? "󰝟" : "󰕾"); color: levelOsd.muted ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
@@ -6759,9 +6759,7 @@ ShellRoot {
             width: 205
             height: 8
             anchors.verticalCenter: parent.verticalCenter
-            ratio: levelOsd.level / levelOsd.maximum
-            // Where the output leaves its own hardware range behind.
-            Rectangle { visible: !levelOsd.microphone; x: parent.width * 100 / levelOsd.maximum; width: 1; height: parent.height; color: root.alpha(root.text, 0.35) }
+            ratio: root.audioFillRatio(levelOsd.level)
           }
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
         }
