@@ -592,6 +592,28 @@ pub(crate) fn aggregate_states() -> Value {
     Value::Object(result)
 }
 
+fn sampled_idle(last: Option<&Value>, ticks: u64, now: i64) -> i64 {
+    let elapsed = last
+        .and_then(|value| value.get("at"))
+        .and_then(Value::as_i64)
+        .map(|at| now - at)
+        .unwrap_or(0);
+    let burnt = last
+        .and_then(|value| value.get("ticks"))
+        .and_then(Value::as_u64)
+        .map(|old| ticks.saturating_sub(old))
+        .unwrap_or(u64::MAX);
+    let old_idle = last
+        .and_then(|value| value.get("idle"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if elapsed >= 0 && burnt <= (2 * elapsed) as u64 {
+        old_idle + elapsed
+    } else {
+        0
+    }
+}
+
 fn sampled_harnesses() -> Vec<Value> {
     let samples = running_harnesses();
     let path = agent_dir().join(".cpu-sample.json");
@@ -605,25 +627,7 @@ fn sampled_harnesses() -> Vec<Value> {
     let mut records = Vec::new();
     for (pid, agent, ticks) in samples {
         let last = previous.get(pid.to_string());
-        let elapsed = last
-            .and_then(|value| value.get("at"))
-            .and_then(Value::as_i64)
-            .map(|at| now - at)
-            .unwrap_or(0);
-        let burnt = last
-            .and_then(|value| value.get("ticks"))
-            .and_then(Value::as_u64)
-            .map(|old| ticks.saturating_sub(old))
-            .unwrap_or(u64::MAX);
-        let old_idle = last
-            .and_then(|value| value.get("idle"))
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let idle = if elapsed > 0 && burnt <= (2 * elapsed) as u64 {
-            old_idle + elapsed
-        } else {
-            0
-        };
+        let idle = sampled_idle(last, ticks, now);
         next.insert(pid.to_string(), json!({"ticks":ticks,"at":now,"idle":idle}));
         records.push(json!({"agent":agent,"pid":pid,"ticks":ticks,"live":true,"source":"cpu","status":if idle>=20{"input"}else{"working"},"updatedAt":timestamp()}));
     }
@@ -663,4 +667,19 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
         .into_iter()
         .filter_map(|(pid, name)| subtree_ticks(pid).map(|ticks| (pid, name, ticks)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_poll_in_one_second_preserves_idle_history() {
+        let last = json!({"at":100,"ticks":42,"idle":20});
+        assert_eq!(sampled_idle(Some(&last), 42, 100), 20);
+        assert_eq!(sampled_idle(Some(&last), 42, 101), 21);
+        assert_eq!(sampled_idle(Some(&last), 50, 100), 0);
+        assert_eq!(sampled_idle(Some(&last), 42, 99), 0);
+        assert_eq!(sampled_idle(None, 42, 100), 0);
+    }
 }
