@@ -141,7 +141,7 @@ state=$("$control" status | jq '.protonVpn')
 jq -e '.available and .connected and .connection == "Proton VPN DE#1"' <<<"$state" >/dev/null
 
 state=$("$control" status | jq '.sshServer')
-jq -e '.available and .running' <<<"$state" >/dev/null
+jq -e '.available and .tailscaleAvailable and .sshAvailable and .mode == "mixed"' <<<"$state" >/dev/null
 
 state=$("$control" status | jq '[.batteries[] | select(.kind == "logitech")]')
 jq -e '. == [{kind:"logitech",name:"MX Master 3S",percent:73,status:"Discharging",icon:"input-mouse"}]' <<<"$state" >/dev/null
@@ -165,7 +165,7 @@ jq -e '
   .connection == "Disconnected"
   and .audioDevices != null
   and .volume != null
-  and .sshServer == {available:true,running:true}
+  and .sshServer == {available:true,mode:"mixed",tailscaleAvailable:true,sshAvailable:true}
   and any(.batteries[]; .kind == "logitech" and .name == "MX Master 3S" and .percent == 73)
   and .cameraDevices == [{name:"Fixture Camera",device:"/dev/video0"}]
 ' <<<"$state" >/dev/null
@@ -173,12 +173,15 @@ jq -e '
 SEELE_CONTROL_NO_STATUS=1 "$control" tailscale down
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn disconnect
-SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server stop
+SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server off
 state=$("$control" status | jq '.sshServer')
-jq -e '.available and (.running | not)' <<<"$state" >/dev/null
-SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server start
+jq -e '.available and .mode == "off"' <<<"$state" >/dev/null
+SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server tailscale
 state=$("$control" status | jq '.sshServer')
-jq -e '.available and .running' <<<"$state" >/dev/null
+jq -e '.available and .mode == "tailscale"' <<<"$state" >/dev/null
+SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server ssh
+state=$("$control" status | jq '.sshServer')
+jq -e '.available and .mode == "ssh"' <<<"$state" >/dev/null
 SEELE_CONTROL_NO_STATUS=1 "$control" outages
 mkdir -p "$XDG_CONFIG_HOME/openlogi"
 printf 'schema_version = 2\n\n[app_settings]\ncheck_for_updates = false\n' >"$XDG_CONFIG_HOME/openlogi/config.toml"
@@ -200,6 +203,8 @@ grep -qx 'protonvpn connect' "$MOCK_ACTIONS"
 grep -qx 'protonvpn disconnect' "$MOCK_ACTIONS"
 grep -qx 'tailscale set --ssh=false' "$MOCK_ACTIONS"
 grep -qx 'tailscale set --ssh=true' "$MOCK_ACTIONS"
+grep -qx 'systemctl stop sshd.service' "$MOCK_ACTIONS"
+grep -qx 'systemctl start sshd.service' "$MOCK_ACTIONS"
 for _ in {1..20}; do
   grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS" && break
   sleep 0.05

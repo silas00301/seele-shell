@@ -164,7 +164,7 @@ ShellRoot {
     gateway: "",
     tailscale: { available: false, backend: "Unavailable", connected: false, needsLogin: false, name: "", ip: "", tailnet: "", peers: 0, onlinePeers: 0 },
     protonVpn: { available: false, connected: false, connection: "" },
-    sshServer: { available: false, running: false },
+    sshServer: { available: false, mode: "off", tailscaleAvailable: false, sshAvailable: false },
     bluetoothAvailable: false,
     bluetoothPowered: false,
     bluetoothConnected: 0,
@@ -5498,27 +5498,56 @@ ShellRoot {
           Rectangle {
             id: sshServerCard
             readonly property var state: root.systemData.sshServer || ({})
-            readonly property string action: state.running ? "stop" : "start"
-            readonly property bool busy: root.controlBusy("ssh-server", action)
-            readonly property bool failed: root.controlFailed("ssh-server", action)
-            width: parent.width; height: 66; radius: root.radius
-            color: failed ? root.dangerTint : state.running ? root.activeTint : root.surface
-            Row {
-              anchors.fill: parent; anchors.margins: 10; spacing: 9
-              Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰆍"; color: sshServerCard.state.running ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter }
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 82
-                spacing: 3
-                Text { text: "Tailscale SSH"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-                Text { width: parent.width; text: sshServerCard.failed ? "Action failed" : sshServerCard.state.running ? "Allowed by tailnet policy" : "Off"; elide: Text.ElideRight; color: sshServerCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 8 }
+            readonly property bool busy: root.pendingControlAction === "ssh-server"
+            readonly property bool failed: root.failedControlAction === "ssh-server"
+            readonly property string mode: busy ? root.pendingControlValue : String(state.mode || "off")
+            width: parent.width; height: 94; radius: root.radius
+            color: failed ? root.dangerTint : mode !== "off" ? root.activeTint : root.surface
+            Column {
+              anchors.fill: parent; anchors.margins: 10; spacing: 8
+              Row {
+                width: parent.width; spacing: 9
+                Text { width: 24; text: "󰆍"; color: sshServerCard.mode !== "off" ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter }
+                Column {
+                  width: parent.width - 33; spacing: 3
+                  Text { text: "SSH access"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+                  Text {
+                    width: parent.width
+                    text: sshServerCard.failed ? "Mode change failed" : sshServerCard.mode === "mixed" ? "Both paths active · choose one" : sshServerCard.mode === "tailscale" ? "Incoming through Tailscale" : sshServerCard.mode === "ssh" ? "Port 22 · public keys only" : "No incoming SSH"
+                    elide: Text.ElideRight
+                    color: sshServerCard.failed ? root.red : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: 8
+                  }
+                }
               }
-              ControlSwitch {
-                anchors.verticalCenter: parent.verticalCenter
-                enabled: !!sshServerCard.state.available
-                checked: !!sshServerCard.state.running
-                busy: sshServerCard.busy
-                onToggled: root.runControl("ssh-server", sshServerCard.action)
+              Row {
+                width: parent.width; spacing: 6
+                Repeater {
+                  model: [
+                    { label: "Off", mode: "off", available: true },
+                    { label: "Tailscale", mode: "tailscale", available: !!sshServerCard.state.tailscaleAvailable },
+                    { label: "SSH", mode: "ssh", available: !!sshServerCard.state.sshAvailable }
+                  ]
+                  Rectangle {
+                    required property var modelData
+                    readonly property bool selected: sshServerCard.mode === modelData.mode
+                    readonly property bool busy: root.controlBusy("ssh-server", modelData.mode)
+                    width: (parent.width - 12) / 3; height: 28; radius: root.radius
+                    opacity: modelData.available ? 1 : 0.42
+                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoverColor : root.mantle
+                    Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+                    RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: 10 }
+                    MouseArea {
+                      id: sshModeMouse
+                      anchors.fill: parent
+                      enabled: parent.modelData.available && !sshServerCard.busy && !parent.selected
+                      hoverEnabled: true
+                      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                      onClicked: root.runControl("ssh-server", parent.modelData.mode)
+                    }
+                  }
+                }
               }
             }
           }

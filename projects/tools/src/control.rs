@@ -311,12 +311,31 @@ fn proton_state() -> Value {
     json!({"available":true,"connected":!line.is_empty(),"connection":line.split_once(':').map(|(_,name)|name).unwrap_or("")})
 }
 fn ssh_state() -> Value {
-    let Some(prefs) = output("tailscale", ["debug", "prefs"])
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-    else {
-        return json!({"available":false,"running":false});
+    let tailscale = output("tailscale", ["debug", "prefs"])
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let tailscale_running = tailscale
+        .as_ref()
+        .and_then(|prefs| prefs["RunSSH"].as_bool())
+        == Some(true);
+    let ssh_available = output(
+        "systemctl",
+        ["show", "--property=LoadState", "--value", "sshd.service"],
+    )
+    .is_some_and(|state| state.trim() == "loaded");
+    let ssh_running = ssh_available
+        && status("systemctl", ["is-active", "--quiet", "sshd.service"]);
+    let mode = match (tailscale_running, ssh_running) {
+        (false, false) => "off",
+        (true, false) => "tailscale",
+        (false, true) => "ssh",
+        (true, true) => "mixed",
     };
-    json!({"available":true,"running":prefs["RunSSH"].as_bool()==Some(true)})
+    json!({
+        "available": tailscale.is_some() || ssh_available,
+        "mode": mode,
+        "tailscaleAvailable": tailscale.is_some(),
+        "sshAvailable": ssh_available
+    })
 }
 fn openlogi_batteries() -> Vec<Value> {
     let cache = runtime_file("openlogi-batteries.json");
@@ -1022,28 +1041,40 @@ pub fn run(arguments: &[String]) -> Result {
             _ => return Err("invalid Proton VPN action".into()),
         },
         "ssh-server" => {
-            let mut action = arg(1);
-            if action.is_empty() || action == "toggle" {
-                action = if ssh_state()["running"].as_bool() == Some(true) {
-                    "stop"
-                } else {
-                    "start"
-                };
+            let mode = arg(1);
+            if !matches!(mode, "off" | "tailscale" | "ssh") {
+                return Err("invalid SSH mode".into());
             }
-            if !matches!(action, "start" | "stop") {
-                return Err("invalid SSH action".into());
+            let state = ssh_state();
+            let tailscale_available = state["tailscaleAvailable"].as_bool() == Some(true);
+            let ssh_available = state["sshAvailable"].as_bool() == Some(true);
+
+            if mode != "tailscale"
+                && tailscale_available
+                && !status("tailscale", ["set", "--ssh=false"])
+            {
+                return Err("could not disable Tailscale SSH".into());
             }
-            status(
-                "tailscale",
-                [
-                    "set",
-                    if action == "start" {
-                        "--ssh=true"
-                    } else {
-                        "--ssh=false"
-                    },
-                ],
-            );
+            if mode != "ssh"
+                && ssh_available
+                && !status("systemctl", ["stop", "sshd.service"])
+            {
+                return Err("could not stop OpenSSH".into());
+            }
+
+            match mode {
+                "tailscale" if !tailscale_available => {
+                    return Err("Tailscale SSH is unavailable".into());
+                }
+                "tailscale" if !status("tailscale", ["set", "--ssh=true"]) => {
+                    return Err("could not enable Tailscale SSH".into());
+                }
+                "ssh" if !ssh_available => return Err("OpenSSH is unavailable".into()),
+                "ssh" if !status("systemctl", ["start", "sshd.service"]) => {
+                    return Err("could not start OpenSSH".into());
+                }
+                _ => {}
+            }
         }
         "airpods" => match arg(1) {
             "off" | "anc" | "transparency" | "adaptive" => {
