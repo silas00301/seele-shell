@@ -371,10 +371,13 @@ fn tailscale_state() -> Value {
     json!({"available":true,"backend":backend,"connected":backend=="Running","needsLogin":backend=="NeedsLogin","name":raw.pointer("/Self/HostName").and_then(Value::as_str).unwrap_or(""),"ip":raw.pointer("/Self/TailscaleIPs/0").and_then(Value::as_str).unwrap_or(""),"tailnet":raw.pointer("/CurrentTailnet/Name").or_else(||raw.get("MagicDNSSuffix")).and_then(Value::as_str).unwrap_or(""),"peers":peers.map(|value|value.len()).unwrap_or(0),"onlinePeers":peers.map(|value|value.values().filter(|peer|peer["Online"].as_bool()==Some(true)).count()).unwrap_or(0)})
 }
 fn proton_state() -> Value {
-    if output("protonvpn", ["--help"]).is_none()
-        && !env::var_os("PATH")
-            .and_then(|paths| env::split_paths(&paths).find(|path| path.join("protonvpn").exists()))
-            .is_some()
+    if !env::var_os("PATH")
+        .map(|paths| env::split_paths(&paths).any(|path| {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(path.join("protonvpn"))
+                .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        }))
+        .unwrap_or(false)
     {
         return json!({"available":false,"connected":false,"connection":""});
     }
