@@ -57,6 +57,45 @@ ShellRoot {
   readonly property int scrollGutter: 8
   readonly property int scrollInset: 4
   readonly property int panelHeaderHeight: 28
+  // One type ramp for the whole shell. Steps are named for the role they play
+  // rather than for their value, so a surface picks a level instead of
+  // inventing a number, and the ramp is the only place a size is decided. A
+  // glyph normally takes the step above the text it sits beside, because an
+  // icon drawn at the same pixel size reads smaller than a letter does.
+  readonly property int textMicro: 8       // a numeral riding beside a label
+  readonly property int textCaption: 9     // row detail and secondary state
+  readonly property int textLabel: 10      // button, chip and section labels
+  readonly property int textBody: 11       // row titles and primary body text
+  readonly property int textStrong: 12     // emphasised body, menu bar clock
+  readonly property int textLead: 13       // a card's own subject
+  readonly property int textIcon: 14       // menu bar and list-row glyphs
+  readonly property int textSubhead: 15    // a card's lead subject
+  readonly property int textCard: 17       // the glyph a card leads with
+  readonly property int textTitle: 18      // panel titles
+  readonly property int textDisplay: 20    // panel glyphs and hero numerals
+  readonly property int textCode: 26       // a pairing code, read at arm's length
+  readonly property int textHero: 34       // the single glyph a prompt leads with
+  // Weight carries hierarchy instead of bolding everything: DemiBold for a
+  // title or an active label, Medium for a quiet one, Light only for the large
+  // numerals that would otherwise read as a wall.
+  readonly property int weightRegular: Font.Normal
+  readonly property int weightMedium: Font.Medium
+  readonly property int weightStrong: Font.DemiBold
+  readonly property int weightLight: Font.Light
+  // Uppercase section labels are the one place tracking earns its width.
+  readonly property real trackingLabel: 0.9
+  // Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`.
+  readonly property int spaceTight: 4
+  readonly property int spaceSmall: 6
+  readonly property int spaceMedium: 8
+  readonly property int spaceLarge: 12
+  readonly property int cardPadding: 10
+  // The three heights a chip, a button and a list row take, so a panel keeps
+  // its rhythm no matter which surface assembled it. A tile or a card still
+  // sizes to what it holds.
+  readonly property int chipHeight: 28
+  readonly property int controlHeight: 34
+  readonly property int rowHeight: 40
   // Text needs more contrast than decorative borders and inactive glyphs.
   readonly property color mutedText: subtext
   // Textured chrome. Surfaces stay translucent so the compositor's blur
@@ -76,6 +115,22 @@ ShellRoot {
   readonly property color dangerTint: alpha(red, 0.14)
   readonly property color dangerColor: alpha(red, 0.28)
   readonly property color dangerPress: alpha(red, 0.48)
+  // Elevation. A panel is translucent, so a card on it is a tint of the same
+  // material rather than an opaque block, a row inside that card is a lighter
+  // tint again, and a track or well is cut back toward the base. Depth then
+  // comes from how much of the wallpaper each layer still lets through instead
+  // of from a stack of flat greys. `floatColor` is the one nearly solid step,
+  // for a control that overlaps a row whose own fill moves under the pointer.
+  readonly property color cardColor: alpha(surface, 0.55)
+  readonly property color rowColor: alpha(surface, 0.32)
+  readonly property color wellColor: alpha(base, 0.52)
+  readonly property color floatColor: alpha(surface, 0.92)
+  readonly property color cardBorder: alpha(text, 0.07)
+  readonly property color separatorColor: alpha(text, 0.09)
+  // Motion. Only in-surface state changes animate, and they share one pair of
+  // durations so the whole shell settles at the same speed.
+  readonly property int durationFast: 110
+  readonly property int durationNormal: 180
 
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
@@ -103,6 +158,12 @@ ShellRoot {
   property int volumeDrag: -1
   property int microphoneDrag: -1
   readonly property int outputVolumeMaximum: 150
+  // Every level track runs to 100%, so a full bar means full volume on the
+  // output as well as the microphone. Output gain goes further than that, but a
+  // bar cannot draw more than full, so above 100% only the number moves.
+  // Dragging maps across the same 100; the boost above it belongs to the wheel
+  // and the volume keys, which clamp at `outputVolumeMaximum` instead.
+  readonly property int audioTrackMaximum: 100
   property string cameraPreviewDevice: ""
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
@@ -1355,6 +1416,12 @@ ShellRoot {
     return pixels === 0 ? 0 : pixels > 0 ? 1 : -1
   }
 
+  function audioFillRatio(value) {
+    var level = Number(value)
+    if (isNaN(level)) return 0
+    return Math.max(0, Math.min(1, level / root.audioTrackMaximum))
+  }
+
   function adjustAudioFromWheel(wheel, microphone) {
     var steps = root.audioWheelSteps(wheel)
     if (steps === 0) return
@@ -1822,7 +1889,7 @@ ShellRoot {
       text: "󰑐"
       color: refreshGlyph.color
       font.family: root.fontFamily
-      font.pixelSize: 16
+      font.pixelSize: root.textSubhead
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
     }
@@ -1874,7 +1941,7 @@ ShellRoot {
     border.width: 1
     border.color: control.busy ? root.accent : switchMouse.pressed ? root.text : switchMouse.containsMouse ? root.accent : "transparent"
 
-    Behavior on color { ColorAnimation { duration: 80 } }
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     Rectangle {
       visible: !control.busy
@@ -1885,7 +1952,7 @@ ShellRoot {
       x: control.checked ? control.width - width - 3 : 3
       color: control.checked ? root.base : root.text
 
-      Behavior on x { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
+      Behavior on x { NumberAnimation { duration: root.durationFast; easing.type: Easing.OutCubic } }
     }
 
     RefreshGlyph {
@@ -1895,7 +1962,7 @@ ShellRoot {
       height: 16
       spinning: visible
       color: control.checked ? root.base : root.text
-      font.pixelSize: 11
+      font.pixelSize: root.textBody
     }
 
     MouseArea { id: switchMouse; anchors.fill: parent; enabled: control.enabled && !control.busy; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: control.toggled() }
@@ -1985,9 +2052,14 @@ ShellRoot {
 
     property var mouse: null
     property string text: ""
+    // A menu bar tip has to stand down while a panel is open, because the entry
+    // it belongs to is sitting behind that panel. A tip on a control inside the
+    // panel is the opposite case: the panel being open is the only time it can
+    // be hovered at all, so the same guard would have hidden it always.
+    property bool inOverlay: false
 
     visible: mouse !== null && mouse.containsMouse && text !== ""
-      && root.controlPanel === "" && !root.agentsOpen && !root.trayMenuOpen
+      && (hoverTip.inOverlay || (root.controlPanel === "" && !root.agentsOpen && !root.trayMenuOpen))
     implicitWidth: hoverTipLabel.implicitWidth + 20
     implicitHeight: 26
     color: "transparent"
@@ -2025,7 +2097,7 @@ ShellRoot {
         text: hoverTip.text
         color: root.text
         font.family: root.fontFamily
-        font.pixelSize: 10
+        font.pixelSize: root.textLabel
       }
     }
   }
@@ -2061,16 +2133,130 @@ ShellRoot {
     }
   }
 
-  // Every panel introduces itself with a glyph, the way the AI cockpit does.
-  component PanelGlyph: Text {
-    anchors.verticalCenter: parent.verticalCenter
-    width: 32
-    color: root.accent
+  // Every panel introduces itself the same way: one accent glyph, the panel's
+  // name, an optional line of context beneath it, and a trailing slot for
+  // whatever that panel keeps beside its title. Panels used to assemble this
+  // row by hand and had drifted apart on glyph size, header height and
+  // baseline, so the header is a component and the drift has nowhere to live.
+  component PanelHeader: Item {
+    id: panelHeader
+
+    property string glyph: ""
+    // A panel whose subject is drawn rather than typed -- the headphone
+    // silhouette -- hands its mark over instead of a glyph.
+    property Component mark: null
+    property string title: ""
+    property string detail: ""
+    property color detailColor: root.subtext
+    default property alias trailing: panelHeaderTrailing.data
+
+    height: panelHeader.detail !== "" ? 42 : root.panelHeaderHeight
+
+    Item {
+      id: panelHeaderGlyph
+
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      width: 30
+      height: parent.height
+
+      Text {
+        visible: panelHeader.mark === null
+        anchors.fill: parent
+        text: panelHeader.glyph
+        color: root.accent
+        font.family: root.fontFamily
+        font.pixelSize: root.textDisplay
+        horizontalAlignment: Text.AlignLeft
+        verticalAlignment: Text.AlignVCenter
+      }
+
+      Loader {
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        sourceComponent: panelHeader.mark
+      }
+    }
+
+    Column {
+      anchors.left: panelHeaderGlyph.right
+      anchors.right: panelHeaderTrailing.left
+      anchors.rightMargin: panelHeaderTrailing.width > 0 ? root.spaceLarge : 0
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: 1
+
+      Text {
+        width: parent.width
+        text: panelHeader.title
+        elide: Text.ElideRight
+        color: root.text
+        font.family: root.fontFamily
+        font.pixelSize: root.textTitle
+        font.weight: root.weightStrong
+      }
+
+      Text {
+        visible: panelHeader.detail !== ""
+        width: parent.width
+        text: panelHeader.detail
+        elide: Text.ElideRight
+        color: panelHeader.detailColor
+        font.family: root.fontFamily
+        font.pixelSize: root.textCaption
+      }
+    }
+
+    Row {
+      id: panelHeaderTrailing
+
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: root.spaceMedium
+    }
+  }
+
+  // The uppercase rule that introduces a group inside a panel. It had drifted
+  // between two sizes and two colours; here it is one thing, and the tracking
+  // is what keeps a run of capitals from reading as a shout.
+  component SectionLabel: Text {
+    color: root.overlay
     font.family: root.fontFamily
-    font.pixelSize: 20
-    horizontalAlignment: Text.AlignLeft
-    verticalAlignment: Text.AlignVCenter
-    transform: Translate { x: 2 }
+    font.pixelSize: root.textLabel
+    font.weight: root.weightMedium
+    font.letterSpacing: root.trackingLabel
+  }
+
+  // A filled track. Every meter in the shell -- capacity, daily usage, battery,
+  // the volume OSD -- is this one shape, rounded on its own height rather than
+  // on a literal that had outgrown the bar it was drawn in.
+  component MeterBar: Rectangle {
+    id: meterBar
+
+    property real ratio: 0
+    property color fill: root.accent
+
+    implicitHeight: 7
+    radius: height / 2
+    color: root.wellColor
+
+    Rectangle {
+      width: parent.width * Math.max(0, Math.min(1, meterBar.ratio))
+      height: parent.height
+      radius: parent.radius
+      color: meterBar.fill
+    }
+  }
+
+  // The hairline that lifts a card off the panel material behind it. Drawn as
+  // a child rather than as the card's own border, so a card whose fill already
+  // tracks hover and press state keeps that binding and still gets the edge.
+  component CardEdge: Rectangle {
+    anchors.fill: parent
+    radius: root.radius
+    color: "transparent"
+    border.width: 1
+    border.color: root.cardBorder
+    antialiasing: true
   }
 
   component SpeedGauge: Rectangle {
@@ -2100,8 +2286,9 @@ ShellRoot {
       text: speedGauge.icon + "  " + speedGauge.label
       color: speedGauge.tint
       font.family: root.fontFamily
-      font.pixelSize: 8
-      font.bold: true
+      font.pixelSize: root.textLabel
+      font.weight: root.weightMedium
+      font.letterSpacing: root.trackingLabel
     }
 
     Canvas {
@@ -2168,8 +2355,8 @@ ShellRoot {
       text: speedGauge.active && speedGauge.value < 0 ? "Measuring…" : speedGauge.value < 0 ? "" : root.speedtestValue(speedGauge.value)
       color: speedGauge.tint
       font.family: root.fontFamily
-      font.pixelSize: 11
-      font.bold: true
+      font.pixelSize: root.textBody
+      font.weight: root.weightStrong
     }
   }
 
@@ -2240,7 +2427,7 @@ ShellRoot {
 
     opacity: barItem.module !== "" && root.dragModule === barItem.module && !root.dragOverBar ? 0.4 : 1
 
-    Behavior on opacity { NumberAnimation { duration: 110 } }
+    Behavior on opacity { NumberAnimation { duration: root.durationFast } }
 
     anchors.verticalCenter: parent.verticalCenter
     height: root.barHeight
@@ -2254,7 +2441,7 @@ ShellRoot {
       radius: root.radius
       color: parent.active ? root.selectedColor : parent.hovered ? root.hoverColor : "transparent"
 
-      Behavior on color { ColorAnimation { duration: 110 } }
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
     }
   }
 
@@ -2281,7 +2468,7 @@ ShellRoot {
       anchors.verticalCenter: parent.verticalCenter
       text: "M"
       font.family: root.fontFamily
-      font.pixelSize: 10
+      font.pixelSize: root.textLabel
     }
 
     Text {
@@ -2293,7 +2480,7 @@ ShellRoot {
       elide: Text.ElideRight
       color: barLabel.color
       font.family: root.fontFamily
-      font.pixelSize: 10
+      font.pixelSize: root.textLabel
     }
   }
 
@@ -2365,6 +2552,7 @@ ShellRoot {
     anchors.fill: parent
     hoverEnabled: true
     preventStealing: true
+    cursorShape: Qt.PointingHandCursor
 
     onPressed: function(mouse) {
       barModuleArea.originY = mouse.y
@@ -2409,7 +2597,6 @@ ShellRoot {
     readonly property int shown: audioLevelRow.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
-    readonly property int maximum: audioLevelRow.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: audioLevelRow.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
 
     spacing: 8
@@ -2418,22 +2605,14 @@ ShellRoot {
       width: audioLevelRow.width - 52
       height: 44
       radius: root.radius
-      color: root.surface
+      color: root.wellColor
       clip: true
 
       Rectangle {
-        width: parent.width * Math.max(0, Math.min(1, audioLevelRow.shown / audioLevelRow.maximum))
+        width: parent.width * root.audioFillRatio(audioLevelRow.shown)
         radius: parent.radius
         height: parent.height
         color: audioLevelRow.muted ? root.fillDanger : root.fillColor
-      }
-
-      Rectangle {
-        visible: !audioLevelRow.microphone
-        x: parent.width * 100 / audioLevelRow.maximum
-        width: 1
-        height: parent.height
-        color: root.alpha(root.text, 0.25)
       }
 
       Row {
@@ -2446,8 +2625,8 @@ ShellRoot {
             : (audioLevelRow.muted ? "󰝟  Output muted" : "󰕾  Output")
           color: root.text
           font.family: root.fontFamily
-          font.pixelSize: 11
-          font.bold: true
+          font.pixelSize: root.textBody
+          font.weight: root.weightStrong
         }
         Text {
           anchors.verticalCenter: parent.verticalCenter
@@ -2455,7 +2634,7 @@ ShellRoot {
           text: audioLevelRow.shown + "%"
           color: root.subtext
           font.family: root.fontFamily
-          font.pixelSize: 11
+          font.pixelSize: root.textBody
           horizontalAlignment: Text.AlignRight
         }
       }
@@ -2463,7 +2642,7 @@ ShellRoot {
       MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        function valueAt(x) { return Math.max(0, Math.min(audioLevelRow.maximum, Math.round(x / width * audioLevelRow.maximum))) }
+        function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
         onPressed: function(mouse) {
           if (audioLevelRow.microphone) {
             root.microphoneDrag = valueAt(mouse.x)
@@ -2502,14 +2681,15 @@ ShellRoot {
       width: 44
       height: 44
       radius: root.radius
-      color: audioMuteMouse.pressed ? root.pressColor : audioLevelRow.muted ? root.dangerColor : audioMuteMouse.containsMouse ? root.hoverColor : root.surface
+      color: audioMuteMouse.pressed ? root.pressColor : audioLevelRow.muted ? root.dangerColor : audioMuteMouse.containsMouse ? root.hoverColor : root.cardColor
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
         anchors.centerIn: parent
         text: audioLevelRow.microphone ? (audioLevelRow.muted ? "󰍭" : "󰍬") : (audioLevelRow.muted ? "󰝟" : "󰕾")
         color: audioLevelRow.muted ? root.red : root.text
         font.family: root.fontFamily
-        font.pixelSize: 15
+        font.pixelSize: root.textSubhead
       }
 
       ModuleDragArea {
@@ -2525,6 +2705,7 @@ ShellRoot {
 
       HoverTip {
         mouse: audioMuteMouse
+        inOverlay: true
         text: audioLevelRow.microphone
           ? (audioLevelRow.muted ? "Unmute microphone" : "Mute microphone")
           : (audioLevelRow.muted ? "Unmute output" : "Mute output")
@@ -2541,12 +2722,11 @@ ShellRoot {
     readonly property int shown: controlLevel.microphone
       ? (root.microphoneDrag >= 0 ? root.microphoneDrag : Number(root.systemData.microphoneVolume))
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
-    readonly property int maximum: controlLevel.microphone ? 100 : root.outputVolumeMaximum
     readonly property bool muted: controlLevel.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
-    readonly property real fillRatio: Math.max(0, Math.min(1, controlLevel.shown / controlLevel.maximum))
+    readonly property real fillRatio: root.audioFillRatio(controlLevel.shown)
 
     radius: root.radius
-    color: root.alpha(root.base, 0.52)
+    color: root.wellColor
     clip: true
 
     Rectangle {
@@ -2556,14 +2736,6 @@ ShellRoot {
       color: controlLevel.muted ? root.fillDanger : root.fillColor
     }
 
-    Rectangle {
-      visible: !controlLevel.microphone
-      x: parent.width * 100 / controlLevel.maximum
-      width: 1
-      height: parent.height
-      color: root.alpha(root.text, 0.25)
-    }
-
     Text {
       anchors.right: parent.right
       anchors.rightMargin: 10
@@ -2571,15 +2743,15 @@ ShellRoot {
       text: controlLevel.shown + "%"
       color: root.text
       font.family: root.fontFamily
-      font.pixelSize: 10
-      font.bold: true
+      font.pixelSize: root.textLabel
+      font.weight: root.weightStrong
     }
 
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      function valueAt(x) { return Math.max(0, Math.min(controlLevel.maximum, Math.round(x / width * controlLevel.maximum))) }
+      function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
       function updateValue(value) {
         if (controlLevel.microphone) {
           root.microphoneDrag = value
@@ -2617,13 +2789,14 @@ ShellRoot {
       height: 30
       radius: width / 2
       color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoverColor : root.alpha(root.base, 0.72)
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
         anchors.centerIn: parent
         text: controlLevel.microphone ? (controlLevel.muted ? "󰍭" : "󰍬") : (controlLevel.muted ? "󰝟" : "󰕾")
         color: controlLevel.muted ? root.red : root.text
         font.family: root.fontFamily
-        font.pixelSize: 15
+        font.pixelSize: root.textSubhead
       }
 
       MouseArea {
@@ -2642,6 +2815,7 @@ ShellRoot {
 
       HoverTip {
         mouse: controlLevelMuteMouse
+        inOverlay: true
         text: controlLevel.microphone
           ? (controlLevel.muted ? "Unmute microphone" : "Mute microphone")
           : (controlLevel.muted ? "Unmute output" : "Mute output")
@@ -2677,6 +2851,7 @@ ShellRoot {
       radius: width / 2
       opacity: connectivityRow.toggleEnabled ? 1 : 0.42
       color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoverColor : root.alpha(root.overlay, 0.35)
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
         visible: !connectivityRow.busy
@@ -2684,7 +2859,7 @@ ShellRoot {
         text: connectivityRow.icon
         color: connectivityRow.active ? root.base : root.text
         font.family: root.fontFamily
-        font.pixelSize: 15
+        font.pixelSize: root.textSubhead
       }
 
       RefreshGlyph {
@@ -2694,7 +2869,7 @@ ShellRoot {
         height: 16
         spinning: visible
         color: connectivityRow.active ? root.base : root.text
-        font.pixelSize: 11
+        font.pixelSize: root.textBody
       }
 
       MouseArea {
@@ -2715,6 +2890,7 @@ ShellRoot {
       height: 38
       radius: root.radius
       color: connectivityLabelMouse.pressed ? root.pressColor : connectivityLabelMouse.containsMouse ? root.hoverColor : "transparent"
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Column {
         anchors.verticalCenter: parent.verticalCenter
@@ -2724,8 +2900,8 @@ ShellRoot {
         anchors.rightMargin: 22
         spacing: 1
 
-        Text { width: parent.width; text: connectivityRow.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-        Text { width: parent.width; text: connectivityRow.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+        Text { width: parent.width; text: connectivityRow.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+        Text { width: parent.width; text: connectivityRow.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
       }
 
       // The hand-off is only worth advertising under the pointer; the row is
@@ -2738,7 +2914,7 @@ ShellRoot {
         text: "󰅂"
         color: root.overlay
         font.family: root.fontFamily
-        font.pixelSize: 12
+        font.pixelSize: root.textStrong
       }
 
       ModuleDragArea {
@@ -2764,7 +2940,10 @@ ShellRoot {
 
     radius: root.radius
     opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? 0.45 : 1
-    color: controlTileMouse.pressed ? root.pressColor : controlTile.active ? root.activeTint : controlTileMouse.containsMouse ? root.hoverColor : root.surface
+    color: controlTileMouse.pressed ? root.pressColor : controlTile.active ? root.activeTint : controlTileMouse.containsMouse ? root.hoverColor : root.cardColor
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    CardEdge {}
 
     Row {
       anchors.fill: parent
@@ -2783,8 +2962,8 @@ ShellRoot {
         width: parent.width - (controlTile.compact ? 23 : 31)
         spacing: 2
 
-        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: controlTile.compact ? 10 : 11; font.bold: true }
-        Text { visible: !controlTile.compact; width: parent.width; text: controlTile.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: controlTile.compact ? root.textLabel : root.textBody; font.weight: root.weightStrong }
+        Text { visible: !controlTile.compact; width: parent.width; text: controlTile.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
       }
     }
 
@@ -2799,12 +2978,12 @@ ShellRoot {
     id: controlGrid
 
     property string screenName: ""
-    readonly property real gap: 8
+    readonly property real gap: root.spaceMedium
     readonly property real cellSize: (width - gap * 3) / 4
     readonly property real mediaSize: cellSize * 2 + gap
     readonly property real mediaHeight: 148
-    readonly property real controlSpacing: 4
-    readonly property real audioPadding: 12
+    readonly property real controlSpacing: root.spaceTight
+    readonly property real audioPadding: root.spaceLarge
     readonly property real audioSliderHeight: 46
     readonly property real controlsHeight: audioSliderHeight * 2 + audioPadding * 3
     readonly property real smallTileHeight: 55
@@ -2820,8 +2999,10 @@ ShellRoot {
       width: parent.width
       height: controlGrid.mediaHeight
       radius: root.radius
-      color: root.surface
+      color: root.cardColor
       opacity: root.dragModule === "media" ? 0.45 : 1
+
+      CardEdge {}
 
       ModuleDragArea {
         module: "media"
@@ -2870,7 +3051,7 @@ ShellRoot {
             text: "󰎆"
             color: controlCenterMedia.player ? root.accent : root.overlay
             font.family: root.fontFamily
-            font.pixelSize: 28
+            font.pixelSize: Math.round(parent.height * 0.26)
           }
         }
       }
@@ -2895,8 +3076,8 @@ ShellRoot {
           elide: Text.ElideRight
           color: root.text
           font.family: root.fontFamily
-          font.pixelSize: 12
-          font.bold: true
+          font.pixelSize: root.textStrong
+          font.weight: root.weightStrong
         }
 
         Text {
@@ -2909,7 +3090,7 @@ ShellRoot {
           elide: Text.ElideRight
           color: root.subtext
           font.family: root.fontFamily
-          font.pixelSize: 9
+          font.pixelSize: root.textCaption
         }
 
         Row {
@@ -2953,7 +3134,9 @@ ShellRoot {
       width: controlGrid.mediaSize
       height: controlGrid.controlsHeight
       radius: root.radius
-      color: root.surface
+      color: root.cardColor
+
+      CardEdge {}
 
       Column {
         anchors.left: parent.left
@@ -2965,7 +3148,7 @@ ShellRoot {
 
         ConnectivityRow {
           width: parent.width
-          height: 40
+          height: root.rowHeight
           module: "network"
           icon: root.systemData.connection === "Disconnected" ? "󰖪" : root.systemData.connectionType.indexOf("wireless") >= 0 ? "󰖩" : "󰈀"
           label: root.systemData.wifiAvailable ? "Wi-Fi" : "Network"
@@ -2979,7 +3162,7 @@ ShellRoot {
 
         ConnectivityRow {
           width: parent.width
-          height: 40
+          height: root.rowHeight
           module: "bluetooth"
           visible: root.systemData.bluetoothAvailable
           icon: root.systemData.bluetoothPowered ? "󰂯" : "󰂲"
@@ -2996,7 +3179,7 @@ ShellRoot {
 
         ConnectivityRow {
           width: parent.width
-          height: 40
+          height: root.rowHeight
           module: "vpn"
           icon: "󰒃"
           label: "VPN"
@@ -3016,8 +3199,11 @@ ShellRoot {
       width: controlGrid.mediaSize
       height: controlGrid.controlsHeight
       radius: root.radius
-      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudioMouse.containsMouse ? root.hoverColor : root.surface
+      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudioMouse.containsMouse ? root.hoverColor : root.cardColor
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
       opacity: root.dragModule === "audio" ? 0.45 : 1
+
+      CardEdge {}
 
       ModuleDragArea {
         id: controlCenterAudioMouse
@@ -3059,7 +3245,7 @@ ShellRoot {
         text: root.systemData.cameraActive ? "󰄀" : "󰄁"
         color: root.systemData.cameraActive ? root.red : root.accent
         font.family: root.fontFamily
-        font.pixelSize: 14
+        font.pixelSize: root.textIcon
       }
       onActivated: root.toggleControl("camera", controlGrid.screenName)
     }
@@ -3110,7 +3296,9 @@ ShellRoot {
       radius: root.radius
       color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
         : notificationEntry.actionable && notificationOpenMouse.containsMouse ? root.hoverColor
-        : root.surface
+        : root.cardColor
+
+      CardEdge {}
 
       MouseArea {
         id: notificationOpenMouse
@@ -3130,20 +3318,22 @@ ShellRoot {
         spacing: 3
         Row {
           width: parent.width
-          Text { width: parent.width - (notificationEntry.unfoldable ? 110 : 84); text: modelData.summary || modelData.app_name || "Notification"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-          Text { width: 58; text: root.agoText(modelData.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; horizontalAlignment: Text.AlignRight }
+          Text { width: parent.width - (notificationEntry.unfoldable ? 110 : 84); text: modelData.summary || modelData.app_name || "Notification"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+          Text { width: 58; text: root.agoText(modelData.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
           Rectangle {
             visible: notificationEntry.unfoldable
             width: visible ? 26 : 0
             height: 20
             radius: root.radiusSmall
             color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : "transparent"
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text {
               anchors.centerIn: parent
               text: notificationEntry.unfolded ? "󰅃" : "󰅀"
               color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               font.family: root.fontFamily
-              font.pixelSize: 10
+              font.pixelSize: root.textLabel
             }
             MouseArea {
               id: notificationUnfoldMouse
@@ -3152,7 +3342,7 @@ ShellRoot {
               cursorShape: Qt.PointingHandCursor
               onClicked: root.toggleNotificationUnfolded(notificationEntry.modelData.id)
             }
-            HoverTip { mouse: notificationUnfoldMouse; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
+            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
           }
           Rectangle {
             readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.modelData.id))
@@ -3161,8 +3351,9 @@ ShellRoot {
             height: 20
             radius: root.radiusSmall
             color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : "transparent"
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
-            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: 10 }
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
             MouseArea {
               id: notificationDismissMouse
               anchors.fill: parent
@@ -3174,7 +3365,7 @@ ShellRoot {
                 ? root.retireNotificationPopup(notificationEntry.modelData.id)
                 : root.dismissNotification(notificationEntry.modelData.id)
             }
-            HoverTip { mouse: notificationDismissMouse; text: notificationList.popup ? "Hide · stays in notifications" : "Dismiss" }
+            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide · stays in notifications" : "Dismiss" }
           }
         }
         Text {
@@ -3183,7 +3374,7 @@ ShellRoot {
           text: modelData.body || modelData.app_name || ""
           color: root.subtext
           font.family: root.fontFamily
-          font.pixelSize: 9
+          font.pixelSize: root.textCaption
           wrapMode: notificationEntry.unfolded ? Text.WordWrap : Text.NoWrap
           elide: notificationEntry.unfolded ? Text.ElideNone : Text.ElideRight
           // Bounded, so one pathological notification cannot take the panel.
@@ -3301,7 +3492,7 @@ ShellRoot {
       text: barMediaArt.icon
       color: barMediaArt.iconColor
       font.family: root.fontFamily
-      font.pixelSize: 13
+      font.pixelSize: root.textLead
     }
 
     Text {
@@ -3310,7 +3501,7 @@ ShellRoot {
       text: "󰏤"
       color: barMediaArt.hasArt ? root.text : root.mutedText
       font.family: root.fontFamily
-      font.pixelSize: barMediaArt.hasArt ? 11 : 13
+      font.pixelSize: barMediaArt.hasArt ? root.textBody : root.textLead
     }
   }
 
@@ -3327,13 +3518,16 @@ ShellRoot {
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
     color: mediaButtonMouse.pressed ? root.pressColor : mediaButtonMouse.containsMouse ? root.hoverColor : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.mantle
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     Text {
       anchors.centerIn: parent
       text: mediaButton.icon
       color: root.text
       font.family: root.fontFamily
-      font.pixelSize: mediaButton.flat ? (mediaButton.primary ? 22 : 18) : mediaButton.primary ? 15 : 13
+      font.pixelSize: mediaButton.flat
+        ? (mediaButton.primary ? root.textDisplay : root.textTitle)
+        : mediaButton.primary ? root.textSubhead : root.textLead
     }
 
     MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
@@ -3419,8 +3613,9 @@ ShellRoot {
         text: "LIVE"
         color: root.overlay
         font.family: root.fontFamily
-        font.pixelSize: 9
-        font.bold: true
+        font.pixelSize: root.textLabel
+        font.weight: root.weightMedium
+        font.letterSpacing: root.trackingLabel
       }
 
       Rectangle {
@@ -3449,8 +3644,8 @@ ShellRoot {
     Row {
       visible: !mediaTimeline.live
       width: parent.width
-      Text { width: parent.width / 2; text: root.formatMediaTime(mediaTimeline.shownPosition); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
-      Text { width: parent.width / 2; text: root.formatMediaTime(mediaTimeline.length); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9; horizontalAlignment: Text.AlignRight }
+      Text { width: parent.width / 2; text: root.formatMediaTime(mediaTimeline.shownPosition); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+      Text { width: parent.width / 2; text: root.formatMediaTime(mediaTimeline.length); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
     }
 
     Timer {
@@ -3558,6 +3753,7 @@ ShellRoot {
               id: menuMouse
               anchors.fill: parent
               hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
               onClicked: root.toggleLauncher("apps")
             }
             HoverTip { mouse: menuMouse; text: "Applications" }
@@ -3573,7 +3769,7 @@ ShellRoot {
               height: parent.height
 
               Behavior on width {
-                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic }
               }
 
               Rectangle {
@@ -3583,13 +3779,14 @@ ShellRoot {
                 anchors.centerIn: parent
                 radius: root.radius
                 color: parent.active ? root.accent : workspaceMouse.containsMouse ? root.alpha(root.accent, 0.55) : parent.occupied ? root.alpha(root.subtext, 0.65) : root.alpha(root.subtext, 0.3)
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
 
                 Behavior on width {
-                  NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                  NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic }
                 }
 
                 Behavior on color {
-                  ColorAnimation { duration: 140 }
+                  ColorAnimation { duration: root.durationFast }
                 }
 
                 Text {
@@ -3597,8 +3794,8 @@ ShellRoot {
                   text: String(parent.parent.modelData)
                   color: root.base
                   font.family: root.fontFamily
-                  font.pixelSize: 10
-                  font.bold: parent.parent.active
+                  font.pixelSize: root.textLabel
+                  font.weight: parent.parent.active ? root.weightStrong : root.weightRegular
                 }
               }
 
@@ -3649,9 +3846,9 @@ ShellRoot {
               text: root.systemData.voxtypeStatus === "recording" ? "󰍬" : root.systemData.voxtypeStatus === "transcribing" ? "󰔟" : "󰍭"
               color: root.systemData.voxtypeStatus === "recording" ? root.red : root.systemData.voxtypeStatus === "transcribing" ? root.yellow : root.subtext
               font.family: root.fontFamily
-              font.pixelSize: 14
+              font.pixelSize: root.textIcon
             }
-            MouseArea { id: voxtypeMouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.runControl("voxtype") }
+            MouseArea { id: voxtypeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("voxtype") }
             HoverTip { mouse: voxtypeMouse; text: "Voxtype: " + root.systemData.voxtypeStatus }
           }
         }
@@ -3672,8 +3869,8 @@ ShellRoot {
               text: Qt.formatDateTime(root.now, "HH:mm")
               color: root.text
               font.family: root.fontFamily
-              font.pixelSize: 12
-              font.bold: true
+              font.pixelSize: root.textStrong
+              font.weight: root.weightStrong
             }
             MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name) }
             HoverTip { mouse: clockMouse; text: "Time zones" }
@@ -3689,7 +3886,7 @@ ShellRoot {
               text: Qt.formatDateTime(root.now, "yyyy-MM-dd")
               color: root.subtext
               font.family: root.fontFamily
-              font.pixelSize: 12
+              font.pixelSize: root.textStrong
             }
             MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
@@ -3708,13 +3905,14 @@ ShellRoot {
                 text: "󰍭"
                 color: root.subtext
                 font.family: root.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.textStrong
               }
             }
             MouseArea {
               id: microphoneMutedIndicator
               anchors.fill: parent
               hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
               onClicked: {
                 root.patchSystemData({ microphoneMuted: false })
                 root.runControl("microphone", "mute")
@@ -3736,6 +3934,7 @@ ShellRoot {
               id: microphoneActiveIndicator
               anchors.fill: parent
               hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
               onClicked: {
                 root.patchSystemData({ microphoneMuted: true })
                 root.runControl("microphone", "mute")
@@ -3753,7 +3952,7 @@ ShellRoot {
               width: 9; height: 9; radius: 4.5
               color: root.iosGreen
             }
-            MouseArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleControl("camera", barWindow.modelData.name) }
+            MouseArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("camera", barWindow.modelData.name) }
             HoverTip { mouse: cameraActiveIndicator; text: "Camera in use" }
           }
 
@@ -3866,6 +4065,7 @@ ShellRoot {
                 id: trayMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                 preventStealing: true
                 function openContextMenu() {
@@ -3896,9 +4096,9 @@ ShellRoot {
                 text: root.trayExpanded ? "󰅂" : "󰅁"
                 color: root.trayExpanded ? root.accent : root.overlay
                 font.family: root.fontFamily
-                font.pixelSize: 13
+                font.pixelSize: root.textLead
               }
-              MouseArea { id: trayExpandMouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.trayPinned = !root.trayPinned }
+              MouseArea { id: trayExpandMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.trayPinned = !root.trayPinned }
               HoverTip {
                 mouse: trayExpandMouse
                 text: root.trayPinned ? "Keep the tray open · click to unpin"
@@ -3913,7 +4113,7 @@ ShellRoot {
             width: 30
             hovered: cameraMouse.containsMouse
             active: root.panelHere("camera", barWindow.modelData)
-            Text { anchors.centerIn: parent; text: root.systemData.cameraActive ? "󰄀" : "󰄁"; color: root.systemData.cameraActive ? root.red : root.text; font.family: root.fontFamily; font.pixelSize: 14 }
+            Text { anchors.centerIn: parent; text: root.systemData.cameraActive ? "󰄀" : "󰄁"; color: root.systemData.cameraActive ? root.red : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
             BarModuleArea { id: cameraMouse; module: "camera"; onActivated: root.toggleControl("camera", barWindow.modelData.name) }
             HoverTip { mouse: cameraMouse; text: root.systemData.cameraActive ? "Camera in use" : "Camera" }
           }
@@ -3946,8 +4146,8 @@ ShellRoot {
                   text: root.agentBadge(modelData.id)
                   color: agentBadgeItem.stateColor
                   font.family: root.fontFamily
-                  font.pixelSize: 10
-                  font.bold: true
+                  font.pixelSize: root.textLabel
+                  font.weight: root.weightStrong
                 }
                 Rectangle {
                   id: agentStateBar
@@ -3964,7 +4164,7 @@ ShellRoot {
                   }
                 }
               }
-              MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleAgents(barWindow.modelData.name) }
+              MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleAgents(barWindow.modelData.name) }
               HoverTip { mouse: agentBadgeMouse; text: modelData.name + " · " + (modelData.status === "input" ? "needs input" : modelData.status) }
             }
           }
@@ -3982,15 +4182,15 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 5
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "󱚣"; color: root.accent; font.family: root.fontFamily; font.pixelSize: 15 }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: "󱚣"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
               Text {
                 visible: aiBarContent.codexCapacity >= 0
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Codex " + aiBarContent.codexCapacity + "%"
                 color: aiBarContent.codexCapacity <= 15 ? root.red : root.text
                 font.family: root.fontFamily
-                font.pixelSize: 11
-                font.bold: true
+                font.pixelSize: root.textBody
+                font.weight: root.weightStrong
               }
               Text {
                 visible: aiBarContent.codexCapacity >= 0 && aiBarContent.claudeCapacity >= 0
@@ -3998,7 +4198,7 @@ ShellRoot {
                 text: "·"
                 color: root.overlay
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.textBody
               }
               Text {
                 visible: aiBarContent.claudeCapacity >= 0
@@ -4006,8 +4206,8 @@ ShellRoot {
                 text: "Claude " + aiBarContent.claudeCapacity + "%"
                 color: aiBarContent.claudeCapacity <= 15 ? root.red : root.text
                 font.family: root.fontFamily
-                font.pixelSize: 11
-                font.bold: true
+                font.pixelSize: root.textBody
+                font.weight: root.weightStrong
               }
               Text {
                 visible: aiBarContent.codexCapacity < 0 && aiBarContent.claudeCapacity < 0
@@ -4015,14 +4215,15 @@ ShellRoot {
                 text: "AI"
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 11
-                font.bold: true
+                font.pixelSize: root.textBody
+                font.weight: root.weightStrong
               }
             }
             MouseArea {
               id: aiMouse
               anchors.fill: parent
               hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
               acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
               onPressed: function(mouse) {
                 if (mouse.button === Qt.RightButton) root.runAgent("pi", "")
@@ -4055,7 +4256,7 @@ ShellRoot {
               text: root.systemData.bluetoothPowered ? "󰂯" : "󰂲"
               color: root.systemData.bluetoothConnected > 0 ? root.accent : root.text
               font.family: root.fontFamily
-              font.pixelSize: 14
+              font.pixelSize: root.textIcon
             }
             BarModuleArea { id: bluetoothMouse; module: "bluetooth"; onActivated: root.toggleControl("bluetooth", barWindow.modelData.name) }
             HoverTip { mouse: bluetoothMouse; text: "Bluetooth · " + (root.systemData.bluetoothPowered ? root.systemData.bluetoothConnected + " connected" : "off") }
@@ -4072,7 +4273,7 @@ ShellRoot {
               text: "󰒃"
               color: root.privateNetworkActive() ? root.accent : root.text
               font.family: root.fontFamily
-              font.pixelSize: 14
+              font.pixelSize: root.textIcon
             }
             BarModuleArea { id: vpnMouse; module: "vpn"; onActivated: root.toggleControl("vpn", barWindow.modelData.name) }
             HoverTip { mouse: vpnMouse; text: "VPN · " + root.privateNetworkDetail() }
@@ -4089,7 +4290,7 @@ ShellRoot {
               text: root.systemData.connection === "Disconnected" ? "󰖪" : root.systemData.connectionType.indexOf("wireless") >= 0 ? "󰖩" : "󰈀"
               color: root.privateNetworkActive() ? root.accent : root.systemData.connectivity === "full" ? root.text : root.yellow
               font.family: root.fontFamily
-              font.pixelSize: 14
+              font.pixelSize: root.textIcon
             }
             BarModuleArea { id: networkMouse; module: "network"; onActivated: root.toggleControl("network", barWindow.modelData.name) }
             HoverTip {
@@ -4120,9 +4321,9 @@ ShellRoot {
                 text: root.systemData.muted ? "󰝟" : audioBarItem.shownVolume > 55 ? "󰕾" : "󰖀"
                 color: root.systemData.muted ? root.red : root.text
                 font.family: root.fontFamily
-                font.pixelSize: 14
+                font.pixelSize: root.textIcon
               }
-              Text { anchors.verticalCenter: parent.verticalCenter; text: audioBarItem.shownVolume + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: audioBarItem.shownVolume + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
             }
             BarModuleArea {
               id: audioMouse
@@ -4144,8 +4345,8 @@ ShellRoot {
             width: 30
             hovered: controlCenterMouse.containsMouse
             active: root.panelHere("control-center", barWindow.modelData)
-            Text { anchors.centerIn: parent; text: "󰘮"; color: root.text; font.family: root.fontFamily; font.pixelSize: 14 }
-            MouseArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleControl("control-center", barWindow.modelData.name) }
+            Text { anchors.centerIn: parent; text: "󰘮"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+            MouseArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("control-center", barWindow.modelData.name) }
             HoverTip { mouse: controlCenterMouse; text: "Control Center" }
           }
 
@@ -4158,10 +4359,10 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 4
-              Text { anchors.verticalCenter: parent.verticalCenter; text: root.systemData.dnd ? "󰂛" : "󰂚"; color: root.systemData.dnd ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: 14 }
-              Text { visible: Number(root.systemData.notifications.count || 0) > 0; anchors.verticalCenter: parent.verticalCenter; text: String(root.systemData.notifications.count); color: root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: root.systemData.dnd ? "󰂛" : "󰂚"; color: root.systemData.dnd ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              Text { visible: Number(root.systemData.notifications.count || 0) > 0; anchors.verticalCenter: parent.verticalCenter; text: String(root.systemData.notifications.count); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption; font.weight: root.weightStrong }
             }
-            MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleControl("notifications", barWindow.modelData.name) }
+            MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("notifications", barWindow.modelData.name) }
             HoverTip { mouse: notificationMouse; text: "Notifications · " + (root.systemData.dnd ? "do not disturb" : root.systemData.notifications.count || 0) }
           }
 
@@ -4183,17 +4384,17 @@ ShellRoot {
                 text: root.batteryIcon(batteryBarItem.entry)
                 color: root.batteryColor(batteryBarItem.entry)
                 font.family: root.fontFamily
-                font.pixelSize: 14
+                font.pixelSize: root.textIcon
               }
               Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: batteryBarItem.entry ? Number(batteryBarItem.entry.percent) + "%" : ""
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 10
+                font.pixelSize: root.textLabel
               }
             }
-            MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleControl("battery", barWindow.modelData.name) }
+            MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("battery", barWindow.modelData.name) }
             HoverTip { mouse: batteryMouse; text: "Battery · " + (batteryBarItem.entry ? batteryBarItem.entry.name + " " + Number(batteryBarItem.entry.percent) + "%" : "unavailable") }
           }
 
@@ -4209,8 +4410,8 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 5
-              Text { anchors.verticalCenter: parent.verticalCenter; text: root.moduleGlyph(root.dragModule); color: root.accent; font.family: root.fontFamily; font.pixelSize: 14 }
-              Text { anchors.verticalCenter: parent.verticalCenter; text: root.moduleLabel(root.dragModule); color: root.accent; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: root.moduleGlyph(root.dragModule); color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              Text { anchors.verticalCenter: parent.verticalCenter; text: root.moduleLabel(root.dragModule); color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
             }
           }
 
@@ -4218,8 +4419,8 @@ ShellRoot {
             width: 30
             hovered: sessionMouse.containsMouse
             active: root.panelHere("system", barWindow.modelData)
-            Text { anchors.centerIn: parent; text: "󰐥"; color: root.windowsCountdown >= 0 ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: 14 }
-            MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; onPressed: root.toggleControl("system", barWindow.modelData.name) }
+            Text { anchors.centerIn: parent; text: "󰐥"; color: root.windowsCountdown >= 0 ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+            MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("system", barWindow.modelData.name) }
             HoverTip { mouse: sessionMouse; text: "Power and session" }
           }
         }
@@ -4234,7 +4435,7 @@ ShellRoot {
           z: 1
           color: root.dragOverBar ? root.selectedColor : root.hoverColor
 
-          Behavior on color { ColorAnimation { duration: 110 } }
+          Behavior on color { ColorAnimation { duration: root.durationFast } }
         }
 
         Rectangle {
@@ -4311,20 +4512,20 @@ ShellRoot {
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
 
-          Row {
+          PanelHeader {
             width: parent.width
-            height: 42
-            PanelGlyph { text: "󰃭"; font.pixelSize: 24 }
-            Column {
-              width: parent.width - 116
-              Text { text: Qt.formatDate(root.now, "dddd"); color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-              Text { text: Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
-            }
+            glyph: "󰃭"
+            title: Qt.formatDate(root.now, "dddd")
+            detail: Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now)
+
             Rectangle {
-              width: 84; height: 30; radius: root.radius
-              anchors.verticalCenter: parent.verticalCenter
-              color: todayMouse.pressed ? root.pressColor : todayMouse.containsMouse ? root.hoverColor : root.surface
-              Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+              width: 84
+              height: root.controlHeight
+              radius: root.radius
+              color: todayMouse.pressed ? root.pressColor : todayMouse.containsMouse ? root.hoverColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              CardEdge {}
+              Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               MouseArea { id: todayMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendarMonths.positionViewAtIndex(60, ListView.Beginning) }
             }
           }
@@ -4341,37 +4542,44 @@ ShellRoot {
               required property int modelData
               readonly property int monthOffset: modelData - 60
               readonly property date month: Time.monthDate(root.now, monthOffset)
+              // A month occupies four, five or six Monday-first rows, and is
+              // drawn at the height it needs rather than padded out to a fixed
+              // block with the neighbouring months' days.
+              readonly property int weeks: Time.calendarWeeks(root.now, monthOffset)
+              readonly property int weekdayHeight: 22
+              readonly property int cellHeight: 33
               width: ListView.view.width
-              height: 258
+              height: root.chipHeight + root.spaceSmall + weekdayHeight
+                + root.spaceSmall + weeks * cellHeight
 
               Column {
                 anchors.fill: parent
-                spacing: 6
+                spacing: root.spaceSmall
                 Text {
                   width: parent.width
-                  height: 28
+                  height: root.chipHeight
                   text: Qt.formatDate(monthDelegate.month, "MMMM yyyy")
                   color: monthDelegate.monthOffset === 0 ? root.accent : root.text
                   font.family: root.fontFamily
-                  font.pixelSize: 14
-                  font.bold: true
+                  font.pixelSize: root.textIcon
+                  font.weight: root.weightStrong
                   verticalAlignment: Text.AlignVCenter
                 }
                 Grid {
                   width: parent.width
-                  height: 22
+                  height: monthDelegate.weekdayHeight
                   columns: 8
                   Repeater {
                     model: ["Wk", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
                     Text {
                       required property string modelData
                       width: parent.width / 8
-                      height: 22
+                      height: monthDelegate.weekdayHeight
                       text: modelData
                       color: root.mutedText
                       font.family: root.fontFamily
-                      font.pixelSize: 9
-                      font.bold: true
+                      font.pixelSize: root.textCaption
+                      font.weight: root.weightStrong
                       horizontalAlignment: Text.AlignHCenter
                       verticalAlignment: Text.AlignVCenter
                     }
@@ -4380,7 +4588,7 @@ ShellRoot {
                 Grid {
                   id: monthGrid
                   width: parent.width
-                  height: 198
+                  height: monthDelegate.weeks * monthDelegate.cellHeight
                   columns: 8
                   Repeater {
                     model: Time.calendarCells(root.now, monthDelegate.monthOffset)
@@ -4388,7 +4596,7 @@ ShellRoot {
                       id: calendarCell
                       required property var modelData
                       width: monthGrid.width / 8
-                      height: 33
+                      height: monthDelegate.cellHeight
                       Rectangle {
                         visible: !calendarCell.modelData.week && calendarCell.modelData.today
                         anchors.centerIn: parent
@@ -4397,12 +4605,12 @@ ShellRoot {
                       }
                       Text {
                         anchors.centerIn: parent
-                        text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label : calendarCell.modelData.day
-                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.base : calendarCell.modelData.inMonth ? root.text : root.mutedText
-                        opacity: calendarCell.modelData.week || calendarCell.modelData.inMonth || calendarCell.modelData.today ? 1 : 0.72
+                        text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
+                          : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
+                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.base : root.text
                         font.family: root.fontFamily
-                        font.pixelSize: calendarCell.modelData.week ? 9 : 10
-                        font.bold: !!calendarCell.modelData.today || !!calendarCell.modelData.week
+                        font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
+                        font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
                       }
                     }
                   }
@@ -4446,16 +4654,19 @@ ShellRoot {
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
 
-          Row {
+          PanelHeader {
             width: parent.width
-            height: 42
-            PanelGlyph { text: "󰥔"; font.pixelSize: 24 }
-            Column {
-              width: parent.width - 140
-              Text { text: "World clock"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-              Text { text: "Pin zones to the top"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+            glyph: "󰥔"
+            title: "World clock"
+            detail: "Pin zones to the top"
+
+            Text {
+              text: Qt.formatDateTime(root.now, "HH:mm:ss")
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textTitle
+              font.weight: root.weightStrong
             }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDateTime(root.now, "HH:mm:ss"); color: root.accent; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignRight }
           }
 
           TextField {
@@ -4468,10 +4679,12 @@ ShellRoot {
             selectionColor: root.accent
             selectedTextColor: root.base
             font.family: root.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: root.textLabel
             leftPadding: 12
             rightPadding: 12
-            background: Rectangle { radius: root.radius; color: root.surface; border.color: timezoneSearch.activeFocus ? root.accent : "transparent"; border.width: 1 }
+            background: Rectangle { radius: root.radius; color: root.wellColor; border.color: timezoneSearch.activeFocus ? root.accent : root.cardBorder; border.width: 1 }
+
+            Keys.onEscapePressed: root.closeOverlays()
           }
 
           SeeleListView {
@@ -4488,24 +4701,25 @@ ShellRoot {
               width: ListView.view.width
               height: 54
               radius: root.radius
-              color: timezoneRowMouse.containsMouse ? root.surface : root.alpha(root.surface, 0.45)
+              color: timezoneRowMouse.containsMouse ? root.cardColor : root.rowColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-              Text { visible: modelData.kind === "city"; anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 25; text: modelData.flag; font.pixelSize: 16; horizontalAlignment: Text.AlignHCenter }
+              Text { visible: modelData.kind === "city"; anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 25; text: modelData.flag; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
               Column {
                 anchors.left: parent.left
                 anchors.leftMargin: modelData.kind === "city" ? 43 : 12
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - (modelData.kind === "city" ? 176 : 145)
-                Text { width: parent.width; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true; elide: Text.ElideRight }
-                Text { width: parent.width; text: modelData.id + " · " + modelData.abbreviation + " " + modelData.offset; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 8; elide: Text.ElideRight }
+                Text { width: parent.width; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; elide: Text.ElideRight }
+                Text { width: parent.width; text: modelData.id + " · " + modelData.abbreviation + " " + modelData.offset; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textMicro; elide: Text.ElideRight }
               }
               Column {
                 anchors.right: pinTimezoneButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: 76
-                Text { width: parent.width; text: Time.offsetTime(root.now, modelData.offset, false) || modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignRight }
-                Text { width: parent.width; text: modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: 8; horizontalAlignment: Text.AlignRight }
+                Text { width: parent.width; text: Time.offsetTime(root.now, modelData.offset, false) || modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong; horizontalAlignment: Text.AlignRight }
+                Text { width: parent.width; text: modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textMicro; horizontalAlignment: Text.AlignRight }
               }
               MouseArea {
                 id: timezoneRowMouse
@@ -4518,7 +4732,8 @@ ShellRoot {
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 38; height: 30; radius: root.radius
                 color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoverColor : root.mantle
-                Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 8; font.bold: true }
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: pinTimezoneMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pinTimezone(timezoneRow.modelData.id) }
               }
             }
@@ -4540,7 +4755,8 @@ ShellRoot {
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 310
-      implicitHeight: Math.min(420, 58 + Math.max(1, trayMenuOpener.children.values.length) * 36)
+      implicitHeight: Math.min(420, root.panelMargin * 2 + root.controlHeight + root.spaceSmall
+        + Math.max(1, trayMenuOpener.children.values.length) * 36)
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -4550,13 +4766,13 @@ ShellRoot {
       PanelSurface {
         Column {
           anchors.fill: parent
-          anchors.margins: root.panelSpacing
-          spacing: 6
+          anchors.margins: root.panelMargin
+          spacing: root.spaceSmall
 
           Row {
             width: parent.width
-            height: 30
-            spacing: 8
+            height: root.controlHeight
+            spacing: root.spaceMedium
             IconImage {
               visible: source !== ""
               anchors.verticalCenter: parent.verticalCenter
@@ -4570,20 +4786,21 @@ ShellRoot {
               elide: Text.ElideRight
               color: root.text
               font.family: root.fontFamily
-              font.pixelSize: 12
-              font.bold: true
+              font.pixelSize: root.textStrong
+              font.weight: root.weightStrong
             }
             Rectangle {
               width: 72; height: 26; radius: root.radius
               anchors.verticalCenter: parent.verticalCenter
-              color: trayHideMouse.pressed ? root.pressColor : trayHideMouse.containsMouse ? root.hoverColor : root.surface
+              color: trayHideMouse.pressed ? root.pressColor : trayHideMouse.containsMouse ? root.hoverColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text {
                 anchors.centerIn: parent
                 text: root.trayItemHidden(root.activeTrayItem) ? "Show icon" : "Hide icon"
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 9
-                font.bold: true
+                font.pixelSize: root.textLabel
+                font.weight: root.weightStrong
               }
               MouseArea {
                 id: trayHideMouse
@@ -4599,7 +4816,8 @@ ShellRoot {
             Rectangle {
               width: 30; height: 30; radius: root.radius
               color: trayMenuCloseMouse.pressed ? root.pressColor : trayMenuCloseMouse.containsMouse ? root.hoverColor : "transparent"
-              Text { anchors.centerIn: parent; text: "󰅖"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              Text { anchors.centerIn: parent; text: "󰅖"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
               MouseArea { id: trayMenuCloseMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.closeTrayMenu() }
             }
           }
@@ -4607,7 +4825,7 @@ ShellRoot {
           SeeleListView {
             id: trayMenuList
             width: parent.width
-            height: parent.height - 36
+            height: parent.height - root.controlHeight - root.spaceSmall
             spacing: 2
             clip: true
             model: trayMenuOpener.children
@@ -4622,7 +4840,7 @@ ShellRoot {
                 anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: 8; anchors.rightMargin: 8
                 height: 1
-                color: root.alpha(root.overlay, 0.5)
+                color: root.separatorColor
               }
 
               Rectangle {
@@ -4630,6 +4848,7 @@ ShellRoot {
                 anchors.fill: parent
                 radius: root.radius
                 color: trayMenuEntryMouse.pressed ? root.pressColor : trayMenuEntryMouse.containsMouse && parent.modelData.enabled ? root.hoverColor : "transparent"
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
               }
 
               IconImage {
@@ -4648,7 +4867,7 @@ ShellRoot {
                 color: root.accent
                 horizontalAlignment: Text.AlignHCenter
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.textBody
               }
 
               Text {
@@ -4659,7 +4878,7 @@ ShellRoot {
                 elide: Text.ElideRight
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.textBody
               }
 
               Text {
@@ -4669,7 +4888,7 @@ ShellRoot {
                 text: "›"
                 color: root.subtext
                 font.family: root.fontFamily
-                font.pixelSize: 15
+                font.pixelSize: root.textSubhead
               }
 
               MouseArea {
@@ -4721,6 +4940,9 @@ ShellRoot {
         id: agentsSurface
 
         visible: agentsWindow.active
+        focus: true
+
+        Keys.onEscapePressed: root.closeOverlays()
 
         SeeleFlickable {
           id: agentsScroll
@@ -4740,51 +4962,32 @@ ShellRoot {
             width: agentsScroll.width - root.panelMargin + root.scrollInset
             spacing: 14
 
-            Item {
+            PanelHeader {
               width: parent.width
-              height: 42
+              glyph: "󱚣"
+              title: "AI cockpit"
+              detail: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.subscriptionSummary()
+              detailColor: root.agentError !== "" ? root.red : root.subtext
 
-              Text {
-                id: cockpitGlyph
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "󱚣"
-                color: root.accent
-                font.family: root.fontFamily
-                font.pixelSize: 28
-              }
-              Column {
-                anchors.left: cockpitGlyph.right
-                anchors.leftMargin: 10
-                anchors.right: cockpitRefresh.left
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                Text { text: "AI cockpit"; color: root.text; font.family: root.fontFamily; font.pixelSize: 20; font.bold: true }
-                Text {
-                  width: parent.width
-                  elide: Text.ElideRight
-                  text: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.subscriptionSummary()
-                  color: root.agentError !== "" ? root.red : root.subtext
-                  font.family: root.fontFamily; font.pixelSize: 11
-                }
-              }
               Rectangle {
-                id: cockpitRefresh
-                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 34; height: 34; radius: root.radius
+                width: root.controlHeight
+                height: root.controlHeight
+                radius: root.radius
                 color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : "transparent"
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
                 MouseArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.refreshAgents() }
-                HoverTip { mouse: refreshMouse; text: "Refresh usage" }
+                HoverTip { mouse: refreshMouse; text: "Refresh usage"; inOverlay: true }
               }
             }
 
-            Text { text: "CHANGE THIS SYSTEM"; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+            SectionLabel { text: "CHANGE THIS SYSTEM" }
 
             Rectangle {
               width: parent.width; height: 48; radius: root.radius
-              color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.hoverColor : root.surface
+              color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.hoverColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               border.color: root.alpha(root.accent, 0.45)
               border.width: 1
               Row {
@@ -4792,8 +4995,8 @@ ShellRoot {
                 anchors.leftMargin: 14
                 anchors.rightMargin: 14
                 spacing: 12
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "󱄅"; color: root.accent; font.family: root.fontFamily; font.pixelSize: 22 }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 46; text: "Describe a change to Seele"; color: root.text; font.family: root.fontFamily; font.pixelSize: 13; font.bold: true }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "󱄅"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 46; text: "Describe a change to Seele"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong }
               }
               MouseArea {
                 id: osSessionMouse
@@ -4804,7 +5007,7 @@ ShellRoot {
               }
             }
 
-            Text { text: "LAUNCH"; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+            SectionLabel { text: "LAUNCH" }
 
             Grid {
               width: parent.width
@@ -4816,19 +5019,20 @@ ShellRoot {
                   required property var modelData
                   readonly property string status: root.agentStatus(modelData.id)
                   width: (parent.width - 8) / 2; height: 68; radius: root.radius
-                  color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoverColor : root.surface
+                  color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoverColor : root.cardColor
+                  Behavior on color { ColorAnimation { duration: root.durationFast } }
                   border.color: status === "input" ? root.yellow : status === "working" ? root.accent : status === "finished" ? root.green : root.alpha(root.overlay, 0.35)
                   border.width: status === "idle" ? 1 : 2
                   Column {
                     anchors.centerIn: parent
                     spacing: 3
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.name; color: root.text; font.family: root.fontFamily; font.pixelSize: 13; font.bold: true }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.name; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong }
                     Text {
                       anchors.horizontalCenter: parent.horizontalCenter
                       text: parent.parent.status === "working" ? "● working" : parent.parent.status === "input" ? "◆ input needed" : parent.parent.status === "finished" ? "✓ finished" : modelData.id === "pi" ? "Primary" : "Ready"
                       color: parent.parent.status === "input" ? root.yellow : parent.parent.status === "working" ? root.accent : parent.parent.status === "finished" ? root.green : root.subtext
                       font.family: root.fontFamily
-                      font.pixelSize: 9
+                      font.pixelSize: root.textCaption
                     }
                   }
                   MouseArea { id: launchMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runAgent(parent.modelData.id, "") }
@@ -4836,7 +5040,7 @@ ShellRoot {
               }
             }
 
-            Text { text: "SUBSCRIPTION CAPACITY"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+            SectionLabel { text: "SUBSCRIPTION CAPACITY" }
 
             Repeater {
               model: root.agentData.subscriptions || []
@@ -4852,15 +5056,15 @@ ShellRoot {
                     elide: Text.ElideRight
                     color: root.text
                     font.family: root.fontFamily
-                    font.pixelSize: 12
-                    font.bold: true
+                    font.pixelSize: root.textStrong
+                    font.weight: root.weightStrong
                   }
                   Text {
                     width: parent.width * 0.38
                     text: modelData.credits !== null && modelData.credits !== undefined && Number(modelData.credits) > 0 ? Number(modelData.credits) + " credits" : modelData.source
                     color: root.overlay
                     font.family: root.fontFamily
-                    font.pixelSize: 9
+                    font.pixelSize: root.textCaption
                     horizontalAlignment: Text.AlignRight
                   }
                 }
@@ -4872,13 +5076,14 @@ ShellRoot {
                     spacing: 5
                     Row {
                       width: parent.width
-                      Text { width: parent.width * 0.45; text: modelData.name; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
-                      Text { width: parent.width * 0.3; text: root.freePercent(modelData) + "% free"; color: root.freePercent(modelData) <= 15 ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter }
-                      Text { width: parent.width * 0.25; text: "resets " + root.resetText(modelData.resetsAt); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
+                      Text { width: parent.width * 0.45; text: modelData.name; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
+                      Text { width: parent.width * 0.3; text: root.freePercent(modelData) + "% free"; color: root.freePercent(modelData) <= 15 ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignHCenter }
+                      Text { width: parent.width * 0.25; text: "resets " + root.resetText(modelData.resetsAt); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
                     }
-                    Rectangle {
-                      width: parent.width; height: 8; radius: 4; color: root.surface
-                      Rectangle { width: parent.width * root.freePercent(modelData) / 100; height: parent.height; radius: 4; color: root.freePercent(modelData) <= 15 ? root.red : root.accent }
+                    MeterBar {
+                      width: parent.width
+                      ratio: root.freePercent(modelData) / 100
+                      fill: root.freePercent(modelData) <= 15 ? root.red : root.accent
                     }
                   }
                 }
@@ -4887,14 +5092,14 @@ ShellRoot {
                   text: "No usage window reported"
                   color: root.overlay
                   font.family: root.fontFamily
-                  font.pixelSize: 9
+                  font.pixelSize: root.textCaption
                 }
               }
             }
 
             Row {
               width: parent.width
-              height: 28
+              height: root.chipHeight
               spacing: 4
 
               Repeater {
@@ -4908,7 +5113,7 @@ ShellRoot {
                 Rectangle {
                   required property var modelData
                   width: (parent.width - 12) / 4
-                  height: 28
+                  height: root.chipHeight
                   radius: root.radius
                   color: metricPeriodMouse.pressed
                     ? root.pressColor
@@ -4916,7 +5121,7 @@ ShellRoot {
                       ? root.selectedColor
                       : metricPeriodMouse.containsMouse
                         ? root.hoverColor
-                        : root.surface
+                        : root.cardColor
                   border.width: root.agentMetricPeriod === modelData.id ? 1 : 0
                   border.color: root.alpha(root.accent, 0.55)
 
@@ -4925,8 +5130,8 @@ ShellRoot {
                     text: modelData.label
                     color: root.agentMetricPeriod === modelData.id ? root.accent : root.subtext
                     font.family: root.fontFamily
-                    font.pixelSize: 10
-                    font.bold: root.agentMetricPeriod === modelData.id
+                    font.pixelSize: root.textLabel
+                    font.weight: root.agentMetricPeriod === modelData.id ? root.weightStrong : root.weightRegular
                   }
 
                   MouseArea {
@@ -4944,17 +5149,19 @@ ShellRoot {
               width: parent.width
               spacing: 8
               Rectangle {
-                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.surface
+                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.cardColor
+                CardEdge {}
                 Column { anchors.centerIn: parent; spacing: 4
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.formatTokens(root.agentMetricData.totalTokens || 0); color: root.accent; font.family: root.fontFamily; font.pixelSize: 20; font.bold: true }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "tokens · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.formatTokens(root.agentMetricData.totalTokens || 0); color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "tokens · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                 }
               }
               Rectangle {
-                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.surface
+                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.cardColor
+                CardEdge {}
                 Column { anchors.centerIn: parent; spacing: 4
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "$" + Number(root.agentMetricData.totalCost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: 20; font.bold: true }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "estimated · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "$" + Number(root.agentMetricData.totalCost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "estimated · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                 }
               }
             }
@@ -4964,8 +5171,8 @@ ShellRoot {
               height: 18
               Row {
                 anchors.fill: parent
-                Text { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "LAST 7 DAYS"; color: usageHeaderMouse.pressed ? root.accent : usageHeaderMouse.containsMouse ? root.text : root.overlay; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
-                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentUsageOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 11; horizontalAlignment: Text.AlignRight }
+                SectionLabel { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "LAST 7 DAYS"; color: usageHeaderMouse.pressed ? root.accent : usageHeaderMouse.containsMouse ? root.text : root.overlay }
+                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentUsageOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignRight }
               }
               MouseArea { id: usageHeaderMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.agentUsageOpen = !root.agentUsageOpen }
             }
@@ -4985,12 +5192,13 @@ ShellRoot {
                     for (var i = 0; i < days.length; i++) value = Math.max(value, Number(days[i].totalTokens || 0))
                     return value
                   }
-                  Text { width: 76; anchors.verticalCenter: parent.verticalCenter; text: modelData.date || ""; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
-                  Rectangle {
-                    width: parent.width - 150; height: 7; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: root.surface
-                    Rectangle { width: parent.width * Number(modelData.totalTokens || 0) / parent.parent.peak; height: parent.height; radius: 4; color: root.accent }
+                  Text { width: 76; anchors.verticalCenter: parent.verticalCenter; text: modelData.date || ""; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                  MeterBar {
+                    width: parent.width - 150
+                    anchors.verticalCenter: parent.verticalCenter
+                    ratio: Number(modelData.totalTokens || 0) / parent.peak
                   }
-                  Text { width: 58; anchors.verticalCenter: parent.verticalCenter; text: root.formatTokens(modelData.totalTokens || 0); color: root.text; font.family: root.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
+                  Text { width: 58; anchors.verticalCenter: parent.verticalCenter; text: root.formatTokens(modelData.totalTokens || 0); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
                 }
               }
             }
@@ -5000,8 +5208,8 @@ ShellRoot {
               height: 18
               Row {
                 anchors.fill: parent
-                Text { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "TOP MODELS"; color: modelsHeaderMouse.pressed ? root.accent : modelsHeaderMouse.containsMouse ? root.text : root.overlay; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
-                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentModelsOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 11; horizontalAlignment: Text.AlignRight }
+                SectionLabel { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "TOP MODELS"; color: modelsHeaderMouse.pressed ? root.accent : modelsHeaderMouse.containsMouse ? root.text : root.overlay }
+                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentModelsOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignRight }
               }
               MouseArea { id: modelsHeaderMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.agentModelsOpen = !root.agentModelsOpen }
             }
@@ -5014,9 +5222,9 @@ ShellRoot {
                 Row {
                   required property var modelData
                   width: parent.width; height: 25
-                  Text { width: parent.width * 0.62; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
-                  Text { width: parent.width * 0.2; text: root.formatTokens(modelData.tokens); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
-                  Text { width: parent.width * 0.18; text: "$" + Number(modelData.cost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
+                  Text { width: parent.width * 0.62; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
+                  Text { width: parent.width * 0.2; text: root.formatTokens(modelData.tokens); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
+                  Text { width: parent.width * 0.18; text: "$" + Number(modelData.cost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
                 }
               }
             }
@@ -5074,14 +5282,7 @@ ShellRoot {
 
             anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
-            // The title sits a little lower in a slightly shorter row: it was
-            // crowding the panel's top edge while everything under it sat low.
-            Row {
-              width: parent.width
-              height: root.panelHeaderHeight - 3
-              PanelGlyph { text: "󰘮"; anchors.verticalCenterOffset: 4 }
-              Text { anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: 4; text: "Control Center"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-            }
+            PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
 
             ControlCenterGrid {
               width: parent.width
@@ -5120,12 +5321,7 @@ ShellRoot {
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
 
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰎆" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Now Playing"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
+          PanelHeader { width: parent.width; glyph: "󰎆"; title: "Now Playing" }
 
           Row {
             width: parent.width
@@ -5168,7 +5364,7 @@ ShellRoot {
                   text: "󰎆"
                   color: mediaWindow.player ? root.accent : root.overlay
                   font.family: root.fontFamily
-                  font.pixelSize: 42
+                  font.pixelSize: Math.round(parent.height * 0.26)
                 }
               }
             }
@@ -5189,8 +5385,8 @@ ShellRoot {
                   elide: Text.ElideRight
                   color: mediaWindow.player ? root.text : root.subtext
                   font.family: root.fontFamily
-                  font.pixelSize: 15
-                  font.bold: true
+                  font.pixelSize: root.textSubhead
+                  font.weight: root.weightStrong
                 }
                 Text {
                   width: parent.width
@@ -5198,7 +5394,7 @@ ShellRoot {
                   elide: Text.ElideRight
                   color: root.subtext
                   font.family: root.fontFamily
-                  font.pixelSize: 11
+                  font.pixelSize: root.textBody
                 }
               }
 
@@ -5242,8 +5438,10 @@ ShellRoot {
     PanelWindow {
       id: audioControlsWindow
 
-      readonly property int outputHeight: Math.max(1, Math.min(4, root.audioDevices("output").length)) * 32
-      readonly property int inputHeight: Math.max(1, Math.min(4, root.audioDevices("input").length)) * 32
+      // Four rows of twenty-eight with a four-pixel gap between them. The gap
+      // after the last row is not drawn, so it is not reserved either.
+      readonly property int outputHeight: Math.max(0, Math.min(4, root.audioDevices("output").length) * 32 - root.spaceTight)
+      readonly property int inputHeight: Math.max(0, Math.min(4, root.audioDevices("input").length) * 32 - root.spaceTight)
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "audio" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -5261,57 +5459,54 @@ ShellRoot {
           id: audioContent
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰕾" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Audio"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
+          PanelHeader { width: parent.width; glyph: "󰕾"; title: "Audio" }
           AudioLevelRow { width: parent.width }
           AudioLevelRow { width: parent.width; microphone: true }
-          Text { text: "OUTPUT DEVICE"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+          SectionLabel { text: "OUTPUT DEVICE" }
           SeeleListView {
             width: parent.width
             height: audioControlsWindow.outputHeight
-            spacing: 4
+            spacing: root.spaceTight
             clip: true
             model: root.audioDevices("output")
             delegate: Rectangle {
               required property var modelData
               readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
               readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-              width: ListView.view.width; height: 28; radius: root.radius
-              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : outputDeviceMouse.containsMouse ? root.surface : root.alpha(root.surface, 0.5)
+              width: ListView.view.width; height: root.chipHeight; radius: root.radius
+              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 visible: !parent.busy
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰓃"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 12 }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰓃"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
               }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
             }
           }
-          Text { text: "INPUT DEVICE"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+          SectionLabel { text: "INPUT DEVICE" }
           SeeleListView {
             width: parent.width
             height: audioControlsWindow.inputHeight
-            spacing: 4
+            spacing: root.spaceTight
             clip: true
             model: root.audioDevices("input")
             delegate: Rectangle {
               required property var modelData
               readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
               readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-              width: ListView.view.width; height: 28; radius: root.radius
-              color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : inputDeviceMouse.containsMouse ? root.surface : root.alpha(root.surface, 0.5)
+              width: ListView.view.width; height: root.chipHeight; radius: root.radius
+              color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : modelData.default || complete ? root.hoverColor : inputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 visible: !parent.busy
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰍬"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 12 }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰍬"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
               }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: inputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
             }
           }
@@ -5340,12 +5535,20 @@ ShellRoot {
         Column {
           id: networkContent
 
-          anchors.fill: parent; anchors.margins: root.panelMargin; spacing: 6
-          Row {
-            width: parent.width; height: 34; spacing: 8
-            PanelGlyph { text: "󰤨" }
-            Text { width: root.systemData.wifiAvailable ? parent.width - 128 : parent.width - 40; anchors.verticalCenter: parent.verticalCenter; text: "Network"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-            Text { visible: root.systemData.wifiAvailable; anchors.verticalCenter: parent.verticalCenter; text: "Wi-Fi"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
+          anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
+          PanelHeader {
+            width: parent.width
+            glyph: "󰤨"
+            title: "Network"
+
+            Text {
+              visible: root.systemData.wifiAvailable
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Wi-Fi"
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
             ControlSwitch {
               visible: root.systemData.wifiAvailable
               anchors.verticalCenter: parent.verticalCenter
@@ -5356,22 +5559,44 @@ ShellRoot {
           }
           Row {
             width: parent.width; height: 22
-            Text { width: parent.width * 0.64; text: root.systemData.connection || "Disconnected"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 12; font.bold: true }
-            Text { width: parent.width * 0.36; text: root.systemData.connectivity; color: root.systemData.connectivity === "full" ? root.green : root.yellow; font.family: root.fontFamily; font.pixelSize: 9; horizontalAlignment: Text.AlignRight }
+            Text { width: parent.width * 0.64; text: root.systemData.connection || "Disconnected"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textStrong; font.weight: root.weightStrong }
+            Text { width: parent.width * 0.36; text: root.systemData.connectivity; color: root.systemData.connectivity === "full" ? root.green : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
           }
           Rectangle {
-            width: parent.width; height: 60; radius: root.radius; color: root.surface
+            width: parent.width
+            height: 60
+            radius: root.radius
+            color: root.cardColor
+
+            CardEdge {}
+
             Column {
-              anchors.fill: parent; anchors.margins: 9; spacing: 4
-              Text { text: "IP address    " + (root.systemData.ipAddress || "Unavailable"); color: root.text; font.family: root.fontFamily; font.pixelSize: 9 }
-              Text { text: "Gateway       " + (root.systemData.gateway || "Unavailable") + " · " + (root.systemData.connectionType || "None"); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
+              spacing: root.spaceTight
+
+              Repeater {
+                model: [
+                  { label: "IP address", value: root.systemData.ipAddress || "Unavailable" },
+                  { label: "Gateway", value: (root.systemData.gateway || "Unavailable") + " · " + (root.systemData.connectionType || "None") }
+                ]
+
+                Row {
+                  required property var modelData
+                  width: parent.width
+                  height: 18
+                  Text { width: 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                  Text { width: parent.width - 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.value; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                }
+              }
             }
           }
 
           Rectangle {
             id: speedtestCard
 
-            width: parent.width; height: 204; radius: root.radius; color: root.surface
+            width: parent.width; height: 204; radius: root.radius; color: root.cardColor
+            CardEdge {}
             Column {
               anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 10; rightMargin: 10; topMargin: 8 }
               spacing: 8
@@ -5380,29 +5605,26 @@ ShellRoot {
                 Column {
                   anchors.centerIn: parent
                   spacing: 0
-                  Text {
+                  SectionLabel {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "PING"
-                    color: root.overlay
-                    font.family: root.fontFamily
-                    font.pixelSize: 8
-                    font.bold: true
                   }
                   Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.speedtestPingText()
                     color: root.speedtestError !== "" ? root.red : root.text
                     font.family: root.fontFamily
-                    font.pixelSize: 10
-                    font.bold: true
+                    font.pixelSize: root.textLabel
+                    font.weight: root.weightStrong
                   }
                 }
                 Rectangle {
                   anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                   width: 64; height: 24; radius: root.radius
                   color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoverColor : root.mantle
-                  Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
-                  RefreshGlyph { visible: speedtestProcess.running; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: 10 }
+                  Behavior on color { ColorAnimation { duration: root.durationFast } }
+                  Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                  RefreshGlyph { visible: speedtestProcess.running; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
                   MouseArea { id: speedtestMouse; anchors.fill: parent; enabled: !speedtestProcess.running; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.startSpeedtest() }
                 }
               }
@@ -5444,9 +5666,10 @@ ShellRoot {
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
                 width: (parent.width - 16) / 3; height: 38; radius: root.radius
-                color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoverColor : root.surface
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
-                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: 13 }
+                color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: root.textLead }
                 MouseArea {
                   id: networkActionMouse
                   anchors.fill: parent
@@ -5486,12 +5709,7 @@ ShellRoot {
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰒃" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "VPN"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
+          PanelHeader { width: parent.width; glyph: "󰒃"; title: "VPN" }
 
           Rectangle {
             id: tailscaleCard
@@ -5501,7 +5719,9 @@ ShellRoot {
             readonly property bool busy: root.controlBusy("tailscale", action)
             readonly property bool failed: root.controlFailed("tailscale", action)
             width: parent.width; height: 66; radius: root.radius
-            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleMenuMouse.containsMouse ? root.hoverColor : state.connected ? root.activeTint : root.surface
+            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleMenuMouse.containsMouse ? root.hoverColor : state.connected ? root.activeTint : root.cardColor
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            CardEdge {}
             MouseArea {
               id: tailscaleMenuMouse
               anchors.fill: parent
@@ -5511,16 +5731,16 @@ ShellRoot {
               cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
               onClicked: root.openTrayItemMenu(tailscaleCard.trayItem, root.overlayScreen)
             }
-            HoverTip { mouse: tailscaleMenuMouse; text: "Open Tailscale menu" }
+            HoverTip { mouse: tailscaleMenuMouse; inOverlay: true; text: "Open Tailscale menu" }
             Row {
               anchors.fill: parent; anchors.margins: 10; spacing: 9
-              Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰛳"; color: tailscaleCard.state.connected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter }
+              Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰛳"; color: tailscaleCard.state.connected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
               Column {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 82
                 spacing: 3
-                Text { text: "Tailscale"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-                Text { width: parent.width; text: tailscaleCard.failed ? "Action failed" : root.tailscaleDetail(); elide: Text.ElideRight; color: tailscaleCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 8 }
+                Text { text: "Tailscale"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+                Text { width: parent.width; text: tailscaleCard.failed ? "Action failed" : root.tailscaleDetail(); elide: Text.ElideRight; color: tailscaleCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
               }
               ControlSwitch {
                 anchors.verticalCenter: parent.verticalCenter
@@ -5539,22 +5759,23 @@ ShellRoot {
             readonly property bool failed: root.failedControlAction === "ssh-server"
             readonly property string mode: busy ? root.pendingControlValue : String(state.mode || "off")
             width: parent.width; height: 94; radius: root.radius
-            color: failed ? root.dangerTint : mode !== "off" ? root.activeTint : root.surface
+            color: failed ? root.dangerTint : mode !== "off" ? root.activeTint : root.cardColor
+            CardEdge {}
             Column {
               anchors.fill: parent; anchors.margins: 10; spacing: 8
               Row {
                 width: parent.width; spacing: 9
-                Text { width: 24; text: "󰆍"; color: sshServerCard.mode !== "off" ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter }
+                Text { width: 24; text: "󰆍"; color: sshServerCard.mode !== "off" ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
                 Column {
                   width: parent.width - 33; spacing: 3
-                  Text { text: "SSH access"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+                  Text { text: "SSH access"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
                   Text {
                     width: parent.width
                     text: sshServerCard.failed ? "Mode change failed" : sshServerCard.mode === "mixed" ? "Both paths active · choose one" : sshServerCard.mode === "tailscale" ? "Incoming through Tailscale" : sshServerCard.mode === "ssh" ? "Port 22 · public keys only" : "No incoming SSH"
                     elide: Text.ElideRight
                     color: sshServerCard.failed ? root.red : root.subtext
                     font.family: root.fontFamily
-                    font.pixelSize: 8
+                    font.pixelSize: root.textCaption
                   }
                 }
               }
@@ -5570,11 +5791,12 @@ ShellRoot {
                     required property var modelData
                     readonly property bool selected: sshServerCard.mode === modelData.mode
                     readonly property bool busy: root.controlBusy("ssh-server", modelData.mode)
-                    width: (parent.width - 12) / 3; height: 28; radius: root.radius
+                    width: (parent.width - 12) / 3; height: root.chipHeight; radius: root.radius
                     opacity: modelData.available ? 1 : 0.42
                     color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoverColor : root.mantle
-                    Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
-                    RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: 10 }
+                    Behavior on color { ColorAnimation { duration: root.durationFast } }
+                    Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                    RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
                     MouseArea {
                       id: sshModeMouse
                       anchors.fill: parent
@@ -5596,24 +5818,26 @@ ShellRoot {
             readonly property bool busy: root.controlBusy("proton-vpn", action)
             readonly property bool failed: root.controlFailed("proton-vpn", action)
             width: parent.width; height: 66; radius: root.radius
-            color: failed ? root.dangerTint : state.connected ? root.activeTint : root.surface
+            color: failed ? root.dangerTint : state.connected ? root.activeTint : root.cardColor
+            CardEdge {}
             Row {
               anchors.fill: parent; anchors.margins: 10; spacing: 9
-              Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰒃"; color: protonVpnCard.state.connected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter }
+              Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰒃"; color: protonVpnCard.state.connected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
               Column {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 123
                 spacing: 3
-                Text { text: "Proton VPN"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-                Text { width: parent.width; text: protonVpnCard.failed ? "Quick connect failed · open the app" : root.protonVpnDetail(); elide: Text.ElideRight; color: protonVpnCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 8 }
+                Text { text: "Proton VPN"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+                Text { width: parent.width; text: protonVpnCard.failed ? "Quick connect failed · open the app" : root.protonVpnDetail(); elide: Text.ElideRight; color: protonVpnCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
               }
               Rectangle {
                 width: 32; height: 32; radius: root.radius
                 anchors.verticalCenter: parent.verticalCenter
                 color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoverColor : root.mantle
-                Text { anchors.centerIn: parent; text: "󰏌"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 12 }
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { anchors.centerIn: parent; text: "󰏌"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
                 MouseArea { id: protonAppMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("proton-vpn", "open") }
-                HoverTip { mouse: protonAppMouse; text: "Open Proton VPN for sign-in and location selection" }
+                HoverTip { mouse: protonAppMouse; inOverlay: true; text: "Open Proton VPN for sign-in and location selection" }
               }
               ControlSwitch {
                 anchors.verticalCenter: parent.verticalCenter
@@ -5637,15 +5861,15 @@ ShellRoot {
 
       required property var modelData
       readonly property var devices: root.bluetoothDevices()
-      readonly property int listHeight: Math.min(6, devices.length) * 44
+      // Six rows of forty with a four-pixel gap between them, and no gap after
+      // the last one.
+      readonly property int listHeight: Math.max(0, Math.min(6, devices.length) * 44 - root.spaceTight)
       screen: modelData
       visible: root.controlPanel === "bluetooth" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 360
-      implicitHeight: root.systemData.bluetoothPowered
-        ? 124 + (devices.length === 0 ? 26 : listHeight) + 44
-        : 88
+      implicitHeight: bluetoothContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -5655,22 +5879,22 @@ ShellRoot {
         id: bluetoothSurface
 
         Column {
-          anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width; spacing: 8
-            PanelGlyph { text: "󰂯" }
-            Column {
-              width: parent.width - 88
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: 2
-              Text { text: "Bluetooth"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-              Text {
-                text: root.systemData.bluetoothPowered ? root.systemData.bluetoothConnected + " connected device" + (root.systemData.bluetoothConnected === 1 ? "" : "s") : "Radio is off"
-                color: root.subtext
-                font.family: root.fontFamily
-                font.pixelSize: 11
-              }
-            }
+          id: bluetoothContent
+
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+
+          PanelHeader {
+            width: parent.width
+            glyph: "󰂯"
+            title: "Bluetooth"
+            detail: root.systemData.bluetoothPowered
+              ? root.systemData.bluetoothConnected + " connected device" + (root.systemData.bluetoothConnected === 1 ? "" : "s")
+              : "Radio is off"
+
             ControlSwitch {
               anchors.verticalCenter: parent.verticalCenter
               checked: root.systemData.bluetoothPowered
@@ -5681,7 +5905,7 @@ ShellRoot {
           Row {
             visible: root.systemData.bluetoothPowered
             width: parent.width
-            height: 34
+            height: root.controlHeight
             spacing: 8
             Text {
               anchors.verticalCenter: parent.verticalCenter
@@ -5689,20 +5913,20 @@ ShellRoot {
               text: "󰂰"
               color: root.bluetoothReceiverActive ? root.accent : root.subtext
               font.family: root.fontFamily
-              font.pixelSize: 15
+              font.pixelSize: root.textSubhead
             }
             Column {
               anchors.verticalCenter: parent.verticalCenter
               width: parent.width - 74
               spacing: 1
-              Text { width: parent.width; text: "Receive audio"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 12 }
+              Text { width: parent.width; text: "Receive audio"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
               Text {
                 width: parent.width
                 text: root.bluetoothReceiverDetail()
                 elide: Text.ElideRight
                 color: root.bluetoothReceiverActive ? root.subtext : root.overlay
                 font.family: root.fontFamily
-                font.pixelSize: 9
+                font.pixelSize: root.textCaption
               }
             }
             ControlSwitch {
@@ -5721,11 +5945,12 @@ ShellRoot {
               text: root.bluetoothScanActive ? "Discovering · this PC is visible" : "Find a device, or let one find this PC"
               color: root.bluetoothScanActive ? root.accent : root.subtext
               font.family: root.fontFamily
-              font.pixelSize: 11
+              font.pixelSize: root.textBody
             }
             Rectangle {
-              width: 34; height: 34; radius: root.radius
+              width: root.controlHeight; height: root.controlHeight; radius: root.radius
               color: bluetoothScanMouse.pressed ? root.pressColor : root.bluetoothScanActive ? root.activeTint : bluetoothScanMouse.containsMouse ? root.hoverColor : "transparent"
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.bluetoothScanActive }
               MouseArea {
                 id: bluetoothScanMouse
@@ -5734,7 +5959,7 @@ ShellRoot {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.setBluetoothScanning(!root.bluetoothScanActive)
               }
-              HoverTip { mouse: bluetoothScanMouse; text: root.bluetoothScanActive ? "Stop discovering" : "Search and stay visible for two minutes" }
+              HoverTip { mouse: bluetoothScanMouse; inOverlay: true; text: root.bluetoothScanActive ? "Stop discovering" : "Search and stay visible for two minutes" }
             }
           }
           SeeleListView {
@@ -5750,8 +5975,9 @@ ShellRoot {
               readonly property bool busy: root.bluetoothBusy === modelData.address
               readonly property bool forgetArmed: root.bluetoothForget === modelData.address
               readonly property bool rowActions: !busy && modelData.paired && (deviceMouse.containsMouse || forgetMouse.containsMouse || autoConnectMouse.containsMouse || forgetArmed)
-              width: ListView.view.width; height: 40; radius: root.radius
-              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : deviceMouse.containsMouse ? root.hoverColor : modelData.connected ? root.activeTint : root.alpha(root.surface, 0.55)
+              width: ListView.view.width; height: root.rowHeight; radius: root.radius
+              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : deviceMouse.containsMouse ? root.hoverColor : modelData.connected ? root.activeTint : root.rowColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                 Text {
@@ -5759,20 +5985,20 @@ ShellRoot {
                   text: root.bluetoothIcon(modelData)
                   color: modelData.connected ? root.accent : root.subtext
                   font.family: root.fontFamily
-                  font.pixelSize: 15
+                  font.pixelSize: root.textSubhead
                 }
                 Column {
                   anchors.verticalCenter: parent.verticalCenter
                   width: parent.width - 62
                   spacing: 1
-                  Text { width: parent.width; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
+                  Text { width: parent.width; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
                   Text {
                     width: parent.width
                     text: root.bluetoothDetail(modelData)
                     elide: Text.ElideRight
                     color: forgetArmed ? root.red : modelData.connected ? root.green : root.bluetoothBusy === modelData.address ? root.yellow : root.overlay
                     font.family: root.fontFamily
-                    font.pixelSize: 9
+                    font.pixelSize: root.textCaption
                   }
                 }
                 Text {
@@ -5781,10 +6007,10 @@ ShellRoot {
                   text: root.bluetoothSignal(modelData)
                   color: root.overlay
                   font.family: root.fontFamily
-                  font.pixelSize: 11
+                  font.pixelSize: root.textBody
                 }
               }
-              RefreshGlyph { visible: parent.busy; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+              RefreshGlyph { visible: parent.busy; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: deviceMouse; anchors.fill: parent; enabled: !parent.busy; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleBluetoothDevice(parent.modelData) }
               Rectangle {
                 visible: rowActions
@@ -5792,10 +6018,11 @@ ShellRoot {
                 anchors.rightMargin: 38
                 anchors.verticalCenter: parent.verticalCenter
                 width: 44; height: 24; radius: root.radius
-                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : autoConnectMouse.containsMouse ? root.hoverColor : root.alpha(root.surface, 0.95)
-                Text { anchors.centerIn: parent; text: "Auto"; color: modelData.trusted ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : autoConnectMouse.containsMouse ? root.hoverColor : root.floatColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { anchors.centerIn: parent; text: "Auto"; color: modelData.trusted ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: autoConnectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runBluetooth("trust", modelData.address) }
-                HoverTip { mouse: autoConnectMouse; text: modelData.trusted ? "Autoconnect on" : "Autoconnect off" }
+                HoverTip { mouse: autoConnectMouse; inOverlay: true; text: modelData.trusted ? "Autoconnect on" : "Autoconnect off" }
               }
               Rectangle {
                 visible: rowActions
@@ -5803,8 +6030,9 @@ ShellRoot {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 24; radius: root.radius
-                color: forgetMouse.pressed || forgetArmed ? root.dangerPress : forgetMouse.containsMouse ? root.dangerColor : root.alpha(root.surface, 0.95)
-                Text { anchors.centerIn: parent; text: "󰅖"; color: forgetArmed || forgetMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
+                color: forgetMouse.pressed || forgetArmed ? root.dangerPress : forgetMouse.containsMouse ? root.dangerColor : root.floatColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { anchors.centerIn: parent; text: "󰅖"; color: forgetArmed || forgetMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
                 MouseArea { id: forgetMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.forgetBluetoothDevice(modelData) }
               }
             }
@@ -5815,7 +6043,7 @@ ShellRoot {
             text: root.bluetoothScanActive ? "Looking for nearby devices…" : "No devices yet · start a search"
             color: root.overlay
             font.family: root.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: root.textLabel
           }
         }
       }
@@ -5863,7 +6091,7 @@ ShellRoot {
             text: "󰂰"
             color: root.accent
             font.family: root.fontFamily
-            font.pixelSize: 34
+            font.pixelSize: root.textHero
           }
 
           Text {
@@ -5875,8 +6103,8 @@ ShellRoot {
               : "Pair with " + pairingWindow.deviceName + "?"
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 13
-            font.bold: true
+            font.pixelSize: root.textLead
+            font.weight: root.weightStrong
           }
 
           Rectangle {
@@ -5885,14 +6113,14 @@ ShellRoot {
             width: parent.width
             height: 52
             radius: root.radius
-            color: root.alpha(root.surface, 0.55)
+            color: root.wellColor
             Text {
               anchors.centerIn: parent
               text: root.pairingCode()
               color: root.accent
               font.family: root.fontFamily
-              font.pixelSize: 26
-              font.bold: true
+              font.pixelSize: root.textCode
+              font.weight: root.weightStrong
               font.letterSpacing: 4
             }
           }
@@ -5911,17 +6139,18 @@ ShellRoot {
             selectionColor: root.accent
             selectedTextColor: root.base
             font.family: root.fontFamily
-            font.pixelSize: 26
-            font.bold: true
+            font.pixelSize: root.textCode
+            font.weight: root.weightStrong
             font.letterSpacing: 4
             background: Rectangle {
               radius: root.radius
-              color: root.alpha(root.surface, 0.55)
+              color: root.wellColor
               border.color: pairingCodeField.activeFocus ? root.accent : "transparent"
               border.width: 1
             }
             onAccepted: root.answerBluetoothPairing("accept", pairingCodeField.text)
             Keys.onEscapePressed: root.answerBluetoothPairing("reject", "")
+            Keys.onShortcutOverride: function(event) { event.accepted = event.key === Qt.Key_Escape }
           }
 
           Text {
@@ -5934,7 +6163,7 @@ ShellRoot {
               : "Accept only if the device shows the same code."
             color: root.subtext
             font.family: root.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: root.textLabel
           }
 
           Row {
@@ -5945,8 +6174,9 @@ ShellRoot {
               width: (pairingCard.width - 8) / 2
               height: 30
               radius: root.radius
-              color: pairingRejectMouse.pressed ? root.dangerPress : pairingRejectMouse.containsMouse ? root.dangerColor : root.alpha(root.surface, 0.95)
-              Text { anchors.centerIn: parent; text: "Reject"; color: pairingRejectMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+              color: pairingRejectMouse.pressed ? root.dangerPress : pairingRejectMouse.containsMouse ? root.dangerColor : root.floatColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              Text { anchors.centerIn: parent; text: "Reject"; color: pairingRejectMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
               MouseArea { id: pairingRejectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.answerBluetoothPairing("reject", "") }
             }
             Rectangle {
@@ -5954,7 +6184,8 @@ ShellRoot {
               height: 30
               radius: root.radius
               color: pairingAcceptMouse.pressed ? root.pressColor : pairingAcceptMouse.containsMouse ? root.hoverColor : root.selectedColor
-              Text { anchors.centerIn: parent; text: "Confirm"; color: root.accent; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              Text { anchors.centerIn: parent; text: "Confirm"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
               MouseArea { id: pairingAcceptMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.answerBluetoothPairing("accept", pairingCodeField.text) }
             }
           }
@@ -5965,8 +6196,9 @@ ShellRoot {
             width: parent.width
             height: 30
             radius: root.radius
-            color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoverColor : root.alpha(root.surface, 0.95)
-            Text { anchors.centerIn: parent; text: "Dismiss"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
+            color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoverColor : root.floatColor
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            Text { anchors.centerIn: parent; text: "Dismiss"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
             MouseArea { id: pairingDismissMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearBluetoothPairing() }
           }
         }
@@ -5986,7 +6218,7 @@ ShellRoot {
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 340
-      implicitHeight: nothingHeadphones ? 150 : 252
+      implicitHeight: headphonesContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -5994,29 +6226,22 @@ ShellRoot {
 
       PanelSurface {
         Column {
-          anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width; spacing: 8
-            HeadphonesIcon { anchors.verticalCenter: parent.verticalCenter; width: 22; height: 22; kind: String(headphones.kind || "airpods"); tint: root.accent }
-            Column {
-              width: parent.width - 32
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: 2
-              Text { text: headphones.name || "Headphones"; elide: Text.ElideRight; width: parent.width; color: root.text; font.family: root.fontFamily; font.pixelSize: 16; font.bold: true }
-              Text {
-                text: root.headphonesBatteryText() || "Connected"
-                color: root.subtext
-                font.family: root.fontFamily
-                font.pixelSize: 11
-              }
-            }
+          id: headphonesContent
+
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+
+          PanelHeader {
+            width: parent.width
+            mark: HeadphonesIcon { width: 22; height: 22; kind: String(headphones.kind || "airpods"); tint: root.accent }
+            title: headphones.name || "Headphones"
+            detail: root.headphonesBatteryText() || "Connected"
           }
-          Text {
+          SectionLabel {
             text: "NOISE CONTROL" + (nothingHeadphones && !headphones.controls ? " · CONNECTING" : "")
-            color: root.overlay
-            font.family: root.fontFamily
-            font.pixelSize: 9
-            font.bold: true
           }
           Row {
             width: parent.width
@@ -6030,10 +6255,11 @@ ShellRoot {
                 readonly property bool complete: root.controlCompleted("airpods", modelData.mode)
                 readonly property bool failed: root.controlFailed("airpods", modelData.mode)
                 readonly property bool selected: headphones.noiseMode === modelData.mode
-                width: (parent.width - 18) / 4; height: 40; radius: root.radius
-                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoverColor : root.surface
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
-                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+                width: (parent.width - 18) / 4; height: root.rowHeight; radius: root.radius
+                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoverColor : root.cardColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
                 MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", parent.modelData.mode) }
               }
             }
@@ -6045,8 +6271,8 @@ ShellRoot {
               width: parent.width - 48
               anchors.verticalCenter: parent.verticalCenter
               spacing: 1
-              Text { text: "Auto play and pause"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
-              Text { text: "Ear detection through librepods"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9 }
+              Text { text: "Auto play and pause"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+              Text { text: "Ear detection through librepods"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
             }
             ControlSwitch {
               anchors.verticalCenter: parent.verticalCenter
@@ -6061,9 +6287,10 @@ ShellRoot {
             readonly property bool complete: root.controlCompleted("airpods", "open")
             readonly property bool failed: root.controlFailed("airpods", "open")
             width: parent.width; height: 38; radius: root.radius
-            color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoverColor : root.surface
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : nothingHeadphones ? "More Nothing controls" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
-            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+            color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoverColor : root.cardColor
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : nothingHeadphones ? "More Nothing controls" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
             MouseArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("headphones", "open") }
           }
         }
@@ -6079,12 +6306,14 @@ ShellRoot {
 
       required property var modelData
       readonly property var entries: root.batteryEntries()
+      readonly property int batteryRowHeight: 38
+      readonly property int listHeight: Math.max(1, Math.min(5, entries.length)) * (batteryRowHeight + root.spaceSmall) - root.spaceSmall
       screen: modelData
       visible: root.controlPanel === "battery" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 330
-      implicitHeight: 78 + Math.max(1, Math.min(5, entries.length)) * 50
+      implicitHeight: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + listHeight
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -6093,45 +6322,37 @@ ShellRoot {
       PanelSurface {
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰁹" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Batteries"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
+          PanelHeader { width: parent.width; glyph: "󰁹"; title: "Batteries" }
           SeeleListView {
             visible: batteryWindow.entries.length > 0
             width: parent.width
-            height: Math.min(5, batteryWindow.entries.length) * 50
-            spacing: 6
+            height: batteryWindow.listHeight
+            spacing: root.spaceSmall
             clip: true
             model: batteryWindow.entries
             delegate: Column {
               required property var modelData
               width: ListView.view.width
-              spacing: 5
+              height: batteryWindow.batteryRowHeight
+              spacing: root.spaceSmall
               Row {
                 width: parent.width; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: root.batteryIcon(modelData); color: root.batteryColor(modelData); font.family: root.fontFamily; font.pixelSize: 14 }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 90; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: root.batteryIcon(modelData); color: root.batteryColor(modelData); font.family: root.fontFamily; font.pixelSize: root.textIcon }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 90; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   width: 60
                   text: Number(modelData.percent) + "%" + (root.batteryCharging(modelData) ? " ⚡" : "")
                   color: root.batteryColor(modelData)
                   font.family: root.fontFamily
-                  font.pixelSize: 11
+                  font.pixelSize: root.textBody
                   horizontalAlignment: Text.AlignRight
                 }
               }
-              Rectangle {
-                width: parent.width; height: 7; radius: 4; color: root.surface
-                Rectangle {
-                  width: parent.width * Math.max(0, Math.min(1, Number(modelData.percent) / 100))
-                  height: parent.height
-                  radius: 4
-                  color: root.batteryColor(modelData)
-                }
+              MeterBar {
+                width: parent.width
+                ratio: Number(modelData.percent) / 100
+                fill: root.batteryColor(modelData)
               }
             }
           }
@@ -6140,7 +6361,7 @@ ShellRoot {
             text: "No batteries reported"
             color: root.overlay
             font.family: root.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: root.textLabel
           }
         }
       }
@@ -6157,7 +6378,12 @@ ShellRoot {
       readonly property var entries: root.notificationHistoryOpen
         ? (root.systemData.notifications.history || [])
         : (root.systemData.notifications.items || [])
-      property int stableHeight: 162
+      // Everything above the list: the panel's own padding, the header, the
+      // history and clear row, and the gap on either side of it.
+      readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
+        + root.panelSpacing + 36 + root.panelSpacing
+      readonly property int emptyHeight: chromeHeight + 46
+      property int stableHeight: emptyHeight
       screen: modelData
       visible: root.controlPanel === "notifications" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; right: true }
@@ -6174,9 +6400,9 @@ ShellRoot {
       function suggestedHeight() {
         var notifications = root.systemData.notifications || { items: [], history: [] }
         var count = Math.max((notifications.items || []).length, (notifications.history || []).length)
-        if (count === 0) return 162
+        if (count === 0) return emptyHeight
         var content = root.notificationHistoryOpen ? notificationHistoryList.contentHeight : notificationCurrentList.contentHeight
-        return Math.min(560, 146 + Math.max(66, content))
+        return Math.min(560, chromeHeight + Math.max(66, content))
       }
 
       function toggleHistory() {
@@ -6202,21 +6428,26 @@ ShellRoot {
 
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
+          PanelHeader {
             width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: root.systemData.dnd ? "󰂛" : "󰂚" }
+            glyph: root.systemData.dnd ? "󰂛" : "󰂚"
+            title: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
+
             Text {
-              width: parent.width - 152
               anchors.verticalCenter: parent.verticalCenter
-              text: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
-              color: root.text
+              text: String(notificationWindow.entries.length)
+              color: root.subtext
               font.family: root.fontFamily
-              font.pixelSize: 18
-              font.bold: true
+              font.pixelSize: root.textBody
             }
-            Text { width: 40; anchors.verticalCenter: parent.verticalCenter; text: String(notificationWindow.entries.length); color: root.subtext; font.family: root.fontFamily; font.pixelSize: 11; horizontalAlignment: Text.AlignRight }
-            Text { width: 40; anchors.verticalCenter: parent.verticalCenter; leftPadding: 10; text: "DND"; color: root.systemData.dnd ? root.yellow : root.subtext; font.family: root.fontFamily; font.pixelSize: 10 }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "DND"
+              color: root.systemData.dnd ? root.yellow : root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+              font.letterSpacing: root.trackingLabel
+            }
             ControlSwitch {
               anchors.verticalCenter: parent.verticalCenter
               checked: root.systemData.dnd
@@ -6228,26 +6459,28 @@ ShellRoot {
             width: parent.width; spacing: 8
             Rectangle {
               width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : historyMouse.containsMouse ? root.hoverColor : root.surface
+              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : historyMouse.containsMouse ? root.hoverColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text {
                 anchors.centerIn: parent
                 text: root.notificationHistoryOpen ? "Back" : "History"
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 10
-                font.bold: true
+                font.pixelSize: root.textLabel
+                font.weight: root.weightStrong
               }
               MouseArea { id: historyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: notificationWindow.toggleHistory() }
-              HoverTip { mouse: historyMouse; text: root.notificationHistoryOpen ? "Show current notifications" : "Show the past 24 hours" }
+              HoverTip { mouse: historyMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Show current notifications" : "Show the past 24 hours" }
             }
             Rectangle {
               readonly property bool busy: root.controlBusy("notifications", "clear")
               readonly property bool complete: root.controlCompleted("notifications", "clear")
               readonly property bool failed: root.controlFailed("notifications", "clear")
               width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoverColor : root.surface
-              Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoverColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
             }
           }
@@ -6255,7 +6488,9 @@ ShellRoot {
             id: notificationViewport
 
             width: parent.width
-            height: notificationWindow.entries.length > 0 ? parent.height - 78 : 46
+            height: notificationWindow.entries.length > 0
+              ? parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
+              : 46
             clip: true
             NotificationList {
               id: notificationCurrentList
@@ -6278,7 +6513,7 @@ ShellRoot {
                 text: root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
                 color: root.overlay
                 font.family: root.fontFamily
-                font.pixelSize: 10
+                font.pixelSize: root.textLabel
                 horizontalAlignment: Text.AlignHCenter
               }
             }
@@ -6314,29 +6549,26 @@ ShellRoot {
           id: cameraContent
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰄀" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Camera"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
-          Text { text: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s"); color: root.systemData.cameraActive ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: 11 }
-          Text { text: "PREVIEW DEVICE"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: 9; font.bold: true }
+          PanelHeader { width: parent.width; glyph: "󰄀"; title: "Camera" }
+          Text { text: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s"); color: root.systemData.cameraActive ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
+          SectionLabel { text: "PREVIEW DEVICE" }
           SeeleListView {
+            visible: cameraWindow.deviceCount > 0
             width: parent.width
-            height: Math.max(1, Math.min(4, cameraWindow.deviceCount)) * 32
-            spacing: 4
+            height: Math.max(0, Math.min(4, cameraWindow.deviceCount) * 32 - root.spaceTight)
+            spacing: root.spaceTight
             clip: true
             model: root.systemData.cameraDevices || []
             delegate: Rectangle {
               required property var modelData
               readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
-              width: ListView.view.width; height: 28; radius: root.radius
-              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoverColor : root.alpha(root.surface, 0.5)
+              width: ListView.view.width; height: root.chipHeight; radius: root.radius
+              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoverColor : root.rowColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: 12 }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 10 }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
               }
               MouseArea {
                 id: cameraDeviceMouse
@@ -6346,15 +6578,15 @@ ShellRoot {
                 onClicked: root.cameraPreviewDevice = String(parent.modelData.device || "")
               }
             }
-            Text {
-              visible: cameraWindow.deviceCount === 0
-              anchors.centerIn: parent
-              text: "No camera detected"
-              color: root.overlay
-              font.family: root.fontFamily
-              font.pixelSize: 10
-            }
             ScrollBar.vertical: SlimScrollBar { popupHovered: cameraSurface.hovered }
+          }
+          Text {
+            visible: cameraWindow.deviceCount === 0
+            width: parent.width
+            text: "No camera detected"
+            color: root.overlay
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
           }
           ClippingRectangle {
             z: 2
@@ -6384,7 +6616,7 @@ ShellRoot {
               text: root.systemData.cameraDevices.length === 0 ? "No camera detected" : root.systemData.cameraActive ? "Camera in use by another app" : cameraPreviewLoader.status === Loader.Ready ? "Starting camera…" : "Preview unavailable"
               color: root.overlay
               font.family: root.fontFamily
-              font.pixelSize: 10
+              font.pixelSize: root.textLabel
             }
           }
           Row {
@@ -6398,9 +6630,10 @@ ShellRoot {
                 readonly property bool complete: root.controlCompleted(modelData.action, device)
                 readonly property bool failed: root.controlFailed(modelData.action, device)
                 width: (parent.width - 8) / 2; height: 42; radius: root.radius
-                color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoverColor : root.surface
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
-                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: 12 }
+                color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
                 MouseArea {
                   id: cameraActionMouse
                   anchors.fill: parent
@@ -6429,7 +6662,8 @@ ShellRoot {
       anchors { top: true; right: true }
       margins { top: root.barHeight + root.panelGap; right: root.panelGap }
       implicitWidth: 420
-      implicitHeight: 222
+      // Padding, header, gap, two rows of buttons and the gap between them.
+      implicitHeight: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + 72 * 2 + root.spaceMedium
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -6438,12 +6672,7 @@ ShellRoot {
       PanelSurface {
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          Row {
-            width: parent.width
-            height: root.panelHeaderHeight
-            PanelGlyph { text: "󰐥" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Power"; color: root.text; font.family: root.fontFamily; font.pixelSize: 18; font.bold: true }
-          }
+          PanelHeader { width: parent.width; glyph: "󰐥"; title: "Power" }
           Grid {
             width: parent.width
             columns: 3
@@ -6461,12 +6690,14 @@ ShellRoot {
               Rectangle {
                 required property var modelData
                 width: (parent.width - 16) / 3; height: 72; radius: root.radius
-                color: modelData.variant === "destructive" ? (sessionActionMouse.pressed ? root.dangerPress : sessionActionMouse.containsMouse ? root.dangerColor : root.dangerTint) : sessionActionMouse.pressed ? root.pressColor : sessionActionMouse.containsMouse ? root.hoverColor : root.surface
+                color: modelData.variant === "destructive" ? (sessionActionMouse.pressed ? root.dangerPress : sessionActionMouse.containsMouse ? root.dangerColor : root.dangerTint) : sessionActionMouse.pressed ? root.pressColor : sessionActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                CardEdge { border.color: modelData.variant === "destructive" ? root.alpha(root.red, 0.22) : root.cardBorder }
                 Column {
                   anchors.centerIn: parent
-                  spacing: 4
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : modelData.action === "reboot-windows" && root.windowsCountdown >= 0 ? root.yellow : root.accent; font.family: root.fontFamily; font.pixelSize: 18 }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: 10; font.bold: true }
+                  spacing: root.spaceTight
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : modelData.action === "reboot-windows" && root.windowsCountdown >= 0 ? root.yellow : root.accent; font.family: root.fontFamily; font.pixelSize: root.textTitle }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 }
                 MouseArea {
                   id: sessionActionMouse
@@ -6521,16 +6752,16 @@ ShellRoot {
           readonly property int level: microphone
             ? Number(root.microphoneDrag >= 0 ? root.microphoneDrag : root.systemData.microphoneVolume)
             : Number(root.volumeDrag >= 0 ? root.volumeDrag : root.systemData.volume)
-          readonly property int maximum: microphone ? 100 : root.outputVolumeMaximum
           visible: microphone || root.osdKind === "volume"
           anchors.fill: parent; anchors.margins: 14; spacing: 12
-          Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.microphone ? (levelOsd.muted ? "󰍭" : "󰍬") : (levelOsd.muted ? "󰝟" : "󰕾"); color: levelOsd.muted ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: 20 }
-          Rectangle {
-            width: 205; height: 8; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: root.surface
-            Rectangle { width: parent.width * Math.max(0, Math.min(1, levelOsd.level / levelOsd.maximum)); height: parent.height; radius: 4; color: root.accent }
-            Rectangle { visible: !levelOsd.microphone; x: parent.width * 100 / levelOsd.maximum; width: 1; height: parent.height; color: root.alpha(root.text, 0.35) }
+          Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.microphone ? (levelOsd.muted ? "󰍭" : "󰍬") : (levelOsd.muted ? "󰝟" : "󰕾"); color: levelOsd.muted ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
+          MeterBar {
+            width: 205
+            height: 8
+            anchors.verticalCenter: parent.verticalCenter
+            ratio: root.audioFillRatio(levelOsd.level)
           }
-          Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: 11 }
+          Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
         }
         Row {
           visible: root.osdKind === "airpods"
@@ -6540,8 +6771,8 @@ ShellRoot {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 34
             spacing: 2
-            Text { width: parent.width; text: root.headphonesOsdName; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: 12; font.bold: true }
-            Text { text: root.headphonesOsdConnected ? (root.headphonesBatteryText() || "Connected") : "Disconnected"; color: root.headphonesOsdConnected ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: 9 }
+            Text { width: parent.width; text: root.headphonesOsdName; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textStrong; font.weight: root.weightStrong }
+            Text { text: root.headphonesOsdConnected ? (root.headphonesBatteryText() || "Connected") : "Disconnected"; color: root.headphonesOsdConnected ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
           }
         }
         // This and the Seele Polkit dialog ask for the same thing, so they are
@@ -6561,7 +6792,7 @@ ShellRoot {
             text: ""
             color: root.yellow
             font.family: root.fontFamily
-            font.pixelSize: 34
+            font.pixelSize: root.textHero
           }
 
           Text {
@@ -6569,8 +6800,8 @@ ShellRoot {
             text: "Touch your YubiKey"
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 13
-            font.bold: true
+            font.pixelSize: root.textLead
+            font.weight: root.weightStrong
           }
 
           Text {
@@ -6579,7 +6810,7 @@ ShellRoot {
             text: "Waiting for hardware confirmation"
             color: root.subtext
             font.family: root.fontFamily
-            font.pixelSize: 11
+            font.pixelSize: root.textBody
             wrapMode: Text.WordWrap
           }
         }

@@ -26,6 +26,23 @@ ShellRoot {
   property var sessionCommand: []
 
   readonly property int radius: 8
+  readonly property int panelMargin: 16
+  readonly property int panelSpacing: 10
+  readonly property int panelHeaderHeight: 28
+  readonly property int spaceTight: 4
+  // The same type ramp, weights and elevation the lock uses, so signing in and
+  // unlocking are one surface seen twice rather than two designs.
+  readonly property int textLabel: 10
+  readonly property int textBody: 11
+  readonly property int textLead: 13
+  readonly property int textCard: 17
+  readonly property int textTitle: 18
+  readonly property int textDisplay: 20
+  readonly property int textMark: 30
+  readonly property int textClock: 72
+  readonly property int weightStrong: Font.DemiBold
+  readonly property int weightLight: Font.Light
+  readonly property int durationFast: 110
   readonly property string grain: "grain.png"
   readonly property real grainOpacity: 0.05
   readonly property color panelColor: alpha(base, 0.86)
@@ -35,6 +52,8 @@ ShellRoot {
   readonly property color dangerTint: alpha(red, 0.14)
   readonly property color dangerColor: alpha(red, 0.28)
   readonly property color dangerPress: alpha(red, 0.48)
+  readonly property color cardColor: alpha(surface, 0.55)
+  readonly property color cardBorder: alpha(text, 0.07)
   readonly property bool inputReady: Greetd.available
     && (Greetd.state === GreetdState.Inactive || responseRequired)
   readonly property bool authenticating: Greetd.state === GreetdState.Authenticating
@@ -209,28 +228,41 @@ ShellRoot {
       ? powerMouse.pressed
         ? root.dangerPress
         : powerMouse.containsMouse ? root.dangerColor : root.dangerTint
-      : powerMouse.pressed ? root.pressColor : powerMouse.containsMouse ? root.hoverColor : root.surface
+      : powerMouse.pressed ? root.pressColor : powerMouse.containsMouse ? root.hoverColor : root.cardColor
     border.width: root.pendingPowerAction === action ? 1 : 0
     border.color: variant === "destructive" ? root.red : root.accent
 
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    Rectangle {
+      visible: powerButton.border.width === 0
+      anchors.fill: parent
+      radius: parent.radius
+      color: "transparent"
+      border.width: 1
+      border.color: powerButton.variant === "destructive" ? root.alpha(root.red, 0.22) : root.cardBorder
+      antialiasing: true
+    }
+
     Column {
       anchors.centerIn: parent
-      spacing: 2
+      spacing: root.spaceTight
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
         text: powerButton.icon
         color: powerButton.variant === "destructive" ? root.red : root.accent
         font.family: root.fontFamily
-        font.pixelSize: 18
+        font.pixelSize: root.textTitle
       }
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.pendingPowerAction === powerButton.action ? "Confirm" : powerButton.label
-        color: root.subtext
+        color: root.text
         font.family: root.fontFamily
-        font.pixelSize: 9
+        font.pixelSize: root.textLabel
+        font.weight: root.weightStrong
       }
     }
 
@@ -381,8 +413,8 @@ ShellRoot {
             text: Qt.formatDateTime(root.now, "HH:mm")
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 72
-            font.weight: Font.Light
+            font.pixelSize: root.textClock
+            font.weight: root.weightLight
           }
 
           Text {
@@ -390,44 +422,33 @@ ShellRoot {
             text: Qt.formatDateTime(root.now, "dddd · yyyy-MM-dd")
             color: root.subtext
             font.family: root.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.textLead
           }
         }
 
-        Rectangle {
+        Item {
           id: authCard
 
           anchors.centerIn: parent
           anchors.verticalCenterOffset: 34
-          width: Math.min(404, parent.width - 48)
-          height: 250
-          radius: root.radius
-          color: root.panelColor
-          border.width: 1
-          border.color: root.panelBorder
-          clip: true
-
-          SurfaceWash { radius: root.radius - 1 }
-          SurfaceGrain { inset: 3 }
+          width: Math.min(360, parent.width - 48)
+          height: 220
 
           Column {
             anchors.fill: parent
             anchors.margins: 22
             spacing: 13
-            z: 2
 
             Rectangle {
               anchors.horizontalCenter: parent.horizontalCenter
               width: 72
               height: 72
               radius: width / 2
-              color: root.surface
+              color: root.panelColor
               border.width: 1
               border.color: root.panelBorder
-              clip: true
 
               SurfaceWash { radius: parent.radius - 1 }
-              SurfaceGrain { inset: 2 }
 
               Text {
                 anchors.centerIn: parent
@@ -435,8 +456,8 @@ ShellRoot {
                 text: root.displayName.charAt(0)
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 30
-                font.bold: true
+                font.pixelSize: root.textMark
+                font.weight: root.weightStrong
               }
             }
 
@@ -445,15 +466,15 @@ ShellRoot {
               text: root.displayName
               color: root.text
               font.family: root.fontFamily
-              font.pixelSize: 13
-              font.bold: true
+              font.pixelSize: root.textLead
+              font.weight: root.weightStrong
             }
 
             Rectangle {
               width: parent.width
               height: 48
               radius: root.radius
-              color: root.alpha(root.surface, 0.72)
+              color: "transparent"
               border.width: 2
               border.color: root.authFailed ? root.red : root.inputReady ? root.accent : root.overlay
 
@@ -481,7 +502,7 @@ ShellRoot {
                 selectionColor: root.alpha(root.accent, 0.45)
                 selectedTextColor: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 17
+                font.pixelSize: root.textCard
                 font.letterSpacing: 3
                 clip: true
 
@@ -526,7 +547,7 @@ ShellRoot {
                       : "Enter password"
                 color: root.authFailed ? root.red : root.subtext
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.textBody
                 elide: Text.ElideRight
               }
 
@@ -549,7 +570,7 @@ ShellRoot {
                   text: root.yubikeyTouchRequired ? "" : "󰌾"
                   color: root.authFailed ? root.red : root.yubikeyTouchRequired ? root.yellow : root.accent
                   font.family: root.fontFamily
-                  font.pixelSize: 17
+                  font.pixelSize: root.textCard
                 }
               }
             }
@@ -565,7 +586,9 @@ ShellRoot {
           anchors.bottom: parent.bottom
           anchors.bottomMargin: 82
           width: 332
-          height: 136
+          // Padding, header, gap, one row of buttons. The literal it replaces
+          // was six pixels short, and the card clips, so the row lost its edge.
+          height: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + 72
           radius: root.radius
           color: root.panelColor
           border.width: 1
@@ -578,21 +601,21 @@ ShellRoot {
 
           Column {
             anchors.fill: parent
-            anchors.margins: 16
-            spacing: 10
+            anchors.margins: root.panelMargin
+            spacing: root.panelSpacing
             z: 2
 
             Row {
               width: parent.width
-              height: 28
-              spacing: 10
+              height: root.panelHeaderHeight
+              spacing: root.panelSpacing
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "󰐥"
                 color: root.accent
                 font.family: root.fontFamily
-                font.pixelSize: 20
+                font.pixelSize: root.textDisplay
               }
 
               Text {
@@ -600,8 +623,8 @@ ShellRoot {
                 text: "Power"
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 18
-                font.bold: true
+                font.pixelSize: root.textTitle
+                font.weight: root.weightStrong
               }
             }
 
@@ -626,13 +649,13 @@ ShellRoot {
           radius: width / 2
           color: powerMouse.pressed
             ? root.pressColor
-            : powerMouse.containsMouse || root.powerMenuOpen ? root.hoverColor : root.surface
+            : powerMouse.containsMouse || root.powerMenuOpen ? root.hoverColor : root.cardColor
           border.width: root.powerMenuOpen ? 1 : 0
           border.color: root.accent
-          clip: true
+
+          Behavior on color { ColorAnimation { duration: root.durationFast } }
 
           SurfaceWash { radius: parent.radius - 1 }
-          SurfaceGrain { inset: 2 }
 
           Text {
             anchors.centerIn: parent
@@ -640,7 +663,7 @@ ShellRoot {
             text: "󰐥"
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 20
+            font.pixelSize: root.textDisplay
           }
 
           MouseArea {

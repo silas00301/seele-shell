@@ -17,6 +17,12 @@ definition in `projects/shell/` combines the runtime tools. The greeter, lock,
 and polkit packages use `packages/core/` directly and do not import the main
 shell.
 
+`projects/shell/shell.qml` opens with the design tokens every surface reads
+from — the type ramp, weights, tracking, spacing, control heights, elevation
+fills, and the two motion durations — followed by the shared components those
+surfaces are assembled out of. The greeter, lock, and polkit clients mirror the
+subset of those tokens they use so all four read as one desktop.
+
 ## Build and test
 
 ```sh

@@ -12,10 +12,24 @@ function assert(condition, message) {
 
 const now = new Date(2026, 7, 23, 21, 30);
 const cells = time.calendarCells(now, 0);
-assert(cells.length === 48, "a month must render six week-numbered rows");
+const days = cells.filter((cell) => !cell.week);
+assert(time.calendarWeeks(now, 0) === 6, "August 2026 spans six Monday-first rows");
+assert(cells.length === 48, "a month renders one week number per row it occupies");
 assert(cells[0].week && cells[0].label === 31, "August 2026 must begin in ISO week 31");
-assert(cells[1].day === 27 && !cells[1].inMonth, "a month must include leading Monday-first days");
+assert(!cells[1].inMonth && cells[1].day === 0, "a day before the first of the month must be left empty");
+assert(days.filter((cell) => cell.inMonth).length === 31, "every day of the month must appear exactly once");
+assert(days.filter((cell) => cell.inMonth)[0].day === 1, "the month's own days must start at the first");
+assert(!days[days.length - 1].inMonth, "a day after the last of the month must be left empty");
 assert(cells.some((cell) => cell.today && cell.day === 23), "the current day must be marked");
+
+// February 2027 starts on a Monday and is exactly four weeks long, so it must
+// occupy four rows with no empty cell in any of them.
+assert(time.calendarWeeks(now, 6) === 4, "a February beginning on a Monday spans four rows");
+const february = time.calendarCells(now, 6);
+assert(february.length === 32, "a four-row month must not be padded out to six");
+assert(february.filter((cell) => !cell.week).every((cell) => cell.inMonth), "a month that fills its rows must have no empty cells");
+assert(february.every((cell) => !cell.today), "only the current month may mark a day as today");
+
 assert(time.isoWeek(new Date(2027, 0, 1, 12)) === 53, "ISO week numbering must cross year boundaries");
 
 const zones = [
