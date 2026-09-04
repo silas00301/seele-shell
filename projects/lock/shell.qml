@@ -27,13 +27,27 @@ ShellRoot {
   readonly property int radius: 8
   readonly property int panelMargin: 16
   readonly property int panelSpacing: 10
+  readonly property int panelHeaderHeight: 28
+  readonly property int spaceTight: 4
+  // The same type ramp and weights Seele Shell uses, so the lock is the desktop
+  // at rest rather than a surface that merely resembles it.
+  readonly property int textLabel: 10
+  readonly property int textBody: 11
+  readonly property int textLead: 13
+  readonly property int textCard: 17
+  readonly property int textTitle: 18
+  readonly property int textDisplay: 20
+  readonly property int textMark: 30
+  readonly property int textClock: 72
+  readonly property int weightStrong: Font.DemiBold
+  readonly property int weightLight: Font.Light
+  readonly property int durationFast: 110
   readonly property string grain: "grain.png"
   readonly property real grainOpacity: 0.05
   readonly property color panelColor: alpha(base, 0.86)
   readonly property color panelBorder: alpha(accent, 0.65)
   readonly property color hoverColor: alpha(accent, 0.18)
   readonly property color pressColor: alpha(accent, 0.42)
-  readonly property color selectedColor: alpha(accent, 0.24)
   readonly property color dangerTint: alpha(red, 0.14)
   readonly property color dangerColor: alpha(red, 0.28)
   readonly property color dangerPress: alpha(red, 0.48)
@@ -42,7 +56,8 @@ ShellRoot {
   readonly property string displayName: Quickshell.env("SEELE_LOCK_NAME") || titleCase(userName)
   readonly property bool secure: sessionLock.secure
   readonly property bool authenticating: pam.active
-  readonly property color controlColor: alpha(surface, 0.72)
+  readonly property color cardColor: alpha(surface, 0.55)
+  readonly property color cardBorder: alpha(text, 0.07)
 
   property date now: new Date()
   property string passwordText: ""
@@ -151,13 +166,25 @@ ShellRoot {
       ? powerMouse.pressed
         ? root.dangerPress
         : powerMouse.containsMouse ? root.dangerColor : root.dangerTint
-      : powerMouse.pressed ? root.pressColor : powerMouse.containsMouse ? root.hoverColor : root.surface
+      : powerMouse.pressed ? root.pressColor : powerMouse.containsMouse ? root.hoverColor : root.cardColor
     border.width: root.pendingPowerAction === action ? 1 : 0
     border.color: variant === "destructive" ? root.red : root.accent
 
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    Rectangle {
+      visible: powerButton.border.width === 0
+      anchors.fill: parent
+      radius: parent.radius
+      color: "transparent"
+      border.width: 1
+      border.color: powerButton.variant === "destructive" ? root.alpha(root.red, 0.22) : root.cardBorder
+      antialiasing: true
+    }
+
     Column {
       anchors.centerIn: parent
-      spacing: 2
+      spacing: root.spaceTight
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -168,15 +195,16 @@ ShellRoot {
             ? root.yellow
             : root.accent
         font.family: root.fontFamily
-        font.pixelSize: 18
+        font.pixelSize: root.textTitle
       }
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.pendingPowerAction === powerButton.action ? "Confirm" : powerButton.label
-        color: root.subtext
+        color: root.text
         font.family: root.fontFamily
-        font.pixelSize: 9
+        font.pixelSize: root.textLabel
+        font.weight: root.weightStrong
       }
     }
 
@@ -445,8 +473,8 @@ ShellRoot {
             text: Qt.formatDateTime(root.now, "HH:mm")
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 72
-            font.weight: Font.Light
+            font.pixelSize: root.textClock
+            font.weight: root.weightLight
           }
 
           Text {
@@ -454,7 +482,7 @@ ShellRoot {
             text: Qt.formatDateTime(root.now, "dddd · yyyy-MM-dd")
             color: root.subtext
             font.family: root.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.textLead
           }
         }
 
@@ -486,8 +514,8 @@ ShellRoot {
                 text: root.displayName.charAt(0)
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 30
-                font.bold: true
+                font.pixelSize: root.textMark
+                font.weight: root.weightStrong
               }
             }
 
@@ -496,8 +524,8 @@ ShellRoot {
               text: root.displayName
               color: root.text
               font.family: root.fontFamily
-              font.pixelSize: 13
-              font.bold: true
+              font.pixelSize: root.textLead
+              font.weight: root.weightStrong
             }
 
             Rectangle {
@@ -531,7 +559,7 @@ ShellRoot {
                 selectionColor: root.alpha(root.accent, 0.45)
                 selectedTextColor: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 17
+                font.pixelSize: root.textCard
                 font.letterSpacing: 3
                 clip: true
 
@@ -580,7 +608,7 @@ ShellRoot {
                       : "Enter password"
                 color: root.authFailed ? root.red : root.subtext
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.textBody
                 elide: Text.ElideRight
               }
 
@@ -603,7 +631,7 @@ ShellRoot {
                   text: root.yubikeyTouchRequired ? "" : "󰌾"
                   color: root.authFailed ? root.red : root.yubikeyTouchRequired ? root.yellow : root.accent
                   font.family: root.fontFamily
-                  font.pixelSize: 17
+                  font.pixelSize: root.textCard
                 }
               }
             }
@@ -619,7 +647,8 @@ ShellRoot {
           anchors.bottom: parent.bottom
           anchors.bottomMargin: 82
           width: 420
-          height: 222
+          // Padding, header, gap, two rows of buttons and the gap between them.
+          height: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + 72 * 2 + 8
           radius: root.radius
           color: root.panelColor
           border.width: 1
@@ -632,20 +661,20 @@ ShellRoot {
 
           Column {
             anchors.fill: parent
-            anchors.margins: 16
-            spacing: 10
+            anchors.margins: root.panelMargin
+            spacing: root.panelSpacing
 
             Row {
               width: parent.width
-              height: 28
-              spacing: 10
+              height: root.panelHeaderHeight
+              spacing: root.panelSpacing
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "󰐥"
                 color: root.accent
                 font.family: root.fontFamily
-                font.pixelSize: 20
+                font.pixelSize: root.textDisplay
               }
 
               Text {
@@ -653,8 +682,8 @@ ShellRoot {
                 text: "Power"
                 color: root.text
                 font.family: root.fontFamily
-                font.pixelSize: 18
-                font.bold: true
+                font.pixelSize: root.textTitle
+                font.weight: root.weightStrong
               }
             }
 
@@ -698,9 +727,11 @@ ShellRoot {
           radius: width / 2
           color: powerMenuMouse.pressed
             ? root.pressColor
-            : powerMenuMouse.containsMouse || root.powerMenuOpen ? root.hoverColor : root.surface
+            : powerMenuMouse.containsMouse || root.powerMenuOpen ? root.hoverColor : root.cardColor
           border.width: root.powerMenuOpen ? 1 : 0
           border.color: root.accent
+
+          Behavior on color { ColorAnimation { duration: root.durationFast } }
 
           SurfaceWash { radius: parent.radius - 1 }
 
@@ -709,7 +740,7 @@ ShellRoot {
             text: "󰐥"
             color: root.text
             font.family: root.fontFamily
-            font.pixelSize: 20
+            font.pixelSize: root.textDisplay
           }
 
           MouseArea {

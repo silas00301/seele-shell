@@ -30,6 +30,15 @@ ShellRoot {
   readonly property real grainOpacity: 0.05
   readonly property color panelColor: alpha(base, 0.86)
   readonly property color panelBorder: alpha(accent, 0.65)
+  // A well, cut back toward the base like every input the shell draws.
+  readonly property color wellColor: alpha(base, 0.52)
+  // The shell's type ramp and weights, so the dialog is the same object as the
+  // lock's prompt and Seele Shell's own YubiKey notice.
+  readonly property int textBody: 11
+  readonly property int textLead: 13
+  readonly property int textCard: 17
+  readonly property int textHero: 34
+  readonly property int weightStrong: Font.DemiBold
 
   // `flow` is null whenever polkit has nothing outstanding, so every binding
   // below has to tolerate that rather than assume a live request.
@@ -244,7 +253,7 @@ ShellRoot {
           text: ""
           color: root.yellow
           font.family: root.fontFamily
-          font.pixelSize: 34
+          font.pixelSize: root.textHero
         }
 
         Text {
@@ -252,8 +261,8 @@ ShellRoot {
           text: "Touch your YubiKey"
           color: root.text
           font.family: root.fontFamily
-          font.pixelSize: 13
-          font.bold: true
+          font.pixelSize: root.textLead
+          font.weight: root.weightStrong
         }
 
         // What is actually being authorised. Without it the dialog would ask for
@@ -266,7 +275,7 @@ ShellRoot {
           text: root.prompting ? root.requesterMarkup(root.flow.message) : ""
           color: root.subtext
           font.family: root.fontFamily
-          font.pixelSize: 11
+          font.pixelSize: root.textBody
           wrapMode: Text.WordWrap
         }
 
@@ -274,11 +283,11 @@ ShellRoot {
           width: parent.width
           height: 48
           radius: root.radius
-          color: root.alpha(root.surface, 0.45)
+          color: root.wellColor
           border.width: 2
           border.color: root.prompting && root.flow.supplementaryIsError
             ? root.red
-            : passwordInput.activeFocus ? root.accent : root.alpha(root.overlay, 0.8)
+            : passwordInput.activeFocus ? root.accent : root.overlay
 
           TextInput {
             id: passwordInput
@@ -305,7 +314,7 @@ ShellRoot {
             selectionColor: root.alpha(root.accent, 0.45)
             selectedTextColor: root.text
             font.family: root.fontFamily
-            font.pixelSize: 15
+            font.pixelSize: root.textCard
             font.letterSpacing: 3
             clip: true
 
@@ -347,7 +356,7 @@ ShellRoot {
                     : "…or type your password"
             color: root.prompting && root.flow.supplementaryIsError ? root.red : root.subtext
             font.family: root.fontFamily
-            font.pixelSize: 11
+            font.pixelSize: root.textBody
             elide: Text.ElideRight
           }
         }
