@@ -20,9 +20,10 @@ shell.
 `projects/shell/shell.qml` opens with the design tokens every surface reads
 from — the type ramp, weights, tracking, spacing, control heights, elevation
 fills, surface edges, and the two motion durations — followed by the shared
-components those surfaces are assembled out of. The greeter, lock, and polkit
-clients mirror the subset of those tokens they use so all four read as one
-desktop.
+components those surfaces are assembled out of. `CenteredGlyph.qml` keeps icon
+ink centered inside fixed wells even when the font's advance width is uneven.
+The greeter, lock, and polkit clients mirror the subset of those tokens they use
+so all four read as one desktop.
 
 ## Build and test
 

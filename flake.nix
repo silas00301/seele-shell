@@ -31,6 +31,9 @@
             lib = pkgs.lib;
             quickshellInput = inputs.quickshell;
           };
+          fontConfig = pkgs.makeFontsConf {
+            fontDirectories = [ pkgs.maple-mono.NF-CN ];
+          };
         in
         {
           packages = {
@@ -91,6 +94,10 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/time.js projects/shell/time.js
+                  FONTCONFIG_FILE=${fontConfig} bash tests/centered-glyph.sh \
+                    projects/shell/CenteredGlyph.qml \
+                    ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+                    tests/tst_centeredglyph.qml
                 '';
               }
             ];
