@@ -123,7 +123,9 @@ ShellRoot {
   readonly property color edgeCrown: alpha(text, 0.16)
   // Interaction. The pointer is reported in neutral light and the commit is
   // reported in accent, so hovering the shell does not set it glowing and a
-  // press still reads as something having been asked for.
+  // press still reads as something having been asked for. `hoverColor` is a
+  // wash: filled controls composite it over their resting material instead of
+  // replacing that material with a nearly transparent colour.
   readonly property color hoverColor: alpha(text, 0.07)
   readonly property color pressColor: alpha(accent, 0.3)
   readonly property color selectedColor: alpha(accent, 0.2)
@@ -294,6 +296,21 @@ ShellRoot {
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
+  }
+
+  function layeredColor(base, tint) {
+    var opacity = tint.a + base.a * (1 - tint.a)
+    if (opacity <= 0) return Qt.rgba(0, 0, 0, 0)
+    return Qt.rgba(
+      (tint.r * tint.a + base.r * base.a * (1 - tint.a)) / opacity,
+      (tint.g * tint.a + base.g * base.a * (1 - tint.a)) / opacity,
+      (tint.b * tint.a + base.b * base.a * (1 - tint.a)) / opacity,
+      opacity
+    )
+  }
+
+  function hoveredColor(base) {
+    return layeredColor(base, hoverColor)
   }
 
   function focusedScreen(screen) {
@@ -2779,7 +2796,7 @@ ShellRoot {
       width: 44
       height: 44
       radius: root.radius
-      color: audioMuteMouse.pressed ? root.pressColor : audioLevelRow.muted ? root.dangerColor : audioMuteMouse.containsMouse ? root.hoverColor : root.cardColor
+      color: audioMuteMouse.pressed ? root.pressColor : audioLevelRow.muted ? root.dangerColor : audioMuteMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
@@ -2886,7 +2903,7 @@ ShellRoot {
       width: 30
       height: 30
       radius: width / 2
-      color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoverColor : root.alpha(root.crust, 0.7)
+      color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoveredColor(root.alpha(root.crust, 0.7)) : root.alpha(root.crust, 0.7)
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Text {
@@ -2948,7 +2965,7 @@ ShellRoot {
       height: 30
       radius: width / 2
       opacity: connectivityRow.toggleEnabled ? 1 : 0.42
-      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoverColor : root.wellColor
+      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoveredColor(root.wellColor) : root.wellColor
       border.width: connectivityRow.active ? 0 : 1
       border.color: root.edgeLight
       antialiasing: true
@@ -3041,7 +3058,7 @@ ShellRoot {
 
     radius: root.radius
     opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? 0.45 : 1
-    color: controlTileMouse.pressed ? root.pressColor : controlTile.active ? root.activeTint : controlTileMouse.containsMouse ? root.hoverColor : root.cardColor
+    color: controlTileMouse.pressed ? root.pressColor : controlTile.active ? root.activeTint : controlTileMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     CardEdge {}
@@ -3300,7 +3317,7 @@ ShellRoot {
       width: controlGrid.mediaSize
       height: controlGrid.controlsHeight
       radius: root.radius
-      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudioMouse.containsMouse ? root.hoverColor : root.cardColor
+      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudioMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
       Behavior on color { ColorAnimation { duration: root.durationFast } }
       opacity: root.dragModule === "audio" ? 0.45 : 1
 
@@ -3396,7 +3413,7 @@ ShellRoot {
       height: Math.max(60, notificationText.implicitHeight + 18)
       radius: root.radius
       color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
-        : notificationEntry.actionable && notificationOpenMouse.containsMouse ? root.hoverColor
+        : notificationEntry.actionable && notificationOpenMouse.containsMouse ? root.hoveredColor(root.cardColor)
         : root.cardColor
 
       CardEdge {}
@@ -3618,7 +3635,12 @@ ShellRoot {
     height: mediaButton.flat ? 32 : 28
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
-    color: mediaButtonMouse.pressed ? root.pressColor : mediaButtonMouse.containsMouse ? root.hoverColor : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
+    color: mediaButtonMouse.pressed ? root.pressColor
+      : mediaButtonMouse.containsMouse
+        ? mediaButton.flat
+          ? root.hoverColor
+          : root.hoveredColor(mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor)
+        : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     Text {
@@ -4643,7 +4665,7 @@ ShellRoot {
               width: 84
               height: root.controlHeight
               radius: root.radius
-              color: todayMouse.pressed ? root.pressColor : todayMouse.containsMouse ? root.hoverColor : root.cardColor
+              color: todayMouse.pressed ? root.pressColor : todayMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -4856,7 +4878,7 @@ ShellRoot {
                 id: pinTimezoneButton
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 38; height: 30; radius: root.radius
-                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: pinTimezoneMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pinTimezone(timezoneRow.modelData.id) }
@@ -4917,7 +4939,7 @@ ShellRoot {
             Rectangle {
               width: 72; height: 26; radius: root.radius
               anchors.verticalCenter: parent.verticalCenter
-              color: trayHideMouse.pressed ? root.pressColor : trayHideMouse.containsMouse ? root.hoverColor : root.cardColor
+              color: trayHideMouse.pressed ? root.pressColor : trayHideMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text {
                 anchors.centerIn: parent
@@ -5147,7 +5169,7 @@ ShellRoot {
                   required property var modelData
                   readonly property string status: root.agentStatus(modelData.id)
                   width: (parent.width - 8) / 2; height: 68; radius: root.radius
-                  color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoverColor : root.cardColor
+                  color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                   border.color: status === "input" ? root.yellow : status === "working" ? root.accent : status === "finished" ? root.green : root.cardBorder
                   border.width: status === "idle" ? 1 : 2
@@ -5248,7 +5270,7 @@ ShellRoot {
                     : root.agentMetricPeriod === modelData.id
                       ? root.selectedColor
                       : metricPeriodMouse.containsMouse
-                        ? root.hoverColor
+                        ? root.hoveredColor(root.cardColor)
                         : root.cardColor
                   border.width: 1
                   border.color: root.agentMetricPeriod === modelData.id ? root.alpha(root.accent, 0.4) : root.cardBorder
@@ -5749,7 +5771,7 @@ ShellRoot {
                 Rectangle {
                   anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                   width: 64; height: 24; radius: root.radius
-                  color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoverColor : root.cardColor
+                  color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                   Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                   RefreshGlyph { visible: speedtestProcess.running; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
@@ -5794,7 +5816,7 @@ ShellRoot {
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
                 width: (parent.width - 16) / 3; height: 38; radius: root.radius
-                color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: root.textLead }
@@ -5847,7 +5869,7 @@ ShellRoot {
             readonly property bool busy: root.controlBusy("tailscale", action)
             readonly property bool failed: root.controlFailed("tailscale", action)
             width: parent.width; height: 66; radius: root.radius
-            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleMenuMouse.containsMouse ? root.hoverColor : state.connected ? root.activeTint : root.cardColor
+            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleMenuMouse.containsMouse ? root.hoveredColor(state.connected ? root.activeTint : root.cardColor) : state.connected ? root.activeTint : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             CardEdge {}
             MouseArea {
@@ -5921,7 +5943,7 @@ ShellRoot {
                     readonly property bool busy: root.controlBusy("ssh-server", modelData.mode)
                     width: (parent.width - 12) / 3; height: root.chipHeight; radius: root.radius
                     opacity: modelData.available ? 1 : 0.42
-                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoverColor : root.cardColor
+                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                     Behavior on color { ColorAnimation { duration: root.durationFast } }
                     Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                     RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
@@ -5961,7 +5983,7 @@ ShellRoot {
               Rectangle {
                 width: 32; height: 32; radius: root.radius
                 anchors.verticalCenter: parent.verticalCenter
-                color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "󰏌"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
                 MouseArea { id: protonAppMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("proton-vpn", "open") }
@@ -6104,7 +6126,7 @@ ShellRoot {
               readonly property bool forgetArmed: root.bluetoothForget === modelData.address
               readonly property bool rowActions: !busy && modelData.paired && (deviceMouse.containsMouse || forgetMouse.containsMouse || autoConnectMouse.containsMouse || forgetArmed)
               width: ListView.view.width; height: root.rowHeight; radius: root.radius
-              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : deviceMouse.containsMouse ? root.hoverColor : modelData.connected ? root.activeTint : root.rowColor
+              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : deviceMouse.containsMouse ? root.hoveredColor(modelData.connected ? root.activeTint : root.rowColor) : modelData.connected ? root.activeTint : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
@@ -6146,7 +6168,7 @@ ShellRoot {
                 anchors.rightMargin: 38
                 anchors.verticalCenter: parent.verticalCenter
                 width: 44; height: 24; radius: root.radius
-                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : autoConnectMouse.containsMouse ? root.hoverColor : root.floatColor
+                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : autoConnectMouse.containsMouse ? root.hoveredColor(root.floatColor) : root.floatColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "Auto"; color: modelData.trusted ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: autoConnectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runBluetooth("trust", modelData.address) }
@@ -6311,7 +6333,7 @@ ShellRoot {
               width: (pairingCard.width - 8) / 2
               height: 30
               radius: root.radius
-              color: pairingAcceptMouse.pressed ? root.pressColor : pairingAcceptMouse.containsMouse ? root.hoverColor : root.selectedColor
+              color: pairingAcceptMouse.pressed ? root.pressColor : pairingAcceptMouse.containsMouse ? root.hoveredColor(root.selectedColor) : root.selectedColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "Confirm"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
               MouseArea { id: pairingAcceptMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.answerBluetoothPairing("accept", pairingCodeField.text) }
@@ -6324,7 +6346,7 @@ ShellRoot {
             width: parent.width
             height: 30
             radius: root.radius
-            color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoverColor : root.floatColor
+            color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoveredColor(root.floatColor) : root.floatColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { anchors.centerIn: parent; text: "Dismiss"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
             MouseArea { id: pairingDismissMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearBluetoothPairing() }
@@ -6384,7 +6406,7 @@ ShellRoot {
                 readonly property bool failed: root.controlFailed("airpods", modelData.mode)
                 readonly property bool selected: headphones.noiseMode === modelData.mode
                 width: (parent.width - 18) / 4; height: root.rowHeight; radius: root.radius
-                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
@@ -6415,7 +6437,7 @@ ShellRoot {
             readonly property bool complete: root.controlCompleted("airpods", "open")
             readonly property bool failed: root.controlFailed("airpods", "open")
             width: parent.width; height: 38; radius: root.radius
-            color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoverColor : root.cardColor
+            color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : nothingHeadphones ? "More Nothing controls" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
@@ -6587,7 +6609,7 @@ ShellRoot {
             width: parent.width; spacing: 8
             Rectangle {
               width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : historyMouse.containsMouse ? root.hoverColor : root.cardColor
+              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : historyMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text {
                 anchors.centerIn: parent
@@ -6605,7 +6627,7 @@ ShellRoot {
               readonly property bool complete: root.controlCompleted("notifications", "clear")
               readonly property bool failed: root.controlFailed("notifications", "clear")
               width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoverColor : root.cardColor
+              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
@@ -6691,7 +6713,7 @@ ShellRoot {
               required property var modelData
               readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
               width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoverColor : root.rowColor
+              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoveredColor(root.rowColor) : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
@@ -6758,7 +6780,7 @@ ShellRoot {
                 readonly property bool complete: root.controlCompleted(modelData.action, device)
                 readonly property bool failed: root.controlFailed(modelData.action, device)
                 width: (parent.width - 8) / 2; height: 42; radius: root.radius
-                color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
@@ -6818,7 +6840,7 @@ ShellRoot {
               Rectangle {
                 required property var modelData
                 width: (parent.width - 16) / 3; height: 72; radius: root.radius
-                color: modelData.variant === "destructive" ? (sessionActionMouse.pressed ? root.dangerPress : sessionActionMouse.containsMouse ? root.dangerColor : root.dangerTint) : sessionActionMouse.pressed ? root.pressColor : sessionActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                color: modelData.variant === "destructive" ? (sessionActionMouse.pressed ? root.dangerPress : sessionActionMouse.containsMouse ? root.dangerColor : root.dangerTint) : sessionActionMouse.pressed ? root.pressColor : sessionActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 CardEdge { border.color: modelData.variant === "destructive" ? root.alpha(root.red, 0.22) : root.cardBorder }
                 Column {
