@@ -111,10 +111,14 @@ fn subtree_ticks(root: u32) -> Option<u64> {
             }
         }
     }
+    Some(subtree_ticks_in(root, &processes))
+}
+
+fn subtree_ticks_in(root: u32, processes: &[(u32, u32, u64)]) -> u64 {
     let mut members = HashSet::from([root]);
     loop {
         let before = members.len();
-        for (pid, parent, _) in &processes {
+        for (pid, parent, _) in processes {
             if members.contains(parent) {
                 members.insert(*pid);
             }
@@ -123,13 +127,11 @@ fn subtree_ticks(root: u32) -> Option<u64> {
             break;
         }
     }
-    Some(
-        processes
+    processes
             .iter()
             .filter(|(pid, _, _)| members.contains(pid))
             .map(|(_, _, ticks)| ticks)
-            .sum(),
-    )
+            .sum()
 }
 
 fn write_run_state(
@@ -640,6 +642,7 @@ fn sampled_harnesses() -> Vec<Value> {
 
 fn running_harnesses() -> Vec<(u32, String, u64)> {
     let mut roots = HashMap::new();
+    let mut processes = Vec::new();
     let Ok(entries) = fs::read_dir("/proc") else {
         return Vec::new();
     };
@@ -647,6 +650,9 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
+        if let Some((parent, ticks)) = proc_stat(pid) {
+            processes.push((pid, parent, ticks));
+        }
         let mut name = process_name(pid);
         if !matches!(name.as_str(), "pi" | "opencode" | "codex" | "claude") {
             let bytes = fs::read(entry.path().join("cmdline")).unwrap_or_default();
@@ -665,7 +671,7 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
     }
     roots
         .into_iter()
-        .filter_map(|(pid, name)| subtree_ticks(pid).map(|ticks| (pid, name, ticks)))
+        .map(|(pid, name)| (pid, name, subtree_ticks_in(pid, &processes)))
         .collect()
 }
 
@@ -682,4 +688,12 @@ mod tests {
         assert_eq!(sampled_idle(Some(&last), 42, 99), 0);
         assert_eq!(sampled_idle(None, 42, 100), 0);
     }
+    #[test]
+    fn one_snapshot_accounts_for_each_harness_and_its_descendants() {
+        let processes = [(30, 20, 7), (20, 10, 5), (10, 1, 3), (40, 1, 11)];
+        assert_eq!(subtree_ticks_in(10, &processes), 15);
+        assert_eq!(subtree_ticks_in(20, &processes), 12);
+        assert_eq!(subtree_ticks_in(40, &processes), 11);
+    }
+
 }
