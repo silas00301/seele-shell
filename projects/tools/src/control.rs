@@ -1323,18 +1323,16 @@ pub fn run(arguments: &[String]) -> Result {
             child.stdin.take().unwrap().write_all(ip.as_bytes())?;
             child.wait()?;
         }
-        "lock" => {
-            status(
+        "lock" | "lock-suspend" => {
+            if !status(
                 &env::var("SEELE_LOCK").unwrap_or_else(|_| "seele-lock".into()),
                 std::iter::empty::<&str>(),
-            );
-        }
-        "lock-suspend" => {
-            status(
-                &env::var("SEELE_LOCK").unwrap_or_else(|_| "seele-lock".into()),
-                std::iter::empty::<&str>(),
-            );
-            status("systemctl", ["suspend"]);
+            ) {
+                return Err("could not secure the session".into());
+            }
+            if command == "lock-suspend" && !status("systemctl", ["suspend"]) {
+                return Err("could not suspend the session".into());
+            }
         }
         "logout" => {
             status("hyprctl", ["dispatch", "exit"]);
