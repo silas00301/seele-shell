@@ -60,7 +60,10 @@ pub fn detached(program: &str, arguments: &[String]) -> Result {
             Ok(())
         });
     }
-    command.spawn()?;
+    let mut child = command.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
@@ -132,4 +135,31 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result {
 
 pub fn process_alive(pid: u32) -> bool {
     Path::new("/proc").join(pid.to_string()).exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detached_child_is_reaped_without_blocking_the_caller() {
+        let path = std::env::temp_dir().join(format!("seele-detached-test-{}", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let started = std::time::Instant::now();
+        detached("sh", &["-c".into(), "echo $$ > \"$1\"; sleep 0.2".into(), "sh".into(), path.to_string_lossy().into_owned()]).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_millis(150));
+        let deadline = started + std::time::Duration::from_secs(3);
+        let pid = loop {
+            if let Ok(text) = fs::read_to_string(&path) {
+                if let Ok(pid) = text.trim().parse::<u32>() { break pid; }
+            }
+            assert!(std::time::Instant::now() < deadline, "child never started");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let _ = fs::remove_file(path);
+        assert!(!process_alive(pid), "detached child remained a zombie");
+    }
 }
