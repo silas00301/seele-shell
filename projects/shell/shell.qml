@@ -160,6 +160,9 @@ ShellRoot {
   // durations so the whole shell settles at the same speed.
   readonly property int durationFast: 110
   readonly property int durationNormal: 180
+  // The media block is one object at one size, so its height is decided here
+  // rather than by whichever surface happens to be holding it.
+  readonly property int mediaBodyHeight: 148
 
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
@@ -3027,11 +3030,23 @@ ShellRoot {
       height: 30
       radius: width / 2
       opacity: connectivityRow.toggleEnabled ? 1 : 0.42
-      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : connectivityKnobMouse.containsMouse ? root.hoveredColor(root.wellColor) : root.wellColor
+      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : root.wellColor
       border.width: connectivityRow.active ? 0 : 1
       border.color: root.edgeLight
       antialiasing: true
       Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      // The pointer is reported in neutral light laid over whatever the knob is
+      // already saying, rather than as one more branch of its fill. A fill that
+      // asked `active` first could never report a pointer on a radio that was
+      // on, so the 30px at the head of every lit row answered nothing and the
+      // highlight only began once the pointer had crossed past it.
+      Rectangle {
+        anchors.fill: parent
+        radius: width / 2
+        color: connectivityKnobMouse.containsMouse ? root.hoverColor : root.clearColor
+        Behavior on color { ColorAnimation { duration: root.durationFast } }
+      }
 
       Text {
         visible: !connectivityRow.busy
@@ -3063,11 +3078,15 @@ ShellRoot {
     }
 
     Rectangle {
+      // Full row height. At 38 in a 40px row the highlight left a dead line
+      // above and below itself, which the 4px between rows widened into a 6px
+      // band the pointer crossed on its way from one row to the next — the
+      // highlight blinking out between two rows that look adjacent.
       anchors.left: connectivityKnob.right
       anchors.leftMargin: 4
       anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      height: 38
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
       radius: root.radius
       color: connectivityLabelMouse.pressed ? root.pressColor : connectivityLabelMouse.containsMouse ? root.hoverColor : root.clearColor
       Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -3161,7 +3180,7 @@ ShellRoot {
     readonly property real gap: root.spaceMedium
     readonly property real cellSize: (width - gap * 3) / 4
     readonly property real mediaSize: cellSize * 2 + gap
-    readonly property real mediaHeight: 148
+    readonly property real mediaHeight: root.mediaBodyHeight
     readonly property real controlSpacing: root.spaceTight
     readonly property real audioPadding: root.spaceLarge
     readonly property real audioSliderHeight: 46
@@ -3176,136 +3195,37 @@ ShellRoot {
       id: controlCenterMedia
 
       readonly property var player: root.nowPlayingPlayer()
+      // Every other module in the Control Center reports the pointer; this one
+      // is a module too — it drags to the menu bar and opens the media panel —
+      // and said nothing, so the largest card in the panel stayed dark while a
+      // transport button lit under the pointer crossing it. The transport, the
+      // art and the timeline are all hover areas over this fill, so the card
+      // asks a handler rather than the drag area beneath them.
+      readonly property bool hovered: controlCenterMediaHover.hovered
       width: parent.width
       height: controlGrid.mediaHeight
       radius: root.radius
-      color: root.cardColor
+      color: controlCenterMediaMouse.pressed ? root.pressColor
+        : controlCenterMedia.hovered ? root.hoverColor
+        : root.cardColor
       opacity: root.dragModule === "media" ? 0.45 : 1
+
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverHandler { id: controlCenterMediaHover }
 
       CardEdge {}
 
       ModuleDragArea {
+        id: controlCenterMediaMouse
         module: "media"
         cursorShape: Qt.ArrowCursor
         onActivated: root.toggleMedia(controlCenterMedia.player, controlGrid.screenName)
       }
 
-      Item {
-        id: controlCenterMediaArtFrame
-
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.margins: 12
-        width: height
-
-        Image {
-          id: controlCenterMediaArt
-
-          anchors.fill: parent
-          visible: false
-          source: controlCenterMedia.player ? String(controlCenterMedia.player.trackArtUrl || "") : ""
-          fillMode: Image.PreserveAspectCrop
-          sourceSize.width: width * 3
-          sourceSize.height: height * 3
-          smooth: true
-          mipmap: true
-          asynchronous: true
-          cache: true
-        }
-
-        RoundedSource {
-          anchors.fill: parent
-          source: controlCenterMediaArt
-          radius: root.radiusSmall
-          visible: controlCenterMediaArt.status === Image.Ready
-        }
-
-        Rectangle {
-          anchors.fill: parent
-          visible: controlCenterMediaArt.status !== Image.Ready
-          radius: root.radiusSmall
-          color: root.wellColor
-          Text {
-            anchors.centerIn: parent
-            text: "󰎆"
-            color: controlCenterMedia.player ? root.accent : root.overlay
-            font.family: root.fontFamily
-            font.pixelSize: Math.round(parent.height * 0.26)
-          }
-        }
-      }
-
-      Item {
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.left: controlCenterMediaArtFrame.right
-        anchors.right: parent.right
-        anchors.topMargin: 12
-        anchors.bottomMargin: 9
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-
-        Text {
-          id: controlCenterMediaTitle
-
-          anchors.top: parent.top
-          anchors.left: parent.left
-          anchors.right: parent.right
-          text: controlCenterMedia.player ? (root.mediaTitle(controlCenterMedia.player) || "Unknown track") : "Not Playing"
-          elide: Text.ElideRight
-          color: root.text
-          font.family: root.fontFamily
-          font.pixelSize: root.textStrong
-          font.weight: root.weightStrong
-        }
-
-        Text {
-          visible: text !== ""
-          anchors.top: controlCenterMediaTitle.bottom
-          anchors.topMargin: 2
-          anchors.left: parent.left
-          anchors.right: parent.right
-          text: controlCenterMedia.player ? root.mediaSubtitle(controlCenterMedia.player) : ""
-          elide: Text.ElideRight
-          color: root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textCaption
-        }
-
-        Row {
-          anchors.horizontalCenter: parent.horizontalCenter
-          anchors.verticalCenter: parent.verticalCenter
-          anchors.verticalCenterOffset: 4
-          spacing: 9
-
-          MediaButton {
-            flat: true
-            icon: "󰒮"
-            enabled: !!controlCenterMedia.player && controlCenterMedia.player.canGoPrevious
-            onActivated: controlCenterMedia.player.previous()
-          }
-          MediaButton {
-            flat: true
-            icon: controlCenterMedia.player && controlCenterMedia.player.isPlaying ? "󰏤" : "󰐊"
-            primary: true
-            enabled: !!controlCenterMedia.player
-            onActivated: controlCenterMedia.player.togglePlaying()
-          }
-          MediaButton {
-            flat: true
-            icon: "󰒭"
-            enabled: !!controlCenterMedia.player && controlCenterMedia.player.canGoNext
-            onActivated: controlCenterMedia.player.next()
-          }
-        }
-
-        MediaTimeline {
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.bottom: parent.bottom
-          player: controlCenterMedia.player
-        }
+      MediaBody {
+        anchors.fill: parent
+        player: controlCenterMedia.player
       }
     }
 
@@ -3374,14 +3294,25 @@ ShellRoot {
     }
 
     Rectangle {
+      id: controlCenterAudio
+
+      // The two level tracks cover all of this card but its padding, and each
+      // is a hover area of its own, so the card asks a handler whether the
+      // pointer is on it. Reading the drag area underneath meant the tint was
+      // lit only in the margins around the sliders and went out across the
+      // sliders themselves — the card blinking under a pointer crossing it.
+      readonly property bool hovered: controlCenterAudioHover.hovered
+
       x: controlGrid.mediaSize + controlGrid.gap
       y: controlGrid.controlsY
       width: controlGrid.mediaSize
       height: controlGrid.controlsHeight
       radius: root.radius
-      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudioMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudio.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
       Behavior on color { ColorAnimation { duration: root.durationFast } }
       opacity: root.dragModule === "audio" ? 0.45 : 1
+
+      HoverHandler { id: controlCenterAudioHover }
 
       CardEdge {}
 
@@ -3861,6 +3792,140 @@ ShellRoot {
       onTriggered: mediaTimeline.tick++
     }
   }
+
+  // The media block — art, title, transport, timeline — as one object. The
+  // Control Center module and the Now Playing panel it opens used to arrange
+  // the same parts differently: different art size and corner, a different type
+  // ramp, a filled transport against a flat one, and a timeline that ran the
+  // full width under the art here and beside it there. They draw this instead,
+  // so the module and the panel are the same presentation at the same size.
+  component MediaBody: Item {
+    id: mediaBody
+
+    property var player: null
+
+    implicitHeight: root.mediaBodyHeight
+
+    Item {
+      id: mediaBodyArtFrame
+
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.left: parent.left
+      anchors.margins: 12
+      width: height
+
+      Image {
+        id: mediaBodyArt
+
+        anchors.fill: parent
+        visible: false
+        source: mediaBody.player ? String(mediaBody.player.trackArtUrl || "") : ""
+        fillMode: Image.PreserveAspectCrop
+        sourceSize.width: width * 3
+        sourceSize.height: height * 3
+        smooth: true
+        mipmap: true
+        asynchronous: true
+        cache: true
+      }
+
+      RoundedSource {
+        anchors.fill: parent
+        source: mediaBodyArt
+        radius: root.radius
+        visible: mediaBodyArt.status === Image.Ready
+      }
+
+      Rectangle {
+        anchors.fill: parent
+        visible: mediaBodyArt.status !== Image.Ready
+        radius: root.radius
+        color: root.wellColor
+
+        Text {
+          anchors.centerIn: parent
+          text: "󰎆"
+          color: mediaBody.player ? root.accent : root.overlay
+          font.family: root.fontFamily
+          font.pixelSize: Math.round(parent.height * 0.26)
+        }
+      }
+    }
+
+    Item {
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.left: mediaBodyArtFrame.right
+      anchors.right: parent.right
+      anchors.topMargin: 12
+      anchors.bottomMargin: 9
+      anchors.leftMargin: 12
+      anchors.rightMargin: 12
+
+      Text {
+        id: mediaBodyTitle
+
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        text: mediaBody.player ? (root.mediaTitle(mediaBody.player) || "Unknown track") : "Nothing playing"
+        elide: Text.ElideRight
+        color: root.text
+        font.family: root.fontFamily
+        font.pixelSize: root.textStrong
+        font.weight: root.weightStrong
+      }
+
+      Text {
+        visible: text !== ""
+        anchors.top: mediaBodyTitle.bottom
+        anchors.topMargin: 2
+        anchors.left: parent.left
+        anchors.right: parent.right
+        text: mediaBody.player ? root.mediaSubtitle(mediaBody.player) : "Start a track to see it here"
+        elide: Text.ElideRight
+        color: root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textCaption
+      }
+
+      Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: 4
+        spacing: root.spaceMedium
+
+        MediaButton {
+          flat: true
+          icon: "󰒮"
+          enabled: !!mediaBody.player && mediaBody.player.canGoPrevious
+          onActivated: mediaBody.player.previous()
+        }
+        MediaButton {
+          flat: true
+          icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
+          primary: true
+          enabled: !!mediaBody.player
+          onActivated: mediaBody.player.togglePlaying()
+        }
+        MediaButton {
+          flat: true
+          icon: "󰒭"
+          enabled: !!mediaBody.player && mediaBody.player.canGoNext
+          onActivated: mediaBody.player.next()
+        }
+      }
+
+      MediaTimeline {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        player: mediaBody.player
+      }
+    }
+  }
+
 
   Timer {
     id: volumeDragTimer
@@ -5661,108 +5726,9 @@ ShellRoot {
 
           PanelHeader { width: parent.width; glyph: "󰎆"; title: "Now Playing" }
 
-          Row {
+          MediaBody {
             width: parent.width
-            height: 150
-            spacing: 14
-
-            Item {
-              width: 150
-              height: 150
-
-              Image {
-                id: mediaPanelArt
-
-                anchors.fill: parent
-                visible: false
-                source: mediaWindow.player ? String(mediaWindow.player.trackArtUrl || "") : ""
-                fillMode: Image.PreserveAspectCrop
-                sourceSize.width: width * 2
-                sourceSize.height: height * 2
-                smooth: true
-                mipmap: true
-                asynchronous: true
-                cache: true
-              }
-
-              RoundedSource {
-                anchors.fill: parent
-                source: mediaPanelArt
-                radius: root.radius
-                visible: mediaPanelArt.status === Image.Ready
-              }
-
-              Rectangle {
-                anchors.fill: parent
-                visible: mediaPanelArt.status !== Image.Ready
-                radius: root.radius
-                color: root.wellColor
-                Text {
-                  anchors.centerIn: parent
-                  text: "󰎆"
-                  color: mediaWindow.player ? root.accent : root.overlay
-                  font.family: root.fontFamily
-                  font.pixelSize: Math.round(parent.height * 0.26)
-                }
-              }
-            }
-
-            Item {
-              width: parent.width - 164
-              height: parent.height
-
-              Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                spacing: 4
-
-                Text {
-                  width: parent.width
-                  text: mediaWindow.player ? (root.mediaTitle(mediaWindow.player) || "Unknown track") : "Nothing playing"
-                  elide: Text.ElideRight
-                  color: mediaWindow.player ? root.text : root.subtext
-                  font.family: root.fontFamily
-                  font.pixelSize: root.textSubhead
-                  font.weight: root.weightStrong
-                }
-                Text {
-                  width: parent.width
-                  text: mediaWindow.player ? root.mediaSubtitle(mediaWindow.player) : "Start a track to see it here"
-                  elide: Text.ElideRight
-                  color: root.subtext
-                  font.family: root.fontFamily
-                  font.pixelSize: root.textBody
-                }
-              }
-
-              Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                spacing: 8
-
-                MediaButton {
-                  icon: "󰒮"
-                  enabled: !!mediaWindow.player && mediaWindow.player.canGoPrevious
-                  onActivated: mediaWindow.player.previous()
-                }
-                MediaButton {
-                  icon: mediaWindow.player && mediaWindow.player.isPlaying ? "󰏤" : "󰐊"
-                  primary: true
-                  enabled: !!mediaWindow.player
-                  onActivated: mediaWindow.player.togglePlaying()
-                }
-                MediaButton {
-                  icon: "󰒭"
-                  enabled: !!mediaWindow.player && mediaWindow.player.canGoNext
-                  onActivated: mediaWindow.player.next()
-                }
-              }
-            }
-          }
-
-          MediaTimeline {
-            width: parent.width
+            height: root.mediaBodyHeight
             player: mediaWindow.player
           }
         }
@@ -6056,9 +6022,16 @@ ShellRoot {
             readonly property string action: state.connected ? "down" : state.needsLogin ? "login" : "up"
             readonly property bool busy: root.controlBusy("tailscale", action)
             readonly property bool failed: root.controlFailed("tailscale", action)
+            // The click area stops short of the switch on purpose — tapping the
+            // switch toggles Tailscale rather than opening its menu — but the
+            // pointer is still on the card there, and the switch is a hover
+            // area besides, so the tint comes from a handler over the whole
+            // card. It still only lights where there is a menu to open.
+            readonly property bool hovered: tailscaleCardHover.hovered && !!tailscaleCard.trayItem
             width: parent.width; height: 66; radius: root.radius
-            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleMenuMouse.containsMouse ? root.hoveredColor(state.connected ? root.activeTint : root.cardColor) : state.connected ? root.activeTint : root.cardColor
+            color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleCard.hovered ? root.hoveredColor(state.connected ? root.activeTint : root.cardColor) : state.connected ? root.activeTint : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
+            HoverHandler { id: tailscaleCardHover }
             CardEdge {}
             MouseArea {
               id: tailscaleMenuMouse

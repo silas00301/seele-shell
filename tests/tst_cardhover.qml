@@ -15,8 +15,11 @@ TestCase {
   width: 300; height: 120
   visible: true
 
-  // A card carrying a button on top of its own pointer area, as a notification
-  // entry carries dismiss and a Bluetooth row carries Auto.
+  // A card carrying a control on top of its own pointer area, as the Control
+  // Center's audio card carries its two level tracks, a notification entry
+  // carries dismiss, and a Bluetooth row carries Auto. The control does not
+  // have to be written inline: the audio card's came from a `ControlLevel`
+  // instantiation, which is how this shape hid the longest.
   Rectangle {
     id: card
 
@@ -28,8 +31,10 @@ TestCase {
 
     MouseArea { id: cardMouse; anchors.fill: parent; hoverEnabled: true }
 
+    // Sized like a level track rather than a button: nearly the whole card, so
+    // the card would be cold almost everywhere a pointer could land on it.
     Rectangle {
-      width: 40; height: 24; x: 240; y: 10
+      width: 280; height: 30; x: 10; y: 10
       MouseArea { id: actionMouse; anchors.fill: parent; hoverEnabled: true }
     }
   }
@@ -49,11 +54,11 @@ TestCase {
   }
 
   function test_card_keeps_the_pointer_over_its_own_button() {
-    mouseMove(card, 20, 25)
+    mouseMove(card, 150, 45)
     verify(card.hovered, "the card reports a pointer on the card")
     verify(cardMouse.containsMouse, "and so does the area under it, so far")
 
-    mouseMove(card, 260, 20)
+    mouseMove(card, 150, 20)
     verify(actionMouse.containsMouse, "the pointer is on the button")
     compare(cardMouse.containsMouse, false,
       "the button has taken the hover from the area below it")
@@ -68,7 +73,7 @@ TestCase {
   }
 
   function test_hover_still_ends_at_the_edge() {
-    mouseMove(card, 20, 25)
+    mouseMove(card, 150, 45)
     verify(card.hovered)
     mouseMove(row, 20, 20)
     verify(!card.hovered, "the card lets go once the pointer is off it")
