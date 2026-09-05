@@ -158,6 +158,10 @@ ShellRoot {
   // focused monitor instead would move an open panel to another output the
   // moment the pointer crossed a screen edge.
   property string overlayScreen: ""
+  // Horizontal center of the menu bar item that opened the current overlay.
+  // Panels keep that center until it would put them closer to a screen edge
+  // than Hyprland puts ordinary windows.
+  property real overlayAnchorX: -1
   property string osdScreen: ""
   property string notificationPopupScreen: ""
   property string controlPanel: ""
@@ -330,6 +334,22 @@ ShellRoot {
     return controlPanel === panel && pinnedScreen(overlayScreen, screen)
   }
 
+  function barItemCenter(item) {
+    if (!item) return -1
+    return item.mapToItem(null, item.width / 2, item.height / 2).x
+  }
+
+  function panelLeft(screen, panelWidth) {
+    var rightmost = screen.width - panelWidth - panelGap
+    var requested = overlayAnchorX >= 0 ? overlayAnchorX - panelWidth / 2 : rightmost
+    return Math.max(panelGap, Math.min(requested, rightmost))
+  }
+
+  function requestedOverlayAnchor(anchorX) {
+    var requested = Number(anchorX)
+    return !isNaN(requested) && requested >= 0 ? requested : overlayAnchorX
+  }
+
   function agentsHere(screen) {
     return agentsOpen && pinnedScreen(overlayScreen, screen)
   }
@@ -345,6 +365,7 @@ ShellRoot {
     controlPanel = ""
     mediaPanelPlayer = null
     overlayScreen = ""
+    overlayAnchorX = -1
     closeTrayMenu()
     windowsCountdown = -1
     windowsTimer.stop()
@@ -358,32 +379,38 @@ ShellRoot {
     Quickshell.execDetached(["seele-control", "launcher-toggle"])
   }
 
-  function toggleAgents(screen) {
+  function toggleAgents(screen, anchorX) {
     var shouldOpen = !agentsOpen
+    var nextAnchor = requestedOverlayAnchor(anchorX)
     closeOverlays()
     agentsOpen = shouldOpen
     if (!agentsOpen) return
     overlayScreen = screen || currentScreen()
+    overlayAnchorX = nextAnchor
     if (!agentData.generatedAt || agentError !== "") refreshAgents()
   }
 
-  function toggleControl(panel, screen) {
+  function toggleControl(panel, screen, anchorX) {
     var shouldOpen = controlPanel !== panel
+    var nextAnchor = requestedOverlayAnchor(anchorX)
     closeOverlays()
     controlPanel = shouldOpen ? panel : ""
     if (controlPanel === "") return
     overlayScreen = screen || currentScreen()
+    overlayAnchorX = nextAnchor
     refreshStatus()
   }
 
-  function toggleMedia(player, screen) {
+  function toggleMedia(player, screen, anchorX) {
     var samePlayer = root.controlPanel === "media" && root.mediaPanelPlayer === player
     var shouldOpen = !!player && !(samePlayer && root.overlayScreen === (screen || root.currentScreen()))
+    var nextAnchor = requestedOverlayAnchor(anchorX)
     root.closeOverlays()
     if (!shouldOpen) return
     root.mediaPanelPlayer = player
     root.controlPanel = "media"
     root.overlayScreen = screen || root.currentScreen()
+    root.overlayAnchorX = nextAnchor
   }
 
   function toggleControls() {
@@ -854,15 +881,17 @@ ShellRoot {
     return null
   }
 
-  function openTrayItemMenu(item, screen) {
+  function openTrayItemMenu(item, screen, anchorX) {
     if (!item) return false
     if (item.menu) {
       var sameMenu = root.trayMenuOpen && root.activeTrayItem === item
+      var nextAnchor = requestedOverlayAnchor(anchorX)
       root.closeOverlays()
       if (!sameMenu) {
         root.activeTrayItem = item
         root.trayMenuOpen = true
         root.overlayScreen = screen || root.currentScreen()
+        root.overlayAnchorX = nextAnchor
       }
     } else {
       root.closeOverlays()
@@ -4012,7 +4041,7 @@ ShellRoot {
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name) }
+            MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: clockMouse; text: "Time zones" }
           }
 
@@ -4028,7 +4057,7 @@ ShellRoot {
               font.family: root.fontFamily
               font.pixelSize: root.textStrong
             }
-            MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name) }
+            MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
           }
 
@@ -4092,7 +4121,7 @@ ShellRoot {
               width: 9; height: 9; radius: 4.5
               color: root.iosGreen
             }
-            MouseArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("camera", barWindow.modelData.name) }
+            MouseArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("camera", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: cameraActiveIndicator; text: "Camera in use" }
           }
 
@@ -4143,7 +4172,7 @@ ShellRoot {
                 text: root.mediaLabel(parent.parent.player)
               }
             }
-            BarModuleArea { id: deviceMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name) }
+            BarModuleArea { id: deviceMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: deviceMediaMouse; text: root.mediaLabel(deviceMediaItem.player) }
           }
 
@@ -4174,7 +4203,7 @@ ShellRoot {
                 text: root.mediaLabel(parent.parent.player)
               }
             }
-            BarModuleArea { id: spotifyMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name) }
+            BarModuleArea { id: spotifyMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: spotifyMediaMouse; text: root.mediaLabel(spotifyMediaItem.player) }
           }
 
@@ -4209,7 +4238,7 @@ ShellRoot {
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                 preventStealing: true
                 function openContextMenu() {
-                  root.openTrayItemMenu(parent.modelData, barWindow.modelData.name)
+                  root.openTrayItemMenu(parent.modelData, barWindow.modelData.name, root.barItemCenter(parent))
                 }
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.MiddleButton) root.toggleTrayItemHidden(parent.modelData)
@@ -4254,7 +4283,7 @@ ShellRoot {
             hovered: cameraMouse.containsMouse
             active: root.panelHere("camera", barWindow.modelData)
             Text { anchors.centerIn: parent; text: root.systemData.cameraActive ? "󰄀" : "󰄁"; color: root.systemData.cameraActive ? root.red : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-            BarModuleArea { id: cameraMouse; module: "camera"; onActivated: root.toggleControl("camera", barWindow.modelData.name) }
+            BarModuleArea { id: cameraMouse; module: "camera"; onActivated: root.toggleControl("camera", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: cameraMouse; text: root.systemData.cameraActive ? "Camera in use" : "Camera" }
           }
 
@@ -4304,7 +4333,7 @@ ShellRoot {
                   }
                 }
               }
-              MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleAgents(barWindow.modelData.name) }
+              MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent)) }
               HoverTip { mouse: agentBadgeMouse; text: modelData.name + " · " + (modelData.status === "input" ? "needs input" : modelData.status) }
             }
           }
@@ -4368,7 +4397,7 @@ ShellRoot {
               onPressed: function(mouse) {
                 if (mouse.button === Qt.RightButton) root.runAgent("pi", "")
                 else if (mouse.button === Qt.MiddleButton) root.refreshAgents()
-                else root.toggleAgents(barWindow.modelData.name)
+                else root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent))
               }
             }
             HoverTip { mouse: aiMouse; text: "AI cockpit · middle-click to refresh · right-click to launch Pi" }
@@ -4381,7 +4410,7 @@ ShellRoot {
             hovered: airpodsMouse.containsMouse
             active: root.panelHere("airpods", barWindow.modelData)
             HeadphonesIcon { anchors.centerIn: parent; kind: String((root.systemData.headphones || {}).kind || "airpods"); tint: root.accent }
-            BarModuleArea { id: airpodsMouse; module: "airpods"; onActivated: root.toggleControl("airpods", barWindow.modelData.name) }
+            BarModuleArea { id: airpodsMouse; module: "airpods"; onActivated: root.toggleControl("airpods", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: airpodsMouse; text: (root.systemData.headphones || {}).name || "Headphones" }
           }
 
@@ -4398,7 +4427,7 @@ ShellRoot {
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
-            BarModuleArea { id: bluetoothMouse; module: "bluetooth"; onActivated: root.toggleControl("bluetooth", barWindow.modelData.name) }
+            BarModuleArea { id: bluetoothMouse; module: "bluetooth"; onActivated: root.toggleControl("bluetooth", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: bluetoothMouse; text: "Bluetooth · " + (root.systemData.bluetoothPowered ? root.systemData.bluetoothConnected + " connected" : "off") }
           }
 
@@ -4415,7 +4444,7 @@ ShellRoot {
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
-            BarModuleArea { id: vpnMouse; module: "vpn"; onActivated: root.toggleControl("vpn", barWindow.modelData.name) }
+            BarModuleArea { id: vpnMouse; module: "vpn"; onActivated: root.toggleControl("vpn", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: vpnMouse; text: "VPN · " + root.privateNetworkDetail() }
           }
 
@@ -4432,7 +4461,7 @@ ShellRoot {
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
-            BarModuleArea { id: networkMouse; module: "network"; onActivated: root.toggleControl("network", barWindow.modelData.name) }
+            BarModuleArea { id: networkMouse; module: "network"; onActivated: root.toggleControl("network", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip {
               mouse: networkMouse
               text: "Network · " + (root.systemData.connection || "Disconnected")
@@ -4473,7 +4502,7 @@ ShellRoot {
                 if (mouse.button === Qt.MiddleButton) {
                   if (root.runControl("volume", "mute")) root.patchSystemData({ muted: !root.systemData.muted })
                 } else {
-                  root.toggleControl("audio", barWindow.modelData.name)
+                  root.toggleControl("audio", barWindow.modelData.name, root.barItemCenter(parent))
                 }
               }
               onWheel: function(wheel) { root.adjustAudioFromWheel(wheel, false) }
@@ -4486,7 +4515,7 @@ ShellRoot {
             hovered: controlCenterMouse.containsMouse
             active: root.panelHere("control-center", barWindow.modelData)
             Text { anchors.centerIn: parent; text: "󰘮"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-            MouseArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("control-center", barWindow.modelData.name) }
+            MouseArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("control-center", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: controlCenterMouse; text: "Control Center" }
           }
 
@@ -4502,7 +4531,7 @@ ShellRoot {
               Text { anchors.verticalCenter: parent.verticalCenter; text: root.systemData.dnd ? "󰂛" : "󰂚"; color: root.systemData.dnd ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
               Text { visible: Number(root.systemData.notifications.count || 0) > 0; anchors.verticalCenter: parent.verticalCenter; text: String(root.systemData.notifications.count); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption; font.weight: root.weightStrong }
             }
-            MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("notifications", barWindow.modelData.name) }
+            MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("notifications", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: notificationMouse; text: "Notifications · " + (root.systemData.dnd ? "do not disturb" : root.systemData.notifications.count || 0) }
           }
 
@@ -4534,7 +4563,7 @@ ShellRoot {
                 font.pixelSize: root.textLabel
               }
             }
-            MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("battery", barWindow.modelData.name) }
+            MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("battery", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: batteryMouse; text: "Battery · " + (batteryBarItem.entry ? batteryBarItem.entry.name + " " + Number(batteryBarItem.entry.percent) + "%" : "unavailable") }
           }
 
@@ -4560,7 +4589,7 @@ ShellRoot {
             hovered: sessionMouse.containsMouse
             active: root.panelHere("system", barWindow.modelData)
             Text { anchors.centerIn: parent; text: "󰐥"; color: root.windowsCountdown >= 0 ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-            MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("system", barWindow.modelData.name) }
+            MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("system", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: sessionMouse; text: "Power and session" }
           }
         }
@@ -4633,8 +4662,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "calendar" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true }
-      margins.top: root.barHeight + root.panelGap
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 390
       implicitHeight: Math.min(modelData.height - 60, 470)
       exclusionMode: ExclusionMode.Ignore
@@ -4776,8 +4805,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "clock" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true }
-      margins.top: root.barHeight + root.panelGap
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 430
       implicitHeight: Math.min(modelData.height - 60, 560)
       exclusionMode: ExclusionMode.Ignore
@@ -4897,8 +4926,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.trayMenuOpen && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 310
       implicitHeight: Math.min(420, root.panelMargin * 2 + root.controlHeight + root.spaceSmall
         + Math.max(1, trayMenuOpener.children.values.length) * 36)
@@ -5067,8 +5096,8 @@ ShellRoot {
       readonly property bool active: root.agentsOpen && root.pinnedScreen(root.overlayScreen, modelData)
       screen: modelData
       visible: true
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 500
       implicitHeight: Math.min(modelData.height - 60, 760)
       exclusionMode: ExclusionMode.Ignore
@@ -5406,8 +5435,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "control-center" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: 0; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: 0; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 400
       implicitHeight: controlCenterContent.implicitHeight + root.panelMargin * 2 + controlCenterWindow.barReach
       exclusionMode: ExclusionMode.Ignore
@@ -5452,8 +5481,8 @@ ShellRoot {
       readonly property var player: root.mediaPanelPlayer || root.nowPlayingPlayer()
       screen: modelData
       visible: root.controlPanel === "media" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 400
       implicitHeight: mediaContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -5593,8 +5622,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "audio" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 350
       implicitHeight: audioContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -5670,8 +5699,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "network" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 390
       implicitHeight: networkContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -5842,8 +5871,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "vpn" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 390
       implicitHeight: vpnContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -6014,8 +6043,8 @@ ShellRoot {
       readonly property int listHeight: Math.max(0, Math.min(6, devices.length) * 44 - root.spaceTight)
       screen: modelData
       visible: root.controlPanel === "bluetooth" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 360
       implicitHeight: bluetoothContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -6363,8 +6392,8 @@ ShellRoot {
       readonly property bool nothingHeadphones: headphones.kind === "nothing"
       screen: modelData
       visible: root.controlPanel === "airpods" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 340
       implicitHeight: headphonesContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -6458,8 +6487,8 @@ ShellRoot {
       readonly property int listHeight: Math.max(1, Math.min(5, entries.length)) * (batteryRowHeight + root.spaceSmall) - root.spaceSmall
       screen: modelData
       visible: root.controlPanel === "battery" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 330
       implicitHeight: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + listHeight
       exclusionMode: ExclusionMode.Ignore
@@ -6534,8 +6563,8 @@ ShellRoot {
       property int stableHeight: emptyHeight
       screen: modelData
       visible: root.controlPanel === "notifications" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 400
       implicitHeight: stableHeight
       exclusionMode: ExclusionMode.Ignore
@@ -6681,8 +6710,8 @@ ShellRoot {
       readonly property int deviceCount: (root.systemData.cameraDevices || []).length
       screen: modelData
       visible: root.controlPanel === "camera" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 360
       implicitHeight: cameraContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
@@ -6807,8 +6836,8 @@ ShellRoot {
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "system" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; right: true }
-      margins { top: root.barHeight + root.panelGap; right: root.panelGap }
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 420
       // Padding, header, gap, two rows of buttons and the gap between them.
       implicitHeight: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + 72 * 2 + root.spaceMedium
