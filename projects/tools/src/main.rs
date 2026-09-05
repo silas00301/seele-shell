@@ -7,6 +7,7 @@ mod grain;
 mod launch;
 mod mic_sync;
 mod nothing;
+mod notifications;
 mod receiver;
 mod session;
 mod shellctl;
