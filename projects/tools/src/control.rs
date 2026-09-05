@@ -1,6 +1,6 @@
 use crate::agents;
 use crate::command::{
-    atomic_write, config_home, detached, json_output, output, process_alive, runtime_home, status,
+    atomic_write, config_home, detached, json_output, output, process_alive, runtime_home, status, require_status,
 };
 use crate::nothing;
 use crate::Result;
@@ -371,10 +371,13 @@ fn tailscale_state() -> Value {
     json!({"available":true,"backend":backend,"connected":backend=="Running","needsLogin":backend=="NeedsLogin","name":raw.pointer("/Self/HostName").and_then(Value::as_str).unwrap_or(""),"ip":raw.pointer("/Self/TailscaleIPs/0").and_then(Value::as_str).unwrap_or(""),"tailnet":raw.pointer("/CurrentTailnet/Name").or_else(||raw.get("MagicDNSSuffix")).and_then(Value::as_str).unwrap_or(""),"peers":peers.map(|value|value.len()).unwrap_or(0),"onlinePeers":peers.map(|value|value.values().filter(|peer|peer["Online"].as_bool()==Some(true)).count()).unwrap_or(0)})
 }
 fn proton_state() -> Value {
-    if output("protonvpn", ["--help"]).is_none()
-        && !env::var_os("PATH")
-            .and_then(|paths| env::split_paths(&paths).find(|path| path.join("protonvpn").exists()))
-            .is_some()
+    if !env::var_os("PATH")
+        .map(|paths| env::split_paths(&paths).any(|path| {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(path.join("protonvpn"))
+                .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        }))
+        .unwrap_or(false)
     {
         return json!({"available":false,"connected":false,"connection":""});
     }
@@ -551,66 +554,6 @@ fn percent(text: &str) -> u64 {
         .unwrap_or(0)
 }
 
-fn audio_devices(dump: &Value) -> Vec<Value> {
-    let mut default_sink = String::new();
-    let mut default_source = String::new();
-    for object in dump.as_array().into_iter().flatten().filter(|object| {
-        object.get("type").and_then(Value::as_str) == Some("PipeWire:Interface:Metadata")
-            && object
-                .pointer("/props/metadata.name")
-                .and_then(Value::as_str)
-                == Some("default")
-    }) {
-        for item in object
-            .get("metadata")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let key = item["key"].as_str().unwrap_or("");
-            let name = item
-                .pointer("/value/name")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if key == "default.audio.sink" {
-                default_sink = name.into()
-            }
-            if key == "default.audio.source" {
-                default_source = name.into()
-            }
-        }
-    }
-    let mut values = Vec::new();
-    for object in dump.as_array().into_iter().flatten() {
-        let class = object
-            .pointer("/info/props/media.class")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if !matches!(class, "Audio/Sink" | "Audio/Source") {
-            continue;
-        }
-        let props = object.pointer("/info/props").unwrap_or(&Value::Null);
-        let node = props["node.name"].as_str().unwrap_or("");
-        let kind = if class == "Audio/Sink" {
-            "output"
-        } else {
-            "input"
-        };
-        values.push(json!({"id":object["id"],"kind":kind,"name":props["node.description"].as_str().or_else(||props["node.nick"].as_str()).or_else(||props["node.name"].as_str()).unwrap_or(""),"node":node,"profile":Value::Null,"default":if kind=="output"{node==default_sink}else{node==default_source}}));
-    }
-    values.sort_by_key(|value| {
-        (
-            value["kind"].as_str().unwrap_or("").to_owned(),
-            value["name"].as_str().unwrap_or("").to_ascii_lowercase(),
-        )
-    });
-    values
-}
-fn notification_state() -> Value {
-    let active = json_output("makoctl", ["list", "-j"], json!([]));
-    let history = json_output("makoctl", ["history", "-j"], json!([]));
-    json!({"count":active.as_array().map(Vec::len).unwrap_or(0),"items":active,"history":history})
-}
 fn tray_hidden() -> Value {
     fs::read_to_string(config_file("tray.json"))
         .ok()
@@ -754,7 +697,7 @@ fn status_value() -> Value {
     let tailscale = tailscale_state();
     let proton = proton_state();
     let ssh = ssh_state();
-    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":audio_devices(&dump),"agentStates":agents::aggregate_states(),"notifications":notification_state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
+    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":crate::audio::devices(&dump),"agentStates":agents::aggregate_states(),"notifications":crate::notifications::state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
 }
 fn print_status() {
     if !no_status() {
@@ -896,9 +839,9 @@ pub fn run(arguments: &[String]) -> Result {
         "speedtest" => return speedtest(),
         "launcher-toggle" => {
             if status("vicinae", ["state", "open"]) {
-                status("vicinae", ["close"]);
+                require_status("vicinae", ["close"])?;
             } else {
-                status("vicinae", ["open"]);
+                require_status("vicinae", ["open"])?;
             }
         }
         "bluetooth-pairing-answer" => {
@@ -912,9 +855,9 @@ pub fn run(arguments: &[String]) -> Result {
             )?;
         }
         "bluetooth-pair-worker" => {
-            status("timeout", ["90", "bluetoothctl", "pair", arg(1)]);
-            status("timeout", ["10", "bluetoothctl", "trust", arg(1)]);
-            status("timeout", ["20", "bluetoothctl", "connect", arg(1)]);
+            require_status("timeout", ["90", "bluetoothctl", "pair", arg(1)])?;
+            require_status("timeout", ["10", "bluetoothctl", "trust", arg(1)])?;
+            require_status("timeout", ["20", "bluetoothctl", "connect", arg(1)])?;
         }
         "volume" | "microphone" => {
             let (target, maximum, limit) = if command == "volume" {
@@ -924,35 +867,31 @@ pub fn run(arguments: &[String]) -> Result {
             };
             match arg(1) {
                 "up" => {
-                    status("wpctl", ["set-volume", "-l", limit, target, "5%+"]);
+                    require_status("wpctl", ["set-volume", "-l", limit, target, "5%+"])?;
                 }
                 "down" => {
-                    status("wpctl", ["set-volume", target, "5%-"]);
+                    require_status("wpctl", ["set-volume", target, "5%-"])?;
                 }
                 "mute" => {
-                    status("wpctl", ["set-mute", target, "toggle"]);
+                    require_status("wpctl", ["set-mute", target, "toggle"])?;
                 }
                 value if value.parse::<u8>().is_ok_and(|value| value <= maximum) => {
-                    status(
+                    require_status(
                         "wpctl",
                         ["set-volume", "-l", limit, target, &format!("{value}%")],
-                    );
+                    )?;
                 }
                 _ => return Err("invalid audio value".into()),
             }
         }
         "audio-device" => {
-            if !arg(1).chars().all(|c| c.is_ascii_digit()) {
-                return Err("device id required".into());
-            }
+            let wanted = arg(1).parse::<u64>().map_err(|_| "device id required")?;
             if arg(2).is_empty() {
-                status("wpctl", ["set-default", arg(1)]);
+                require_status("wpctl", ["set-default", arg(1)])?;
             } else {
-                if !arg(2).chars().all(|c| c.is_ascii_digit()) {
-                    return Err("profile id required".into());
-                }
-                status("wpctl", ["set-profile", arg(1), arg(2)]);
-                let wanted = arg(1).parse::<u64>().unwrap_or(0);
+                arg(2).parse::<u64>().map_err(|_| "profile id required")?;
+                require_status("wpctl", ["set-profile", arg(1), arg(2)])?;
+                let mut selected = false;
                 for _ in 0..20 {
                     let dump = json_output("pw-dump", std::iter::empty::<&str>(), json!([]));
                     let node = dump
@@ -974,15 +913,19 @@ pub fn run(arguments: &[String]) -> Result {
                         .and_then(|object| object.get("id"))
                         .and_then(Value::as_u64);
                     if let Some(node) = node {
-                        status("wpctl", ["set-default", &node.to_string()]);
+                        require_status("wpctl", ["set-default", &node.to_string()])?;
+                        selected = true;
                         break;
                     }
                     thread::sleep(Duration::from_millis(100));
                 }
+                if !selected {
+                    return Err("audio profile did not create an output".into());
+                }
             }
         }
         "voxtype" => {
-            status("voxtype", ["record", "toggle"]);
+            require_status("voxtype", ["record", "toggle"])?;
         }
         "wifi" => {
             let mut target = arg(1);
@@ -997,7 +940,7 @@ pub fn run(arguments: &[String]) -> Result {
                     "on"
                 };
             }
-            status("nmcli", ["radio", "wifi", target]);
+            require_status("nmcli", ["radio", "wifi", target])?;
         }
         "bluetooth" => match arg(1) {
             "" | "toggle" => {
@@ -1005,9 +948,9 @@ pub fn run(arguments: &[String]) -> Result {
                     bluetooth_scan_stop();
                     bluetooth_receiver_stop();
                     pairing_close();
-                    status("bluetoothctl", ["power", "off"]);
+                    require_status("bluetoothctl", ["power", "off"])?;
                 } else {
-                    status("bluetoothctl", ["power", "on"]);
+                    require_status("bluetoothctl", ["power", "on"])?;
                 }
             }
             "scan" => match arg(2) {
@@ -1052,7 +995,7 @@ pub fn run(arguments: &[String]) -> Result {
                 _ => return Err("invalid pairing action".into()),
             },
             "connect" => {
-                status("bluetoothctl", ["power", "on"]);
+                require_status("bluetoothctl", ["power", "on"])?;
                 let paired = bluetooth_state()["devices"]
                     .as_array()
                     .into_iter()
@@ -1063,7 +1006,7 @@ pub fn run(arguments: &[String]) -> Result {
                     });
                 if paired {
                     bluetooth_scan_stop();
-                    status("timeout", ["20", "bluetoothctl", "connect", arg(2)]);
+                    require_status("timeout", ["20", "bluetoothctl", "connect", arg(2)])?;
                 } else {
                     if !daemon_active(&runtime_file("bluetooth-agent.pid"), "bt-agent") {
                         bluetooth_agent_start()?;
@@ -1075,7 +1018,7 @@ pub fn run(arguments: &[String]) -> Result {
                 }
             }
             "pair" => {
-                status("bluetoothctl", ["power", "on"]);
+                require_status("bluetoothctl", ["power", "on"])?;
                 if !daemon_active(&runtime_file("bluetooth-agent.pid"), "bt-agent") {
                     bluetooth_agent_start()?;
                 }
@@ -1085,10 +1028,10 @@ pub fn run(arguments: &[String]) -> Result {
                 )?;
             }
             "forget" => {
-                status("timeout", ["20", "bluetoothctl", "remove", arg(2)]);
+                require_status("timeout", ["20", "bluetoothctl", "remove", arg(2)])?;
             }
             "disconnect" => {
-                status("timeout", ["20", "bluetoothctl", "disconnect", arg(2)]);
+                require_status("timeout", ["20", "bluetoothctl", "disconnect", arg(2)])?;
             }
             "trust" => {
                 let trusted = bluetooth_state()["devices"]
@@ -1106,26 +1049,26 @@ pub fn run(arguments: &[String]) -> Result {
                     "toggle" | "" => "trust",
                     _ => return Err("invalid Bluetooth trust action".into()),
                 };
-                status("timeout", ["10", "bluetoothctl", action, arg(2)]);
+                require_status("timeout", ["10", "bluetoothctl", action, arg(2)])?;
             }
             _ => return Err("invalid Bluetooth action".into()),
         },
         "tailscale" => match arg(1) {
             "up" => {
-                status("tailscale", ["up"]);
+                require_status("tailscale", ["up"])?;
             }
             "down" => {
-                status("tailscale", ["down"]);
+                require_status("tailscale", ["down"])?;
             }
             "login" => detached("ghostty", &["-e".into(), "tailscale".into(), "up".into()])?,
             _ => return Err("invalid Tailscale action".into()),
         },
         "proton-vpn" => match arg(1) {
             "connect" => {
-                status("protonvpn", ["connect"]);
+                require_status("protonvpn", ["connect"])?;
             }
             "disconnect" => {
-                status("protonvpn", ["disconnect"]);
+                require_status("protonvpn", ["disconnect"])?;
             }
             "open" => detached("protonvpn-app", &[])?,
             _ => return Err("invalid Proton VPN action".into()),
@@ -1171,7 +1114,7 @@ pub fn run(arguments: &[String]) -> Result {
                 .ok_or("unsupported headphones")?;
             match (kind, arg(1)) {
                 ("airpods", "off" | "anc" | "transparency" | "adaptive") => {
-                    status("librepods-ctl", [&format!("noise:{}", arg(1))]);
+                    require_status("librepods-ctl", [&format!("noise:{}", arg(1))])?;
                 }
                 ("airpods", "ear-detection") => {
                     set_airpods_ear_detection(if arg(2).is_empty() { "toggle" } else { arg(2) })?
@@ -1295,21 +1238,21 @@ pub fn run(arguments: &[String]) -> Result {
         }
         "notifications" => match arg(1) {
             "restore" => {
-                status("makoctl", ["restore"]);
+                require_status("makoctl", ["restore"])?;
             }
             "dismiss" => {
-                status("makoctl", ["dismiss", "-n", arg(2)]);
+                require_status("makoctl", ["dismiss", "-n", arg(2)])?;
             }
             "invoke" => {
-                status("makoctl", ["invoke", "-n", arg(2)]);
+                require_status("makoctl", ["invoke", "-n", arg(2)])?;
             }
             "clear" => {
-                status("makoctl", ["dismiss", "--all", "--no-history"]);
+                require_status("makoctl", ["dismiss", "--all", "--no-history"])?;
             }
             _ => return Err("invalid notification action".into()),
         },
         "dnd" => {
-            status("makoctl", ["mode", "-t", "do-not-disturb"]);
+            require_status("makoctl", ["mode", "-t", "do-not-disturb"])?;
         }
         "network-settings" => detached("nm-connection-editor", &[])?,
         "outages" => detached("xdg-open", &["https://xn--allestrungen-9ib.de/".to_owned()])?,
@@ -1335,19 +1278,19 @@ pub fn run(arguments: &[String]) -> Result {
             }
         }
         "logout" => {
-            status("hyprctl", ["dispatch", "exit"]);
+            require_status("hyprctl", ["dispatch", "exit"])?;
         }
         "reboot" => {
-            status("systemctl", ["reboot"]);
+            require_status("systemctl", ["reboot"])?;
         }
         "shutdown" => {
-            status("systemctl", ["poweroff"]);
+            require_status("systemctl", ["poweroff"])?;
         }
         "reboot-windows" => {
-            status(
+            require_status(
                 "systemctl",
                 ["--no-block", "start", "reboot-windows.service"],
-            );
+            )?;
         }
         _ => return Err("unknown Seele control command".into()),
     }

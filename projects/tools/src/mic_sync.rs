@@ -256,16 +256,24 @@ fn parse_pending(pending: &mut String, session: &mut Session) {
 
 fn watch(card: u32, numid: u32, running: &AtomicBool) -> Result {
     let (sender, receiver) = mpsc::channel();
-    let alsa = Command::new("alsactl")
+    let mut alsa = Command::new("alsactl")
         .args(["monitor", &format!("hw:{card}")])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
-    let graph = Command::new("pw-dump")
+    let graph = match Command::new("pw-dump")
         .arg("-m")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(graph) => graph,
+        Err(error) => {
+            let _ = alsa.kill();
+            let _ = alsa.wait();
+            return Err(error.into());
+        }
+    };
     let mut alsa = stream(alsa, false, sender.clone());
     let mut graph = stream(graph, true, sender);
     let mut session = Session {

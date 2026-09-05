@@ -176,5 +176,22 @@ if [[ $(cat "$MOCK_OSD") != "-q microphone-state live
 fi
 
 kill "$daemon" 2>/dev/null
+wait "$daemon" || true
 daemon=""
+# A failed second spawn must not leave the first monitor behind. Record the
+# parent PID from a successful command before replacing pw-dump's interpreter.
+export MOCK_MONITOR_PID="$work/monitor-pid"
+stub alsactl <<'SH'
+echo "$$" >"$MOCK_MONITOR_PID"
+exec sleep 60
+SH
+printf '#!/nonexistent-seele-audit-interpreter\n' >"$work/bin/pw-dump"
+if "$sync" 14ED:1019 >"$work/startup-failure.log" 2>&1; then
+  echo "mic-sync: failed monitor startup reported success" >&2
+  exit 1
+fi
+if [[ -s $MOCK_MONITOR_PID ]] && kill -0 "$(cat "$MOCK_MONITOR_PID")" 2>/dev/null; then
+  echo "mic-sync: ALSA monitor leaked after PipeWire failed to start" >&2
+  exit 1
+fi
 echo "mic-sync ok"

@@ -1,4 +1,5 @@
 mod agents;
+mod audio;
 mod bluetooth;
 mod clock;
 mod command;
@@ -7,6 +8,7 @@ mod grain;
 mod launch;
 mod mic_sync;
 mod nothing;
+mod notifications;
 mod receiver;
 mod session;
 mod shellctl;

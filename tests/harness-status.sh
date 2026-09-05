@@ -145,11 +145,11 @@ stale=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
 cat >"$work/state/seele-shell/agents/pi-heuristic-old.json" <<JSON
 {"agent":"pi","status":"finished","source":"heuristic","pid":4194303,"startedAt":"$stale","updatedAt":"$stale","endedAt":"$stale"}
 JSON
-cat >"$work/state/seele-shell/agents/codex-heuristic-recent.json" <<JSON
-{"agent":"codex","status":"finished","source":"heuristic","pid":4194303,"startedAt":"$now","updatedAt":"$now","endedAt":"$now"}
+cat >"$work/state/seele-shell/agents/test-finished-heuristic-recent.json" <<JSON
+{"agent":"test-finished","status":"finished","source":"heuristic","pid":4194303,"startedAt":"$now","updatedAt":"$now","endedAt":"$now"}
 JSON
 result=$(XDG_STATE_HOME="$work/state" "$control" agent-status)
-[[ $(jq -r '.codex.status' <<<"$result") == finished && $(jq -r '.codex.active' <<<"$result") == false ]] || {
+[[ $(jq -r '.["test-finished"].status' <<<"$result") == finished && $(jq -r '.["test-finished"].active' <<<"$result") == false ]] || {
   printf 'a run that just finished must stay visible: %s\n' "$result" >&2
   exit 1
 }

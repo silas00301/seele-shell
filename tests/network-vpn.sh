@@ -254,3 +254,8 @@ grep -qx 'xdg-open https://xn--allestrungen-9ib.de/' "$MOCK_ACTIONS"
 grep -qx 'openlogi-gui' "$MOCK_ACTIONS"
 if grep -q '^pkill ' "$MOCK_ACTIONS"; then exit 1; fi
 grep -qx 'speedtest --accept-license --accept-gdpr --format=jsonl --progress=yes --progress-update-interval=250' "$MOCK_ACTIONS"
+
+if grep -qx 'protonvpn --help' "$MOCK_ACTIONS"; then
+  echo "status unnecessarily launched the Proton client" >&2
+  exit 1
+fi

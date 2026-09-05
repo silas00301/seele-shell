@@ -2247,15 +2247,13 @@ ShellRoot {
       border.color: root.alpha(root.accent, 0.22)
       antialiasing: true
 
-      Text {
+      CenteredGlyph {
         visible: panelHeader.mark === null
         anchors.fill: parent
         text: panelHeader.glyph
         color: root.accent
         font.family: root.fontFamily
         font.pixelSize: root.textSubhead
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
       }
 
       Loader {

@@ -59,6 +59,7 @@ pub fn run() -> Result {
                 true
             } else {
                 let _ = child.kill();
+                let _ = child.wait();
                 false
             }
         });

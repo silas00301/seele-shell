@@ -9,6 +9,9 @@ let
     patches = (old.patches or [ ]) ++ [ ../../packages/core/patches/librepods-status.patch ];
   });
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
+  fontConfig = pkgs.makeFontsConf {
+    fontDirectories = [ pkgs.maple-mono.NF-CN ];
+  };
   runtimePath = lib.makeBinPath [
     pkgs.alsa-utils
     pkgs.bluez
@@ -66,6 +69,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/share/licenses/seele-shell" "$out/libexec/seele-shell" "$out/bin"
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
+    install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude-code.svg} "$out/share/seele-shell/claude-code.svg"
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
@@ -127,6 +131,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstallCheck
 
     test -f "$out/share/seele-shell/shell.qml"
+    test -f "$out/share/seele-shell/CenteredGlyph.qml"
     test -f "$out/share/seele-shell/seele.svg"
     test -f "$out/share/seele-shell/claude-code.svg"
     test -s "$out/share/seele-shell/grain.png"
@@ -141,7 +146,11 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/vicinae/extensions/seele-shell/seele.js"
     test -f "$out/share/vicinae/extensions/seele-shell/keybindings.js"
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml"
+    FONTCONFIG_FILE=${fontConfig} bash ${../../tests/centered-glyph.sh} \
+      "$out/share/seele-shell/CenteredGlyph.qml" \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+      ${../../tests/tst_centeredglyph.qml}
     for command in seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done

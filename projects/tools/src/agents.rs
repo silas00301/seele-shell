@@ -111,10 +111,14 @@ fn subtree_ticks(root: u32) -> Option<u64> {
             }
         }
     }
+    Some(subtree_ticks_in(root, &processes))
+}
+
+fn subtree_ticks_in(root: u32, processes: &[(u32, u32, u64)]) -> u64 {
     let mut members = HashSet::from([root]);
     loop {
         let before = members.len();
-        for (pid, parent, _) in &processes {
+        for (pid, parent, _) in processes {
             if members.contains(parent) {
                 members.insert(*pid);
             }
@@ -123,13 +127,11 @@ fn subtree_ticks(root: u32) -> Option<u64> {
             break;
         }
     }
-    Some(
-        processes
+    processes
             .iter()
             .filter(|(pid, _, _)| members.contains(pid))
             .map(|(_, _, ticks)| ticks)
-            .sum(),
-    )
+            .sum()
 }
 
 fn write_run_state(
@@ -592,6 +594,28 @@ pub(crate) fn aggregate_states() -> Value {
     Value::Object(result)
 }
 
+fn sampled_idle(last: Option<&Value>, ticks: u64, now: i64) -> i64 {
+    let elapsed = last
+        .and_then(|value| value.get("at"))
+        .and_then(Value::as_i64)
+        .map(|at| now - at)
+        .unwrap_or(0);
+    let burnt = last
+        .and_then(|value| value.get("ticks"))
+        .and_then(Value::as_u64)
+        .map(|old| ticks.saturating_sub(old))
+        .unwrap_or(u64::MAX);
+    let old_idle = last
+        .and_then(|value| value.get("idle"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if elapsed >= 0 && burnt <= (2 * elapsed) as u64 {
+        old_idle + elapsed
+    } else {
+        0
+    }
+}
+
 fn sampled_harnesses() -> Vec<Value> {
     let samples = running_harnesses();
     let path = agent_dir().join(".cpu-sample.json");
@@ -605,25 +629,7 @@ fn sampled_harnesses() -> Vec<Value> {
     let mut records = Vec::new();
     for (pid, agent, ticks) in samples {
         let last = previous.get(pid.to_string());
-        let elapsed = last
-            .and_then(|value| value.get("at"))
-            .and_then(Value::as_i64)
-            .map(|at| now - at)
-            .unwrap_or(0);
-        let burnt = last
-            .and_then(|value| value.get("ticks"))
-            .and_then(Value::as_u64)
-            .map(|old| ticks.saturating_sub(old))
-            .unwrap_or(u64::MAX);
-        let old_idle = last
-            .and_then(|value| value.get("idle"))
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let idle = if elapsed > 0 && burnt <= (2 * elapsed) as u64 {
-            old_idle + elapsed
-        } else {
-            0
-        };
+        let idle = sampled_idle(last, ticks, now);
         next.insert(pid.to_string(), json!({"ticks":ticks,"at":now,"idle":idle}));
         records.push(json!({"agent":agent,"pid":pid,"ticks":ticks,"live":true,"source":"cpu","status":if idle>=20{"input"}else{"working"},"updatedAt":timestamp()}));
     }
@@ -636,6 +642,7 @@ fn sampled_harnesses() -> Vec<Value> {
 
 fn running_harnesses() -> Vec<(u32, String, u64)> {
     let mut roots = HashMap::new();
+    let mut processes = Vec::new();
     let Ok(entries) = fs::read_dir("/proc") else {
         return Vec::new();
     };
@@ -643,6 +650,9 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
+        if let Some((parent, ticks)) = proc_stat(pid) {
+            processes.push((pid, parent, ticks));
+        }
         let mut name = process_name(pid);
         if !matches!(name.as_str(), "pi" | "opencode" | "codex" | "claude") {
             let bytes = fs::read(entry.path().join("cmdline")).unwrap_or_default();
@@ -661,6 +671,29 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
     }
     roots
         .into_iter()
-        .filter_map(|(pid, name)| subtree_ticks(pid).map(|ticks| (pid, name, ticks)))
+        .map(|(pid, name)| (pid, name, subtree_ticks_in(pid, &processes)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_poll_in_one_second_preserves_idle_history() {
+        let last = json!({"at":100,"ticks":42,"idle":20});
+        assert_eq!(sampled_idle(Some(&last), 42, 100), 20);
+        assert_eq!(sampled_idle(Some(&last), 42, 101), 21);
+        assert_eq!(sampled_idle(Some(&last), 50, 100), 0);
+        assert_eq!(sampled_idle(Some(&last), 42, 99), 0);
+        assert_eq!(sampled_idle(None, 42, 100), 0);
+    }
+    #[test]
+    fn one_snapshot_accounts_for_each_harness_and_its_descendants() {
+        let processes = [(30, 20, 7), (20, 10, 5), (10, 1, 3), (40, 1, 11)];
+        assert_eq!(subtree_ticks_in(10, &processes), 15);
+        assert_eq!(subtree_ticks_in(20, &processes), 12);
+        assert_eq!(subtree_ticks_in(40, &processes), 11);
+    }
+
 }
