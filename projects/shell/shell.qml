@@ -127,6 +127,14 @@ ShellRoot {
   // wash: filled controls composite it over their resting material instead of
   // replacing that material with a nearly transparent colour.
   readonly property color hoverColor: alpha(text, 0.07)
+  // Where a tint rests on nothing at all it fades to its own colour at zero
+  // alpha rather than to `transparent`. Qt interpolates a colour channel by
+  // channel and `transparent` is black, so a tint animated against it is
+  // dragged down through grey on the way in and back up through it on the way
+  // out. The pill then reads as a smudge lifting off the strip instead of as
+  // light arriving on it.
+  readonly property color clearColor: alpha(text, 0)
+  readonly property color clearDanger: alpha(red, 0)
   readonly property color pressColor: alpha(accent, 0.3)
   readonly property color selectedColor: alpha(accent, 0.2)
   readonly property color activeTint: alpha(accent, 0.12)
@@ -165,6 +173,8 @@ ShellRoot {
   property string osdScreen: ""
   property string notificationPopupScreen: ""
   property string controlPanel: ""
+  property var applicationWindow: null
+  property bool applicationForceConfirm: false
   property var mediaPanelPlayer: null
   // A module being dragged between the Control Center and the menu bar.
   // `dragKind` is "add" when it came from the panel and "remove" when it was
@@ -363,6 +373,8 @@ ShellRoot {
     cancelModuleDrag()
     agentsOpen = false
     controlPanel = ""
+    applicationWindow = null
+    applicationForceConfirm = false
     mediaPanelPlayer = null
     overlayScreen = ""
     overlayAnchorX = -1
@@ -399,6 +411,29 @@ ShellRoot {
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
     refreshStatus()
+  }
+
+  function toggleApplication(window, screen, anchorX) {
+    var sameWindow = root.controlPanel === "application" && root.applicationWindow === window
+    var shouldOpen = !!window && !(sameWindow && root.overlayScreen === (screen || root.currentScreen()))
+    var nextAnchor = requestedOverlayAnchor(anchorX)
+    closeOverlays()
+    if (!shouldOpen) return
+    controlPanel = "application"
+    applicationWindow = window
+    overlayScreen = screen || currentScreen()
+    overlayAnchorX = nextAnchor
+  }
+
+  function quitApplication(force) {
+    if (force && !root.applicationForceConfirm) {
+      root.applicationForceConfirm = true
+      return
+    }
+    var address = root.applicationWindow ? String(root.applicationWindow.address || "") : ""
+    root.closeOverlays()
+    if (address === "") return
+    Quickshell.execDetached(["seele-control", "application", force ? "force-quit" : "quit", address])
   }
 
   function toggleMedia(player, screen, anchorX) {
@@ -2581,7 +2616,7 @@ ShellRoot {
       anchors.leftMargin: root.barSpacing / 2
       anchors.rightMargin: root.barSpacing / 2
       radius: root.radius
-      color: parent.active ? root.selectedColor : parent.hovered ? root.hoverColor : "transparent"
+      color: parent.active ? root.selectedColor : parent.hovered ? root.hoverColor : root.clearColor
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
     }
@@ -3034,7 +3069,7 @@ ShellRoot {
       anchors.verticalCenter: parent.verticalCenter
       height: 38
       radius: root.radius
-      color: connectivityLabelMouse.pressed ? root.pressColor : connectivityLabelMouse.containsMouse ? root.hoverColor : "transparent"
+      color: connectivityLabelMouse.pressed ? root.pressColor : connectivityLabelMouse.containsMouse ? root.hoverColor : root.clearColor
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
       Column {
@@ -3439,9 +3474,21 @@ ShellRoot {
       width: ListView.view.width
       height: Math.max(60, notificationText.implicitHeight + 18)
       radius: root.radius
+      // Asked of the card rather than of the pointer area covering it. The
+      // unfold and dismiss buttons sit on top of that area with hover enabled
+      // of their own, and a hovered child takes the event away from the parent
+      // below it, so a fill reading `containsMouse` fell back to `cardColor`
+      // the moment the pointer reached a button and lit again when it left. A
+      // handler on the card is hovered for the whole card, buttons included.
+      readonly property bool hovered: notificationHover.hovered
+
       color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
-        : notificationEntry.actionable && notificationOpenMouse.containsMouse ? root.hoveredColor(root.cardColor)
+        : notificationEntry.actionable && notificationEntry.hovered ? root.hoveredColor(root.cardColor)
         : root.cardColor
+
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverHandler { id: notificationHover }
 
       CardEdge {}
 
@@ -3470,7 +3517,7 @@ ShellRoot {
             width: visible ? 26 : 0
             height: 20
             radius: root.radiusSmall
-            color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : "transparent"
+            color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : root.clearColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text {
               anchors.centerIn: parent
@@ -3495,7 +3542,7 @@ ShellRoot {
             width: visible ? 26 : 0
             height: 20
             radius: root.radiusSmall
-            color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : "transparent"
+            color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : root.clearDanger
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
@@ -3667,7 +3714,7 @@ ShellRoot {
         ? mediaButton.flat
           ? root.hoverColor
           : root.hoveredColor(mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor)
-        : mediaButton.flat ? "transparent" : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
+        : mediaButton.flat ? root.clearColor : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     Text {
@@ -3984,6 +4031,7 @@ ShellRoot {
             visible: window !== null && root.windowLabel(window) !== ""
             width: Math.min(230, activeWindowRow.implicitWidth + 14)
             hovered: activeWindowMouse.containsMouse
+            active: root.panelHere("application", barWindow.modelData) && root.applicationWindow === window
             Row {
               id: activeWindowRow
               anchors.centerIn: parent
@@ -4003,7 +4051,13 @@ ShellRoot {
                 text: root.windowLabel(parent.parent.window)
               }
             }
-            MouseArea { id: activeWindowMouse; anchors.fill: parent; hoverEnabled: true }
+            MouseArea {
+              id: activeWindowMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onPressed: root.toggleApplication(parent.window, barWindow.modelData.name, root.barItemCenter(parent))
+            }
             HoverTip { mouse: activeWindowMouse; text: root.windowTitle(activeWindowMouse.parent.window) }
           }
 
@@ -4654,6 +4708,115 @@ ShellRoot {
     }
   }
 
+  // Application menu ----------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "application"
+        && root.applicationWindow !== null
+        && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 320
+      implicitHeight: root.panelMargin * 2 + applicationContent.implicitHeight
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-application"
+
+      PanelSurface {
+        Column {
+          id: applicationContent
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+
+          PanelHeader {
+            width: parent.width
+            title: root.windowLabel(root.applicationWindow)
+            detail: root.windowTitle(root.applicationWindow)
+            mark: Component {
+              Item {
+                width: root.textDisplay
+                height: root.textDisplay
+                IconImage {
+                  id: applicationIcon
+                  anchors.fill: parent
+                  source: root.windowIcon(root.applicationWindow)
+                }
+                CenteredGlyph {
+                  visible: applicationIcon.source === ""
+                  anchors.fill: parent
+                  text: "󰣆"
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textSubhead
+                }
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: root.spaceTight
+            Repeater {
+              model: [
+                { label: "Quit", glyph: "󰅖", force: false },
+                { label: root.applicationForceConfirm ? "Confirm force quit" : "Force quit", glyph: "󰜺", force: true }
+              ]
+              Rectangle {
+                required property var modelData
+                width: parent.width
+                height: root.controlHeight
+                radius: root.radius
+                color: modelData.force
+                  ? applicationActionMouse.pressed ? root.dangerPress : applicationActionMouse.containsMouse ? root.dangerColor : root.dangerTint
+                  : applicationActionMouse.pressed ? root.pressColor : applicationActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                CardEdge { border.color: modelData.force ? root.alpha(root.red, 0.22) : root.cardBorder }
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: root.cardPadding
+                  spacing: root.spaceMedium
+                  CenteredGlyph {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: root.textIcon
+                    height: root.textIcon
+                    text: modelData.glyph
+                    color: modelData.force ? root.red : root.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textIcon
+                  }
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: modelData.label
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    font.weight: root.weightStrong
+                  }
+                }
+
+                MouseArea {
+                  id: applicationActionMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.quitApplication(parent.modelData.force)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Calendar ------------------------------------------------------------------
   Variants {
     model: Quickshell.screens
@@ -4875,7 +5038,7 @@ ShellRoot {
               width: ListView.view.width
               height: 54
               radius: root.radius
-              color: timezoneRowMouse.containsMouse ? root.cardColor : root.rowColor
+              color: timezoneRowHover.hovered ? root.cardColor : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
               Text { visible: modelData.kind === "city"; anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 25; text: modelData.flag; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
@@ -4895,12 +5058,10 @@ ShellRoot {
                 Text { width: parent.width; text: Time.offsetTime(root.now, modelData.offset, false) || modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong; horizontalAlignment: Text.AlignRight }
                 Text { width: parent.width; text: modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textMicro; horizontalAlignment: Text.AlignRight }
               }
-              MouseArea {
-                id: timezoneRowMouse
-                anchors.left: parent.left; anchors.right: pinTimezoneButton.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                hoverEnabled: true
-                acceptedButtons: Qt.NoButton
-              }
+              // The row lifts for a pointer anywhere on it, Pin button
+              // included. A hover area stopped at that button's edge dropped
+              // the lift again as soon as the pointer crossed it.
+              HoverHandler { id: timezoneRowHover }
               Rectangle {
                 id: pinTimezoneButton
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
@@ -4989,7 +5150,7 @@ ShellRoot {
             }
             Rectangle {
               width: 30; height: 30; radius: root.radius
-              color: trayMenuCloseMouse.pressed ? root.pressColor : trayMenuCloseMouse.containsMouse ? root.hoverColor : "transparent"
+              color: trayMenuCloseMouse.pressed ? root.pressColor : trayMenuCloseMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "󰅖"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
               MouseArea { id: trayMenuCloseMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.closeTrayMenu() }
@@ -5021,7 +5182,7 @@ ShellRoot {
                 visible: !parent.modelData.isSeparator
                 anchors.fill: parent
                 radius: root.radius
-                color: trayMenuEntryMouse.pressed ? root.pressColor : trayMenuEntryMouse.containsMouse && parent.modelData.enabled ? root.hoverColor : "transparent"
+                color: trayMenuEntryMouse.pressed ? root.pressColor : trayMenuEntryMouse.containsMouse && parent.modelData.enabled ? root.hoverColor : root.clearColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
               }
 
@@ -5148,7 +5309,7 @@ ShellRoot {
                 width: root.controlHeight
                 height: root.controlHeight
                 radius: root.radius
-                color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : "transparent"
+                color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : root.clearColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
                 MouseArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.refreshAgents() }
@@ -6126,7 +6287,7 @@ ShellRoot {
             }
             Rectangle {
               width: root.controlHeight; height: root.controlHeight; radius: root.radius
-              color: bluetoothScanMouse.pressed ? root.pressColor : root.bluetoothScanActive ? root.activeTint : bluetoothScanMouse.containsMouse ? root.hoverColor : "transparent"
+              color: bluetoothScanMouse.pressed ? root.pressColor : root.bluetoothScanActive ? root.activeTint : bluetoothScanMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.bluetoothScanActive }
               MouseArea {
@@ -6151,10 +6312,19 @@ ShellRoot {
               required property var modelData
               readonly property bool busy: root.bluetoothBusy === modelData.address
               readonly property bool forgetArmed: root.bluetoothForget === modelData.address
-              readonly property bool rowActions: !busy && modelData.paired && (deviceMouse.containsMouse || forgetMouse.containsMouse || autoConnectMouse.containsMouse || forgetArmed)
+              // The Auto and forget buttons float over the row's own pointer
+              // area and take its hover, so both the fill and the buttons ask
+              // the row itself whether the pointer is on it. Reading
+              // `deviceMouse.containsMouse` instead left the row dropping back
+              // to its resting fill under a pointer that had only moved onto
+              // one of the buttons the hover had just revealed.
+              readonly property bool hovered: deviceHover.hovered
+              readonly property bool rowActions: !busy && modelData.paired && (hovered || forgetArmed)
               width: ListView.view.width; height: root.rowHeight; radius: root.radius
-              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : deviceMouse.containsMouse ? root.hoveredColor(modelData.connected ? root.activeTint : root.rowColor) : modelData.connected ? root.activeTint : root.rowColor
+              color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : hovered ? root.hoveredColor(modelData.connected ? root.activeTint : root.rowColor) : modelData.connected ? root.activeTint : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+              HoverHandler { id: deviceHover }
               Row {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                 Text {

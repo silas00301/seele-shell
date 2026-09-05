@@ -49,6 +49,36 @@ fn kill_group(pid: u32) {
     }
 }
 
+fn window_address(value: &str) -> Result<String> {
+    let address = value.strip_prefix("0x").unwrap_or(value);
+    if address.is_empty() || !address.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("valid window address required".into());
+    }
+    Ok(address.to_ascii_lowercase())
+}
+
+fn application_pid(address: &str) -> Option<u32> {
+    let clients = json_output("hyprctl", ["clients", "-j"], json!([]));
+    clients.as_array()?.iter().find_map(|client| {
+        let candidate = client["address"].as_str()?.trim_start_matches("0x");
+        if candidate.eq_ignore_ascii_case(address) {
+            client["pid"].as_u64()?.try_into().ok()
+        } else {
+            None
+        }
+    })
+}
+
+fn force_quit_application(address: &str) -> Result {
+    let pid = application_pid(address)
+        .filter(|pid| *pid > 1)
+        .ok_or("application not found")?;
+    if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
 fn daemon_active(path: &Path, name: &str) -> bool {
     pid(path)
         .map(|pid| process_alive(pid) && cmdline_contains(pid, name))
@@ -844,6 +874,17 @@ pub fn run(arguments: &[String]) -> Result {
                 require_status("vicinae", ["open"])?;
             }
         }
+        "application" => {
+            let address = window_address(arg(2))?;
+            match arg(1) {
+                "quit" => require_status(
+                    "hyprctl",
+                    ["dispatch", "closewindow", &format!("address:0x{address}")],
+                )?,
+                "force-quit" => force_quit_application(&address)?,
+                _ => return Err("invalid application action".into()),
+            }
+        }
         "bluetooth-pairing-answer" => {
             if !matches!(arg(2), "accept" | "reject") {
                 return Err("accept or reject required".into());
@@ -1300,6 +1341,7 @@ pub fn run(arguments: &[String]) -> Result {
             | "agent-status"
             | "bluetooth-status"
             | "speedtest"
+            | "application"
             | "bluetooth-pair-worker"
             | "tray-menu"
     ) {

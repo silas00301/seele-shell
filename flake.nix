@@ -98,6 +98,9 @@
                     projects/shell/CenteredGlyph.qml \
                     ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     tests/tst_centeredglyph.qml
+                  QT_QPA_PLATFORM=offscreen qmltestrunner \
+                    -import ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+                    -input tests/tst_cardhover.qml
                 '';
               }
             ];
