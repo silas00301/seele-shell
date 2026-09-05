@@ -99,8 +99,11 @@ fn session(repo: &Path) -> Result {
         } else {
             println!("\n  {message}\n");
             if confirm("Commit with this message?") {
-                status("jj", ["commit", "-m", &message]);
-                println!("Committed.");
+                if status("jj", ["commit", "-m", &message]) {
+                    println!("Committed.");
+                } else {
+                    println!("Commit failed. Review the error above and retry with jj.");
+                }
             } else {
                 println!("Nothing was committed.");
             }
