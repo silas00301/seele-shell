@@ -83,12 +83,12 @@ impl Agent {
     fn publish(
         kind: &str,
         path: &DbusPath<'static>,
-        passkey: Option<u32>,
+        passkey: String,
     ) -> std::result::Result<String, MethodErr> {
         let token = Self::token();
         let request = json!({
             "token":token,"kind":kind,"address":Self::property(path,"Address"),"name":Self::name(path),
-            "icon":Self::property(path,"Icon"),"passkey":passkey.map(|value|format!("{value:06}")).unwrap_or_default()
+            "icon":Self::property(path,"Icon"),"passkey":passkey
         });
         let (request_path, answer_path) = files();
         let _ = fs::remove_file(answer_path);
@@ -105,7 +105,7 @@ impl Agent {
         passkey: Option<u32>,
     ) -> std::result::Result<String, MethodErr> {
         println!("request kind={kind} device={path}");
-        let token = Self::publish(kind, path, passkey)?;
+        let token = Self::publish(kind, path, passkey.map(|value| format!("{value:06}")).unwrap_or_default())?;
         let (_, answer_path) = files();
         for _ in 0..900 {
             if let Ok(answer) = fs::read_to_string(&answer_path) {
@@ -194,15 +194,15 @@ pub fn agent(arguments: &[String]) -> Result {
             ("device", "passkey", "entered"),
             (),
             |_, _: &mut Agent, (device, passkey, _entered): (DbusPath<'static>, u32, u16)| {
-                Agent::publish("display", &device, Some(passkey)).map(|_| ())
+                Agent::publish("display", &device, format!("{passkey:06}")).map(|_| ())
             },
         );
         builder.method(
             "DisplayPinCode",
             ("device", "pincode"),
             (),
-            |_, _: &mut Agent, (device, _pincode): (DbusPath<'static>, String)| {
-                Agent::publish("display", &device, None).map(|_| ())
+            |_, _: &mut Agent, (device, pincode): (DbusPath<'static>, String)| {
+                Agent::publish("display", &device, pincode).map(|_| ())
             },
         );
         builder.method(
