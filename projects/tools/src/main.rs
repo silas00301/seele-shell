@@ -1,4 +1,5 @@
 mod agents;
+mod audio;
 mod bluetooth;
 mod clock;
 mod command;

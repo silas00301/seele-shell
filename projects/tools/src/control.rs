@@ -551,61 +551,6 @@ fn percent(text: &str) -> u64 {
         .unwrap_or(0)
 }
 
-fn audio_devices(dump: &Value) -> Vec<Value> {
-    let mut default_sink = String::new();
-    let mut default_source = String::new();
-    for object in dump.as_array().into_iter().flatten().filter(|object| {
-        object.get("type").and_then(Value::as_str) == Some("PipeWire:Interface:Metadata")
-            && object
-                .pointer("/props/metadata.name")
-                .and_then(Value::as_str)
-                == Some("default")
-    }) {
-        for item in object
-            .get("metadata")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let key = item["key"].as_str().unwrap_or("");
-            let name = item
-                .pointer("/value/name")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if key == "default.audio.sink" {
-                default_sink = name.into()
-            }
-            if key == "default.audio.source" {
-                default_source = name.into()
-            }
-        }
-    }
-    let mut values = Vec::new();
-    for object in dump.as_array().into_iter().flatten() {
-        let class = object
-            .pointer("/info/props/media.class")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if !matches!(class, "Audio/Sink" | "Audio/Source") {
-            continue;
-        }
-        let props = object.pointer("/info/props").unwrap_or(&Value::Null);
-        let node = props["node.name"].as_str().unwrap_or("");
-        let kind = if class == "Audio/Sink" {
-            "output"
-        } else {
-            "input"
-        };
-        values.push(json!({"id":object["id"],"kind":kind,"name":props["node.description"].as_str().or_else(||props["node.nick"].as_str()).or_else(||props["node.name"].as_str()).unwrap_or(""),"node":node,"profile":Value::Null,"default":if kind=="output"{node==default_sink}else{node==default_source}}));
-    }
-    values.sort_by_key(|value| {
-        (
-            value["kind"].as_str().unwrap_or("").to_owned(),
-            value["name"].as_str().unwrap_or("").to_ascii_lowercase(),
-        )
-    });
-    values
-}
 fn tray_hidden() -> Value {
     fs::read_to_string(config_file("tray.json"))
         .ok()
@@ -749,7 +694,7 @@ fn status_value() -> Value {
     let tailscale = tailscale_state();
     let proton = proton_state();
     let ssh = ssh_state();
-    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":audio_devices(&dump),"agentStates":agents::aggregate_states(),"notifications":crate::notifications::state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
+    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":crate::audio::devices(&dump),"agentStates":agents::aggregate_states(),"notifications":crate::notifications::state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
 }
 fn print_status() {
     if !no_status() {
