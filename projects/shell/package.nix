@@ -46,6 +46,7 @@ let
     pkgs.voxtype-vulkan
     pkgs.wireplumber
     pkgs.wl-clipboard
+    pkgs.wtype
     pkgs.xdg-utils
     quickshell
   ];
@@ -85,7 +86,8 @@ pkgs.stdenvNoCC.mkDerivation {
     substitute ${../vicinae/seele.tsx} seele.tsx \
       --replace-fail '@SEELE_SHELLCTL@' "$out/bin/seele-shellctl"
     substitute ${../vicinae/keybindings.tsx} keybindings.tsx \
-      --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl'
+      --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl' \
+      --replace-fail '@WTYPE@' '${pkgs.wtype}/bin/wtype'
     esbuild seele.tsx --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/seele.js"
     esbuild keybindings.tsx --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/keybindings.js"
 

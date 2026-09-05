@@ -870,13 +870,7 @@ pub fn run(arguments: &[String]) -> Result {
         "agent-status" => println!("{}", agents::aggregate_states()),
         "bluetooth-status" => println!("{}", bluetooth_state()),
         "speedtest" => return speedtest(),
-        "launcher-toggle" => {
-            if status("vicinae", ["state", "open"]) {
-                require_status("vicinae", ["close"])?;
-            } else {
-                require_status("vicinae", ["open"])?;
-            }
-        }
+        "launcher-toggle" => require_status("vicinae", ["toggle"])?,
         "application" => {
             let address = window_address(arg(2))?;
             match arg(1) {

@@ -112,6 +112,7 @@ case "${1:-}" in
   state) [[ $(cat "$MOCK_VICINAE_STATE") == open ]] ;;
   open) printf '%s\n' open >"$MOCK_VICINAE_STATE" ;;
   close) printf '%s\n' closed >"$MOCK_VICINAE_STATE" ;;
+  toggle) if [[ $(cat "$MOCK_VICINAE_STATE") == open ]]; then printf '%s\n' closed >"$MOCK_VICINAE_STATE"; else printf '%s\n' open >"$MOCK_VICINAE_STATE"; fi ;;
   *) exit 2 ;;
 esac
 SH
