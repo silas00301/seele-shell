@@ -1,4 +1,4 @@
-use crate::command::{atomic_write, epoch, json_output, state_home};
+use crate::command::{atomic_write, epoch, json_output, output, state_home};
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::fs;
@@ -39,19 +39,37 @@ fn normalize(active: Value, history: Value, saved: &Value, now: i64) -> (Value, 
     )
 }
 
-pub fn state() -> Value {
-    let active = json_output("makoctl", ["list", "-j"], json!([]));
-    let history = json_output("makoctl", ["history", "-j"], json!([]));
-    let path = state_home().join("seele-shell/notification-times.json");
-    let saved = fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_else(|| Value::Object(Map::new()));
-    let (result, stamps) = normalize(active, history, &saved, epoch());
-    if saved != stamps {
-        let _ = atomic_write(&path, stamps.to_string().as_bytes());
+pub(crate) struct Snapshot {
+    active: Value,
+    history: Value,
+    saved: Value,
+    dnd: bool,
+    path: std::path::PathBuf,
+}
+
+impl Snapshot {
+    pub(crate) fn read() -> Self {
+        let path = state_home().join("seele-shell/notification-times.json");
+        Self {
+            active: json_output("makoctl", ["list", "-j"], json!([])),
+            history: json_output("makoctl", ["history", "-j"], json!([])),
+            dnd: output("makoctl", ["mode"]).unwrap_or_default().lines().any(|line| line == "do-not-disturb"),
+            saved: fs::read_to_string(&path).ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_else(|| Value::Object(Map::new())),
+            path,
+        }
     }
-    result
+
+    // Aging history needs a new clock reading, not another query to mako.
+    pub(crate) fn patch(&mut self) -> Value {
+        let (notifications, stamps) = normalize(self.active.clone(), self.history.clone(), &self.saved, epoch());
+        if self.saved != stamps {
+            let _ = atomic_write(&self.path, stamps.to_string().as_bytes());
+            self.saved = stamps;
+        }
+        json!({"notifications":notifications,"dnd":self.dnd})
+    }
 }
 
 #[cfg(test)]

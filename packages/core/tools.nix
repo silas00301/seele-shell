@@ -8,6 +8,7 @@ pkgs.rustPlatform.buildRustPackage {
 
   nativeBuildInputs = [ pkgs.pkg-config ];
   buildInputs = [ pkgs.dbus ];
+  nativeCheckInputs = [ pkgs.dbus ];
 
   meta = {
     description = "Runtime helpers for Seele Shell";

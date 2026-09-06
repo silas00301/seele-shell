@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::{CStr, CString};
 use std::fs;
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 unsafe extern "C" {
@@ -143,9 +144,8 @@ fn zone_time(epoch: i64) -> [String; 4] {
     })
 }
 
-fn current_zones() -> Result<Vec<Zone>> {
+fn seasonal_aliases(zones: &mut [ZoneSource], now: i64) {
     let directory = zoneinfo();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
     let year = format_time(now, "%Y");
     let winter = output("date", ["-d", &format!("{year}-01-15 12:00"), "+%s"])
         .and_then(|value| value.trim().parse().ok())
@@ -154,8 +154,7 @@ fn current_zones() -> Result<Vec<Zone>> {
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(now);
     let previous_tz = env::var_os("TZ");
-    let mut result = Vec::new();
-    for source in sources()? {
+    for source in zones {
         let timezone = if source.zone.contains('/') {
             format!(":{}", directory.join(&source.zone).display())
         } else {
@@ -174,20 +173,12 @@ fn current_zones() -> Result<Vec<Zone>> {
                 aliases.push(word.to_owned());
             }
         }
-        let [time, day, abbreviation, offset] = zone_time(now);
-        result.push(Zone {
-            id: source.id,
-            zone: source.zone,
-            label: source.label,
-            flag: source.flag,
-            aliases: aliases.join(" "),
-            kind: source.kind,
-            time,
-            day,
-            abbreviation,
-            offset,
-        });
+        source.aliases = aliases.join(" ");
     }
+    restore_timezone(previous_tz);
+}
+
+fn restore_timezone(previous_tz: Option<std::ffi::OsString>) {
     if let Some(value) = previous_tz {
         env::set_var("TZ", value)
     } else {
@@ -196,7 +187,94 @@ fn current_zones() -> Result<Vec<Zone>> {
     unsafe {
         tzset();
     }
-    Ok(result)
+}
+
+// The packaged TZDIR is immutable. Also notice table/version replacements in
+// a mutable database, and refresh seasonal aliases at a year/locale change.
+#[derive(PartialEq)]
+struct CatalogKey {
+    directory: PathBuf,
+    files: Vec<Option<(u64, SystemTime)>>,
+    context: Vec<Option<std::ffi::OsString>>,
+    year: String,
+}
+
+fn catalog_key(now: i64) -> CatalogKey {
+    let directory = fs::canonicalize(zoneinfo()).unwrap_or_else(|_| zoneinfo());
+    CatalogKey {
+        files: ["", "iso3166.tab", "zone1970.tab", "tzdata.zi", "Etc"]
+            .iter()
+            .map(|name| {
+                fs::metadata(directory.join(name))
+                    .ok()
+                    .and_then(|info| Some((info.len(), info.modified().ok()?)))
+            })
+            .collect(),
+        directory,
+        context: ["TZ", "LC_ALL", "LC_TIME", "LANG"]
+            .iter()
+            .map(env::var_os)
+            .collect(),
+        year: format_time(now, "%Y"),
+    }
+}
+
+#[derive(Default)]
+struct Catalog {
+    key: Option<CatalogKey>,
+    zones: Vec<ZoneSource>,
+}
+
+impl Catalog {
+    fn snapshot(&mut self, now: i64) -> Result<Value> {
+        let key = catalog_key(now);
+        if self.key.as_ref() != Some(&key) {
+            let mut zones = sources()?;
+            seasonal_aliases(&mut zones, now);
+            self.zones = zones;
+            self.key = Some(key);
+        }
+        let previous_tz = env::var_os("TZ");
+        let directory = zoneinfo();
+        let zones: Vec<_> = self
+            .zones
+            .iter()
+            .map(|source| {
+                let timezone = if source.zone.contains('/') {
+                    format!(":{}", directory.join(&source.zone).display())
+                } else {
+                    source.zone.clone()
+                };
+                env::set_var("TZ", timezone);
+                unsafe {
+                    tzset();
+                }
+                let [time, day, abbreviation, offset] = zone_time(now);
+                Zone {
+                    id: source.id.clone(),
+                    zone: source.zone.clone(),
+                    label: source.label.clone(),
+                    flag: source.flag.clone(),
+                    aliases: source.aliases.clone(),
+                    kind: source.kind.clone(),
+                    time,
+                    day,
+                    abbreviation,
+                    offset,
+                }
+            })
+            .collect();
+        restore_timezone(previous_tz);
+        Ok(json!({"pinned":pins(&self.zones),"zones":zones}))
+    }
+}
+
+fn print_snapshot(catalog: &mut Catalog) -> Result {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "{}", catalog.snapshot(now)?)?;
+    stdout.flush()?;
+    Ok(())
 }
 
 fn pin_path() -> PathBuf {
@@ -244,13 +322,19 @@ fn write_pins(values: &[String]) -> Result {
 
 pub fn run(arguments: &[String]) -> Result {
     let command = arguments.first().map(String::as_str).unwrap_or("list");
-    let available = sources()?;
     match command {
-        "list" => println!(
-            "{}",
-            serde_json::to_string(&json!({"pinned":pins(&available),"zones":current_zones()?}))?
-        ),
+        "list" => print_snapshot(&mut Catalog::default())?,
+        "watch" => {
+            let mut catalog = Catalog::default();
+            print_snapshot(&mut catalog)?;
+            for line in io::stdin().lock().lines() {
+                if line?.trim() == "refresh" {
+                    print_snapshot(&mut catalog)?;
+                }
+            }
+        }
         "pin" | "unpin" => {
+            let available = sources()?;
             let wanted = arguments.get(1).map(String::as_str).unwrap_or("");
             let id =
                 resolve(wanted, &available).ok_or_else(|| format!("Unknown timezone: {wanted}"))?;
@@ -264,7 +348,89 @@ pub fn run(arguments: &[String]) -> Result {
             }
             write_pins(&values)?;
         }
-        _ => return Err("Usage: seele-clock [list|pin TIMEZONE|unpin TIMEZONE]".into()),
+        _ => return Err("Usage: seele-clock [list|watch|pin TIMEZONE|unpin TIMEZONE]".into()),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn epoch(year: i32, month: i32, day: i32, hour: i32, minute: i32) -> i64 {
+        let mut date: libc::tm = unsafe { std::mem::zeroed() };
+        date.tm_year = year - 1900;
+        date.tm_mon = month - 1;
+        date.tm_mday = day;
+        date.tm_hour = hour;
+        date.tm_min = minute;
+        unsafe { libc::timegm(&mut date) as i64 }
+    }
+
+    #[test]
+    fn cached_metadata_keeps_live_dst_times_and_invalidates_with_database_and_year() {
+        // Clock runs in its own single-threaded process. No other unit test
+        // uses localtime/TZ; timestamps elsewhere use gmtime_r instead.
+        let previous_tz = env::var_os("TZ");
+        let previous_dir = env::var_os("TZDIR");
+        let dir = env::temp_dir().join(format!("seele-clock-test-{}", std::process::id()));
+        fs::create_dir_all(dir.join("Etc")).unwrap();
+        fs::write(dir.join("iso3166.tab"), "XX\tFixture\n").unwrap();
+        fs::write(dir.join("zone1970.tab"), "XX\t+0000+00000\tUTC\tOriginal\n").unwrap();
+        env::set_var("TZDIR", &dir);
+        env::set_var("TZ", "UTC");
+        unsafe {
+            tzset();
+        }
+        let before = epoch(2026, 3, 8, 6, 59);
+        let after = epoch(2026, 3, 8, 7, 0);
+        let mut catalog = Catalog::default();
+        let first = catalog.snapshot(before).unwrap();
+        let allocation = catalog.zones.as_ptr();
+        assert_eq!(first["zones"][0]["time"], "06:59");
+        let next = catalog.snapshot(after).unwrap();
+        assert_eq!(next["zones"][0]["time"], "07:00");
+        assert_eq!(
+            catalog.zones.as_ptr(),
+            allocation,
+            "metadata was rebuilt without a key change"
+        );
+        fs::write(
+            dir.join("zone1970.tab"),
+            "XX\t+0000+00000\tUTC\tReplacement comment\n",
+        )
+        .unwrap();
+        assert!(catalog.snapshot(after).unwrap()["zones"][0]["aliases"]
+            .as_str()
+            .unwrap()
+            .contains("Replacement comment"));
+        catalog.snapshot(epoch(2027, 1, 1, 0, 0)).unwrap();
+        assert_eq!(catalog.key.as_ref().unwrap().year, "2027");
+        // POSIX rules give the test a real DST transition without depending
+        // on which timezone files the test machine has installed.
+        catalog.key = Some(catalog_key(before));
+        catalog.zones = vec![ZoneSource {
+            id: "fixture".into(),
+            zone: "EST5EDT,M3.2.0,M11.1.0".into(),
+            label: "Fixture".into(),
+            flag: String::new(),
+            aliases: "EST EDT".into(),
+            kind: "city".into(),
+        }];
+        let first = catalog.snapshot(before).unwrap();
+        let next = catalog.snapshot(after).unwrap();
+        assert_eq!(first["zones"][0]["time"], "01:59");
+        assert_eq!(next["zones"][0]["time"], "03:00");
+        assert_eq!(first["zones"][0]["offset"], "-0500");
+        assert_eq!(next["zones"][0]["offset"], "-0400");
+        assert_eq!(first["zones"][0]["aliases"], next["zones"][0]["aliases"]);
+        assert_eq!(env::var("TZ").unwrap(), "UTC");
+        restore_timezone(previous_tz);
+        if let Some(value) = previous_dir {
+            env::set_var("TZDIR", value);
+        } else {
+            env::remove_var("TZDIR");
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

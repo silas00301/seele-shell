@@ -71,6 +71,7 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/share/licenses/seele-shell" "$out/libexec/seele-shell" "$out/bin"
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
+    install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude-code.svg} "$out/share/seele-shell/claude-code.svg"
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
@@ -134,6 +135,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
     test -f "$out/share/seele-shell/shell.qml"
     test -f "$out/share/seele-shell/CenteredGlyph.qml"
+    test -f "$out/share/seele-shell/SystemState.qml"
     test -f "$out/share/seele-shell/seele.svg"
     test -f "$out/share/seele-shell/claude-code.svg"
     test -s "$out/share/seele-shell/grain.png"
@@ -148,7 +150,11 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/vicinae/extensions/seele-shell/seele.js"
     test -f "$out/share/vicinae/extensions/seele-shell/keybindings.js"
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml"
+    bash ${../../tests/system-state.sh} \
+      "$out/share/seele-shell/SystemState.qml" \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+      ${../../tests/tst_systemstate.qml}
     FONTCONFIG_FILE=${fontConfig} bash ${../../tests/centered-glyph.sh} \
       "$out/share/seele-shell/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
@@ -165,6 +171,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"
+    node ${../../tests/status-patches.js} "$out/share/seele-shell/shell.qml"
     bash ${../../tests/clock.sh} "$out/bin/seele-clock"
     PATH="${runtimePath}:$PATH" bash ${../../tests/network-vpn.sh} "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${../../tests/bluetooth-receiver.sh} \

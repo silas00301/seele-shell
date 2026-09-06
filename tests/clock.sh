@@ -44,3 +44,10 @@ if $clock pin Invalid/Timezone 2>/dev/null; then
   printf 'invalid timezones must not be pinned\n' >&2
   exit 1
 fi
+
+# The resident worker replies once at startup and once per request, and exits
+# on EOF. Cached metadata must not change the public snapshot shape or pins.
+watch_result=$(printf 'refresh\nrefresh\n' | "$clock" watch)
+jq -se 'length == 3 and all(.[];
+  .pinned == ["Europe/London"] and (.zones | length) > 200
+  and all(.zones[]; .time != "" and .offset != ""))' <<<"$watch_result" >/dev/null

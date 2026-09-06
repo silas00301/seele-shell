@@ -254,7 +254,7 @@ fn pairing_open() -> Result {
     Ok(())
 }
 
-fn bluetooth_state() -> Value {
+pub(crate) fn bluetooth_state() -> Value {
     let raw = output(
         "busctl",
         [
@@ -654,18 +654,16 @@ fn set_airpods_ear_detection(action: &str) -> Result {
     Ok(())
 }
 
-fn status_value() -> Value {
-    // These read-only probes are independent of device discovery and of each
-    // other. Bound concurrency to three workers rather than one per command.
-    let audio_probe = thread::spawn(|| {
-        let audio = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SINK@"])
-            .unwrap_or_else(|| "Volume: 0.00".into());
-        let microphone = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
-            .unwrap_or_else(|| "Volume: 0.00".into());
-        (audio, microphone)
-    });
-    let vpn_probe = thread::spawn(|| (tailscale_state(), ssh_state()));
-    let graph_probe = thread::spawn(|| json_output("pw-dump", std::iter::empty::<&str>(), json!([])));
+pub(crate) fn volumes() -> Value {
+    let audio = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .unwrap_or_else(|| "Volume: 0.00".into());
+    let microphone = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+        .unwrap_or_else(|| "Volume: 0.00".into());
+    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),
+        "microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED")})
+}
+
+pub(crate) fn network_status() -> Value {
     let connections = output(
         "nmcli",
         ["-t", "-f", "TYPE,NAME", "connection", "show", "--active"],
@@ -687,9 +685,13 @@ fn status_value() -> Value {
         .unwrap_or_default()
         .trim()
         == "enabled";
-    let route = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]));
-    let bluetooth = bluetooth_state();
-    let headphones = headphone_state(&bluetooth);
+    json!({"connection":connection_name,"connectionType":connection_type,
+        "connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),
+        "wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"protonVpn":proton_state(&connections)})
+}
+
+pub(crate) fn bluetooth_status(bluetooth: &Value) -> Value {
+    let headphones = headphone_state(bluetooth);
     let mut batteries = system_batteries();
     batteries.extend(openlogi_batteries());
     for device in bluetooth["devices"]
@@ -707,8 +709,29 @@ fn status_value() -> Value {
     }
     let mut names = HashSet::new();
     batteries.retain(|value| names.insert(value["name"].as_str().unwrap_or("").to_owned()));
+    json!({"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],
+        "bluetoothScanning":bluetooth_scan_active(),"bluetoothReceiver":bluetooth_receiver_active(),
+        "bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],
+        "bluetoothDevices":bluetooth["devices"],"headphones":headphones,"batteries":batteries,
+        "airpodsEarDetection":airpods_ear_detection()})
+}
+
+pub(crate) fn auxiliary_status() -> Value {
     let cameras = camera_devices();
-    let dump = graph_probe.join().expect("PipeWire status worker panicked");
+    let route = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]));
+    json!({"tailscale":tailscale_state(),"sshServer":ssh_state(),"trayHidden":tray_hidden(),
+        "barModules":bar_modules(),"agentStates":agents::aggregate_states(),
+        "ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),
+        "gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),
+        "voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),
+        "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or("")})
+}
+
+pub(crate) fn notification_status() -> Value {
+    crate::notifications::Snapshot::read().patch()
+}
+
+pub(crate) fn graph_status(dump: &Value) -> Value {
     let array = dump.as_array().map(Vec::as_slice).unwrap_or_default();
     let microphone_active = array.iter().any(|object| {
         object
@@ -735,10 +758,29 @@ fn status_value() -> Value {
             == Some("Video/Source")
             && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
     });
-    let (audio, microphone) = audio_probe.join().expect("audio status worker panicked");
-    let (tailscale, ssh) = vpn_probe.join().expect("VPN status worker panicked");
-    let proton = proton_state(&connections);
-    json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":crate::audio::devices(&dump),"agentStates":agents::aggregate_states(),"notifications":crate::notifications::state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
+    json!({"microphoneActive":microphone_active,"cameraActive":camera_active,
+        "screenRecording":screen_recording,"audioDevices":crate::audio::devices(dump)})
+}
+
+pub(crate) fn merge_status(parts: impl IntoIterator<Item = Value>) -> Value {
+    let mut result = serde_json::Map::new();
+    for part in parts {
+        if let Value::Object(values) = part { result.extend(values); }
+    }
+    Value::Object(result)
+}
+
+fn status_value() -> Value {
+    // Keep the one-shot CLI compatible, with at most three probe workers.
+    let audio = thread::spawn(volumes);
+    let auxiliary = thread::spawn(auxiliary_status);
+    let graph = thread::spawn(|| graph_status(&json_output("pw-dump", std::iter::empty::<&str>(), json!([]))));
+    let network = network_status();
+    let bluetooth = bluetooth_status(&bluetooth_state());
+    merge_status([network, bluetooth, notification_status(),
+        audio.join().expect("audio status worker panicked"),
+        auxiliary.join().expect("auxiliary status worker panicked"),
+        graph.join().expect("PipeWire status worker panicked")])
 }
 fn print_status() {
     if !no_status() {
@@ -874,6 +916,8 @@ pub fn run(arguments: &[String]) -> Result {
     let command = arguments.first().map(String::as_str).unwrap_or("status");
     let arg = |index: usize| arguments.get(index).map(String::as_str).unwrap_or("");
     match command {
+        "watch-status" => return crate::live::run(),
+        "notifications-status" => { println!("{}", notification_status()); return Ok(()); }
         "status" => println!("{}", status_value()),
         "agent-status" => println!("{}", agents::aggregate_states()),
         "bluetooth-status" => println!("{}", bluetooth_state()),

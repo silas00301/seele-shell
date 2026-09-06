@@ -23,24 +23,34 @@ fn clean_key(value: &str) -> String {
         .collect()
 }
 
-fn proc_stat(pid: u32) -> Option<(u32, u64)> {
-    let text = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+fn parse_proc_stat(text: &str) -> Option<(u32, u64, &str)> {
+    let start = text.find('(')?;
     let end = text.rfind(") ")?;
-    let fields: Vec<&str> = text[end + 2..].split_whitespace().collect();
-    let parent = fields.get(1)?.parse().ok()?;
-    let user: u64 = fields.get(11)?.parse().ok()?;
-    let system: u64 = fields.get(12)?.parse().ok()?;
-    Some((parent, user + system))
+    let name = text.get(start + 1..end)?;
+    let mut fields = text[end + 2..].split_whitespace();
+    let parent = fields.nth(1)?.parse().ok()?;
+    // After state and ppid, utime is nine fields ahead; stime follows it.
+    let user: u64 = fields.nth(9)?.parse().ok()?;
+    let system: u64 = fields.next()?.parse().ok()?;
+    Some((parent, user.checked_add(system)?, name))
 }
 
-fn process_name(pid: u32) -> String {
-    fs::read_to_string(format!("/proc/{pid}/comm"))
-        .unwrap_or_default()
-        .trim()
+fn proc_stat(pid: u32) -> Option<(u32, u64)> {
+    let text = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (parent, ticks, _) = parse_proc_stat(&text)?;
+    Some((parent, ticks))
+}
+
+fn normalized_process_name(name: &str) -> &str {
+    name.trim()
         .trim_start_matches('.')
         .trim_end_matches("-wrapped")
         .trim_end_matches("-wrapp")
-        .to_owned()
+}
+
+fn process_name(pid: u32) -> String {
+    let name = fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
+    normalized_process_name(&name).to_owned()
 }
 
 fn owning_pid(agent: &str) -> u32 {
@@ -666,10 +676,16 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
-        if let Some((parent, ticks)) = proc_stat(pid) {
+        // stat already carries the same comm field as /proc/<pid>/comm.
+        // Reuse that read for discovery as well as CPU accounting.
+        let stat = fs::read_to_string(entry.path().join("stat")).ok();
+        let parsed = stat.as_deref().and_then(parse_proc_stat);
+        let mut name = if let Some((parent, ticks, name)) = parsed {
             processes.push((pid, parent, ticks));
-        }
-        let mut name = process_name(pid);
+            normalized_process_name(name).to_owned()
+        } else {
+            process_name(pid)
+        };
         if !matches!(name.as_str(), "pi" | "opencode" | "codex" | "claude") {
             let bytes = fs::read(entry.path().join("cmdline")).unwrap_or_default();
             name =
@@ -695,6 +711,45 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stat_snapshot_supplies_name_parent_and_ticks_together() {
+        for name in [
+            "pi",
+            ".claude-wrapped",
+            ".opencode-wrapp",
+            "name with ) (parens)",
+            "a\nb",
+        ] {
+            let text = format!("42 ({name}) S 7 0 0 0 0 0 0 0 0 0 13 5 0 0\n");
+            assert_eq!(parse_proc_stat(&text), Some((7, 18, name)));
+        }
+        assert_eq!(normalized_process_name(".claude-wrapped\n"), "claude");
+        assert_eq!(normalized_process_name(".opencode-wrapp"), "opencode");
+        assert_eq!(normalized_process_name(" pi "), "pi");
+    }
+
+    #[test]
+    fn malformed_stat_snapshots_are_ignored() {
+        for text in [
+            "",
+            "42 no name S 7",
+            "42 (pi) S 7",
+            "42 (pi) S invalid",
+            "42 (pi) S 7 0 0 0 0 0 0 0 0 0 nope 5",
+            "42 (pi) S 7 0 0 0 0 0 0 0 0 0 18446744073709551615 1",
+        ] {
+            assert_eq!(parse_proc_stat(text), None);
+        }
+    }
+
+    #[test]
+    fn stat_name_matches_the_kernel_comm_for_this_process() {
+        let pid = std::process::id();
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+        let (_, _, name) = parse_proc_stat(&stat).unwrap();
+        assert_eq!(normalized_process_name(name), process_name(pid));
+    }
 
     #[test]
     fn repeated_poll_in_one_second_preserves_idle_history() {

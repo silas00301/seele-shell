@@ -2,5 +2,6 @@
 result
 result-*
 node_modules/
+/projects/tools/target/
 __pycache__/
 *.swp

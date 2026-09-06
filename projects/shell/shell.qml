@@ -239,8 +239,6 @@ ShellRoot {
   property bool polkitPrompting: false
   property bool lockPrompting: false
   property bool statusInitialized: false
-  property bool statusRefreshQueued: false
-  property bool bluetoothStatusRefreshQueued: false
   property string pendingControlAction: ""
   property string pendingControlValue: ""
   property string pendingControlExtra: ""
@@ -260,44 +258,7 @@ ShellRoot {
     var periods = (agentData.local || {}).periods || {}
     return periods[agentMetricPeriod] || { totalTokens: 0, totalCost: 0, models: [] }
   }
-  property var systemData: ({
-    volume: 0,
-    muted: false,
-    microphoneVolume: 0,
-    microphoneMuted: false,
-    microphoneActive: false,
-    connection: "Disconnected",
-    connectionType: "",
-    connectivity: "unknown",
-    wifiEnabled: false,
-    wifiAvailable: false,
-    ipAddress: "",
-    gateway: "",
-    tailscale: { available: false, backend: "Unavailable", connected: false, needsLogin: false, name: "", ip: "", tailnet: "", peers: 0, onlinePeers: 0 },
-    protonVpn: { available: false, connected: false, connection: "" },
-    sshServer: { available: false, mode: "off", tailscaleAvailable: false, sshAvailable: false },
-    bluetoothAvailable: false,
-    bluetoothPowered: false,
-    bluetoothConnected: 0,
-    bluetoothScanning: false,
-    bluetoothReceiver: false,
-    bluetoothDiscoverable: false,
-    bluetoothDevices: [],
-    headphones: { connected: false, name: "", kind: "", battery: null, controls: false, noiseMode: "" },
-    voxtypeStatus: "unavailable",
-    cameraDevices: [],
-    cameraDevice: "",
-    cameraActive: false,
-    screenRecording: false,
-    audioDevices: [],
-    batteries: [],
-    trayHidden: [],
-    barModules: ({}),
-    airpodsEarDetection: true,
-    agentStates: {},
-    notifications: { count: 0, items: [], history: [] },
-    dnd: false
-  })
+  readonly property SystemState systemData: SystemState {}
   property bool agentRefreshing: false
   property string bluetoothBusy: ""
   property string bluetoothAction: ""
@@ -422,7 +383,12 @@ ShellRoot {
     if (controlPanel === "") return
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
-    refreshStatus()
+    var group = panel === "notifications" ? "notifications"
+      : panel === "audio" ? "audio"
+      : ["bluetooth", "airpods"].indexOf(panel) >= 0 ? "bluetooth"
+      : panel === "network" ? "network"
+      : ["control-center", "vpn"].indexOf(panel) >= 0 ? "all" : "aux"
+    refreshStatus(group)
   }
 
   function toggleApplication(window, screen, anchorX) {
@@ -481,14 +447,13 @@ ShellRoot {
     }[agentMetricPeriod] || "day"
   }
 
-  function refreshStatus() {
-    if (statusProcess.running) root.statusRefreshQueued = true
+  function refreshStatus(group) {
+    if (statusProcess.running) statusProcess.write(String(group || "all") + "\n")
     else statusProcess.running = true
   }
 
   function refreshBluetoothStatus() {
-    if (bluetoothStatusProcess.running) root.bluetoothStatusRefreshQueued = true
-    else bluetoothStatusProcess.running = true
+    root.refreshStatus("bluetooth")
   }
 
   function notificationPopupClock() {
@@ -526,58 +491,42 @@ ShellRoot {
     try {
       var parsed = JSON.parse(String(output || ""))
       if (parsed) {
-        var nextHeadphones = parsed.headphones || ({})
-        var currentHeadphones = root.systemData.headphones || ({})
-        if (root.statusInitialized && !!nextHeadphones.connected !== !!currentHeadphones.connected) {
-          root.headphonesOsdConnected = !!nextHeadphones.connected
-          root.headphonesOsdName = String(nextHeadphones.name || currentHeadphones.name || "Headphones")
-          root.headphonesOsdKind = String(nextHeadphones.kind || currentHeadphones.kind || "airpods")
-          root.showTimedOsd("airpods")
-        }
-        var previousNotifications = (root.systemData.notifications || {}).items || []
-        var nextNotifications = (parsed.notifications || {}).items || []
-        var previousIds = {}
-        for (var i = 0; i < previousNotifications.length; i++) previousIds[String(previousNotifications[i].id)] = true
-        for (var j = 0; j < nextNotifications.length; j++) {
-          if (!previousIds[String(nextNotifications[j].id)]) {
-            root.notificationPopupScreen = root.currentScreen()
-            break
+        if (parsed.headphones !== undefined) {
+          var nextHeadphones = parsed.headphones || ({})
+          var currentHeadphones = root.systemData.headphones || ({})
+          if (root.statusInitialized && !!nextHeadphones.connected !== !!currentHeadphones.connected) {
+            root.headphonesOsdConnected = !!nextHeadphones.connected
+            root.headphonesOsdName = String(nextHeadphones.name || currentHeadphones.name || "Headphones")
+            root.headphonesOsdKind = String(nextHeadphones.kind || currentHeadphones.kind || "airpods")
+            root.showTimedOsd("airpods")
           }
+          root.statusInitialized = true
         }
-        // Stamped before the assignment below, so the popup bindings never see
-        // fresh items against a clock from the last tick.
-        root.notificationNow = root.notificationPopupClock()
-        systemData = parsed
-        root.pruneNotificationPopups(parsed.notifications)
-        if (parsed.dnd) root.retireNotificationPopupsForDnd(parsed.notifications)
-        root.statusInitialized = true
-        if (root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
-        if (root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
-        root.reconcileBluetoothScanIntent(!!parsed.bluetoothScanning)
-        root.reconcileBluetoothReceiverIntent(!!parsed.bluetoothReceiver)
+        if (parsed.notifications !== undefined) {
+          var previousNotifications = (root.systemData.notifications || {}).items || []
+          var nextNotifications = (parsed.notifications || {}).items || []
+          var previousIds = {}
+          for (var i = 0; i < previousNotifications.length; i++) previousIds[String(previousNotifications[i].id)] = true
+          for (var j = 0; j < nextNotifications.length; j++) {
+            if (!previousIds[String(nextNotifications[j].id)]) {
+              root.notificationPopupScreen = root.currentScreen()
+              break
+            }
+          }
+          // Stamp before publishing new items to the popup bindings.
+          root.notificationNow = root.notificationPopupClock()
+        }
+        root.systemData.apply(parsed)
+        if (parsed.notifications !== undefined) root.pruneNotificationPopups(parsed.notifications)
+        if ((parsed.notifications !== undefined || parsed.dnd !== undefined) && root.systemData.dnd)
+          root.retireNotificationPopupsForDnd(root.systemData.notifications)
+        if (parsed.volume !== undefined && root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
+        if (parsed.microphoneVolume !== undefined && root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
+        if (parsed.bluetoothScanning !== undefined) root.reconcileBluetoothScanIntent(!!parsed.bluetoothScanning)
+        if (parsed.bluetoothReceiver !== undefined) root.reconcileBluetoothReceiverIntent(!!parsed.bluetoothReceiver)
       }
     } catch (error) {
       console.warn("seele-shell/status", error)
-    }
-  }
-
-  function parseBluetoothData(output) {
-    try {
-      var parsed = JSON.parse(String(output || ""))
-      if (!parsed) return
-      root.patchSystemData({
-        bluetoothAvailable: !!parsed.available,
-        bluetoothPowered: !!parsed.powered,
-        bluetoothScanning: !!parsed.scanning,
-        bluetoothReceiver: !!parsed.receiver,
-        bluetoothDiscoverable: !!parsed.discoverable,
-        bluetoothConnected: Number(parsed.connected || 0),
-        bluetoothDevices: parsed.devices || []
-      })
-      root.reconcileBluetoothScanIntent(!!parsed.scanning)
-      root.reconcileBluetoothReceiverIntent(!!parsed.receiver)
-    } catch (error) {
-      console.warn("seele-shell/bluetooth-status", error)
     }
   }
 
@@ -1466,10 +1415,7 @@ ShellRoot {
   }
 
   function patchSystemData(patch) {
-    var next = {}
-    for (var key in root.systemData) next[key] = root.systemData[key]
-    for (var field in patch) next[field] = patch[field]
-    root.systemData = next
+    root.systemData.apply(patch)
   }
 
   function agoText(value) {
@@ -1639,7 +1585,8 @@ ShellRoot {
   }
 
   function refreshClock() {
-    if (!clockProcess.running) clockProcess.running = true
+    if (clockProcess.running) clockProcess.write("refresh\n")
+    else clockProcess.running = true
   }
 
   function parseClockData(output) {
@@ -1713,11 +1660,18 @@ ShellRoot {
 
   Process {
     id: clockProcess
-    command: ["seele-clock", "list"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.parseClockData(text)
+    command: ["seele-clock", "watch"]
+    stdinEnabled: true
+    stdout: SplitParser {
+      onRead: data => root.parseClockData(data)
     }
+    onExited: clockRestartTimer.restart()
+  }
+
+  Timer {
+    id: clockRestartTimer
+    interval: 1000
+    onTriggered: clockProcess.running = true
   }
 
   Process {
@@ -1727,40 +1681,20 @@ ShellRoot {
 
   Process {
     id: statusProcess
-    command: ["seele-control", "status"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.parseSystemData(text)
-    }
-    onExited: {
-      if (root.statusRefreshQueued) {
-        root.statusRefreshQueued = false
-        Qt.callLater(function() { statusProcess.running = true })
-      }
-    }
-  }
-
-  // Mako owns the history and timeout. Watching its D-Bus traffic makes the
-  // shell-native popup appear and disappear without waiting for the 5s status
-  // refresh.
-  Process {
-    command: [
-      "busctl",
-      "--user",
-      "--match=type='method_call',interface='org.freedesktop.Notifications',member='Notify'",
-      "--match=type='signal',interface='org.freedesktop.Notifications',member='NotificationClosed'",
-      "monitor"
-    ]
+    command: ["seele-control", "watch-status"]
+    stdinEnabled: true
     running: true
     stdout: SplitParser {
-      onRead: root.refreshStatus()
+      onRead: data => root.parseSystemData(data)
     }
+    onExited: statusRestartTimer.restart()
   }
 
   Process {
     id: controlProcess
     environment: ({ SEELE_CONTROL_NO_STATUS: "1" })
     onExited: function(exitCode) {
+      var action = root.pendingControlAction
       if (exitCode === 0) {
         root.completedControlAction = root.pendingControlAction
         root.completedControlValue = root.pendingControlValue
@@ -1776,22 +1710,10 @@ ShellRoot {
       root.pendingControlValue = ""
       root.pendingControlExtra = ""
       controlFeedbackTimer.restart()
-      root.refreshStatus()
-    }
-  }
-
-  Process {
-    id: bluetoothStatusProcess
-    command: ["seele-control", "bluetooth-status"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.parseBluetoothData(text)
-    }
-    onExited: {
-      if (root.bluetoothStatusRefreshQueued) {
-        root.bluetoothStatusRefreshQueued = false
-        Qt.callLater(function() { bluetoothStatusProcess.running = true })
-      }
+      var group = ["notifications", "dnd"].indexOf(action) >= 0 ? "notifications"
+        : ["volume", "microphone", "audio-device"].indexOf(action) >= 0 ? "audio"
+        : ["wifi", "proton-vpn"].indexOf(action) >= 0 ? "network" : "aux"
+      root.refreshStatus(group)
     }
   }
 
@@ -1881,11 +1803,9 @@ ShellRoot {
   }
 
   Timer {
-    interval: 5000
-    repeat: true
-    running: true
-    triggeredOnStart: true
-    onTriggered: root.refreshStatus()
+    id: statusRestartTimer
+    interval: 1000
+    onTriggered: statusProcess.running = true
   }
 
   Timer {
@@ -1952,18 +1872,6 @@ ShellRoot {
     id: bluetoothScanTimer
     interval: 120000
     onTriggered: root.setBluetoothScanning(false)
-  }
-
-  // A search needs the fastest cadence, but the receiver row reports live state
-  // too — what is connected and whether it is actually streaming — and the
-  // shared five-second status poll is too slow to read as live.
-  Timer {
-    interval: root.bluetoothScanActive ? 500 : 1500
-    repeat: true
-    running: root.controlPanel === "bluetooth"
-      && (root.bluetoothScanActive || root.bluetoothReceiverActive || root.bluetoothSources().length > 0)
-    triggeredOnStart: true
-    onTriggered: root.refreshBluetoothStatus()
   }
 
   Timer {

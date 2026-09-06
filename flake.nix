@@ -56,6 +56,7 @@
               nodejs
               qt6.qtdeclarative
               cargo
+              dbus
               dbus.dev
               pkg-config
               stdenv.cc
@@ -90,12 +91,17 @@
               }
               {
                 name = "test-shell";
-                help = "Run the Rust and JavaScript tests";
+                help = "Run the Rust, JavaScript, and QML tests";
                 command = ''
                   set -e
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/time.js projects/shell/time.js
+                  node tests/status-patches.js projects/shell/shell.qml
+                  bash tests/system-state.sh \
+                    projects/shell/SystemState.qml \
+                    ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+                    tests/tst_systemstate.qml
                   FONTCONFIG_FILE=${fontConfig} bash tests/centered-glyph.sh \
                     projects/shell/CenteredGlyph.qml \
                     ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
