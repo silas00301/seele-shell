@@ -220,37 +220,62 @@ fn stream(mut child: Child, graph: bool, sender: mpsc::Sender<Event>) -> Child {
 }
 
 fn parse_pending(pending: &mut String, session: &mut Session) {
-    loop {
-        let trimmed = pending.trim_start();
-        let skipped = pending.len() - trimmed.len();
-        if skipped > 0 {
-            pending.drain(..skipped);
+    parse_values(pending, |value| {
+        if let Value::Array(objects) = value {
+            for object in objects {
+                session.graph(&object);
+            }
         }
-        if pending.is_empty() {
+    });
+}
+
+fn parse_values(pending: &mut String, mut consume: impl FnMut(Value)) {
+    let mut consumed = 0;
+    loop {
+        let remaining = &pending[consumed..];
+        let trimmed = remaining.trim_start();
+        consumed += remaining.len() - trimmed.len();
+        if trimmed.is_empty() {
             break;
         }
-        let mut stream = serde_json::Deserializer::from_str(pending).into_iter::<Value>();
+        let mut stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Value>();
         match stream.next() {
-            Some(Ok(Value::Array(objects))) => {
-                let used = stream.byte_offset();
-                for object in objects {
-                    session.graph(&object);
-                }
-                pending.drain(..used);
-            }
-            Some(Ok(_)) => {
-                let used = stream.byte_offset();
-                pending.drain(..used);
+            Some(Ok(value)) => {
+                consumed += stream.byte_offset();
+                consume(value);
             }
             Some(Err(error)) if error.is_eof() => break,
             Some(Err(_)) => {
-                pending.remove(0);
+                consumed += trimmed.chars().next().unwrap().len_utf8();
             }
             None => {
-                pending.clear();
+                consumed = pending.len();
                 break;
             }
         }
+    }
+    pending.drain(..consumed);
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    #[test]
+    fn split_values_and_invalid_utf8_characters_preserve_stream_order() {
+        let mut pending = String::new();
+        let mut values = Vec::new();
+        for chunk in [" \n[", "1] 🦀 [2,", "3] tr", "ue {\"x\":", "4}"] {
+            pending.push_str(chunk);
+            parse_values(&mut pending, |value| values.push(value));
+        }
+        assert_eq!(values, [serde_json::json!([1]), serde_json::json!([2, 3]), Value::Bool(true), serde_json::json!({"x":4})]);
+        assert!(pending.is_empty());
+        pending.push_str("[1][2][3");
+        values.clear();
+        parse_values(&mut pending, |value| values.push(value));
+        assert_eq!(values, [serde_json::json!([1]), serde_json::json!([2])]);
+        assert_eq!(pending, "[3");
     }
 }
 
