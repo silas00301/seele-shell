@@ -125,6 +125,13 @@ SH
 cat >"$work/bin/wpctl" <<'SH'
 #!/usr/bin/env bash
 if [[ ${1:-} == get-volume ]]; then
+  if [[ ${MOCK_REQUIRE_OVERLAP:-0} == 1 ]]; then
+    for ((attempt = 0; attempt < 200; attempt++)); do
+      [[ -s "$XDG_RUNTIME_DIR/nmcli-queries" ]] && break
+      sleep 0.01
+    done
+    [[ -s "$XDG_RUNTIME_DIR/nmcli-queries" ]] || exit 1
+  fi
   printf 'Volume: 1.00\n'
 else
   printf 'wpctl %s\n' "$*" >>"$MOCK_ACTIONS"
@@ -155,8 +162,10 @@ SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx open "$MOCK_VICINAE_STATE"
 
 : >"$XDG_RUNTIME_DIR/nmcli-queries"
-state=$("$control" status | jq '.tailscale')
+state=$(MOCK_REQUIRE_OVERLAP=1 "$control" status)
 test "$(wc -l <"$XDG_RUNTIME_DIR/nmcli-queries")" -eq 1
+jq -e '.volume == 100 and .microphoneVolume == 100' <<<"$state" >/dev/null
+state=$(jq '.tailscale' <<<"$state")
 jq -e '
   .available and .connected and (.needsLogin | not)
   and .name == "fixture-host" and .ip == "100.64.0.1"
