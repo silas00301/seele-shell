@@ -25,7 +25,14 @@ case $1 in
       {
         provider: "codex",
         daily: [
-          {date: "2026-08-29", totalTokens: 20, totalCost: 2, modelBreakdowns: [{modelName: "codex-model", totalTokens: 20, cost: 2}]},
+          {date: "2026-08-29", totalTokens: 20, totalCost: 2, modelBreakdowns: [
+            {modelName: "codex-model", totalTokens: 20, cost: 2},
+            {modelName: "gpt-5.6-sol", totalTokens: 5, cost: 0.5},
+            {modelName: "gpt-5.6-luna", totalTokens: 4, cost: 0.4},
+            {modelName: "gpt-5.6-terra", totalTokens: 3, cost: 0.3},
+            {modelName: "codex-auto-review", totalTokens: 2, cost: 0.2},
+            {modelName: "gpt-6-astra", totalTokens: 1, cost: 0.1}
+          ]},
           {date: "2026-08-24", totalTokens: 10, totalCost: 1, modelBreakdowns: [{modelName: "codex-model", totalTokens: 10, cost: 1}]},
           {date: "2026-08-09", totalTokens: 30, totalCost: 3, modelBreakdowns: [{modelName: "codex-model", totalTokens: 30, cost: 3}]},
           {date: "2026-07-10", totalTokens: 40, totalCost: 4, modelBreakdowns: [{modelName: "codex-model", totalTokens: 40, cost: 4}]}
@@ -66,6 +73,7 @@ jq -e '
   and .local.periods.all.totalTokens == 250
   and .local.periods.all.totalCost == 38
   and any(.local.periods.day.models[]; .name == "claude-model" and .tokens == 70 and .cost == 7)
+  and any(.local.models[]; .name == "gpt-6-astra" and .tokens == 1 and .cost == 0.1)
 ' "$work/result.json" >/dev/null
 
 test "$(<"$work/cost-count")" -eq 2

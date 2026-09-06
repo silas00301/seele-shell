@@ -103,6 +103,10 @@ ShellRoot {
   readonly property int chipHeight: 28
   readonly property int controlHeight: 34
   readonly property int rowHeight: 40
+  // A notification card is as tall as what it holds, but never shorter than
+  // this: one line of summary over one line of body, beside the app icon. An
+  // empty list is measured against it too, so "nothing here" costs one card.
+  readonly property int notificationRowHeight: 54
   // Text needs more contrast than decorative borders and inactive glyphs.
   readonly property color mutedText: subtext
   // Textured chrome. Surfaces stay translucent so the compositor's blur
@@ -212,6 +216,9 @@ ShellRoot {
   // popup hides a toast, it does not dismiss what raised it.
   readonly property int notificationPopupSeconds: 10
   property double notificationNow: 0
+  property int notificationPopupHoverCount: 0
+  property double notificationPopupPausedAt: 0
+  property double notificationPopupPausedSeconds: 0
   property var notificationPopupRetired: ({})
   // A toast is a place to notice something and the panel is a place to read it,
   // so the panel shows a notification whole and only the toast keeps it to one
@@ -482,6 +489,26 @@ ShellRoot {
     else bluetoothStatusProcess.running = true
   }
 
+  function notificationPopupClock() {
+    var now = Date.now() / 1000
+    var currentPause = root.notificationPopupPausedAt > 0 ? now - root.notificationPopupPausedAt : 0
+    return now - root.notificationPopupPausedSeconds - currentPause
+  }
+
+  function setNotificationPopupHovered(hovered) {
+    if (hovered) {
+      root.notificationPopupHoverCount += 1
+      if (root.notificationPopupHoverCount === 1) root.notificationPopupPausedAt = Date.now() / 1000
+    } else {
+      root.notificationPopupHoverCount = Math.max(0, root.notificationPopupHoverCount - 1)
+      if (root.notificationPopupHoverCount === 0 && root.notificationPopupPausedAt > 0) {
+        root.notificationPopupPausedSeconds += Date.now() / 1000 - root.notificationPopupPausedAt
+        root.notificationPopupPausedAt = 0
+      }
+    }
+    root.notificationNow = root.notificationPopupClock()
+  }
+
   function parseAgentData(output) {
     try {
       var parsed = JSON.parse(String(output || ""))
@@ -517,9 +544,10 @@ ShellRoot {
         }
         // Stamped before the assignment below, so the popup bindings never see
         // fresh items against a clock from the last tick.
-        root.notificationNow = Date.now() / 1000
+        root.notificationNow = root.notificationPopupClock()
         systemData = parsed
         root.pruneNotificationPopups(parsed.notifications)
+        if (parsed.dnd) root.retireNotificationPopupsForDnd(parsed.notifications)
         root.statusInitialized = true
         if (root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
         if (root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
@@ -1041,6 +1069,24 @@ ShellRoot {
       else dropped = true
     }
     if (dropped) root.notificationPopupRetired = retired
+  }
+
+  // Do not disturb silences a notification for good, not merely until the
+  // mode ends. The popup surface is hidden while the mode is on, but the
+  // entries behind it were still inside their ten seconds, so switching the
+  // mode off toasted everything that had arrived meanwhile at once.
+  function retireNotificationPopupsForDnd(notifications) {
+    var items = (notifications || {}).items || []
+    var retired = {}
+    var added = false
+    for (var key in root.notificationPopupRetired) retired[key] = true
+    for (var i = 0; i < items.length; i++) {
+      var id = String(items[i].id)
+      if (retired[id]) continue
+      retired[id] = true
+      added = true
+    }
+    if (added) root.notificationPopupRetired = retired
   }
 
   function dismissNotification(id) {
@@ -1846,7 +1892,7 @@ ShellRoot {
     repeat: true
     running: root.notificationPopupEntries().length > 0
     triggeredOnStart: true
-    onTriggered: root.notificationNow = Date.now() / 1000
+    onTriggered: root.notificationNow = root.notificationPopupClock()
   }
 
   Timer {
@@ -3139,10 +3185,13 @@ ShellRoot {
 
     radius: root.radius
     opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? 0.45 : 1
-    color: controlTileMouse.pressed ? root.pressColor : controlTile.active ? root.activeTint : controlTileMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+    readonly property bool hovered: controlTileHover.hovered
+    color: controlTileMouse.pressed ? root.pressColor : controlTile.hovered ? root.hoveredColor(controlTile.active ? root.activeTint : root.cardColor) : controlTile.active ? root.activeTint : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
     CardEdge {}
+
+    HoverHandler { id: controlTileHover }
 
     Row {
       anchors.fill: parent
@@ -3387,6 +3436,7 @@ ShellRoot {
 
     spacing: 6
     clip: true
+    boundsBehavior: Flickable.StopAtBounds
     model: notificationList.history ? (root.systemData.notifications.history || [])
       : notificationList.popup ? root.notificationPopupEntries()
       : (root.systemData.notifications.items || [])
@@ -3402,8 +3452,12 @@ ShellRoot {
       readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
       // Only a toast folds, and only when there is something folded away.
       readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded)
+      readonly property string iconSource: {
+        var icon = String(modelData.app_icon || "").trim()
+        return icon !== "" && icon.indexOf("/tmp/") !== 0 ? Quickshell.iconPath(icon) : ""
+      }
       width: ListView.view.width
-      height: Math.max(60, notificationText.implicitHeight + 18)
+      height: Math.max(root.notificationRowHeight, notificationText.implicitHeight + (notificationEntry.unfolded ? 18 : 12))
       radius: root.radius
       // Asked of the card rather than of the pointer area covering it. The
       // unfold and dismiss buttons sit on top of that area with hover enabled
@@ -3419,9 +3473,36 @@ ShellRoot {
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-      HoverHandler { id: notificationHover }
+      HoverHandler {
+        id: notificationHover
+        onHoveredChanged: if (notificationList.popup) root.setNotificationPopupHovered(hovered)
+      }
 
       CardEdge {}
+
+      Item {
+        id: notificationIconFrame
+        width: 34
+        height: 34
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: 9
+        anchors.topMargin: 9
+
+        Text {
+          anchors.fill: parent
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          text: "󰂚"
+          color: root.accent
+          font.family: root.fontFamily
+          font.pixelSize: root.textSubhead
+        }
+        IconImage {
+          anchors.fill: parent
+          source: notificationEntry.iconSource
+        }
+      }
 
       MouseArea {
         id: notificationOpenMouse
@@ -3434,19 +3515,23 @@ ShellRoot {
 
       Column {
         id: notificationText
-        anchors.left: parent.left
+        anchors.left: notificationIconFrame.right
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 9
+        anchors.leftMargin: root.spaceMedium
+        anchors.rightMargin: 9
+        anchors.topMargin: 9
         spacing: 3
         Row {
           width: parent.width
-          Text { width: parent.width - (notificationEntry.unfoldable ? 110 : 84); text: modelData.summary || modelData.app_name || "Notification"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-          Text { width: 58; text: root.agoText(modelData.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
+          height: 20
+          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: modelData.summary || modelData.app_name || "Notification"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
+          Item { width: 6; height: parent.height }
+          Text { width: 58; height: parent.height; text: root.agoText(modelData.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
           Rectangle {
             visible: notificationEntry.unfoldable
-            width: visible ? 26 : 0
-            height: 20
+            width: visible ? 20 : 0
+            height: parent.height
             radius: root.radiusSmall
             color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : root.clearColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -3467,11 +3552,12 @@ ShellRoot {
             }
             HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
           }
+          Item { visible: !notificationEntry.unfoldable; width: visible ? 6 : 0; height: parent.height }
           Rectangle {
             readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.modelData.id))
             visible: !notificationList.history
-            width: visible ? 26 : 0
-            height: 20
+            width: visible ? 20 : 0
+            height: parent.height
             radius: root.radiusSmall
             color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : root.clearDanger
             Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -3482,13 +3568,9 @@ ShellRoot {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              // On a popup this closes the toast and leaves the notification
-              // in the panel; in the panel it is the actual dismissal.
-              onClicked: notificationList.popup
-                ? root.retireNotificationPopup(notificationEntry.modelData.id)
-                : root.dismissNotification(notificationEntry.modelData.id)
+              onClicked: root.dismissNotification(notificationEntry.modelData.id)
             }
-            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide · stays in notifications" : "Dismiss" }
+            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: "Dismiss" }
           }
         }
         Text {
@@ -4647,7 +4729,23 @@ ShellRoot {
               anchors.centerIn: parent
               height: parent.height
               spacing: 4
-              Text { anchors.verticalCenter: parent.verticalCenter; text: root.systemData.dnd ? "󰂛" : "󰂚"; color: root.systemData.dnd ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              // A Material bell draws well outside its advance, and the
+              // silenced one draws wider still -- 13px of ink against 11px,
+              // for the 8.4px both of them advance. Measuring the button from
+              // the advance therefore left the mode deciding how much padding
+              // was left around the mark. The slot is the silenced bell's ink
+              // in both modes, so the button is that bell plus its padding
+              // whichever bell is drawn, and the count still adds to it.
+              FontMetrics { id: notificationBarGlyphMetrics; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              CenteredGlyph {
+                anchors.verticalCenter: parent.verticalCenter
+                width: notificationBarGlyphMetrics.tightBoundingRect("󰂛").width
+                height: parent.height
+                text: root.systemData.dnd ? "󰂛" : "󰂚"
+                color: root.systemData.dnd ? root.yellow : root.text
+                font.family: root.fontFamily
+                font.pixelSize: root.textIcon
+              }
               Text { visible: Number(root.systemData.notifications.count || 0) > 0; anchors.verticalCenter: parent.verticalCenter; text: String(root.systemData.notifications.count); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption; font.weight: root.weightStrong }
             }
             MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("notifications", barWindow.modelData.name, root.barItemCenter(parent)) }
@@ -4835,14 +4933,17 @@ ShellRoot {
               ]
               Rectangle {
                 required property var modelData
+                readonly property bool hovered: applicationActionHover.hovered
                 width: parent.width
                 height: root.controlHeight
                 radius: root.radius
                 color: modelData.force
-                  ? applicationActionMouse.pressed ? root.dangerPress : applicationActionMouse.containsMouse ? root.dangerColor : root.dangerTint
-                  : applicationActionMouse.pressed ? root.pressColor : applicationActionMouse.containsMouse ? root.hoverColor : root.cardColor
+                  ? applicationActionMouse.pressed ? root.dangerPress : hovered ? root.dangerColor : root.dangerTint
+                  : applicationActionMouse.pressed ? root.pressColor : hovered ? root.hoverColor : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 CardEdge { border.color: modelData.force ? root.alpha(root.red, 0.22) : root.cardBorder }
+
+                HoverHandler { id: applicationActionHover }
 
                 Row {
                   anchors.fill: parent
@@ -6702,7 +6803,10 @@ ShellRoot {
       // history and clear row, and the gap on either side of it.
       readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
         + root.panelSpacing + 36 + root.panelSpacing
-      readonly property int emptyHeight: chromeHeight + 46
+      // An empty list is worth exactly one card: the panel says there is
+      // nothing here in the space one notification would have taken, rather
+      // than holding open a void the size of several.
+      readonly property int emptyHeight: chromeHeight + root.notificationRowHeight
       property int stableHeight: emptyHeight
       screen: modelData
       visible: root.controlPanel === "notifications" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -6717,30 +6821,35 @@ ShellRoot {
 
       // Rows are as tall as the notification they hold, so the opening height
       // comes from what the list actually measured rather than a row count.
+      // It measures the list that is on screen, so the height follows the
+      // side of the panel being read instead of whichever side is longer.
       function suggestedHeight() {
-        var notifications = root.systemData.notifications || { items: [], history: [] }
-        var count = Math.max((notifications.items || []).length, (notifications.history || []).length)
-        if (count === 0) return emptyHeight
+        if (entries.length === 0) return emptyHeight
         var content = root.notificationHistoryOpen ? notificationHistoryList.contentHeight : notificationCurrentList.contentHeight
-        return Math.min(560, chromeHeight + Math.max(66, content))
+        return Math.min(560, chromeHeight + Math.max(root.notificationRowHeight, content))
+      }
+
+      // Deferred, because the lists have not laid out their rows at the moment
+      // the height is asked for and would still measure zero.
+      function remeasure() {
+        if (!visible) return
+        Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
       function toggleHistory() {
         root.notificationHistoryOpen = !root.notificationHistoryOpen
       }
 
-      // Deferred, because the lists have not laid out their rows at the moment
-      // the surface becomes visible and would still measure zero.
-      onVisibleChanged: if (visible) Qt.callLater(function() { stableHeight = suggestedHeight() })
+      onVisibleChanged: remeasure()
+      // Clearing or dismissing while the panel is open has to shrink it; the
+      // height is stored rather than bound, so it only follows the list if the
+      // list says it changed.
+      onEntriesChanged: remeasure()
       // `notificationHistoryOpen` belongs to root, so the change has to be
       // taken from there rather than declared as a handler on this window.
       Connections {
         target: root
-        function onNotificationHistoryOpenChanged() {
-          if (notificationWindow.visible) Qt.callLater(function() {
-            notificationWindow.stableHeight = notificationWindow.suggestedHeight()
-          })
-        }
+        function onNotificationHistoryOpenChanged() { notificationWindow.remeasure() }
       }
 
       PanelSurface {
@@ -6753,26 +6862,57 @@ ShellRoot {
             glyph: root.systemData.dnd ? "󰂛" : "󰂚"
             title: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
 
+            // The count is small print beside a large title, and centring
+            // both line boxes in the same row leaves the digits floating
+            // above the title: the shorter face has the shorter box, so its
+            // baseline lands higher. The offset is the distance between the
+            // two baselines, which puts the count on the title's line.
+            FontMetrics { id: notificationTitleMetrics; font.family: root.fontFamily; font.pixelSize: root.textTitle }
+            FontMetrics { id: notificationCountMetrics; font.family: root.fontFamily; font.pixelSize: root.textBody }
             Text {
               anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: Math.round((notificationCountMetrics.height - notificationTitleMetrics.height) / 2
+                + notificationTitleMetrics.ascent - notificationCountMetrics.ascent)
               text: String(notificationWindow.entries.length)
               color: root.subtext
               font.family: root.fontFamily
               font.pixelSize: root.textBody
             }
-            Text {
+            // Silence is an action, not a setting with a caption: the header
+            // mark already reports whether the shell is muted, so the control
+            // beside it is the same square button every other panel header
+            // uses rather than a labelled switch wedged into the title row.
+            Rectangle {
+              readonly property bool busy: root.controlBusy("dnd", "")
+
               anchors.verticalCenter: parent.verticalCenter
-              text: "DND"
-              color: root.systemData.dnd ? root.yellow : root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-              font.letterSpacing: root.trackingLabel
-            }
-            ControlSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.systemData.dnd
-              busy: root.controlBusy("dnd", "")
-              onToggled: if (root.runControl("dnd", "")) root.patchSystemData({ dnd: !root.systemData.dnd })
+              width: root.chipHeight
+              height: root.chipHeight
+              radius: root.radius
+              color: dndMouse.pressed ? root.pressColor
+                : root.systemData.dnd ? root.alpha(root.yellow, dndMouse.containsMouse ? 0.24 : 0.14)
+                : dndMouse.containsMouse ? root.hoverColor
+                : root.clearColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              Text {
+                visible: !parent.busy
+                anchors.centerIn: parent
+                text: "󰂛"
+                color: root.systemData.dnd ? root.yellow : dndMouse.containsMouse ? root.text : root.subtext
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                font.family: root.fontFamily
+                font.pixelSize: root.textStrong
+              }
+              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
+              MouseArea {
+                id: dndMouse
+                anchors.fill: parent
+                enabled: !parent.busy
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.runControl("dnd", "")) root.patchSystemData({ dnd: !root.systemData.dnd })
+              }
+              HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
             }
           }
           Row {
@@ -6808,9 +6948,7 @@ ShellRoot {
             id: notificationViewport
 
             width: parent.width
-            height: notificationWindow.entries.length > 0
-              ? parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
-              : 46
+            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
@@ -6829,7 +6967,8 @@ ShellRoot {
               visible: notificationWindow.entries.length === 0
               anchors.fill: parent
               Text {
-                anchors.top: parent.top; anchors.topMargin: 14; anchors.horizontalCenter: parent.horizontalCenter
+                anchors.centerIn: parent
+                width: parent.width
                 text: root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
                 color: root.overlay
                 font.family: root.fontFamily

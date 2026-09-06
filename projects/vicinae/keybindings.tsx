@@ -79,6 +79,7 @@ const fallbackDescriptions: Record<string, string> = {
   "Super + A": "Open the AI cockpit",
   "Super + Shift + A": "Launch Pi",
   "Super + C": "Open the Control Center",
+  "Super + N": "Open notifications",
   "Super + Escape": "Open session controls",
   "Super + K": "Search Hyprland keybindings",
 };

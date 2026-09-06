@@ -356,7 +356,6 @@ fn model_rows(days: &[&Value]) -> Vec<Value> {
         .map(|(name, (tokens, cost))| json!({"name":name,"tokens":tokens,"cost":cost}))
         .collect();
     rows.sort_by(|left, right| number(right.get("tokens")).total_cmp(&number(left.get("tokens"))));
-    rows.truncate(5);
     rows
 }
 
