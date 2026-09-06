@@ -4014,7 +4014,7 @@ ShellRoot {
         border.color: root.panelBorder
 
         SurfaceEdge { radius: parent.radius }
-        SurfaceGrain { radius: parent.radius }
+        SurfaceGrain { inset: 3 }
       }
     }
 
