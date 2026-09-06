@@ -1,7 +1,7 @@
 use crate::Result;
 use serde_json::Value;
 use std::env;
-use std::ffi::OsStr;
+use std::ffi::{CStr, OsStr};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -108,10 +108,39 @@ pub fn runtime_home() -> PathBuf {
 }
 
 pub fn timestamp() -> String {
-    output("date", ["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .unwrap_or_default()
-        .trim()
-        .to_owned()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| libc::time_t::try_from(duration.as_secs()).ok())
+        .and_then(format_timestamp)
+        .unwrap_or_else(|| {
+            output("date", ["-u", "+%Y-%m-%dT%H:%M:%SZ"])
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        })
+}
+
+fn format_timestamp(seconds: libc::time_t) -> Option<String> {
+    // gmtime_r is independent of the process timezone and uses caller-owned
+    // storage, so concurrent status reads cannot overwrite one another.
+    unsafe {
+        let mut utc: libc::tm = std::mem::zeroed();
+        if libc::gmtime_r(&seconds, &mut utc).is_null() {
+            return None;
+        }
+        let mut buffer = [0 as libc::c_char; 64];
+        let written = libc::strftime(
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            b"%Y-%m-%dT%H:%M:%SZ\0".as_ptr().cast(),
+            &utc,
+        );
+        if written == 0 {
+            return None;
+        }
+        Some(CStr::from_ptr(buffer.as_ptr()).to_str().ok()?.to_owned())
+    }
 }
 
 pub fn epoch() -> i64 {
@@ -140,6 +169,18 @@ pub fn process_alive(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timestamps_preserve_utc_calendar_format() {
+        for (seconds, expected) in [
+            (-1, "1969-12-31T23:59:59Z"),
+            (0, "1970-01-01T00:00:00Z"),
+            (951_827_696, "2000-02-29T12:34:56Z"),
+            (2_147_483_648, "2038-01-19T03:14:08Z"),
+        ] {
+            assert_eq!(format_timestamp(seconds).as_deref(), Some(expected));
+        }
+    }
 
     #[test]
     fn detached_child_is_reaped_without_blocking_the_caller() {
