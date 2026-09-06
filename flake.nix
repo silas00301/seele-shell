@@ -9,7 +9,8 @@
     quickshell.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = inputs@{ flake-parts, ... }:
+  outputs =
+    inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -20,7 +21,8 @@
         inputs.devshell.flakeModule
       ];
 
-      perSystem = { system, ... }:
+      perSystem =
+        { system, ... }:
         let
           pkgs = import inputs.nixpkgs {
             inherit system;

@@ -85,6 +85,7 @@ function orderZones(zones, pinned, query) {
   var ordered = []
   var seen = {}
   pinned = pinned || []
+  if (pinned.length === 0) return filtered.slice()
 
   for (var pin = 0; pin < pinned.length; pin++) {
     for (var i = 0; i < filtered.length; i++) {

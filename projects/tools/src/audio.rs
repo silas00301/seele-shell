@@ -106,7 +106,7 @@ pub fn devices(dump: &Value) -> Vec<Value> {
             values.push(json!({"id":device["id"],"kind":"output","name":format!("{name} · {description}"),"node":"","profile":profile["index"],"default":false}));
         }
     }
-    values.sort_by_key(|value| {
+    values.sort_by_cached_key(|value| {
         (
             value["kind"].as_str().unwrap_or("").to_owned(),
             value["name"].as_str().unwrap_or("").to_ascii_lowercase(),
@@ -152,5 +152,17 @@ mod tests {
         assert_eq!(entries[0]["id"], 20);
         assert!(entries[0]["profile"].is_null());
         assert_eq!(entries[0]["default"], true);
+    }
+
+    #[test]
+    fn equal_case_insensitive_names_keep_graph_order() {
+        let sink = |id, name| json!({"id":id,"info":{"props":{
+            "media.class":"Audio/Sink","node.name":name,"node.description":name
+        }}});
+        let entries = devices(&json!([
+            sink(10, "Speakers"), sink(20, "headphones"), sink(30, "SPEAKERS")
+        ]));
+        let ids: Vec<_> = entries.iter().map(|entry| entry["id"].as_u64().unwrap()).collect();
+        assert_eq!(ids, [20, 10, 30]);
     }
 }

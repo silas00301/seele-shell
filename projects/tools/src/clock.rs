@@ -133,6 +133,16 @@ fn format_time(epoch: i64, format: &str) -> String {
     }
 }
 
+fn zone_time(epoch: i64) -> [String; 4] {
+    let combined = format_time(epoch, "%H:%M\n%a %d %b\n%Z\n%z");
+    let fields: Vec<_> = combined.split('\n').map(str::to_owned).collect();
+    fields.try_into().unwrap_or_else(|_| {
+        // Preserve the individual conversions for unusually long locale data
+        // or a timezone abbreviation containing the separator.
+        ["%H:%M", "%a %d %b", "%Z", "%z"].map(|pattern| format_time(epoch, pattern))
+    })
+}
+
 fn current_zones() -> Result<Vec<Zone>> {
     let directory = zoneinfo();
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
@@ -164,6 +174,7 @@ fn current_zones() -> Result<Vec<Zone>> {
                 aliases.push(word.to_owned());
             }
         }
+        let [time, day, abbreviation, offset] = zone_time(now);
         result.push(Zone {
             id: source.id,
             zone: source.zone,
@@ -171,10 +182,10 @@ fn current_zones() -> Result<Vec<Zone>> {
             flag: source.flag,
             aliases: aliases.join(" "),
             kind: source.kind,
-            time: format_time(now, "%H:%M"),
-            day: format_time(now, "%a %d %b"),
-            abbreviation: format_time(now, "%Z"),
-            offset: format_time(now, "%z"),
+            time,
+            day,
+            abbreviation,
+            offset,
         });
     }
     if let Some(value) = previous_tz {

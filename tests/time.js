@@ -44,6 +44,12 @@ const ordered = time.orderZones(zones, ["Europe/London", "PST"], "");
 assert(ordered[0].id === "Europe/London" && ordered[1].id === "PST", "multiple pinned zones must lead the list in pin order");
 assert(ordered.length === zones.length, "ordering pinned zones must not inject a local-time entry");
 
+const unpinned = time.orderZones(zones, [], "");
+assert(unpinned !== zones && unpinned[0] === zones[0] && unpinned[1] === zones[1], "unpinned results remain an independent array in source order");
+unpinned.pop();
+assert(zones.length === 2, "mutating the ordered array must not mutate the source");
+assert(time.orderZones(zones, [], "London").length === 1, "the unpinned fast path must preserve search filtering");
+
 const instant = new Date("2026-08-23T21:30:07Z");
 assert(time.offsetTime(instant, "+0530", true) === "03:00:07", "expanded clocks must include seconds across a day boundary");
 assert(time.offsetTime(instant, "-0700", false) === "14:30", "compact offset times must omit seconds");

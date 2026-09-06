@@ -115,23 +115,40 @@ fn subtree_ticks(root: u32) -> Option<u64> {
 }
 
 fn subtree_ticks_in(root: u32, processes: &[(u32, u32, u64)]) -> u64 {
-    let mut members = HashSet::from([root]);
-    loop {
-        let before = members.len();
-        for (pid, parent, _) in processes {
-            if members.contains(parent) {
-                members.insert(*pid);
+    ProcessTree::new(processes).subtree_ticks(root)
+}
+
+struct ProcessTree {
+    children: HashMap<u32, Vec<u32>>,
+    ticks: HashMap<u32, u64>,
+}
+
+impl ProcessTree {
+    fn new(processes: &[(u32, u32, u64)]) -> Self {
+        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut ticks = HashMap::new();
+        for &(pid, parent, count) in processes {
+            children.entry(parent).or_default().push(pid);
+            *ticks.entry(pid).or_default() += count;
+        }
+        Self { children, ticks }
+    }
+
+    fn subtree_ticks(&self, root: u32) -> u64 {
+        let mut pending = vec![root];
+        let mut visited = HashSet::new();
+        let mut total = 0;
+        while let Some(pid) = pending.pop() {
+            if !visited.insert(pid) {
+                continue;
+            }
+            total += self.ticks.get(&pid).copied().unwrap_or(0);
+            if let Some(children) = self.children.get(&pid) {
+                pending.extend(children);
             }
         }
-        if members.len() == before {
-            break;
-        }
+        total
     }
-    processes
-            .iter()
-            .filter(|(pid, _, _)| members.contains(pid))
-            .map(|(_, _, ticks)| ticks)
-            .sum()
 }
 
 fn write_run_state(
@@ -669,9 +686,10 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
             roots.insert(pid, name);
         }
     }
+    let tree = ProcessTree::new(&processes);
     roots
         .into_iter()
-        .map(|(pid, name)| (pid, name, subtree_ticks_in(pid, &processes)))
+        .map(|(pid, name)| (pid, name, tree.subtree_ticks(pid)))
         .collect()
 }
 
@@ -694,6 +712,40 @@ mod tests {
         assert_eq!(subtree_ticks_in(10, &processes), 15);
         assert_eq!(subtree_ticks_in(20, &processes), 12);
         assert_eq!(subtree_ticks_in(40, &processes), 11);
+    }
+
+    #[test]
+    fn process_tree_handles_missing_roots_cycles_and_reversed_chains() {
+        assert_eq!(subtree_ticks_in(10, &[(20, 10, 5)]), 5);
+        assert_eq!(subtree_ticks_in(10, &[(10, 20, 3), (20, 10, 5)]), 8);
+        assert_eq!(subtree_ticks_in(99, &[(10, 1, 3)]), 0);
+        assert_eq!(subtree_ticks_in(10, &[(10, 10, 3)]), 3);
+        let chain: Vec<_> = (1..=10_000).rev().map(|pid| (pid, pid - 1, 1)).collect();
+        assert_eq!(subtree_ticks_in(1, &chain), 10_000);
+    }
+
+    #[test]
+    fn process_tree_matches_transitive_scan_for_reordered_snapshots() {
+        // Independent reference: repeatedly expand a set, including duplicate
+        // rows, orphaned parents and cycles from an inconsistent /proc snapshot.
+        for seed in 0..100_u32 {
+            let processes: Vec<_> = (0..40).map(|i| {
+                ((i * 17 + seed) % 37, (i * 13 + seed * 3) % 43, u64::from(i))
+            }).collect();
+            let tree = ProcessTree::new(&processes);
+            for root in 0..43 {
+                let mut members = HashSet::from([root]);
+                loop {
+                    let before = members.len();
+                    for &(pid, parent, _) in &processes {
+                        if members.contains(&parent) { members.insert(pid); }
+                    }
+                    if members.len() == before { break; }
+                }
+                let expected: u64 = processes.iter().filter(|(pid, _, _)| members.contains(pid)).map(|(_, _, ticks)| ticks).sum();
+                assert_eq!(tree.subtree_ticks(root), expected);
+            }
+        }
     }
 
 }
