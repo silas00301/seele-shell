@@ -370,7 +370,7 @@ fn tailscale_state() -> Value {
     let peers = raw["Peer"].as_object();
     json!({"available":true,"backend":backend,"connected":backend=="Running","needsLogin":backend=="NeedsLogin","name":raw.pointer("/Self/HostName").and_then(Value::as_str).unwrap_or(""),"ip":raw.pointer("/Self/TailscaleIPs/0").and_then(Value::as_str).unwrap_or(""),"tailnet":raw.pointer("/CurrentTailnet/Name").or_else(||raw.get("MagicDNSSuffix")).and_then(Value::as_str).unwrap_or(""),"peers":peers.map(|value|value.len()).unwrap_or(0),"onlinePeers":peers.map(|value|value.values().filter(|peer|peer["Online"].as_bool()==Some(true)).count()).unwrap_or(0)})
 }
-fn proton_state() -> Value {
+fn proton_state(connections: &str) -> Value {
     if !env::var_os("PATH")
         .map(|paths| env::split_paths(&paths).any(|path| {
             use std::os::unix::fs::PermissionsExt;
@@ -381,11 +381,7 @@ fn proton_state() -> Value {
     {
         return json!({"available":false,"connected":false,"connection":""});
     }
-    let line = output(
-        "nmcli",
-        ["-t", "-f", "TYPE,NAME", "connection", "show", "--active"],
-    )
-    .unwrap_or_default()
+    let line = connections
     .lines()
     .find(|line| {
         let lower = line.to_ascii_lowercase();
@@ -668,7 +664,7 @@ fn status_value() -> Value {
     batteries.retain(|value| names.insert(value["name"].as_str().unwrap_or("").to_owned()));
     let cameras = camera_devices();
     let dump = json_output("pw-dump", std::iter::empty::<&str>(), json!([]));
-    let array = dump.as_array().cloned().unwrap_or_default();
+    let array = dump.as_array().map(Vec::as_slice).unwrap_or_default();
     let microphone_active = array.iter().any(|object| {
         object
             .pointer("/info/props/media.class")
@@ -695,7 +691,7 @@ fn status_value() -> Value {
             && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
     });
     let tailscale = tailscale_state();
-    let proton = proton_state();
+    let proton = proton_state(&connections);
     let ssh = ssh_state();
     json!({"volume":percent(&audio),"muted":audio.contains("MUTED"),"microphoneVolume":percent(&microphone),"microphoneMuted":microphone.contains("MUTED"),"microphoneActive":microphone_active,"connection":connection_name,"connectionType":connection_type,"connectivity":output("nmcli",["networking","connectivity"]).unwrap_or_else(||"unknown".into()).trim(),"wifiEnabled":wifi_enabled,"wifiAvailable":wifi_available,"ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),"gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),"tailscale":tailscale,"protonVpn":proton,"sshServer":ssh,"bluetoothAvailable":bluetooth["available"],"bluetoothPowered":bluetooth["powered"],"bluetoothScanning":bluetooth["scanning"],"bluetoothReceiver":bluetooth["receiver"],"bluetoothDiscoverable":bluetooth["discoverable"],"bluetoothConnected":bluetooth["connected"],"bluetoothDevices":bluetooth["devices"],"headphones":headphones,"airpodsEarDetection":airpods_ear_detection(),"trayHidden":tray_hidden(),"barModules":bar_modules(),"batteries":batteries,"voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),"cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),"cameraActive":camera_active,"screenRecording":screen_recording,"audioDevices":crate::audio::devices(&dump),"agentStates":agents::aggregate_states(),"notifications":crate::notifications::state(),"dnd":output("makoctl",["mode"]).unwrap_or_default().lines().any(|line|line=="do-not-disturb")})
 }

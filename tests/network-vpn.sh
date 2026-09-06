@@ -55,6 +55,9 @@ fi
 SH
 cat >"$work/bin/nmcli" <<'SH'
 #!/usr/bin/env bash
+if [[ $* == '-t -f TYPE,NAME connection show --active' ]]; then
+  printf 'active-connections\n' >>"$XDG_RUNTIME_DIR/nmcli-queries"
+fi
 printf '%s\n' "${MOCK_NMCLI:-}"
 exit "${MOCK_NMCLI_EXIT:-0}"
 SH
@@ -151,7 +154,9 @@ grep -qx closed "$MOCK_VICINAE_STATE"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx open "$MOCK_VICINAE_STATE"
 
+: >"$XDG_RUNTIME_DIR/nmcli-queries"
 state=$("$control" status | jq '.tailscale')
+test "$(wc -l <"$XDG_RUNTIME_DIR/nmcli-queries")" -eq 1
 jq -e '
   .available and .connected and (.needsLogin | not)
   and .name == "fixture-host" and .ip == "100.64.0.1"
