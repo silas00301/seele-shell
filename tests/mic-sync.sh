@@ -7,6 +7,7 @@
 set -euo pipefail
 
 sync=${1:?mic-sync script required}
+shellctl=${2:?shellctl binary required}
 work=$(mktemp -d)
 daemon=""
 cleanup() {
@@ -33,6 +34,7 @@ printf '9' >"$work/sysfs/usb1/usb1:1.1/sound/card9/number"
 export MOCK_SWITCH=$work/switch
 export MOCK_NODE=$work/node-mute
 export MOCK_OSD=$work/osd.log
+export MOCK_PARTIAL=$work/partial
 export SEELE_MIC_SYNC_SYSFS=$work/sysfs
 # Every acknowledgement this run sends goes to a shell that takes three seconds
 # to answer, so a sync that waited on one could not keep up with the panel.
@@ -89,6 +91,10 @@ SH
 
 stub pw-dump <<'SH'
 emit() {
+  if [[ -f $MOCK_PARTIAL ]]; then
+    printf '[{"id":63,"info":{"params":{"Props":[{"mute":%s}]}}}]\n' "$(cat "$MOCK_NODE")"
+    return
+  fi
   cat <<JSON
 [ { "id": 63, "type": "PipeWire:Interface:Node",
     "info": { "props": { "media.class": "Audio/Source", "alsa.card": 9 },
@@ -175,6 +181,25 @@ if [[ $(cat "$MOCK_OSD") != "-q microphone-state live
   exit 1
 fi
 
+# pw-dump monitor updates need not repeat unchanged identity properties.
+# Rapid desktop toggles must still reach the physical gate in that format.
+touch "$MOCK_PARTIAL"
+for _ in $(seq 1 8); do
+  mock-write "$MOCK_NODE" false
+  expect "$MOCK_SWITCH" on "partial update unmutes hardware"
+  mock-write "$MOCK_NODE" true
+  expect "$MOCK_SWITCH" off "partial update mutes hardware"
+done
+
+# Repeated panel taps without an extra settling delay must converge in both
+# directions, even while earlier OSD acknowledgements are still outstanding.
+for _ in $(seq 1 8); do
+  mock-write "$MOCK_SWITCH" on
+  expect "$MOCK_NODE" false "rapid panel unmute"
+  mock-write "$MOCK_SWITCH" off
+  expect "$MOCK_NODE" true "rapid panel mute"
+done
+
 kill "$daemon" 2>/dev/null
 wait "$daemon" || true
 daemon=""
@@ -195,3 +220,31 @@ if [[ -s $MOCK_MONITOR_PID ]] && kill -0 "$(cat "$MOCK_MONITOR_PID")" 2>/dev/nul
   exit 1
 fi
 echo "mic-sync ok"
+
+# Keyboard mute must not collect full status before reporting the new mute.
+export MOCK_IPC=$work/ipc.log
+export SEELE_SHELL_PATH=$work/shell
+stub seele-control <<'SH'
+[[ $* == 'microphone mute' && ${SEELE_CONTROL_NO_STATUS:-} == 1 ]] || exit 1
+SH
+stub quickshell <<'SH'
+printf '%s\n' "$*" >>"$MOCK_IPC"
+SH
+for state in true false; do
+  mock-write "$MOCK_NODE" "$state"
+  : >"$MOCK_IPC"
+  "$shellctl" microphone mute
+  [[ $state == true ]] && expected=muted || expected=live
+  [[ $(cat "$MOCK_IPC") == "ipc -n -p $SEELE_SHELL_PATH call -- seele-shell showMicrophone $expected
+ipc -n -p $SEELE_SHELL_PATH call -- seele-shell refreshStatus" ]]
+done
+stub seele-control <<'SH'
+exit 1
+SH
+: >"$MOCK_IPC"
+if "$shellctl" microphone mute 2>/dev/null; then
+  echo 'mic-sync: failed keyboard mute reported success' >&2
+  exit 1
+fi
+[[ ! -s $MOCK_IPC ]]
+echo "microphone keyboard feedback ok"

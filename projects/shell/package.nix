@@ -170,7 +170,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-bt-receiver" \
       "$out/libexec/seele-shell/seele-bt-agent"
     bash ${../../tests/control-actions.sh} "$out/libexec/seele-shell/seele-control"
-    bash ${../../tests/mic-sync.sh} "$out/libexec/seele-shell/seele-mic-sync"
+    bash ${../../tests/mic-sync.sh} "$out/libexec/seele-shell/seele-mic-sync" "$out/libexec/seele-shell/seele-shellctl"
 
     runHook postInstallCheck
   '';

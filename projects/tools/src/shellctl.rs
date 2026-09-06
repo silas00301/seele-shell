@@ -1,6 +1,7 @@
 use crate::command::{exec, output};
 use crate::Result;
 use std::env;
+use std::process::Command;
 
 const USAGE: &str = r#"Usage: seele-shellctl [-q] <command> [arguments]
 
@@ -87,6 +88,22 @@ pub fn run(arguments: &[String]) -> Result {
             )
         }
         "refresh-agents" => call("refreshAgents", &[]),
+        "microphone" if rest.first().map(String::as_str) == Some("mute") => {
+            // Do not let a full system-status collection delay the mute OSD
+            // or deliver an obsolete snapshot after a subsequent key press.
+            let status = Command::new("seele-control")
+                .args(["microphone", "mute"])
+                .env("SEELE_CONTROL_NO_STATUS", "1")
+                .status()?;
+            if !status.success() {
+                return Err("audio control failed".into());
+            }
+            let state = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+                .ok_or("microphone state unavailable")?;
+            let muted = if state.contains("MUTED") { "muted" } else { "live" };
+            call("showMicrophone", &[muted.into()])?;
+            call("refreshStatus", &[])
+        }
         "volume" | "microphone" => {
             let action = rest.first().ok_or("audio action required")?.clone();
             let result = output("seele-control", [command, action.as_str()])
