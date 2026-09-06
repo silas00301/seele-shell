@@ -5,5 +5,7 @@ entrypoint. Projects should use these files instead of keeping copies.
 
 It currently contains:
 
-- `tools.nix`, which builds the shared Rust runtime and texture generator.
+- `tools.nix`, which builds the shared Rust runtime, texture generator, and separate URI OCR worker.
+  Only the OCR worker links to nixpkgs Tesseract; the auth clients retain their
+  existing runtime libraries.
 - `patches/`, which contains local patches for third-party inputs.

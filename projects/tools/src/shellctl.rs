@@ -10,6 +10,7 @@ Commands:
   agents                    Toggle the AI dashboard
   center                    Toggle the Control Center
   controls                  Toggle session controls
+  uris                      Freeze all screens and pick a visible URI
   control <panel>           Toggle a control panel
   bluetooth-pairing <json>  Show a Bluetooth pairing request
   bluetooth-pairing-dismiss Withdraw the Bluetooth pairing request
@@ -71,6 +72,7 @@ pub fn run(arguments: &[String]) -> Result {
         "agents" => call("toggleAgents", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "controls" => call("toggleControls", &[]),
+        "uris" => call("toggleUris", &[]),
         "control" => call(
             "toggleControl",
             &[rest.first().cloned().unwrap_or_else(|| "system".into())],

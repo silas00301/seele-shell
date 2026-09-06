@@ -33,6 +33,7 @@
             lib = pkgs.lib;
             quickshellInput = inputs.quickshell;
           };
+          tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };
           fontConfig = pkgs.makeFontsConf {
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
@@ -64,6 +65,7 @@
               rust-analyzer
               rustc
               rustfmt
+              tesseract
               inputs.quickshell.packages.${system}.default
             ];
 
@@ -75,6 +77,14 @@
               {
                 name = "PKG_CONFIG_PATH";
                 value = "${pkgs.dbus.dev}/lib/pkgconfig";
+              }
+              {
+                name = "NIX_LDFLAGS";
+                eval = "-L${pkgs.lib.getLib tesseract}/lib \${NIX_LDFLAGS:-}";
+              }
+              {
+                name = "TESSDATA_PREFIX";
+                value = "${tesseract}/share/tessdata";
               }
             ];
 
@@ -97,6 +107,7 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/time.js projects/shell/time.js
+                  node tests/uri-picker.js projects/shell/uri-picker.js projects/shell/UriPicker.qml
                   node tests/status-patches.js projects/shell/shell.qml
                   bash tests/system-state.sh \
                     projects/shell/SystemState.qml \

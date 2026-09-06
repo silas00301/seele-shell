@@ -1,4 +1,7 @@
 { pkgs }:
+let
+  tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };
+in
 pkgs.rustPlatform.buildRustPackage {
   pname = "seele-tools";
   version = "1.0.0";
@@ -7,8 +10,13 @@ pkgs.rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../../projects/tools/Cargo.lock;
 
   nativeBuildInputs = [ pkgs.pkg-config ];
-  buildInputs = [ pkgs.dbus ];
+  buildInputs = [
+    pkgs.dbus
+    tesseract
+  ];
   nativeCheckInputs = [ pkgs.dbus ];
+
+  passthru = { inherit tesseract; };
 
   meta = {
     description = "Runtime helpers for Seele Shell";

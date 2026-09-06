@@ -7,7 +7,7 @@ the main shell plus separate greeter, lock-screen, and polkit packages.
 
 - `packages/core/`: shared Rust package definition and local upstream patches.
 - `projects/shell/`: main Quickshell UI, agent integrations, and package definition.
-- `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, and shell-control commands.
+- `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, URI picking, and shell-control commands.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
 - `tests/`: package install checks and focused behavior tests.
@@ -65,6 +65,55 @@ memory. It emits an initial snapshot and handles `refresh` lines on stdin.
 Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
+
+## Screen links
+
+Run `seele-shellctl uris` (Super + Ctrl + S on nerv) to freeze every output and
+highlight visible URIs with globally unique numbers. Type a number to open it
+with `xdg-open`, or click its highlight or badge. Escape dismisses the picker;
+Backspace edits a number. When a number also prefixes another one, Enter opens
+the exact match: `1` + Enter selects 1 when 10 also exists. Numbers are stable
+as OCR results arrive. Enter or a click can open an already numbered link
+while other regions are still being recognized. Automatic number selection
+waits until the complete number set is known.
+
+The overlay uses the shell's existing palette, Maple typography, surface tokens,
+header, edges and grain. It has no opening animation or full-screen blur pass.
+Each output displays its own capture; normalized OCR coordinates also handle
+fractional scaling, mixed resolutions, negative monitor positions and rotated
+outputs. Output removal or size changes dismiss the picker.
+
+`UriPicker.qml` owns the UI lifecycle, numeric input and generation checks.
+The resident `seele-uri-worker` is a separate Rust binary, so OCR never blocks
+the shell's render thread. It preloads up to six independent, single-threaded
+Tesseract engines. Grim captures outputs concurrently as uncompressed PPM;
+Qt displays those same files without a PNG encode/decode round trip. OCR runs
+in overlapping horizontal strips, interleaved across outputs. Each strip owns
+only links whose center lies in its core region, preventing duplicate numbers
+at seams. Results stream into a retained QML ListModel. Idle workers block on
+channels and retain models, while image allocations are released after OCR.
+
+All added runtime dependencies come from official nixpkgs: Grim and Tesseract 5
+with its English data. There are no added flake inputs, Rust crates, downloads
+at runtime, or OCR services. Captures live in a private runtime directory and
+are removed on dismissal, errors, EOF, or graceful worker termination.
+
+Recognition supports explicit hierarchical URIs (including custom handlers),
+`mailto:`, `tel:`, `sms:`, `magnet:`, `geo:`, `news:`, `urn:`, bare domains
+(opened as HTTPS), and email addresses. It preserves paths, queries, fragments
+and balanced punctuation, and joins tightly spaced OCR tokens around URI
+punctuation. It deliberately does not guess replacements for misread characters
+or reconstruct visibly truncated links. As with any OCR, very small text,
+complex backgrounds and links wrapped across lines may not be recognized.
+
+`tests/uri-picker.sh` runs real OCR against generated dark-screen fixtures on
+two simulated outputs, including a link crossing a strip boundary. It verifies
+capture identity, file permissions, numbering, cancellation during capture and
+OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
+selection and badge placement at screen edges. For a local OCR timing sample,
+`seele-uri-worker --image /path/to/frame.ppm` emits the same JSON events,
+including `captureMs` and total `elapsedMs`; this excludes compositor and
+rendering latency and is not a desktop latency benchmark.
 
 ## Build and test
 
