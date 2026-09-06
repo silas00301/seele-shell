@@ -3255,7 +3255,7 @@ ShellRoot {
       height: controlGrid.mediaHeight
       radius: root.radius
       color: controlCenterMediaMouse.pressed ? root.pressColor
-        : controlCenterMedia.hovered ? root.hoverColor
+        : controlCenterMedia.hovered ? root.hoveredColor(root.cardColor)
         : root.cardColor
       opacity: root.dragModule === "media" ? 0.45 : 1
 
@@ -4939,7 +4939,7 @@ ShellRoot {
                 radius: root.radius
                 color: modelData.force
                   ? applicationActionMouse.pressed ? root.dangerPress : hovered ? root.dangerColor : root.dangerTint
-                  : applicationActionMouse.pressed ? root.pressColor : hovered ? root.hoverColor : root.cardColor
+                  : applicationActionMouse.pressed ? root.pressColor : hovered ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 CardEdge { border.color: modelData.force ? root.alpha(root.red, 0.22) : root.cardBorder }
 

@@ -49,6 +49,14 @@ fn kill_group(pid: u32) {
     }
 }
 
+// Hyprland reads `hyprctl dispatch` as Lua, so a dispatcher arrives as one
+// `hl.dsp` call rather than as a bare name followed by its arguments. The bare
+// name resolves to no global and the dispatch is dropped with an error hyprctl
+// still exits zero on, which is why every legacy form failed in silence.
+fn dispatch(call: &str) -> Result {
+    require_status("hyprctl", ["dispatch", call])
+}
+
 fn window_address(value: &str) -> Result<String> {
     let address = value.strip_prefix("0x").unwrap_or(value);
     if address.is_empty() || !address.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -874,10 +882,9 @@ pub fn run(arguments: &[String]) -> Result {
         "application" => {
             let address = window_address(arg(2))?;
             match arg(1) {
-                "quit" => require_status(
-                    "hyprctl",
-                    ["dispatch", "closewindow", &format!("address:0x{address}")],
-                )?,
+                "quit" => dispatch(&format!(
+                    "hl.dsp.window.close({{ window = \"address:0x{address}\" }})"
+                ))?,
                 "force-quit" => force_quit_application(&address)?,
                 _ => return Err("invalid application action".into()),
             }
@@ -1316,7 +1323,7 @@ pub fn run(arguments: &[String]) -> Result {
             }
         }
         "logout" => {
-            require_status("hyprctl", ["dispatch", "exit"])?;
+            dispatch("hl.dsp.exit()")?;
         }
         "reboot" => {
             require_status("systemctl", ["reboot"])?;

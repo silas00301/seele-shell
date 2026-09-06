@@ -71,6 +71,6 @@ pub fn greeter(arguments: &[String]) -> Result {
         .args(["-n", "-p", &config])
         .status()?;
     let hyprctl = env::var("SEELE_HYPRCTL").unwrap_or_else(|_| "hyprctl".into());
-    status(&hyprctl, ["dispatch", "exit"]);
+    status(&hyprctl, ["dispatch", "hl.dsp.exit()"]);
     std::process::exit(result.code().unwrap_or(1));
 }

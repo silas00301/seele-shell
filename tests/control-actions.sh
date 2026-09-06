@@ -33,7 +33,9 @@ export PATH="$work/bin:$PATH"
 
 : >"$MOCK_ACTIONS"
 "$control" application quit 0xAbC
-test "$(cat "$MOCK_ACTIONS")" = "hyprctl dispatch closewindow address:0xabc"
+# One Lua call, because Hyprland reads a dispatch as Lua and drops a bare
+# dispatcher name without failing.
+test "$(cat "$MOCK_ACTIONS")" = 'hyprctl dispatch hl.dsp.window.close({ window = "address:0xabc" })'
 : >"$MOCK_ACTIONS"
 if "$control" application quit not-an-address; then
   echo "invalid application address reported success" >&2

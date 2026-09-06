@@ -122,8 +122,10 @@ pub fn run(arguments: &[String]) -> Result {
                 &variable("SEELE_SHELL_HYPRCTL", "hyprctl"),
                 [
                     "dispatch",
-                    "workspace",
-                    &variable("SEELE_SHELL_OS_WORKSPACE", "9"),
+                    &format!(
+                        "hl.dsp.focus({{ workspace = \"{}\" }})",
+                        variable("SEELE_SHELL_OS_WORKSPACE", "9")
+                    ),
                 ],
             );
             exec(
