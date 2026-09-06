@@ -115,6 +115,7 @@ struct Session {
     numid: u32,
     node: Option<u64>,
     applied: Option<bool>,
+    node_dirty: bool,
 }
 impl Session {
     fn graph(&mut self, object: &Value) {
@@ -127,22 +128,28 @@ impl Session {
         let card = props
             .and_then(|value| value.get("alsa.card"))
             .and_then(Value::as_u64);
-        if props
-            .and_then(|value| value.get("media.class"))
-            .and_then(Value::as_str)
-            != Some("Audio/Source")
-            || card != Some(self.card as u64)
+        let known_node =
+            self.node.is_some() && self.node == object.get("id").and_then(Value::as_u64);
+        if !known_node
+            && (props
+                .and_then(|value| value.get("media.class"))
+                .and_then(Value::as_str)
+                != Some("Audio/Source")
+                || card != Some(self.card as u64))
         {
             return;
         }
-        self.node = object.get("id").and_then(Value::as_u64);
+        if !known_node {
+            self.applied = None;
+            self.node = object.get("id").and_then(Value::as_u64);
+        }
         let carries_mute = object
             .pointer("/info/params/Props")
             .and_then(Value::as_array)
             .map(|items| items.iter().any(|item| item.get("mute").is_some()))
             .unwrap_or(false);
         if carries_mute {
-            self.node_change();
+            self.node_dirty = true;
         }
     }
     fn node_change(&mut self) {
@@ -166,13 +173,13 @@ impl Session {
         }
     }
     fn switch_event(&mut self) {
-        let (Some(applied), Some(node)) = (self.applied, self.node) else {
+        let (Some(previous), Some(node)) = (self.applied, self.node) else {
             return;
         };
         let Some(muted) = switch_muted(self.card, self.numid) else {
             return;
         };
-        if muted == applied {
+        if muted == previous {
             return;
         }
         self.applied = Some(muted);
@@ -227,6 +234,11 @@ fn parse_pending(pending: &mut String, session: &mut Session) {
             }
         }
     });
+    // pw-dump can batch many snapshots into one read. Query the current
+    // value once, rather than running wpctl for every obsolete snapshot.
+    if std::mem::take(&mut session.node_dirty) {
+        session.node_change();
+    }
 }
 
 fn parse_values(pending: &mut String, mut consume: impl FnMut(Value)) {
@@ -260,6 +272,30 @@ fn parse_values(pending: &mut String, mut consume: impl FnMut(Value)) {
 #[cfg(test)]
 mod stream_tests {
     use super::*;
+
+    #[test]
+    fn partial_updates_keep_identity_and_replacement_resets_agreement() {
+        let mut session = Session {
+            card: 9,
+            numid: 3,
+            node: Some(63),
+            applied: Some(true),
+            node_dirty: false,
+        };
+        session.graph(&serde_json::json!({"id":63,"info":{"params":{"Props":[{"mute":false}]}}}));
+        assert!(session.node_dirty);
+        assert_eq!(session.node, Some(63));
+        assert_eq!(session.applied, Some(true));
+        session.node_dirty = false;
+        session.graph(&serde_json::json!({"id":64,"info":{"params":{"Props":[{"mute":false}]}}}));
+        assert!(!session.node_dirty);
+        session.graph(&serde_json::json!({"id":64,"info":{"props":{"media.class":"Audio/Source","alsa.card":9},"params":{"Props":[{"mute":false}]}}}));
+        assert_eq!(session.node, Some(64));
+        assert_eq!(session.applied, None);
+        assert!(session.node_dirty);
+        session.graph(&serde_json::json!({"id":64}));
+        assert_eq!(session.node, None);
+    }
 
     #[test]
     fn split_values_and_invalid_utf8_characters_preserve_stream_order() {
@@ -306,6 +342,7 @@ fn watch(card: u32, numid: u32, running: &AtomicBool) -> Result {
         numid,
         node: None,
         applied: None,
+        node_dirty: false,
     };
     let mut pending = String::new();
     while running.load(Ordering::SeqCst) {
