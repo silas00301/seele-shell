@@ -182,7 +182,10 @@ ShellRoot {
   property string controlPanel: ""
   property var applicationWindow: null
   property bool applicationForceConfirm: false
-  property var mediaPanelPlayer: null
+  // The media panel and Control Center share one selection. It survives the
+  // panel closing, and the resolver falls back when the selected MPRIS client
+  // leaves the bus.
+  property var selectedMediaPlayer: null
   // A module being dragged between the Control Center and the menu bar.
   // `dragKind` is "add" when it came from the panel and "remove" when it was
   // pulled off the bar; `dragOverBar` is the live drop decision.
@@ -385,7 +388,6 @@ ShellRoot {
     controlPanel = ""
     applicationWindow = null
     applicationForceConfirm = false
-    mediaPanelPlayer = null
     overlayScreen = ""
     overlayAnchorX = -1
     closeTrayMenu()
@@ -447,12 +449,12 @@ ShellRoot {
   }
 
   function toggleMedia(player, screen, anchorX) {
-    var samePlayer = root.controlPanel === "media" && root.mediaPanelPlayer === player
+    var samePlayer = root.controlPanel === "media" && root.nowPlayingPlayer() === player
     var shouldOpen = !!player && !(samePlayer && root.overlayScreen === (screen || root.currentScreen()))
     var nextAnchor = requestedOverlayAnchor(anchorX)
     root.closeOverlays()
     if (!shouldOpen) return
-    root.mediaPanelPlayer = player
+    root.selectedMediaPlayer = player
     root.controlPanel = "media"
     root.overlayScreen = screen || root.currentScreen()
     root.overlayAnchorX = nextAnchor
@@ -722,6 +724,10 @@ ShellRoot {
     return Media.label(player)
   }
 
+  function mediaPlayerName(player) {
+    return Media.playerName(player)
+  }
+
   function mediaTitle(player) {
     return Media.title(player)
   }
@@ -745,10 +751,18 @@ ShellRoot {
     return Media.liveStream(player)
   }
 
-  // The bar keeps Spotify and the device player in separate entries, but the
-  // Control Center carries one now-playing module, so it needs a single player.
+  function availableMediaPlayers() {
+    return Media.availablePlayers(Mpris.players.values || [])
+  }
+
+  function selectMediaPlayer(player) {
+    if (player) root.selectedMediaPlayer = player
+  }
+
+  // The bar keeps Spotify and the device player in separate entries. The
+  // media panel and Control Center resolve their shared selection here.
   function nowPlayingPlayer() {
-    return Media.activePlayer(Mpris.players.values || [])
+    return Media.selectedPlayer(Mpris.players.values || [], root.selectedMediaPlayer)
   }
 
   function agentStatus(id) {
@@ -3881,6 +3895,132 @@ ShellRoot {
   // ramp, a filled transport against a flat one, and a timeline that ran the
   // full width under the art here and beside it there. They draw this instead,
   // so the module and the panel are the same presentation at the same size.
+  component MediaPlayerPicker: ComboBox {
+    id: mediaPlayerPicker
+
+    property var player: null
+
+    implicitWidth: 148
+    implicitHeight: root.chipHeight
+    displayText: root.mediaPlayerName(mediaPlayerPicker.player)
+    currentIndex: {
+      for (var i = 0; i < mediaPlayerPicker.model.length; i++) {
+        if (mediaPlayerPicker.model[i] === mediaPlayerPicker.player) return i
+      }
+      return -1
+    }
+    leftPadding: root.spaceMedium
+    rightPadding: root.chipHeight
+
+    contentItem: Text {
+      text: mediaPlayerPicker.displayText
+      color: root.text
+      elide: Text.ElideRight
+      verticalAlignment: Text.AlignVCenter
+      font.family: root.fontFamily
+      font.pixelSize: root.textLabel
+      font.weight: root.weightStrong
+    }
+
+    indicator: CenteredGlyph {
+      x: mediaPlayerPicker.width - width
+      width: root.chipHeight
+      height: mediaPlayerPicker.height
+      text: mediaPlayerPicker.popup.visible ? "󰅀" : "󰅂"
+      color: root.subtext
+      font.family: root.fontFamily
+      font.pixelSize: root.textIcon
+    }
+
+    background: Rectangle {
+      radius: root.radius
+      color: mediaPlayerPicker.pressed ? root.pressColor
+        : mediaPlayerPicker.hovered ? root.hoveredColor(root.wellColor)
+        : root.wellColor
+      border.width: 1
+      border.color: mediaPlayerPicker.popup.visible ? root.alpha(root.accent, 0.55) : root.cardBorder
+
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+    }
+
+    delegate: ItemDelegate {
+      id: mediaPlayerChoice
+
+      required property int index
+      required property var modelData
+
+      width: mediaPlayerPicker.popup.width - mediaPlayerPicker.popup.leftPadding - mediaPlayerPicker.popup.rightPadding
+      height: root.controlHeight
+      leftPadding: root.spaceMedium
+      rightPadding: root.spaceMedium
+      highlighted: mediaPlayerPicker.highlightedIndex === index
+
+      contentItem: Column {
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 1
+
+        Text {
+          width: parent.width
+          text: root.mediaPlayerName(mediaPlayerChoice.modelData)
+          color: mediaPlayerChoice.modelData === mediaPlayerPicker.player ? root.accent : root.text
+          elide: Text.ElideRight
+          font.family: root.fontFamily
+          font.pixelSize: root.textBody
+          font.weight: root.weightStrong
+        }
+        Text {
+          width: parent.width
+          text: root.mediaTitle(mediaPlayerChoice.modelData) || root.mediaSubtitle(mediaPlayerChoice.modelData)
+          color: root.subtext
+          elide: Text.ElideRight
+          font.family: root.fontFamily
+          font.pixelSize: root.textCaption
+        }
+      }
+
+      background: Rectangle {
+        radius: root.radiusSmall
+        color: mediaPlayerChoice.pressed ? root.pressColor
+          : mediaPlayerChoice.modelData === mediaPlayerPicker.player ? root.selectedColor
+          : mediaPlayerChoice.hovered || mediaPlayerChoice.highlighted ? root.hoverColor
+          : root.clearColor
+
+        Behavior on color { ColorAnimation { duration: root.durationFast } }
+      }
+    }
+
+    popup: Popup {
+      x: mediaPlayerPicker.width - width
+      y: mediaPlayerPicker.height + root.spaceTight
+      width: 220
+      implicitHeight: Math.min(contentItem.implicitHeight + topPadding + bottomPadding, root.controlHeight * 5 + topPadding + bottomPadding)
+      topPadding: root.spaceTight
+      bottomPadding: root.spaceTight
+      leftPadding: root.spaceTight
+      rightPadding: root.spaceTight
+
+      contentItem: SeeleListView {
+        implicitHeight: contentHeight
+        clip: true
+        model: mediaPlayerPicker.popup.visible ? mediaPlayerPicker.delegateModel : null
+        currentIndex: mediaPlayerPicker.highlightedIndex
+        ScrollBar.vertical: SlimScrollBar { popupHovered: mediaPlayerPicker.popup.visible }
+      }
+
+      background: Rectangle {
+        radius: root.radius
+        color: root.floatColor
+        border.width: 1
+        border.color: root.panelBorder
+
+        SurfaceEdge { radius: parent.radius }
+        SurfaceGrain { radius: parent.radius }
+      }
+    }
+
+    onActivated: function(index) { root.selectMediaPlayer(mediaPlayerPicker.model[index]) }
+  }
+
   component MediaBody: Item {
     id: mediaBody
 
@@ -4354,7 +4494,7 @@ ShellRoot {
             visible: player !== null && root.barModulePinned("media")
             width: visible ? Math.min(210, deviceMediaRow.implicitWidth + 14) : 0
             hovered: deviceMediaMouse.containsMouse
-            active: root.panelHere("media", barWindow.modelData) && root.mediaPanelPlayer === player
+            active: root.panelHere("media", barWindow.modelData) && root.nowPlayingPlayer() === player
             Row {
               id: deviceMediaRow
               anchors.centerIn: parent
@@ -4385,7 +4525,7 @@ ShellRoot {
             visible: player !== null && root.barModulePinned("media")
             width: visible ? Math.min(210, spotifyMediaRow.implicitWidth + 14) : 0
             hovered: spotifyMediaMouse.containsMouse
-            active: root.panelHere("media", barWindow.modelData) && root.mediaPanelPlayer === player
+            active: root.panelHere("media", barWindow.modelData) && root.nowPlayingPlayer() === player
             Row {
               id: spotifyMediaRow
               anchors.centerIn: parent
@@ -5805,7 +5945,8 @@ ShellRoot {
       id: mediaWindow
 
       required property var modelData
-      readonly property var player: root.mediaPanelPlayer || root.nowPlayingPlayer()
+      readonly property var players: root.availableMediaPlayers()
+      readonly property var player: root.nowPlayingPlayer()
       screen: modelData
       visible: root.controlPanel === "media" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
@@ -5825,7 +5966,18 @@ ShellRoot {
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
 
-          PanelHeader { width: parent.width; glyph: "󰎆"; title: "Now Playing" }
+          PanelHeader {
+            width: parent.width
+            glyph: "󰎆"
+            title: "Now Playing"
+
+            MediaPlayerPicker {
+              visible: mediaWindow.players.length > 1
+              width: visible ? implicitWidth : 0
+              model: mediaWindow.players
+              player: mediaWindow.player
+            }
+          }
 
           MediaBody {
             width: parent.width

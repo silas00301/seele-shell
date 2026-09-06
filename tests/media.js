@@ -83,6 +83,11 @@ assert(
 assert(media.spotifyPlayer([device, spotify]) === spotify, "Spotify selection must ignore other players");
 assert(media.devicePlayer([spotify, device]) === device, "device selection must ignore Spotify");
 assert(media.isSpotify({ dbusName: "org.mpris.MediaPlayer2.spotify.instance" }), "Spotify detection must fall back to its D-Bus name");
+assert(media.playerName(spotify) === "Spotify", "the picker must use the player's stable identity");
+assert(
+  media.playerName({ identity: "", desktopEntry: "", dbusName: "org.mpris.MediaPlayer2.firefox.instance_1" }) === "Firefox",
+  "the picker must derive a readable name from the D-Bus name",
+);
 
 const paused = {
   isPlaying: false,
@@ -99,6 +104,12 @@ assert(media.activePlayer([paused, spotify]) === spotify, "the Control Center mu
 assert(media.activePlayer([paused]) === paused, "the Control Center must fall back to a paused player with a track");
 assert(media.activePlayer([{ trackTitle: "", trackArtist: "", metadata: {} }]) === null, "a player without a track must not fill the now playing module");
 assert(media.activePlayer([]) === null, "no players must leave the now playing module empty");
+const available = media.availablePlayers([spotifyMirror, paused, device, spotify]);
+assert(available.length === 3, "the picker must retain distinct players and remove a mirrored service");
+assert(available[0] === paused && available[1] === device && available[2] === spotify, "the picker must retain bus order");
+assert(media.selectedPlayer([paused, spotify], paused) === paused, "an explicit selection must override the active player");
+assert(media.selectedPlayer([spotify], paused) === spotify, "a selection whose client exited must fall back to the active player");
+assert(media.selectedPlayer([], paused) === null, "an exited selection without a fallback must leave media empty");
 assert(
   media.timelineAvailable({ canSeek: true, positionSupported: true, lengthSupported: true, length: 180, metadata: {} }),
   "a seekable player with position and length support must expose the timeline",

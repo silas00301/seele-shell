@@ -57,6 +57,16 @@ function label(player) {
   return trackTitle || trackSubtitle
 }
 
+function playerName(player) {
+  if (!player) return ""
+  var name = clean(player.identity) || clean(player.desktopEntry)
+  if (name !== "") return name
+
+  var dbusName = clean(player.dbusName).replace(/^org\.mpris\.MediaPlayer2\./, "")
+  var segment = dbusName.split(".")[0].replace(/[-_]+/g, " ").trim()
+  return segment === "" ? "Media player" : segment.charAt(0).toUpperCase() + segment.slice(1)
+}
+
 function lengthSeconds(player) {
   if (!player) return 0
   var direct = Number(player.length)
@@ -116,6 +126,30 @@ function devicePlayer(players) {
   return null
 }
 
+// MPRIS may expose one track through both its native player and an embedded
+// Chromium service. Keep that mirror out of the picker just as the menu bar
+// keeps it out of the device slot, while retaining every distinct resumable
+// player rather than only the first one currently playing.
+function availablePlayers(players) {
+  players = players || []
+  var spotify = null
+  for (var i = 0; i < players.length; i++) {
+    if (isSpotify(players[i]) && (title(players[i]) !== "" || subtitle(players[i]) !== "")) {
+      spotify = players[i]
+      if (players[i].isPlaying) break
+    }
+  }
+
+  var available = []
+  for (var j = 0; j < players.length; j++) {
+    var player = players[j]
+    if (title(player) === "" && subtitle(player) === "") continue
+    if (spotify && player !== spotify && !isSpotify(player) && sameTrack(player, spotify)) continue
+    available.push(player)
+  }
+  return available
+}
+
 // The Control Center carries a single now-playing module where the bar keeps
 // Spotify and the device player apart, so it falls back to whichever player
 // still has a track to resume once nothing is playing.
@@ -127,6 +161,12 @@ function activePlayer(players) {
     if (title(players[i]) !== "" || subtitle(players[i]) !== "") return players[i]
   }
   return null
+}
+
+function selectedPlayer(players, selected) {
+  players = availablePlayers(players)
+  var present = presentPlayer(players, selected)
+  return present || activePlayer(players)
 }
 
 // The bar holds an entry through a pause, and a client that quits takes its
