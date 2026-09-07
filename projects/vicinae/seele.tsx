@@ -131,6 +131,8 @@ const commands = [
 
 export default function Command() {
   const { data, error, loading, refresh } = useStatus();
+  const airpodsConnected =
+    !!data.headphones?.connected && /airpods/i.test(data.headphones.name);
   const level = (value?: number, muted?: boolean) =>
     value === undefined ? "Loading..." : `${value}%${muted ? " · Muted" : ""}`;
   const refreshAction = (
@@ -295,14 +297,30 @@ export default function Command() {
         {commands.map((command) => (
           <List.Item
             key={command.title}
-            title={command.title}
+            title={
+              command.title === "Headphones" && airpodsConnected
+                ? "AirPods"
+                : command.title
+            }
             subtitle={command.subtitle}
-            icon={command.icon}
+            icon={
+              command.title === "Headphones" && airpodsConnected
+                ? Icon.Airpods
+                : command.icon
+            }
             actions={
               <ActionPanel>
                 <Action
-                  title={command.title}
-                  icon={command.icon}
+                  title={
+                    command.title === "Headphones" && airpodsConnected
+                      ? "AirPods"
+                      : command.title
+                  }
+                  icon={
+                    command.title === "Headphones" && airpodsConnected
+                      ? Icon.Airpods
+                      : command.icon
+                  }
                   onAction={() => shell(command.args)}
                 />
               </ActionPanel>

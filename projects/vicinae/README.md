@@ -12,7 +12,10 @@ Vicinae's extension directory. Search for `Seele` in Vicinae to find:
 - **Seele Audio Devices**: outputs and microphones, including available output
   profiles on inactive cards. Enter selects a device. A fresh snapshot resolves
   its node before switching so a recycled PipeWire ID cannot select a different
-  device after a reconnect.
+  device after a reconnect. Ctrl+Enter adds an output to current playback or
+  removes it; at least one output stays selected. Enter returns to that device
+  alone. The shell Audio panel offers the same selection through its Multiple
+  outputs switch.
 - **Search Keybindings**: the compositor's active bindings. Enter closes the
   launcher and inputs the shortcut. Shift+Enter copies it; Ctrl+R reloads it.
 - **Seele Screen Links and Codes**, **Seele Control Center**, **Seele AI
@@ -43,3 +46,19 @@ The package bundles every command declared in `package.json` and runs
 arguments. `tests/vicinae-runtime.cjs` checks focus handoff, error privacy,
 field-patch merging, and worker cleanup. New command names must match their
 TSX entry files.
+
+Headphone panels use an AirPods silhouette and label while AirPods are
+connected, with priority over other supported headphones. Otherwise they use
+an over-ear silhouette and the Headphones label.
+
+Simultaneous playback uses PipeWire's `module-combine-sink` through the packaged
+`pactl` client. It mirrors active outputs and requests latency compensation.
+Activate an inactive card profile before adding its output. Hardware profiles
+remain exclusive, and wireless devices may still have different audible delay.
+The combined output lasts for the audio-server session. Returning to one output
+removes Seele's combined device. Existing streams on the old default follow the
+selection; applications explicitly routed elsewhere keep their output.
+
+`tests/audio-routing.sh` verifies real routing, failures, and cleanup using a
+private PipeWire server and null sinks. `tests/headphones-icon.sh` checks that
+the two rendered silhouettes stay separate.

@@ -1,5 +1,6 @@
 mod agents;
 mod audio;
+mod audio_route;
 mod bluetooth;
 mod clock;
 mod command;

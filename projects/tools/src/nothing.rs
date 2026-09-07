@@ -23,6 +23,9 @@ const CMD_PROTOCOL: u16 = 0xC001;
 const CMD_ACTIVATE: u16 = 0xF001;
 const CMD_BATTERY: u16 = 0xC007;
 const CMD_NOISE: u16 = 0xC01E;
+// Ear detection query/set payloads: https://github.com/Bestello/dms-nothingx
+const CMD_EAR_DETECTION: u16 = 0xC00E;
+const CMD_SET_EAR_DETECTION: u16 = 0xF004;
 const CMD_SET_NOISE: u16 = 0xF00F;
 const EVENT_BATTERY: u16 = 0xE001;
 const EVENT_NOISE: u16 = 0xE003;
@@ -136,13 +139,18 @@ pub struct HeadphoneState {
     pub battery: Option<u8>,
     pub controls: bool,
     pub noise_mode: String,
+    #[serde(default)]
+    pub ear_detection: Option<bool>,
     pub updated_at: u64,
 }
 
 #[derive(Deserialize, Serialize)]
 struct HeadphoneCommand {
     address: String,
+    #[serde(default)]
     mode: String,
+    #[serde(default)]
+    ear_detection: Option<bool>,
 }
 
 fn directory() -> PathBuf {
@@ -172,6 +180,7 @@ pub fn queue_noise(address: &str, mode: &str) -> Result {
     let command = HeadphoneCommand {
         address: address.to_owned(),
         mode: mode.to_owned(),
+        ear_detection: None,
     };
     atomic_write(&command_path(), &serde_json::to_vec(&command)?)?;
     if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref() == Ok("1") {
@@ -190,6 +199,48 @@ pub fn queue_noise(address: &str, mode: &str) -> Result {
     }
     let _ = fs::remove_file(command_path());
     Err("Nothing headphone controls did not respond".into())
+}
+
+pub fn queue_ear_detection(address: &str, action: &str) -> Result {
+    let current = state(address)
+        .filter(|state| state.controls)
+        .and_then(|state| state.ear_detection)
+        .ok_or("Nothing ear detection is not available yet")?;
+    let enabled = match action {
+        "on" => true,
+        "off" => false,
+        "toggle" => !current,
+        _ => return Err("invalid ear detection action".into()),
+    };
+    if std::env::var("SEELE_NOTHING_HEADPHONES_DISABLE_DAEMON").as_deref() == Ok("1") {
+        let mut value = state(address).ok_or("Nothing headphones disconnected")?;
+        value.ear_detection = Some(enabled);
+        return save(&mut value);
+    }
+    let command = HeadphoneCommand {
+        address: address.to_owned(),
+        mode: String::new(),
+        ear_detection: Some(enabled),
+    };
+    atomic_write(&command_path(), &serde_json::to_vec(&command)?)?;
+    for _ in 0..40 {
+        if !command_path().exists()
+            && state(address).is_some_and(|value| value.ear_detection == Some(enabled))
+        {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    let _ = fs::remove_file(command_path());
+    Err("Nothing headphones did not confirm ear detection".into())
+}
+
+fn parse_ear_detection(payload: &[u8]) -> Option<bool> {
+    match payload {
+        [1, 1, 0] => Some(false),
+        [1, 1, 1] => Some(true),
+        _ => None,
+    }
 }
 
 fn bluetooth_address(address: &str) -> Option<[u8; 6]> {
@@ -363,6 +414,7 @@ fn session(address: &str, running: &AtomicBool) -> Result {
         battery: None,
         controls: false,
         noise_mode: String::new(),
+        ear_detection: None,
         updated_at: epoch(),
     };
     save(&mut state)?;
@@ -383,12 +435,19 @@ fn session(address: &str, running: &AtomicBool) -> Result {
                     state.controls = true;
                     send(&mut socket, &mut sequence, CMD_BATTERY, &[])?;
                     send(&mut socket, &mut sequence, CMD_NOISE, &[3])?;
+                    send(&mut socket, &mut sequence, CMD_EAR_DETECTION, &[])?;
                     queried = Instant::now();
                     changed = true;
                 }
                 CMD_BATTERY | EVENT_BATTERY => {
                     if let Some(battery) = parse_battery(&payload) {
                         state.battery = Some(battery);
+                        changed = true;
+                    }
+                }
+                CMD_EAR_DETECTION => {
+                    if let Some(enabled) = parse_ear_detection(&payload) {
+                        state.ear_detection = Some(enabled);
                         changed = true;
                     }
                 }
@@ -408,32 +467,46 @@ fn session(address: &str, running: &AtomicBool) -> Result {
             state.controls = true;
             send(&mut socket, &mut sequence, CMD_BATTERY, &[])?;
             send(&mut socket, &mut sequence, CMD_NOISE, &[3])?;
+            send(&mut socket, &mut sequence, CMD_EAR_DETECTION, &[])?;
             queried = Instant::now();
             changed = true;
         }
         if activated && queried.elapsed() >= Duration::from_secs(15) {
             send(&mut socket, &mut sequence, CMD_BATTERY, &[])?;
             send(&mut socket, &mut sequence, CMD_NOISE, &[3])?;
+            send(&mut socket, &mut sequence, CMD_EAR_DETECTION, &[])?;
             queried = Instant::now();
         }
         if activated && command_path().exists() {
             let command = fs::read_to_string(command_path())
                 .ok()
                 .and_then(|value| serde_json::from_str::<HeadphoneCommand>(&value).ok());
-            let _ = fs::remove_file(command_path());
             if let Some(command) =
                 command.filter(|value| value.address.eq_ignore_ascii_case(address))
             {
-                let value = match command.mode.as_str() {
-                    "off" => 5,
-                    "transparency" => 7,
-                    "adaptive" => 4,
-                    _ => 1,
-                };
-                send(&mut socket, &mut sequence, CMD_SET_NOISE, &[1, value, 0])?;
-                state.noise_mode = command.mode;
-                changed = true;
+                if let Some(enabled) = command.ear_detection {
+                    send(
+                        &mut socket,
+                        &mut sequence,
+                        CMD_SET_EAR_DETECTION,
+                        &[1, 1, u8::from(enabled)],
+                    )?;
+                    state.ear_detection = None;
+                    send(&mut socket, &mut sequence, CMD_EAR_DETECTION, &[])?;
+                } else {
+                    let value = match command.mode.as_str() {
+                        "off" => 5,
+                        "transparency" => 7,
+                        "adaptive" => 4,
+                        _ => 1,
+                    };
+                    send(&mut socket, &mut sequence, CMD_SET_NOISE, &[1, value, 0])?;
+                    state.noise_mode = command.mode;
+                }
+                save(&mut state)?;
+                changed = false;
             }
+            let _ = fs::remove_file(command_path());
         }
         if changed {
             save(&mut state)?;
@@ -463,6 +536,7 @@ pub fn run(arguments: &[String]) -> Result {
             eprintln!("{error}");
             if let Some(mut state) = state(address) {
                 state.controls = false;
+                state.ear_detection = None;
                 save(&mut state)?;
             }
         }
@@ -499,6 +573,18 @@ mod tests {
         value[length - 2..].copy_from_slice(&checksum);
         assert_eq!(messages(&mut value), vec![(CMD_NOISE, vec![3])]);
         assert!(value.is_empty());
+    }
+
+    #[test]
+    fn ear_detection_requires_a_valid_device_setting() {
+        assert_eq!(parse_ear_detection(&[1, 1, 0]), Some(false));
+        assert_eq!(parse_ear_detection(&[1, 1, 1]), Some(true));
+        for payload in [&[][..], &[1, 1], &[1, 1, 2], &[0, 1, 1]] {
+            assert_eq!(parse_ear_detection(payload), None);
+        }
+        let mut sequence = 0;
+        let mut packet = frame(CMD_SET_EAR_DETECTION, &[1, 1, 1], &mut sequence);
+        assert_eq!(messages(&mut packet), vec![(0xF004, vec![1, 1, 1])]);
     }
 
     #[test]

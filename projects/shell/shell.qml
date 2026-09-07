@@ -234,7 +234,7 @@ ShellRoot {
   property string osdKind: "volume"
   property bool headphonesOsdConnected: false
   property string headphonesOsdName: "Headphones"
-  property string headphonesOsdKind: "airpods"
+  property string headphonesOsdKind: "headphones"
   property var yubikeyTouchSources: ({})
   property bool yubikeyTouchRequired: false
   property bool polkitPrompting: false
@@ -506,7 +506,7 @@ ShellRoot {
           if (root.statusInitialized && !!nextHeadphones.connected !== !!currentHeadphones.connected) {
             root.headphonesOsdConnected = !!nextHeadphones.connected
             root.headphonesOsdName = String(nextHeadphones.name || currentHeadphones.name || "Headphones")
-            root.headphonesOsdKind = String(nextHeadphones.kind || currentHeadphones.kind || "airpods")
+            root.headphonesOsdKind = /airpods/i.test(root.headphonesOsdName) ? "airpods" : "headphones"
             root.showTimedOsd("airpods")
           }
           root.statusInitialized = true
@@ -949,6 +949,22 @@ ShellRoot {
     root.patchSystemData({ trayHidden: hidden })
   }
 
+  function selectedAudioOutputs() {
+    return root.audioDevices("output").filter(function(device) { return device.node && (device.selected || device.default) }).map(function(device) { return device.node })
+  }
+
+  function setAudioOutputs(nodes) {
+    if (nodes.length) root.runControl("audio-outputs", JSON.stringify(nodes))
+  }
+
+  function toggleAudioOutput(node) {
+    var nodes = root.selectedAudioOutputs()
+    var index = nodes.indexOf(node)
+    if (index >= 0) nodes.splice(index, 1)
+    else nodes.push(node)
+    root.setAudioOutputs(nodes)
+  }
+
   function setAudioDevice(id, profile) {
     id = String(id)
     // A profile entry carries the card to switch on rather than a sink node to
@@ -1174,7 +1190,7 @@ ShellRoot {
       vpn: "VPN",
       bluetooth: "Bluetooth",
       camera: "Camera",
-      airpods: "Headphones",
+      airpods: root.headphonesLabel(),
       audio: "Sound",
       media: "Now Playing"
     }
@@ -1288,6 +1304,16 @@ ShellRoot {
       if (String(devices[j].device || "") === String(root.systemData.cameraDevice || "")) return devices[j]
     }
     return devices.length > 0 ? devices[0] : null
+  }
+
+  function headphonesIconKind() {
+    var headphones = root.systemData.headphones || ({})
+    return headphones.connected && /airpods/i.test(String(headphones.name || "")) ? "airpods" : "headphones"
+  }
+
+  function headphonesLabel() {
+    var headphones = root.systemData.headphones || ({})
+    return headphones.connected && headphones.name ? String(headphones.name) : "Headphones"
   }
 
   function headphonesDetail() {
@@ -1720,7 +1746,7 @@ ShellRoot {
       root.pendingControlExtra = ""
       controlFeedbackTimer.restart()
       var group = ["notifications", "dnd"].indexOf(action) >= 0 ? "notifications"
-        : ["volume", "microphone", "audio-device"].indexOf(action) >= 0 ? "audio"
+        : ["volume", "microphone", "audio-device", "audio-outputs"].indexOf(action) >= 0 ? "audio"
         : ["wifi", "proton-vpn"].indexOf(action) >= 0 ? "network" : "aux"
       root.refreshStatus(group)
     }
@@ -2057,38 +2083,6 @@ ShellRoot {
     }
 
     MouseArea { id: switchMouse; anchors.fill: parent; enabled: control.enabled && !control.busy; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: control.toggled() }
-  }
-
-  component HeadphonesIcon: Item {
-    id: headphonesIcon
-
-    property color tint: root.text
-    property string kind: "airpods"
-
-    implicitWidth: 16
-    implicitHeight: 16
-
-    Repeater {
-      visible: headphonesIcon.kind === "airpods"
-      model: [0, 1]
-      Item {
-        required property int modelData
-        width: 6
-        height: headphonesIcon.height
-        x: modelData === 0 ? 1 : headphonesIcon.width - width - 1
-        Rectangle { width: 6; height: 6; radius: 3; y: 2; color: headphonesIcon.tint }
-        Rectangle { width: 2.4; height: 7; radius: 1.2; x: 1.8; y: 7.5; color: headphonesIcon.tint }
-      }
-    }
-
-    Text {
-      visible: headphonesIcon.kind !== "airpods"
-      anchors.centerIn: parent
-      text: "󰋋"
-      color: headphonesIcon.tint
-      font.family: root.fontFamily
-      font.pixelSize: Math.min(parent.width, parent.height)
-    }
   }
 
   // Depth wash, drawn under a surface's content and inside its border. The
@@ -3349,10 +3343,10 @@ ShellRoot {
       width: controlGrid.mediaSize
       height: controlGrid.smallTileHeight
       module: "airpods"
-      label: (root.systemData.headphones || {}).name || "Headphones"
+      label: root.headphonesLabel()
       detail: root.headphonesDetail()
       active: true
-      glyph: HeadphonesIcon { kind: String((root.systemData.headphones || {}).kind || "airpods"); tint: root.accent }
+      glyph: HeadphonesIcon { kind: root.headphonesIconKind(); tint: root.accent }
       onActivated: root.toggleControl("airpods", controlGrid.screenName)
     }
   }
@@ -4928,9 +4922,9 @@ ShellRoot {
             width: 30
             hovered: airpodsMouse.containsMouse
             active: root.panelHere("airpods", barWindow.modelData)
-            HeadphonesIcon { anchors.centerIn: parent; kind: String((root.systemData.headphones || {}).kind || "airpods"); tint: root.accent }
+            HeadphonesIcon { anchors.centerIn: parent; kind: root.headphonesIconKind(); tint: root.accent }
             BarModuleArea { id: airpodsMouse; module: "airpods"; onActivated: root.toggleControl("airpods", barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: airpodsMouse; text: (root.systemData.headphones || {}).name || "Headphones" }
+            HoverTip { mouse: airpodsMouse; text: root.headphonesLabel() }
           }
 
           BarItem {
@@ -6172,6 +6166,8 @@ ShellRoot {
     model: Quickshell.screens
     PanelWindow {
       id: audioControlsWindow
+      property bool multipleOutputs: false
+      onVisibleChanged: if (visible) multipleOutputs = root.selectedAudioOutputs().length > 1
 
       // Four rows of twenty-eight with a four-pixel gap between them. The gap
       // after the last row is not drawn, so it is not reserved either.
@@ -6197,7 +6193,26 @@ ShellRoot {
           PanelHeader { width: parent.width; glyph: "󰕾"; title: "Audio" }
           AudioLevelRow { width: parent.width }
           AudioLevelRow { width: parent.width; microphone: true }
-          SectionLabel { text: "OUTPUT DEVICE" }
+          RowLayout {
+            width: parent.width
+            SectionLabel { text: "MULTIPLE OUTPUTS"; Layout.fillWidth: true }
+            RefreshGlyph { visible: root.pendingControlAction === "audio-outputs"; width: 16; height: 16; spinning: visible }
+            ControlSwitch {
+              checked: audioControlsWindow.multipleOutputs
+              enabled: !controlProcess.running
+              onToggled: {
+                var nodes = root.selectedAudioOutputs()
+                if (audioControlsWindow.multipleOutputs && nodes.length > 1) root.setAudioOutputs([nodes[0]])
+                audioControlsWindow.multipleOutputs = !audioControlsWindow.multipleOutputs
+              }
+            }
+          }
+          Text {
+            width: parent.width
+            visible: root.failedControlAction === "audio-outputs"
+            text: "Could not change outputs. Try again."
+            color: root.red; font.family: root.fontFamily; font.pixelSize: root.textLabel
+          }
           SeeleListView {
             width: parent.width
             height: audioControlsWindow.outputHeight
@@ -6209,16 +6224,21 @@ ShellRoot {
               readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
               readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
               width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
+              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : (modelData.selected || modelData.default) || complete ? root.selectedColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Row {
                 visible: !parent.busy
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰓃"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || (modelData.selected || modelData.default) ? "󰄬" : "󰓃"; color: parent.parent.complete || (modelData.selected || modelData.default) ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
                 Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
               }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
+              MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !controlProcess.running
+                onClicked: {
+                  if (!parent.modelData.node) root.setAudioDevice(parent.modelData.id, parent.modelData.profile)
+                  else if (audioControlsWindow.multipleOutputs) root.toggleAudioOutput(parent.modelData.node)
+                  else root.setAudioOutputs([parent.modelData.node])
+                } }
             }
           }
           SectionLabel { text: "INPUT DEVICE" }
@@ -6987,8 +7007,8 @@ ShellRoot {
 
           PanelHeader {
             width: parent.width
-            mark: HeadphonesIcon { width: 16; height: 16; kind: String(headphones.kind || "airpods"); tint: root.accent }
-            title: headphones.name || "Headphones"
+            mark: HeadphonesIcon { width: 16; height: 16; kind: root.headphonesIconKind(); tint: root.accent }
+            title: root.headphonesLabel()
             detail: root.headphonesBatteryText() || "Connected"
           }
           SectionLabel {
@@ -7002,9 +7022,9 @@ ShellRoot {
               model: [{label:"Off", mode:"off"}, {label:"ANC", mode:"anc"}, {label:"Aware", mode:"transparency"}, {label:"Adaptive", mode:"adaptive"}]
               Rectangle {
                 required property var modelData
-                readonly property bool busy: root.controlBusy("airpods", modelData.mode)
-                readonly property bool complete: root.controlCompleted("airpods", modelData.mode)
-                readonly property bool failed: root.controlFailed("airpods", modelData.mode)
+                readonly property bool busy: root.controlBusy("headphones", modelData.mode)
+                readonly property bool complete: root.controlCompleted("headphones", modelData.mode)
+                readonly property bool failed: root.controlFailed("headphones", modelData.mode)
                 readonly property bool selected: headphones.noiseMode === modelData.mode
                 width: (parent.width - 18) / 4; height: root.rowHeight; radius: root.radius
                 color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
@@ -7016,31 +7036,32 @@ ShellRoot {
             }
           }
           Row {
-            visible: !nothingHeadphones
+            visible: headphones.connected
             width: parent.width; spacing: 8
             Column {
               width: parent.width - 48
               anchors.verticalCenter: parent.verticalCenter
               spacing: 1
               Text { text: "Auto play and pause"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-              Text { text: "Ear detection through librepods"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+              Text { text: nothingHeadphones && typeof headphones.earDetection !== "boolean" ? "Reading ear detection…" : "Pause when removed, resume when worn"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
             }
             ControlSwitch {
               anchors.verticalCenter: parent.verticalCenter
-              checked: root.systemData.airpodsEarDetection
-              busy: root.controlBusy("airpods", "ear-detection", "toggle")
-              onToggled: if (root.runControl("headphones", "ear-detection", "toggle")) root.patchSystemData({ airpodsEarDetection: !root.systemData.airpodsEarDetection })
+              enabled: headphones.connected && (!nothingHeadphones || (headphones.controls && typeof headphones.earDetection === "boolean"))
+              checked: nothingHeadphones ? headphones.earDetection === true : root.systemData.airpodsEarDetection
+              busy: root.controlBusy("headphones", "ear-detection", "toggle")
+              onToggled: root.runControl("headphones", "ear-detection", "toggle")
             }
           }
           Rectangle {
-            visible: !nothingHeadphones
-            readonly property bool busy: root.controlBusy("airpods", "open")
-            readonly property bool complete: root.controlCompleted("airpods", "open")
-            readonly property bool failed: root.controlFailed("airpods", "open")
+            visible: headphones.connected && root.headphonesIconKind() === "airpods"
+            readonly property bool busy: root.controlBusy("headphones", "open")
+            readonly property bool complete: root.controlCompleted("headphones", "open")
+            readonly property bool failed: root.controlFailed("headphones", "open")
             width: parent.width; height: 38; radius: root.radius
             color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : nothingHeadphones ? "More Nothing controls" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
             MouseArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("headphones", "open") }
           }

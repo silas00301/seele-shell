@@ -18,6 +18,7 @@ export type Status = {
   cameraActive?: boolean;
   screenRecording?: boolean;
   audioDevices?: AudioDevice[];
+  headphones?: { connected: boolean; name: string };
 };
 
 // Consume the shell's field patches. Closing the view closes stdin, which also

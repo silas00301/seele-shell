@@ -36,8 +36,15 @@ fn bridge(node: &str) -> std::io::Result<Child> {
     Command::new("pw-loopback")
         .args([
             "--capture", node,
-            &format!("--capture-props=node.name=seele-bluetooth-receiver.{node} seele.role=bluetooth-receiver"),
-            &format!("--playback-props=node.name=seele-bluetooth-receiver-out.{node} node.description=Bluetooth Receiver seele.role=bluetooth-receiver"),
+            &format!("--capture-props={}", json!({
+                "node.name": format!("seele-bluetooth-receiver.{node}"),
+                "seele.role": "bluetooth-receiver",
+            })),
+            &format!("--playback-props={}", json!({
+                "node.name": format!("seele-bluetooth-receiver-out.{node}"),
+                "node.description": "Bluetooth Receiver",
+                "seele.role": "bluetooth-receiver",
+            })),
         ])
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
 }

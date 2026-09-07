@@ -21,6 +21,7 @@ export type AudioDevice = {
   node: string;
   profile: number | null;
   default: boolean;
+  selected?: boolean;
 };
 
 export function visibleClients(clients: Client[]) {

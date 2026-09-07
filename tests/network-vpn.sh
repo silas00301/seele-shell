@@ -156,7 +156,7 @@ printf '%s\n' open >"$MOCK_VICINAE_STATE"
 printf '%s\n' active >"$MOCK_SSH_STATE"
 printf '{"RunSSH":true}\n' >"$MOCK_TAILSCALE_PREFS"
 mkdir -p "$XDG_RUNTIME_DIR/seele-shell"
-printf '%s\n' '{"address":"11:22:33:44:55:66","battery":74,"controls":true,"noiseMode":"adaptive","updatedAt":1}' >"$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json"
+printf '%s\n' '{"address":"11:22:33:44:55:66","battery":74,"controls":true,"noiseMode":"adaptive","earDetection":false,"updatedAt":1}' >"$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
 grep -qx closed "$MOCK_VICINAE_STATE"
 SEELE_CONTROL_NO_STATUS=1 "$control" launcher-toggle
@@ -180,7 +180,7 @@ state=$("$control" status | jq '.sshServer')
 jq -e '.available and .tailscaleAvailable and .sshAvailable and .mode == "mixed"' <<<"$state" >/dev/null
 
 state=$("$control" status | jq '.headphones')
-jq -e '. == {connected:true,name:"Nothing Headphone (1)",kind:"nothing",battery:74,controls:true,noiseMode:"adaptive"}' <<<"$state" >/dev/null
+jq -e '. == {connected:true,name:"Nothing Headphone (1)",kind:"nothing",battery:74,controls:true,noiseMode:"adaptive",earDetection:false}' <<<"$state" >/dev/null
 
 state=$("$control" status | jq '[.batteries[] | select(.name == "Nothing Headphone (1)")]')
 jq -e '. == [{kind:"device",name:"Nothing Headphone (1)",percent:71,status:"",icon:"audio-headphones"}]' <<<"$state" >/dev/null
@@ -224,6 +224,11 @@ jq -e '.available and .mode == "tailscale"' <<<"$state" >/dev/null
 SEELE_CONTROL_NO_STATUS=1 "$control" ssh-server ssh
 state=$("$control" status | jq '.sshServer')
 jq -e '.available and .mode == "ssh"' <<<"$state" >/dev/null
+SEELE_CONTROL_NO_STATUS=1 "$control" headphones ear-detection on
+"$control" status | jq -e '.headphones.earDetection == true' >/dev/null
+SEELE_CONTROL_NO_STATUS=1 "$control" headphones ear-detection toggle
+"$control" status | jq -e '.headphones.earDetection == false' >/dev/null
+if SEELE_CONTROL_NO_STATUS=1 "$control" headphones ear-detection invalid 2>/dev/null; then exit 1; fi
 SEELE_CONTROL_NO_STATUS=1 "$control" headphones transparency
 test "$(jq -r .noiseMode "$XDG_RUNTIME_DIR/seele-shell/nothing-headphones.json")" = transparency
 SEELE_CONTROL_NO_STATUS=1 "$control" headphones anc

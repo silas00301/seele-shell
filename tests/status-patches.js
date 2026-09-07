@@ -52,3 +52,19 @@ assert.equal(receivers, 1);
 update({ headphones: { connected: false } });
 assert.equal(osds, 1);
 console.log("partial status patch checks passed");
+
+const headphonesStart = source.indexOf("  function headphonesIconKind() {");
+const headphonesEnd = source.indexOf("  function headphonesDetail()", headphonesStart);
+vm.runInContext(source.slice(headphonesStart, headphonesEnd), context);
+root.headphonesIconKind = context.headphonesIconKind;
+for (const [name, connected, icon, label] of [
+  ["Nothing Headphone (1)", true, "headphones", "Nothing Headphone (1)"],
+  ["Silas AirPods", true, "airpods", "Silas AirPods"],
+  ["Silas AirPods", false, "headphones", "Headphones"],
+  ["Beats", true, "headphones", "Beats"],
+]) {
+  root.systemData.headphones = { name, connected };
+  assert.equal(context.headphonesIconKind(), icon);
+  assert.equal(context.headphonesLabel(), label);
+}
+console.log("headphone identity checks passed");

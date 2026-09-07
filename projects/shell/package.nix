@@ -37,6 +37,7 @@ let
     pkgs.procps
     pkgs.proton-vpn
     pkgs.proton-vpn-cli
+    pkgs.pulseaudio
     pkgs.socat
     pkgs.systemd
     pkgs.tailscale
@@ -60,6 +61,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontWrapQtApps = true;
   nativeBuildInputs = [
     pkgs.esbuild
+    pkgs.dbus
     pkgs.imagemagick
     pkgs.jq
     pkgs.makeWrapper
@@ -73,6 +75,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/share/licenses/seele-shell" "$out/libexec/seele-shell" "$out/bin"
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
+    install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
     install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
     install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
@@ -170,7 +173,11 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml"
+    bash ${../../tests/headphones-icon.sh} \
+      "$out/share/seele-shell/HeadphonesIcon.qml" \
+      ${../../tests/tst_headphones.qml} \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     bash ${../../tests/system-state.sh} \
       "$out/share/seele-shell/SystemState.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
@@ -196,7 +203,9 @@ pkgs.stdenvNoCC.mkDerivation {
       ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
     node ${../../tests/status-patches.js} "$out/share/seele-shell/shell.qml"
     bash ${../../tests/clock.sh} "$out/bin/seele-clock"
+    PATH="${runtimePath}:$PATH" bash ${../../tests/audio-routing.sh} "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${../../tests/network-vpn.sh} "$out/libexec/seele-shell/seele-control"
+    PATH="${runtimePath}:$PATH" bash ${../../tests/bluetooth-receiver-routing.sh} "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${../../tests/bluetooth-receiver.sh} \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-bt-receiver" \

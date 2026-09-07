@@ -1,6 +1,7 @@
 use crate::agents;
 use crate::command::{
-    atomic_write, config_home, detached, json_output, output, process_alive, runtime_home, status, require_status,
+    atomic_write, config_home, detached, json_output, output, process_alive, require_status,
+    runtime_home, status,
 };
 use crate::nothing;
 use crate::Result;
@@ -353,10 +354,20 @@ fn headphone_kind(name: &str) -> Option<&'static str> {
 }
 
 fn connected_headphone(bluetooth: &Value) -> Option<&Value> {
-    bluetooth["devices"].as_array()?.iter().find(|device| {
-        device["connected"].as_bool() == Some(true)
-            && device["name"].as_str().and_then(headphone_kind).is_some()
-    })
+    bluetooth["devices"]
+        .as_array()?
+        .iter()
+        .filter(|device| {
+            device["connected"].as_bool() == Some(true)
+                && device["name"].as_str().and_then(headphone_kind).is_some()
+        })
+        .min_by_key(|device| {
+            !device["name"]
+                .as_str()
+                .unwrap_or("")
+                .to_ascii_lowercase()
+                .contains("airpods")
+        })
 }
 
 fn headphone_state(bluetooth: &Value) -> Value {
@@ -378,7 +389,8 @@ fn headphone_state(bluetooth: &Value) -> Value {
                 json!({
                     "battery":state.battery.map(Value::from).unwrap_or_else(||device["battery"].clone()),
                     "controls":state.controls,
-                    "noiseMode":state.noise_mode
+                    "noiseMode":state.noise_mode,
+                    "earDetection":state.ear_detection
                 })
             })
             .unwrap_or_else(|| json!({"battery":device["battery"],"controls":false,"noiseMode":""}))
@@ -394,7 +406,8 @@ fn headphone_state(bluetooth: &Value) -> Value {
         "kind": kind,
         "battery": details["battery"],
         "controls": details["controls"],
-        "noiseMode": details["noiseMode"]
+        "noiseMode": details["noiseMode"],
+        "earDetection": details["earDetection"]
     })
 }
 
@@ -410,27 +423,30 @@ fn tailscale_state() -> Value {
 }
 fn proton_state(connections: &str) -> Value {
     if !env::var_os("PATH")
-        .map(|paths| env::split_paths(&paths).any(|path| {
-            use std::os::unix::fs::PermissionsExt;
-            fs::metadata(path.join("protonvpn"))
-                .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-        }))
+        .map(|paths| {
+            env::split_paths(&paths).any(|path| {
+                use std::os::unix::fs::PermissionsExt;
+                fs::metadata(path.join("protonvpn")).is_ok_and(|metadata| {
+                    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+                })
+            })
+        })
         .unwrap_or(false)
     {
         return json!({"available":false,"connected":false,"connection":""});
     }
     let line = connections
-    .lines()
-    .find(|line| {
-        let lower = line.to_ascii_lowercase();
-        let kind = line.split(':').next().unwrap_or("");
-        matches!(kind, "vpn" | "wireguard" | "tun")
-            && (lower.contains("protonvpn")
-                || lower.contains("proton vpn")
-                || lower.contains("pvpn"))
-    })
-    .unwrap_or("")
-    .to_owned();
+        .lines()
+        .find(|line| {
+            let lower = line.to_ascii_lowercase();
+            let kind = line.split(':').next().unwrap_or("");
+            matches!(kind, "vpn" | "wireguard" | "tun")
+                && (lower.contains("protonvpn")
+                    || lower.contains("proton vpn")
+                    || lower.contains("pvpn"))
+        })
+        .unwrap_or("")
+        .to_owned();
     json!({"available":true,"connected":!line.is_empty(),"connection":line.split_once(':').map(|(_,name)|name).unwrap_or("")})
 }
 fn ssh_state() -> Value {
@@ -584,7 +600,7 @@ fn percent(text: &str) -> u64 {
     text.split_whitespace()
         .nth(1)
         .and_then(|value| value.parse::<f64>().ok())
-        .map(|value| (value * 100.0) as u64)
+        .map(|value| (value * 100.0).round() as u64)
         .unwrap_or(0)
 }
 
@@ -765,7 +781,9 @@ pub(crate) fn graph_status(dump: &Value) -> Value {
 pub(crate) fn merge_status(parts: impl IntoIterator<Item = Value>) -> Value {
     let mut result = serde_json::Map::new();
     for part in parts {
-        if let Value::Object(values) = part { result.extend(values); }
+        if let Value::Object(values) = part {
+            result.extend(values);
+        }
     }
     Value::Object(result)
 }
@@ -774,13 +792,23 @@ fn status_value() -> Value {
     // Keep the one-shot CLI compatible, with at most three probe workers.
     let audio = thread::spawn(volumes);
     let auxiliary = thread::spawn(auxiliary_status);
-    let graph = thread::spawn(|| graph_status(&json_output("pw-dump", std::iter::empty::<&str>(), json!([]))));
+    let graph = thread::spawn(|| {
+        graph_status(&json_output(
+            "pw-dump",
+            std::iter::empty::<&str>(),
+            json!([]),
+        ))
+    });
     let network = network_status();
     let bluetooth = bluetooth_status(&bluetooth_state());
-    merge_status([network, bluetooth, notification_status(),
+    merge_status([
+        network,
+        bluetooth,
+        notification_status(),
         audio.join().expect("audio status worker panicked"),
         auxiliary.join().expect("auxiliary status worker panicked"),
-        graph.join().expect("PipeWire status worker panicked")])
+        graph.join().expect("PipeWire status worker panicked"),
+    ])
 }
 fn print_status() {
     if !no_status() {
@@ -917,7 +945,10 @@ pub fn run(arguments: &[String]) -> Result {
     let arg = |index: usize| arguments.get(index).map(String::as_str).unwrap_or("");
     match command {
         "watch-status" => return crate::live::run(),
-        "notifications-status" => { println!("{}", notification_status()); return Ok(()); }
+        "notifications-status" => {
+            println!("{}", notification_status());
+            return Ok(());
+        }
         "status" => println!("{}", status_value()),
         "agent-status" => println!("{}", agents::aggregate_states()),
         "bluetooth-status" => println!("{}", bluetooth_state()),
@@ -973,10 +1004,25 @@ pub fn run(arguments: &[String]) -> Result {
                 _ => return Err("invalid audio value".into()),
             }
         }
+        "audio-outputs" => {
+            let names: Vec<String> = serde_json::from_str(arg(1))?;
+            crate::audio_route::set(&names)?;
+        }
         "audio-device" => {
             let wanted = arg(1).parse::<u64>().map_err(|_| "device id required")?;
             if arg(2).is_empty() {
-                require_status("wpctl", ["set-default", arg(1)])?;
+                let dump = json_output("pw-dump", std::iter::empty::<&str>(), json!([]));
+                let devices = crate::audio::devices(&dump);
+                if let Some(device) = devices.iter().find(|device| {
+                    device["id"].as_u64() == Some(wanted) && device["kind"] == "output"
+                }) {
+                    crate::audio_route::set(&[device["node"]
+                        .as_str()
+                        .ok_or("output node missing")?
+                        .to_owned()])?;
+                } else {
+                    require_status("wpctl", ["set-default", arg(1)])?;
+                }
             } else {
                 arg(2).parse::<u64>().map_err(|_| "profile id required")?;
                 require_status("wpctl", ["set-profile", arg(1), arg(2)])?;
@@ -1002,7 +1048,13 @@ pub fn run(arguments: &[String]) -> Result {
                         .and_then(|object| object.get("id"))
                         .and_then(Value::as_u64);
                     if let Some(node) = node {
-                        require_status("wpctl", ["set-default", &node.to_string()])?;
+                        let devices = crate::audio::devices(&dump);
+                        let name = devices
+                            .iter()
+                            .find(|device| device["id"].as_u64() == Some(node))
+                            .and_then(|device| device["node"].as_str())
+                            .ok_or("output node missing")?;
+                        crate::audio_route::set(&[name.to_owned()])?;
                         selected = true;
                         break;
                     }
@@ -1213,6 +1265,15 @@ pub fn run(arguments: &[String]) -> Result {
                         detached("librepods", &[])?;
                     }
                 }
+                ("nothing", "ear-detection") => {
+                    let address = device["address"]
+                        .as_str()
+                        .ok_or("Bluetooth address missing")?;
+                    nothing::queue_ear_detection(
+                        address,
+                        if arg(2).is_empty() { "toggle" } else { arg(2) },
+                    )?;
+                }
                 ("nothing", "off" | "anc" | "transparency" | "adaptive") => {
                     let address = device["address"]
                         .as_str()
@@ -1396,4 +1457,39 @@ pub fn run(arguments: &[String]) -> Result {
         print_status()
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod headphone_tests {
+    use super::*;
+
+    #[test]
+    fn airpods_take_priority_only_while_connected() {
+        let mut state = json!({"devices":[
+            {"name":"Nothing Headphone (1)","connected":true},
+            {"name":"AirPods Pro","connected":true},
+            {"name":"Beats Studio","connected":true}
+        ]});
+        assert_eq!(connected_headphone(&state).unwrap()["name"], "AirPods Pro");
+        state["devices"][1]["connected"] = json!(false);
+        assert_eq!(
+            connected_headphone(&state).unwrap()["name"],
+            "Nothing Headphone (1)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod volume_tests {
+    use super::percent;
+
+    #[test]
+    fn five_point_volume_steps_are_reported_as_five() {
+        for start in 0..=145 {
+            let before = percent(&format!("Volume: {:.2}", start as f64 / 100.0));
+            let after = percent(&format!("Volume: {:.2}", (start + 5) as f64 / 100.0));
+            assert_eq!(before, start, "incorrect volume at {start}%");
+            assert_eq!(after - before, 5, "incorrect step from {start}%");
+        }
+    }
 }

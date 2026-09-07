@@ -39,6 +39,11 @@ pub fn devices(dump: &Value) -> Vec<Value> {
             }
         }
     }
+    let combined: Vec<&str> = dump.as_array().into_iter().flatten()
+        .find(|object| object.pointer("/info/props/node.name").and_then(Value::as_str) == Some(default_sink.as_str())
+            && crate::audio_route::NAMES.contains(&default_sink.as_str()))
+        .and_then(|object| object.pointer("/info/props/seele.outputs").and_then(Value::as_str))
+        .unwrap_or("").split(',').filter(|name| !name.is_empty()).collect();
     let mut values = Vec::new();
     for object in dump.as_array().into_iter().flatten() {
         let class = object
@@ -50,12 +55,13 @@ pub fn devices(dump: &Value) -> Vec<Value> {
         }
         let props = object.pointer("/info/props").unwrap_or(&Value::Null);
         let node = props["node.name"].as_str().unwrap_or("");
+        if crate::audio_route::NAMES.contains(&node) { continue; }
         let kind = if class == "Audio/Sink" {
             "output"
         } else {
             "input"
         };
-        values.push(json!({"id":object["id"],"kind":kind,"name":props["node.description"].as_str().or_else(||props["node.nick"].as_str()).or_else(||props["node.name"].as_str()).unwrap_or(""),"node":node,"profile":Value::Null,"default":if kind=="output"{node==default_sink}else{node==default_source}}));
+        values.push(json!({"id":object["id"],"kind":kind,"name":props["node.description"].as_str().or_else(||props["node.nick"].as_str()).or_else(||props["node.name"].as_str()).unwrap_or(""),"node":node,"profile":Value::Null,"selected":if kind=="output"{node==default_sink || combined.contains(&node)}else{node==default_source},"default":if kind=="output"{node==default_sink}else{node==default_source}}));
     }
     let sink_devices: HashSet<u64> = dump
         .as_array()
@@ -129,6 +135,23 @@ mod tests {
             {"index":3,"description":"Pro Audio","available":"unknown","classes":[["Audio/Sink",1]]},
             {"index":4,"description":"Input","available":"yes","classes":[["Audio/Source",1]]}
         ]}}})
+    }
+
+    #[test]
+    fn combined_output_selects_physical_members_without_showing_virtual_sink() {
+        let sink = |id, name| json!({"id":id,"type":"PipeWire:Interface:Node","info":{"props":{
+            "media.class":"Audio/Sink","node.name":name,"node.description":name
+        }}});
+        let mut combined = sink(30, "seele_outputs_a");
+        combined["info"]["props"]["seele.outputs"] = json!("speakers,headphones");
+        let metadata = json!({"type":"PipeWire:Interface:Metadata","props":{"metadata.name":"default"},
+            "metadata":[{"key":"default.audio.sink","value":{"name":"seele_outputs_a"}}]});
+        let entries = devices(&json!([sink(1,"speakers"), sink(2,"headphones"), sink(3,"hdmi"), combined, metadata]));
+        assert_eq!(entries.len(), 3);
+        for entry in entries {
+            assert_eq!(entry["selected"], entry["node"] != "hdmi");
+            assert_eq!(entry["default"], false);
+        }
     }
 
     #[test]

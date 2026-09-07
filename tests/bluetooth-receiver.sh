@@ -211,6 +211,6 @@ kill -TERM -- "-$bridge" 2>/dev/null || true
 wait 2>/dev/null || true
 test "$(wc -l <"$MOCK_LOOPBACKS")" -eq 1
 grep -q -- '--capture bluez_input.AA_BB_CC_DD_EE_01' "$MOCK_LOOPBACKS"
-grep -q 'seele.role=bluetooth-receiver' "$MOCK_LOOPBACKS"
+grep -q '"seele.role":"bluetooth-receiver"' "$MOCK_LOOPBACKS"
 if grep -q 'alsa_input' "$MOCK_LOOPBACKS"; then exit 1; fi
 if pgrep -f 'bin/pw-loopback' >/dev/null 2>&1; then exit 1; fi
