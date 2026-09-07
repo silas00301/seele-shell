@@ -62,6 +62,12 @@
       "title": "Seele Session Controls",
       "description": "Open lock, suspend, restart, and shutdown controls",
       "mode": "no-view"
+    },
+    {
+      "name": "notes",
+      "title": "Seele Notes and Voice Memos",
+      "description": "Open the standalone Notes app",
+      "mode": "no-view"
     }
   ]
 }

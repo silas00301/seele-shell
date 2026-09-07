@@ -41,6 +41,7 @@
         {
           packages = {
             default = import ./projects/shell/package.nix packageArgs;
+            notes = import ./projects/notes/package.nix packageArgs;
             greeter = import ./projects/greeter/package.nix packageArgs;
             lock = import ./projects/lock/package.nix packageArgs;
             polkit = import ./projects/polkit/package.nix packageArgs;
@@ -102,7 +103,7 @@
               {
                 name = "build-all";
                 help = "Build every Seele package";
-                command = "nix build .#default .#greeter .#lock .#polkit";
+                command = "nix build .#default .#notes .#greeter .#lock .#polkit";
               }
               {
                 name = "test-shell";
@@ -116,6 +117,8 @@
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
                   node tests/player-volume.js projects/shell/player-volume.js
                   node tests/time.js projects/shell/time.js
+                  node tests/notes.js projects/notes/notes.js
+                  node tests/notes-store.js projects/notes/NotesStore.qml projects/notes/notes.js
                   node tests/uri-picker.js projects/shell/uri-picker.js projects/shell/UriPicker.qml
                   node tests/status-patches.js projects/shell/shell.qml
                   bash tests/system-state.sh \
@@ -123,7 +126,7 @@
                     ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     tests/tst_systemstate.qml
                   FONTCONFIG_FILE=${fontConfig} bash tests/centered-glyph.sh \
-                    projects/shell/CenteredGlyph.qml \
+                    projects/shared/CenteredGlyph.qml \
                     ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     tests/tst_centeredglyph.qml
                   QT_QPA_PLATFORM=offscreen qmltestrunner \

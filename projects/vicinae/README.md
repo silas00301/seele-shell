@@ -18,6 +18,7 @@ Vicinae's extension directory. Search for `Seele` in Vicinae to find:
   outputs switch.
 - **Search Keybindings**: the compositor's active bindings. Enter closes the
   launcher and inputs the shortcut. Shift+Enter copies it; Ctrl+R reloads it.
+- **Seele Notes and Voice Memos**: open the separate Notes desktop app.
 - **Seele Screen Links and Codes**, **Seele Control Center**, **Seele AI
   Cockpit**, and **Seele Session Controls**: direct commands for root search,
   aliases, favorites, and Vicinae shortcuts.

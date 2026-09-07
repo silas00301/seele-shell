@@ -51,3 +51,13 @@ watch_result=$(printf 'refresh\nrefresh\n' | "$clock" watch)
 jq -se 'length == 3 and all(.[];
   .pinned == ["Europe/London"] and (.zones | length) > 200
   and all(.zones[]; .time != "" and .offset != ""))' <<<"$watch_result" >/dev/null
+
+# The geographic catalog keeps city identities merged by zone1970.tab.
+if [[ -f ${TZDIR:-/usr/share/zoneinfo}/zone.tab ]]; then
+  jq -e 'any(.zones[]; .id == "Europe/Amsterdam" and .flag == "🇳🇱")
+    and any(.zones[]; .id == "Europe/Copenhagen" and .flag == "🇩🇰")
+    and (.local.offset | test("^[+-][0-9]{4}$"))
+    and all(.zones[]; .day | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))' <<<"$result" >/dev/null
+fi
+printf '["europe/london", "Europe/London", "Invalid/Timezone", "UTC"]' >"$XDG_STATE_HOME/seele-shell/timezone"
+jq -e '.pinned == ["Europe/London", "UTC"]' < <($clock list) >/dev/null

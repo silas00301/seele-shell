@@ -8,11 +8,13 @@ let
   librepods = pkgs.librepods.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ../../packages/core/patches/librepods-status.patch ];
   });
+  notes = import ../notes/package.nix { inherit lib pkgs quickshellInput; };
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
   fontConfig = pkgs.makeFontsConf {
     fontDirectories = [ pkgs.maple-mono.NF-CN ];
   };
   runtimePath = lib.makeBinPath [
+    notes
     pkgs.alsa-utils
     pkgs.bluez
     pkgs.cameractrls-gtk4
@@ -66,6 +68,7 @@ pkgs.stdenvNoCC.mkDerivation {
     pkgs.jq
     pkgs.makeWrapper
     pkgs.nodejs
+    pkgs.python3
     pkgs.qt6.qtdeclarative
     (pkgs.zint-qt.override { withGUI = false; })
   ];
@@ -76,10 +79,11 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/share/seele-shell" "$out/share/vicinae/extensions/seele-shell/assets" "$out/share/licenses/seele-shell" "$out/libexec/seele-shell" "$out/bin"
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
-    install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
-    install -m644 ${./NotificationClipboard.qml} "$out/share/seele-shell/NotificationClipboard.qml"
-    install -m644 ${./notification-copy.js} "$out/share/seele-shell/notification-copy.js"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    mkdir -p "$out/share/shared"
+    cp ${../shared}/*.qml "$out/share/shared/"
+    ${tools}/bin/seele-tools grain "$out/share/shared/grain.png"
+    install -m644 ${./DictationState.qml} "$out/share/seele-shell/DictationState.qml"
     install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
     install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
     install -m644 ${./uri-picker.js} "$out/share/seele-shell/uri-picker.js"
@@ -88,8 +92,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./openai.svg} "$out/share/seele-shell/openai.svg"
     install -m644 ${./opencode.svg} "$out/share/seele-shell/opencode.svg"
     install -m644 ${./pi.svg} "$out/share/seele-shell/pi.svg"
-    ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
-    install -m644 ${./network.js} "$out/share/seele-shell/network.js"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
@@ -145,6 +147,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-shellctl --set SEELE_SHELL_PATH "$out/share/seele-shell"
     makeTool seele-clock --set TZDIR "${pkgs.tzdata}/share/zoneinfo"
     makeTool seele-yubikey-watch
+    makeWrapper ${tools}/bin/seele-dictation-levels "$out/bin/seele-dictation-levels"
     makeWrapper ${tools}/bin/seele-uri-worker "$out/bin/seele-uri-worker" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.grim ]}" \
       --set TESSDATA_PREFIX "${tools.tesseract}/share/tessdata" \
@@ -163,14 +166,14 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstallCheck
 
     test -f "$out/share/seele-shell/shell.qml"
-    test -f "$out/share/seele-shell/CenteredGlyph.qml"
+    test -f "$out/share/shared/CenteredGlyph.qml"
     test -f "$out/share/seele-shell/SystemState.qml"
     test -f "$out/share/seele-shell/seele.svg"
     for mark in claude openai opencode pi; do
       test -f "$out/share/seele-shell/$mark.svg"
     done
-    test -s "$out/share/seele-shell/grain.png"
-    head -c 8 "$out/share/seele-shell/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
+    test -s "$out/share/shared/grain.png"
+    head -c 8 "$out/share/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     test -f "$out/share/seele-shell/media.js"
     test -f "$out/share/seele-shell/time.js"
     test -f "$out/share/seele-shell/CameraPreview.qml"
@@ -183,7 +186,7 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/NotificationClipboard.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -193,7 +196,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${../../tests/tst_systemstate.qml}
     FONTCONFIG_FILE=${fontConfig} bash ${../../tests/centered-glyph.sh} \
-      "$out/share/seele-shell/CenteredGlyph.qml" \
+      "$out/share/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${../../tests/tst_centeredglyph.qml}
     for command in seele-uri-worker seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
@@ -206,9 +209,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/opencode-status.ts" \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-agent-hook"
-    node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
-    node ${../../tests/notification-copy.js} "$out/share/seele-shell/notification-copy.js" "$out/share/seele-shell/NotificationClipboard.qml" "$out/share/seele-shell/shell.qml"
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
@@ -217,6 +218,7 @@ pkgs.stdenvNoCC.mkDerivation {
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \
       ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
     node ${../../tests/status-patches.js} "$out/share/seele-shell/shell.qml"
+    python3 ${../../tests/dictation.py} "$out/bin/seele-dictation-levels"
     bash ${../../tests/clock.sh} "$out/bin/seele-clock"
     PATH="${runtimePath}:$PATH" bash ${../../tests/audio-routing.sh} "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${../../tests/network-vpn.sh} "$out/libexec/seele-shell/seele-control"

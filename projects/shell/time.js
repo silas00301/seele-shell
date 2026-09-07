@@ -9,10 +9,11 @@ function sameDay(left, right) {
 }
 
 function isoWeek(date) {
-  var value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12)
-  var day = value.getDay() || 7
-  value.setDate(value.getDate() + 4 - day)
-  var yearStart = new Date(value.getFullYear(), 0, 1, 12)
+  // Calendar arithmetic must not include the local zone's DST transitions.
+  var value = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  var day = value.getUTCDay() || 7
+  value.setUTCDate(value.getUTCDate() + 4 - day)
+  var yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1))
   return Math.ceil((((value - yearStart) / 86400000) + 1) / 7)
 }
 
@@ -56,21 +57,21 @@ function calendarCells(now, offset) {
 }
 
 function filterZones(zones, query) {
-  var needle = String(query || "").trim().toLowerCase()
-  if (needle === "") return zones || []
+  var words = String(query || "").trim().toLowerCase().replace(/[_/]/g, " ").split(/\s+/).filter(Boolean)
+  if (words.length === 0) return zones || []
   var result = []
   zones = zones || []
   for (var i = 0; i < zones.length; i++) {
     var zone = zones[i]
-    var searchable = [zone.id, zone.zone, zone.label, zone.aliases, zone.flag].join(" ").toLowerCase()
-    if (searchable.indexOf(needle) >= 0) result.push(zone)
+    var searchable = [zone.id, zone.zone, zone.label, zone.aliases, zone.flag, zone.abbreviation, formatOffset(zone.offset)].join(" ").toLowerCase().replace(/[_/]/g, " ")
+    if (words.every(function(word) { return searchable.indexOf(word) >= 0 })) result.push(zone)
   }
   return result
 }
 
 function offsetTime(now, offset, includeSeconds) {
   var match = String(offset || "").match(/^([+-])(\d{2})(\d{2})$/)
-  if (!match) return ""
+  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return ""
   var minutes = Number(match[2]) * 60 + Number(match[3])
   if (match[1] === "-") minutes = -minutes
   var shifted = new Date(now.getTime() + minutes * 60000)
@@ -102,28 +103,7 @@ function orderZones(zones, pinned, query) {
   return ordered
 }
 
-// An ISO timestamp records both the date and the zone offset at the instant
-// clicked. Omitted offset means the local zone, including its current DST.
-function clockTimestamp(now, offset) {
-  if (!now || !Number.isFinite(now.getTime())) return ""
-  if (offset === undefined) {
-    var localMinutes = -now.getTimezoneOffset()
-    var absolute = Math.abs(localMinutes)
-    offset = (localMinutes < 0 ? "-" : "+")
-      + String(Math.floor(absolute / 60)).padStart(2, "0")
-      + String(absolute % 60).padStart(2, "0")
-  }
+function formatOffset(offset) {
   var match = String(offset || "").match(/^([+-])(\d{2})(\d{2})$/)
-  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return ""
-  var minutes = Number(match[2]) * 60 + Number(match[3])
-  if (match[1] === "-") minutes = -minutes
-  var shifted = new Date(now.getTime() + minutes * 60000)
-  if (!Number.isFinite(shifted.getTime()) || shifted.getUTCFullYear() < 0 || shifted.getUTCFullYear() > 9999) return ""
-  return String(shifted.getUTCFullYear()).padStart(4, "0") + "-"
-    + String(shifted.getUTCMonth() + 1).padStart(2, "0") + "-"
-    + String(shifted.getUTCDate()).padStart(2, "0") + "T"
-    + String(shifted.getUTCHours()).padStart(2, "0") + ":"
-    + String(shifted.getUTCMinutes()).padStart(2, "0") + ":"
-    + String(shifted.getUTCSeconds()).padStart(2, "0")
-    + match[1] + match[2] + ":" + match[3]
+  return match ? "UTC" + match[1] + match[2] + ":" + match[3] : ""
 }
