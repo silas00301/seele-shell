@@ -391,6 +391,10 @@ ShellRoot {
     if (controlPanel === "") return
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
+    if (panel === "home-assistant") {
+      homeAssistantStore.refresh()
+      return
+    }
     var group = panel === "notifications" ? "notifications"
       : panel === "audio" ? "audio"
       : ["bluetooth", "airpods"].indexOf(panel) >= 0 ? "bluetooth"
@@ -1947,6 +1951,8 @@ ShellRoot {
     }
     onArrived: root.notificationPopupScreen = root.currentScreen()
   }
+
+  HomeAssistantStore { id: homeAssistantStore }
 
   IpcHandler {
     target: "seele-shell"
@@ -5081,6 +5087,26 @@ ShellRoot {
             HoverTip { mouse: activeWindowMouse; text: root.windowTitle(activeWindowMouse.parent.window) }
           }
 
+          BarItem {
+            visible: homeAssistantStore.configured
+            width: visible ? root.chipHeight : 0
+            hovered: homeAssistantMouse.containsMouse
+            active: root.panelHere("home-assistant", barWindow.modelData)
+            CenteredGlyph {
+              anchors.centerIn: parent
+              text: "󰋜"
+              color: homeAssistantStore.connected ? root.subtext : root.yellow
+              font.pixelSize: root.textStrong
+            }
+            MouseArea {
+              id: homeAssistantMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: homeAssistantMouse; text: homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · unavailable" }
+          }
           BarItem {
             width: 30
             hovered: voxtypeMouse.containsMouse
@@ -8640,6 +8666,105 @@ ShellRoot {
                 }
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  // Selected Home Assistant entities -----------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: homeAssistantWindow
+      required property var modelData
+      screen: modelData
+      visible: root.panelHere("home-assistant", modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 400
+      implicitHeight: homeAssistantContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-home-assistant"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { homeAssistantContent.forceActiveFocus() })
+
+      PanelSurface {
+        HoverHandler { id: homeAssistantHover }
+        Column {
+          id: homeAssistantContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader {
+            width: parent.width
+            glyph: "󰋜"
+            title: "Home Assistant"
+            detail: homeAssistantStore.busy ? "Updating…" : homeAssistantStore.connected ? "Selected entities" : "Unavailable"
+            detailColor: homeAssistantStore.connected ? root.subtext : root.yellow
+            NotificationButton {
+              id: homeAssistantRefresh
+              label: "Refresh"
+              enabled: !homeAssistantStore.busy
+              onClicked: homeAssistantStore.refresh()
+            }
+          }
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: homeAssistantStore.error || (!homeAssistantStore.configured ? "Add a private home-assistant.json configuration to connect." : homeAssistantStore.entities.length === 0 && !homeAssistantStore.busy ? "No selected entities." : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: homeAssistantStore.error ? root.yellow : root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
+          }
+          SeeleListView {
+            width: parent.width
+            height: Math.min(contentHeight, root.rowHeight * 6)
+            visible: homeAssistantStore.entities.length > 0
+            clip: true
+            spacing: root.spaceSmall
+            model: homeAssistantStore.entities
+            delegate: Rectangle {
+              id: homeAssistantRow
+              required property var modelData
+              width: ListView.view.width - root.scrollGutter
+              height: root.rowHeight + root.spaceMedium
+              radius: root.radiusSmall
+              color: activeFocus ? root.selectedColor : root.cardColor
+              readonly property bool actionable: homeAssistantStore.connected && modelData.available && modelData.controllable && !homeAssistantStore.busy
+              activeFocusOnTab: actionable
+              function changeState() {
+                if (actionable) homeAssistantStore.setState(modelData, modelData.state === "on" ? "off" : "on")
+              }
+              Keys.onPressed: event => {
+                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                  changeState()
+                  event.accepted = true
+                }
+              }
+              CardEdge {}
+              Column {
+                anchors { left: parent.left; right: homeAssistantToggle.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding; rightMargin: root.spaceMedium }
+                spacing: root.spaceTight
+                Text { width: parent.width; text: homeAssistantRow.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                Text { width: parent.width; text: homeAssistantRow.modelData.state + (homeAssistantRow.modelData.unit ? " " + homeAssistantRow.modelData.unit : "") + (!homeAssistantStore.connected ? " · stale" : ""); textFormat: Text.PlainText; elide: Text.ElideRight; color: homeAssistantStore.connected && homeAssistantRow.modelData.available ? root.subtext : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+              }
+              ControlSwitch {
+                id: homeAssistantToggle
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
+                visible: homeAssistantRow.modelData.controllable
+                enabled: homeAssistantRow.actionable
+                checked: homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id ? homeAssistantStore.pendingValue === "on" : homeAssistantRow.modelData.state === "on"
+                busy: homeAssistantStore.busy && homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id
+                onToggled: homeAssistantRow.changeState()
+              }
+            }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: homeAssistantHover.hovered }
           }
         }
       }

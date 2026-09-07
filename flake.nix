@@ -51,6 +51,7 @@
             motd = "Seele Shell development environment";
 
             packages = with pkgs; [
+              python3
               bash
               esbuild
               jq
@@ -112,7 +113,8 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
-                  node tests/focus.js projects/shell/focus.js
+                  PYTHONDONTWRITEBYTECODE=1 python3 tests/home-assistant.py projects/home-assistant/control.py
+                  node tests/home-assistant-store.js projects/shell/HomeAssistantStore.qml
                   node tests/time.js projects/shell/time.js
                   node tests/uri-picker.js projects/shell/uri-picker.js projects/shell/UriPicker.qml
                   node tests/status-patches.js projects/shell/shell.qml
