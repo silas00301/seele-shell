@@ -170,6 +170,11 @@ ShellRoot {
   // rather than by whichever surface happens to be holding it.
   readonly property int mediaBodyHeight: 148
 
+  FocusTimer {
+    id: focusTimer
+    onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+  }
+
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
   // focused monitor instead would move an open panel to another output the
@@ -5110,8 +5115,15 @@ ShellRoot {
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: clockMouse; text: "Time zones" }
+            MouseArea {
+              id: clockMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              acceptedButtons: Qt.LeftButton | Qt.RightButton
+              onClicked: mouse => root.toggleControl(mouse.button === Qt.RightButton ? "focus" : "clock", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: clockMouse; text: "Time zones · Right click for focus timer" }
           }
 
           BarItem {
@@ -5128,6 +5140,29 @@ ShellRoot {
             }
             MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
+          }
+
+          BarItem {
+            visible: focusTimer.timerState.status !== "idle"
+            width: visible ? focusBarLabel.implicitWidth + 14 : 0
+            hovered: focusBarMouse.containsMouse
+            active: root.panelHere("focus", barWindow.modelData)
+            Text {
+              id: focusBarLabel
+              anchors.centerIn: parent
+              text: "󰔟 " + focusTimer.label
+              color: focusTimer.timerState.status === "done" ? root.green : root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: focusBarMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleControl("focus", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: focusBarMouse; text: "Focus timer · " + focusTimer.timerState.status }
           }
 
           BarItem {
@@ -5868,6 +5903,118 @@ ShellRoot {
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // Focus timer ---------------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: focusWindow
+      required property var modelData
+      screen: modelData
+      visible: root.panelHere("focus", modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 350
+      implicitHeight: focusContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.namespace: "seele-shell-focus"
+      onVisibleChanged: if (visible) Qt.callLater(function() { focusContent.forceActiveFocus() })
+
+      PanelSurface {
+        Column {
+          id: focusContent
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          Keys.onPressed: event => {
+            if (event.isAutoRepeat || event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+            if (event.key === Qt.Key_1) focusTimer.command("start", 25)
+            else if (event.key === Qt.Key_2) focusTimer.command("start", 50)
+            else if (event.key === Qt.Key_3) focusTimer.command("start", 5)
+            else if (event.key === Qt.Key_Delete) focusTimer.command("cancel")
+            else if (event.key === Qt.Key_Space) {
+              if (focusTimer.timerState.status === "running") focusTimer.command("pause")
+              else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
+              else focusTimer.command("start", 25)
+            } else return
+            event.accepted = true
+          }
+          PanelHeader { width: parent.width; glyph: "󰔟"; title: "Focus timer"; detail: "Focus, then take a break" }
+          Text {
+            width: parent.width
+            text: focusTimer.label
+            color: focusTimer.timerState.status === "done" ? root.green : root.accent
+            font.family: root.fontFamily
+            font.pixelSize: root.textHero
+            font.weight: root.weightLight
+            horizontalAlignment: Text.AlignHCenter
+          }
+          Text {
+            width: parent.width
+            text: focusTimer.timerState.status === "idle" ? "Choose a duration" : focusTimer.timerState.status === "done" ? "Time is up" : focusTimer.timerState.status === "paused" ? "Paused" : "In progress"
+            color: root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textBody
+            horizontalAlignment: Text.AlignHCenter
+          }
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [{minutes:25,label:"25 min"}, {minutes:50,label:"50 min"}, {minutes:5,label:"5 min break"}]
+              Rectangle {
+                required property var modelData
+                width: (parent.width - root.spaceSmall * 2) / 3
+                height: root.controlHeight
+                radius: root.radius
+                color: presetMouse.pressed ? root.pressColor : presetHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+                CardEdge {}
+                HoverHandler { id: presetHover }
+                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                MouseArea { id: presetMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: focusTimer.command("start", modelData.minutes) }
+              }
+            }
+          }
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [focusTimer.timerState.status === "running" ? "Pause" : focusTimer.timerState.status === "paused" ? "Resume" : "Start", focusTimer.timerState.status === "done" ? "Done" : "Cancel"]
+              Rectangle {
+                required property string modelData
+                required property int index
+                width: (parent.width - root.spaceSmall) / 2
+                height: root.controlHeight
+                radius: root.radius
+                color: actionMouse.pressed ? root.pressColor : actionHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+                CardEdge {}
+                HoverHandler { id: actionHover }
+                Text { anchors.centerIn: parent; text: modelData; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                MouseArea {
+                  id: actionMouse
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (index === 1) focusTimer.command("cancel")
+                    else if (focusTimer.timerState.status === "running") focusTimer.command("pause")
+                    else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
+                    else focusTimer.command("start", 25)
+                  }
+                }
+              }
+            }
+          }
+          Text { width: parent.width; text: "1 / 2 / 3 presets · Space pause/resume · Delete cancel"; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textCaption; wrapMode: Text.Wrap }
         }
       }
     }
