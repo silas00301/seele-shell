@@ -1434,11 +1434,82 @@ ShellRoot {
     return badges[id] || String(id).substring(0, 2).toUpperCase()
   }
 
+  // The vendored mark for a harness, or for the provider behind it. Anything
+  // without one keeps its two-letter badge, so a provider this flake has never
+  // heard of still reads on the bar.
+  function agentMark(id) {
+    var marks = { pi: "pi.svg", opencode: "opencode.svg", codex: "openai.svg", openai: "openai.svg", claude: "claude.svg" }
+    return marks[String(id).toLowerCase()] || ""
+  }
+
   function agentColor(status) {
     if (status === "input") return root.yellow
     if (status === "working") return root.accent
     if (status === "finished") return root.green
     return root.subtext
+  }
+
+  // Every harness the cockpit draws an indicator for: the launchers CodexBar
+  // reports, plus any harness that published lifecycle state without one, so a
+  // session started outside all of this is still on the readout.
+  function agentIndicators() {
+    var launchers = root.agentData.launchers || []
+    var states = root.systemData.agentStates || {}
+    var result = []
+    var seen = {}
+    for (var i = 0; i < launchers.length; i++) {
+      result.push({ id: launchers[i].id, name: launchers[i].name })
+      seen[launchers[i].id] = true
+    }
+    for (var id in states) {
+      if (seen[id] || !states[id].active) continue
+      result.push({ id: id, name: id })
+    }
+    return result
+  }
+
+  // Only `idle` means there is no session. A record whose chosen source reports
+  // something else is passed through rather than called "not running", because
+  // the menu bar draws this for a harness it already knows is active.
+  function agentStatusText(status) {
+    if (status === "working") return "working"
+    if (status === "input") return "needs input"
+    if (status === "finished") return "finished"
+    if (status === "idle") return "not running"
+    return String(status)
+  }
+
+  // The words behind the indicator row's dots, held at the end of its rule.
+  // Nothing running says nothing at all.
+  function agentSummary() {
+    var states = root.systemData.agentStates || {}
+    var working = 0
+    var waiting = 0
+    var finished = 0
+    for (var id in states) {
+      var status = String(states[id].status || "idle")
+      if (status === "working") working++
+      else if (status === "input") waiting++
+      else if (status === "finished") finished++
+    }
+    var parts = []
+    if (working > 0) parts.push(working + " working")
+    if (waiting > 0) parts.push(waiting + (waiting === 1 ? " needs input" : " need input"))
+    if (finished > 0) parts.push(finished + " finished")
+    return parts.join(" · ")
+  }
+
+  // Usage figures are only worth what their age says they are. Until the first
+  // scan lands there is no age to report, so the header names the providers
+  // instead.
+  function agentUpdatedText() {
+    var generated = Date.parse(String(root.agentData.generatedAt || ""))
+    return isNaN(generated) ? root.subscriptionSummary() : "Updated " + root.agoText(generated / 1000)
+  }
+
+  function agentRunning(id) {
+    var states = root.systemData.agentStates || {}
+    return !!(states[id] && states[id].active)
   }
 
   function subscriptionSummary() {
@@ -1504,6 +1575,24 @@ ShellRoot {
   function startOsSession() {
     closeOverlays()
     Quickshell.execDetached(["seele-os-session"])
+  }
+
+  // The bar shows each provider's mark and a bare number. This is where that
+  // number says which subscription it belongs to and what it is counting.
+  function menuBarCapacityTip() {
+    var capacities = root.menuBarCapacities()
+    if (capacities.length === 0) return "AI cockpit"
+    var parts = []
+    for (var i = 0; i < capacities.length; i++) parts.push(capacities[i].name + " " + capacities[i].free + "% free")
+    return parts.join(" · ")
+  }
+
+  // A lit indicator takes you to the session it reports on. `seele-control`
+  // owns resolving which window that is, because the harness is a descendant
+  // of the terminal holding it and only /proc says which one.
+  function focusAgent(id) {
+    closeOverlays()
+    Quickshell.execDetached(["seele-control", "agent-focus", String(id)])
   }
 
   function runAgent(id, prompt) {
@@ -1614,9 +1703,30 @@ ShellRoot {
     return limit ? Math.max(0, 100 - Math.round(Number(limit.usedPercent || 0))) : 100
   }
 
-  function menuBarCapacity(id) {
-    var limit = root.subscriptionLimit(id)
-    return limit ? root.freePercent(limit) : -1
+  // A window worth watching before it is a window already spent: the meter and
+  // its number leave the accent once a third of the allowance is left.
+  function capacityColor(free) {
+    if (free <= 15) return root.red
+    if (free <= 30) return root.yellow
+    return root.accent
+  }
+
+  // Every subscription that has actually been spent against, in the order the
+  // provider list reports them rather than by how spent each one is: a bar
+  // entry whose parts reorder themselves is one the eye has to read twice. A
+  // window still at full capacity is left off, because it needs the width to
+  // say nothing.
+  function menuBarCapacities() {
+    var subscriptions = root.agentData.subscriptions || []
+    var result = []
+    for (var i = 0; i < subscriptions.length; i++) {
+      var limit = root.subscriptionLimit(subscriptions[i].id)
+      if (!limit) continue
+      var free = root.freePercent(limit)
+      if (free >= 100) continue
+      result.push({ id: subscriptions[i].id, name: subscriptions[i].name, free: free })
+    }
+    return result
   }
 
   function refreshClock() {
@@ -2221,6 +2331,19 @@ ShellRoot {
   // Qt cannot round an Image or a live video surface, so the source is drawn
   // through a mask instead. The source item must hide itself; the effect draws
   // it in its place.
+  // A harness or provider drawn as its own mark. The vendored icons are flat,
+  // so nothing here carries state: the blinking bar under a badge and the
+  // number beside a capacity already do. Rasterize the vector well above the
+  // size it is drawn at, because the OpenAI knot loses its loops when a 24px
+  // raster is squeezed into the menu bar.
+  component AgentMark: Image {
+    sourceSize.width: 64
+    sourceSize.height: 64
+    fillMode: Image.PreserveAspectFit
+    smooth: true
+    mipmap: true
+  }
+
   component RoundedSource: Item {
     id: roundedSource
 
@@ -2348,6 +2471,70 @@ ShellRoot {
     font.pixelSize: root.textCaption
     font.weight: root.weightMedium
     font.letterSpacing: root.trackingLabel
+  }
+
+  // The rule with everything a group's heading carries: the uppercase label,
+  // the group's own live summary held at the far end of it, and, where the
+  // group folds, the chevron that says so. Hand-assembled headings drift apart
+  // on baseline and row height, and the extra space sits above the label so a
+  // rule reads as belonging to what follows it rather than to what it left.
+  component SectionRule: Item {
+    id: sectionRule
+
+    property string label: ""
+    property string detail: ""
+    property color detailColor: root.overlay
+    property bool collapsible: false
+    property bool expanded: false
+    signal toggled()
+
+    height: 26
+
+    SectionLabel {
+      anchors.left: parent.left
+      anchors.bottom: parent.bottom
+      text: sectionRule.label
+      color: sectionRule.collapsible && sectionRuleMouse.pressed
+        ? root.accent
+        : sectionRule.collapsible && sectionRuleMouse.containsMouse
+          ? root.text
+          : root.overlay
+    }
+
+    Text {
+      anchors.right: sectionRuleChevron.left
+      anchors.rightMargin: sectionRule.collapsible ? root.spaceSmall : 0
+      anchors.bottom: parent.bottom
+      text: sectionRule.detail
+      color: sectionRule.detailColor
+      font.family: root.fontFamily
+      font.pixelSize: root.textCaption
+    }
+
+    Text {
+      id: sectionRuleChevron
+
+      visible: sectionRule.collapsible
+      width: visible ? 14 : 0
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.bottomMargin: -2
+      text: sectionRule.expanded ? "󰅃" : "󰅀"
+      color: sectionRuleMouse.containsMouse ? root.text : root.overlay
+      font.family: root.fontFamily
+      font.pixelSize: root.textBody
+      horizontalAlignment: Text.AlignRight
+    }
+
+    MouseArea {
+      id: sectionRuleMouse
+
+      anchors.fill: parent
+      enabled: sectionRule.collapsible
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: sectionRule.toggled()
+    }
   }
 
   // A filled track. Every meter in the shell -- capacity, daily usage, battery,
@@ -4807,23 +4994,21 @@ ShellRoot {
               id: agentBadgeItem
 
               readonly property color stateColor: root.agentColor(modelData.status)
+              readonly property string mark: root.agentMark(modelData.id)
               width: 28
               hovered: agentBadgeMouse.containsMouse
               Column {
                 anchors.centerIn: parent
                 spacing: 2
-                Image {
-                  visible: modelData.id === "claude"
+                AgentMark {
+                  visible: agentBadgeItem.mark !== ""
                   anchors.horizontalCenter: parent.horizontalCenter
                   width: 13
                   height: 13
-                  source: "claude-code.svg"
-                  fillMode: Image.PreserveAspectFit
-                  smooth: true
-                  mipmap: true
+                  source: agentBadgeItem.mark
                 }
                 Text {
-                  visible: modelData.id !== "claude"
+                  visible: agentBadgeItem.mark === ""
                   anchors.horizontalCenter: parent.horizontalCenter
                   text: root.agentBadge(modelData.id)
                   color: agentBadgeItem.stateColor
@@ -4847,7 +5032,9 @@ ShellRoot {
                 }
               }
               MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent)) }
-              HoverTip { mouse: agentBadgeMouse; text: modelData.name + " · " + (modelData.status === "input" ? "needs input" : modelData.status) }
+              // The mark is the only thing on the strip naming this session, so
+              // the tip is what spells it out.
+              HoverTip { mouse: agentBadgeMouse; text: modelData.name + " · " + root.agentStatusText(modelData.status) }
             }
           }
 
@@ -4857,48 +5044,70 @@ ShellRoot {
             hovered: aiMouse.containsMouse
             active: root.agentsHere(barWindow.modelData)
             visible: root.agentData.launchers && root.agentData.launchers.length > 0
+            // Each spent provider is its own mark and its own number, so the
+            // entry names the subscription without spending the bar's width on
+            // spelling it, and grows or shrinks with however many CodexBar
+            // reports rather than with the two that were once hard-coded.
             Row {
               id: aiBarContent
-              readonly property int codexCapacity: root.menuBarCapacity("codex")
-              readonly property int claudeCapacity: root.menuBarCapacity("claude")
+
+              readonly property var capacities: root.menuBarCapacities()
+
               anchors.centerIn: parent
               height: parent.height
-              spacing: 5
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "󱚣"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
+              spacing: root.spaceMedium
+
+              // Nothing spent yet, or nothing collected yet: the entry falls
+              // back to saying only what it opens.
               Text {
-                visible: aiBarContent.codexCapacity >= 0
+                visible: aiBarContent.capacities.length === 0
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Codex " + aiBarContent.codexCapacity + "%"
-                color: aiBarContent.codexCapacity <= 15 ? root.red : root.text
+                text: "󱚣"
+                color: root.accent
                 font.family: root.fontFamily
-                font.pixelSize: root.textBody
-                font.weight: root.weightStrong
+                font.pixelSize: root.textSubhead
               }
-              Text {
-                visible: aiBarContent.codexCapacity >= 0 && aiBarContent.claudeCapacity >= 0
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: root.overlay
-                font.family: root.fontFamily
-                font.pixelSize: root.textBody
-              }
-              Text {
-                visible: aiBarContent.claudeCapacity >= 0
-                anchors.verticalCenter: parent.verticalCenter
-                text: "Claude " + aiBarContent.claudeCapacity + "%"
-                color: aiBarContent.claudeCapacity <= 15 ? root.red : root.text
-                font.family: root.fontFamily
-                font.pixelSize: root.textBody
-                font.weight: root.weightStrong
-              }
-              Text {
-                visible: aiBarContent.codexCapacity < 0 && aiBarContent.claudeCapacity < 0
-                anchors.verticalCenter: parent.verticalCenter
-                text: "AI"
-                color: root.text
-                font.family: root.fontFamily
-                font.pixelSize: root.textBody
-                font.weight: root.weightStrong
+
+              Repeater {
+                model: aiBarContent.capacities
+
+                Row {
+                  id: aiBarCapacity
+
+                  required property var modelData
+                  readonly property string mark: root.agentMark(modelData.id)
+                  readonly property color tint: modelData.free <= 30 ? root.capacityColor(modelData.free) : root.text
+
+                  height: parent.height
+                  spacing: root.spaceTight
+
+                  AgentMark {
+                    visible: aiBarCapacity.mark !== ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 13
+                    height: 13
+                    source: aiBarCapacity.mark
+                  }
+
+                  Text {
+                    visible: aiBarCapacity.mark === ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.agentBadge(aiBarCapacity.modelData.id)
+                    color: root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: root.weightStrong
+                  }
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: aiBarCapacity.modelData.free + "%"
+                    color: aiBarCapacity.tint
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    font.weight: root.weightStrong
+                  }
+                }
               }
             }
             MouseArea {
@@ -4913,7 +5122,7 @@ ShellRoot {
                 else root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent))
               }
             }
-            HoverTip { mouse: aiMouse; text: "AI cockpit · middle-click to refresh · right-click to launch Pi" }
+            HoverTip { mouse: aiMouse; text: root.menuBarCapacityTip() + " · middle-click to refresh · right-click to launch Pi" }
           }
 
           BarItem {
@@ -5738,7 +5947,10 @@ ShellRoot {
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 500
-      implicitHeight: Math.min(modelData.height - 60, 760)
+      // The panel is as tall as what it holds, up to the screen. A stated
+      // height left a band of empty material below the folds while they were
+      // closed, which is most of the time.
+      implicitHeight: Math.min(modelData.height - 60, agentsContent.implicitHeight + root.panelMargin * 2)
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       mask: Region {
@@ -5773,13 +5985,16 @@ ShellRoot {
             id: agentsContent
 
             width: agentsScroll.width - root.panelMargin + root.scrollInset
-            spacing: 14
+            spacing: root.panelSpacing
 
             PanelHeader {
               width: parent.width
               glyph: "󱚣"
               title: "AI cockpit"
-              detail: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.subscriptionSummary()
+              // What the usage figures below are worth is how recently they
+              // were collected, and this sits directly beside the control that
+              // collects them again.
+              detail: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.agentUpdatedText()
               detailColor: root.agentError !== "" ? root.red : root.subtext
 
               Rectangle {
@@ -5795,12 +6010,128 @@ ShellRoot {
               }
             }
 
-            SectionLabel { text: "CHANGE THIS SYSTEM" }
+            SectionRule {
+              width: parent.width
+              label: "SESSIONS"
+              detail: root.agentSummary()
+            }
 
+            // One indicator per harness, read rather than pressed. The row is a
+            // single card and only a live session lights a cell inside it: the
+            // four launch buttons this replaced each carried the same state on
+            // a target big enough to invite a click, and the panel spent a
+            // third of its height saying nothing.
             Rectangle {
-              width: parent.width; height: 48; radius: root.radius
-              // The one action on this panel that changes the machine, so it
-              // is the one card that arrives already lit.
+              readonly property var indicators: root.agentIndicators()
+
+              width: parent.width
+              height: root.chipHeight + root.spaceMedium
+              radius: root.radius
+              color: root.cardColor
+              visible: indicators.length > 0
+              antialiasing: true
+
+              CardEdge {}
+
+              Row {
+                anchors.fill: parent
+                anchors.margins: root.spaceTight
+
+                Repeater {
+                  model: parent.parent.indicators
+
+                  Rectangle {
+                    id: agentIndicator
+
+                    required property var modelData
+                    readonly property string status: root.agentStatus(modelData.id)
+                    readonly property bool live: status !== "idle"
+                    // A session whose process has already gone keeps reporting
+                    // for five minutes, and there is no window left to send
+                    // anyone to, so only a running one answers the pointer.
+                    readonly property bool running: root.agentRunning(modelData.id)
+                    readonly property color stateColor: root.agentColor(status)
+
+                    width: parent.width / Math.max(1, parent.parent.indicators.length)
+                    height: parent.height
+                    radius: root.radiusSmall
+                    color: agentIndicatorMouse.pressed && agentIndicator.running
+                      ? root.pressColor
+                      : agentIndicator.live ? root.alpha(agentIndicator.stateColor, 0.14) : root.clearColor
+                    antialiasing: true
+                    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+                    // Laid over whatever the cell already says rather than
+                    // asked as another branch of its fill, so a lit session is
+                    // not the one cell that cannot report a pointer on it.
+                    Rectangle {
+                      anchors.fill: parent
+                      radius: parent.radius
+                      color: agentIndicatorMouse.containsMouse && agentIndicator.running ? root.hoverColor : root.clearColor
+                      antialiasing: true
+                      Behavior on color { ColorAnimation { duration: root.durationFast } }
+                    }
+
+                    Row {
+                      anchors.centerIn: parent
+                      spacing: root.spaceSmall
+
+                      // Lit while a session is running and a well in the card
+                      // while nothing is, beating only while the session is
+                      // actually doing something.
+                      Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 7
+                        height: 7
+                        radius: width / 2
+                        antialiasing: true
+                        color: agentIndicator.live ? agentIndicator.stateColor : root.wellColor
+                        border.width: agentIndicator.live ? 0 : 1
+                        border.color: root.edgeLight
+
+                        SequentialAnimation on opacity {
+                          running: agentIndicator.status === "working" || agentIndicator.status === "input"
+                          loops: Animation.Infinite
+                          NumberAnimation { from: 1; to: 0.25; duration: agentIndicator.status === "input" ? 600 : 900; easing.type: Easing.InOutQuad }
+                          NumberAnimation { from: 0.25; to: 1; duration: agentIndicator.status === "input" ? 600 : 900; easing.type: Easing.InOutQuad }
+                        }
+                      }
+
+                      Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: agentIndicator.modelData.name
+                        elide: Text.ElideRight
+                        color: agentIndicator.live ? root.text : root.subtext
+                        font.family: root.fontFamily
+                        font.pixelSize: root.textLabel
+                        font.weight: root.weightStrong
+                      }
+                    }
+
+                    MouseArea {
+                      id: agentIndicatorMouse
+                      anchors.fill: parent
+                      hoverEnabled: true
+                      cursorShape: agentIndicator.running ? Qt.PointingHandCursor : Qt.ArrowCursor
+                      onClicked: if (agentIndicator.running) root.focusAgent(agentIndicator.modelData.id)
+                    }
+                    HoverTip {
+                      mouse: agentIndicatorMouse
+                      text: agentIndicator.modelData.name + " · " + root.agentStatusText(agentIndicator.status)
+                        + (agentIndicator.running ? " · click to focus" : "")
+                      inOverlay: true
+                    }
+                  }
+                }
+              }
+            }
+
+            // The one action on this panel that changes the machine, so it is
+            // the one card that arrives already lit.
+            Rectangle {
+              width: parent.width
+              height: 52
+              radius: root.radius
               color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.selectedColor : root.activeTint
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
@@ -5808,12 +6139,35 @@ ShellRoot {
 
               Row {
                 anchors.fill: parent
-                anchors.leftMargin: 14
-                anchors.rightMargin: 14
-                spacing: 12
+                anchors.leftMargin: root.cardPadding + 2
+                anchors.rightMargin: root.cardPadding + 2
+                spacing: root.spaceLarge
+
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "󱄅"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 46; text: "Describe a change to Seele"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong }
+
+                Column {
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: parent.width - 46
+                  spacing: 1
+
+                  Text { width: parent.width; text: "Describe a change to Seele"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong }
+                  Text { width: parent.width; text: "Opens the flake, rebuilds, then offers to record it"; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                }
               }
+
+              // The hand-off is only worth advertising under the pointer, the
+              // way a Control Center row advertises its own.
+              Text {
+                visible: osSessionMouse.containsMouse
+                anchors.right: parent.right
+                anchors.rightMargin: root.spaceMedium
+                anchors.verticalCenter: parent.verticalCenter
+                text: "󰅂"
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: root.textStrong
+              }
+
               MouseArea {
                 id: osSessionMouse
                 anchors.fill: parent
@@ -5823,89 +6177,136 @@ ShellRoot {
               }
             }
 
-            SectionLabel { text: "LAUNCH" }
+            SectionRule { width: parent.width; label: "CAPACITY" }
 
-            Grid {
+            Rectangle {
               width: parent.width
-              columns: 2
-              spacing: 8
-              Repeater {
-                model: root.agentData.launchers || []
-                Rectangle {
-                  required property var modelData
-                  readonly property string status: root.agentStatus(modelData.id)
-                  width: (parent.width - 8) / 2; height: 68; radius: root.radius
-                  color: launchMouse.pressed ? root.pressColor : launchMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-                  Behavior on color { ColorAnimation { duration: root.durationFast } }
-                  border.color: status === "input" ? root.yellow : status === "working" ? root.accent : status === "finished" ? root.green : root.cardBorder
-                  border.width: status === "idle" ? 1 : 2
+              height: capacityContent.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: root.cardColor
+              antialiasing: true
+
+              CardEdge {}
+
+              Column {
+                id: capacityContent
+
+                anchors.fill: parent
+                anchors.margins: root.cardPadding
+                spacing: root.spaceLarge
+
+                Repeater {
+                  model: root.agentData.subscriptions || []
+
                   Column {
-                    anchors.centerIn: parent
-                    spacing: 3
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.name; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong }
+                    required property var modelData
+
+                    width: parent.width
+                    spacing: root.spaceMedium
+
+                    Item {
+                      width: parent.width
+                      height: 16
+
+                      Text {
+                        anchors.left: parent.left
+                        anchors.right: subscriptionSource.left
+                        anchors.rightMargin: root.spaceMedium
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.name + (modelData.plan ? " · " + modelData.plan : "")
+                        elide: Text.ElideRight
+                        color: root.text
+                        font.family: root.fontFamily
+                        font.pixelSize: root.textStrong
+                        font.weight: root.weightStrong
+                      }
+
+                      // Which OAuth flow CodexBar read the figures through is
+                      // not something the row is about. Credits are, and so is
+                      // a provider that reported nothing.
+                      Text {
+                        id: subscriptionSource
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Number(modelData.credits) > 0 ? Number(modelData.credits) + " credits" : modelData.source === "unavailable" ? "unavailable" : ""
+                        color: root.overlay
+                        font.family: root.fontFamily
+                        font.pixelSize: root.textCaption
+                      }
+                    }
+
+                    Repeater {
+                      model: modelData.limits || []
+
+                      Column {
+                        id: limitColumn
+
+                        required property var modelData
+                        readonly property int free: root.freePercent(modelData)
+
+                        width: parent.width
+                        spacing: root.spaceTight
+
+                        Item {
+                          width: parent.width
+                          height: 14
+
+                          Text {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.name
+                            color: root.subtext
+                            font.family: root.fontFamily
+                            font.pixelSize: root.textBody
+                          }
+
+                          Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: root.spaceTight
+
+                            Text {
+                              anchors.verticalCenter: parent.verticalCenter
+                              text: limitColumn.free + "% free"
+                              color: limitColumn.free <= 30 ? root.capacityColor(limitColumn.free) : root.text
+                              font.family: root.fontFamily
+                              font.pixelSize: root.textBody
+                              font.weight: root.weightStrong
+                            }
+
+                            Text {
+                              visible: root.resetText(limitColumn.modelData.resetsAt) !== ""
+                              anchors.verticalCenter: parent.verticalCenter
+                              text: "· resets " + root.resetText(limitColumn.modelData.resetsAt)
+                              color: root.overlay
+                              font.family: root.fontFamily
+                              font.pixelSize: root.textCaption
+                            }
+                          }
+                        }
+
+                        MeterBar {
+                          width: parent.width
+                          ratio: limitColumn.free / 100
+                          fill: root.capacityColor(limitColumn.free)
+                        }
+                      }
+                    }
+
                     Text {
-                      anchors.horizontalCenter: parent.horizontalCenter
-                      text: parent.parent.status === "working" ? "● working" : parent.parent.status === "input" ? "◆ input needed" : parent.parent.status === "finished" ? "✓ finished" : modelData.id === "pi" ? "Primary" : "Ready"
-                      color: parent.parent.status === "input" ? root.yellow : parent.parent.status === "working" ? root.accent : parent.parent.status === "finished" ? root.green : root.subtext
+                      visible: (modelData.limits || []).length === 0
+                      text: "No usage window reported"
+                      color: root.overlay
                       font.family: root.fontFamily
                       font.pixelSize: root.textCaption
                     }
                   }
-                  MouseArea { id: launchMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runAgent(parent.modelData.id, "") }
                 }
-              }
-            }
 
-            SectionLabel { text: "SUBSCRIPTION CAPACITY" }
-
-            Repeater {
-              model: root.agentData.subscriptions || []
-              Column {
-                required property var modelData
-                width: parent.width
-                spacing: 6
-                Row {
-                  width: parent.width
-                  Text {
-                    width: parent.width * 0.62
-                    text: modelData.name + (modelData.plan ? " · " + modelData.plan : "")
-                    elide: Text.ElideRight
-                    color: root.text
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textStrong
-                    font.weight: root.weightStrong
-                  }
-                  Text {
-                    width: parent.width * 0.38
-                    text: modelData.credits !== null && modelData.credits !== undefined && Number(modelData.credits) > 0 ? Number(modelData.credits) + " credits" : modelData.source
-                    color: root.overlay
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textCaption
-                    horizontalAlignment: Text.AlignRight
-                  }
-                }
-                Repeater {
-                  model: modelData.limits || []
-                  Column {
-                    required property var modelData
-                    width: parent.width
-                    spacing: 5
-                    Row {
-                      width: parent.width
-                      Text { width: parent.width * 0.45; text: modelData.name; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
-                      Text { width: parent.width * 0.3; text: root.freePercent(modelData) + "% free"; color: root.freePercent(modelData) <= 15 ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignHCenter }
-                      Text { width: parent.width * 0.25; text: "resets " + root.resetText(modelData.resetsAt); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
-                    }
-                    MeterBar {
-                      width: parent.width
-                      ratio: root.freePercent(modelData) / 100
-                      fill: root.freePercent(modelData) <= 15 ? root.red : root.accent
-                    }
-                  }
-                }
                 Text {
-                  visible: (modelData.limits || []).length === 0
-                  text: "No usage window reported"
+                  visible: (root.agentData.subscriptions || []).length === 0
+                  text: "No subscriptions reporting"
                   color: root.overlay
                   font.family: root.fontFamily
                   font.pixelSize: root.textCaption
@@ -5913,138 +6314,322 @@ ShellRoot {
               }
             }
 
-            Row {
+            SectionRule { width: parent.width; label: "USAGE" }
+
+            Rectangle {
               width: parent.width
-              height: root.chipHeight
-              spacing: 4
+              height: usageContent.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: root.cardColor
+              antialiasing: true
 
-              Repeater {
-                model: [
-                  { id: "day", label: "Day" },
-                  { id: "week", label: "Week" },
-                  { id: "month", label: "Month" },
-                  { id: "all", label: "All time" }
-                ]
+              CardEdge {}
 
+              Column {
+                id: usageContent
+
+                anchors.fill: parent
+                anchors.margins: root.cardPadding
+                spacing: root.spaceLarge
+
+                // One well holding four segments. The selected range is the
+                // only lit thing in it, so the choice reads off that fill
+                // rather than off an outline drawn around every alternative.
                 Rectangle {
-                  required property var modelData
-                  width: (parent.width - 12) / 4
+                  width: parent.width
                   height: root.chipHeight
                   radius: root.radius
-                  color: metricPeriodMouse.pressed
-                    ? root.pressColor
-                    : root.agentMetricPeriod === modelData.id
-                      ? root.selectedColor
-                      : metricPeriodMouse.containsMouse
-                        ? root.hoveredColor(root.cardColor)
-                        : root.cardColor
+                  color: root.wellColor
                   border.width: 1
-                  border.color: root.agentMetricPeriod === modelData.id ? root.alpha(root.accent, 0.4) : root.cardBorder
+                  border.color: root.alpha(root.text, 0.05)
+                  antialiasing: true
 
-                  Text {
-                    anchors.centerIn: parent
-                    text: modelData.label
-                    color: root.agentMetricPeriod === modelData.id ? root.accent : root.subtext
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textLabel
-                    font.weight: root.agentMetricPeriod === modelData.id ? root.weightStrong : root.weightRegular
-                  }
-
-                  MouseArea {
-                    id: metricPeriodMouse
+                  Row {
                     anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.agentMetricPeriod = parent.modelData.id
+                    anchors.margins: 2
+
+                    Repeater {
+                      model: [
+                        { id: "day", label: "Day" },
+                        { id: "week", label: "Week" },
+                        { id: "month", label: "Month" },
+                        { id: "all", label: "All time" }
+                      ]
+
+                      Rectangle {
+                        id: metricPeriod
+
+                        required property var modelData
+                        readonly property bool selected: root.agentMetricPeriod === modelData.id
+
+                        width: parent.width / 4
+                        height: parent.height
+                        radius: root.radiusSmall
+                        color: metricPeriodMouse.pressed ? root.pressColor : metricPeriod.selected ? root.selectedColor : root.clearColor
+                        antialiasing: true
+                        Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+                        // The pointer is reported in neutral light laid over
+                        // whatever the segment already says. Asked as one more
+                        // branch of the fill, the selected range would be the
+                        // one segment that answered nothing.
+                        Rectangle {
+                          anchors.fill: parent
+                          radius: parent.radius
+                          color: metricPeriodMouse.containsMouse ? root.hoverColor : root.clearColor
+                          antialiasing: true
+                          Behavior on color { ColorAnimation { duration: root.durationFast } }
+                        }
+
+                        Text {
+                          anchors.centerIn: parent
+                          text: metricPeriod.modelData.label
+                          color: metricPeriod.selected ? root.accent : root.subtext
+                          font.family: root.fontFamily
+                          font.pixelSize: root.textLabel
+                          font.weight: metricPeriod.selected ? root.weightStrong : root.weightRegular
+                        }
+
+                        MouseArea {
+                          id: metricPeriodMouse
+                          anchors.fill: parent
+                          hoverEnabled: true
+                          cursorShape: Qt.PointingHandCursor
+                          onClicked: root.agentMetricPeriod = metricPeriod.modelData.id
+                        }
+                      }
+                    }
                   }
                 }
-              }
-            }
 
-            Row {
-              width: parent.width
-              spacing: 8
-              Rectangle {
-                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.cardColor
-                CardEdge {}
-                Column { anchors.centerIn: parent; spacing: 4
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.formatTokens(root.agentMetricData.totalTokens || 0); color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "tokens · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                }
-              }
-              Rectangle {
-                width: (parent.width - 8) / 2; height: 68; radius: root.radius; color: root.cardColor
-                CardEdge {}
-                Column { anchors.centerIn: parent; spacing: 4
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "$" + Number(root.agentMetricData.totalCost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: "estimated · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                }
-              }
-            }
+                // Tokens and their estimated cost cover the same range, so they
+                // are one instrument split by a hairline rather than two cards
+                // that happen to sit beside each other.
+                Item {
+                  width: parent.width
+                  height: 44
 
-            Item {
-              width: parent.width
-              height: 18
-              Row {
-                anchors.fill: parent
-                SectionLabel { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "LAST 7 DAYS"; color: usageHeaderMouse.pressed ? root.accent : usageHeaderMouse.containsMouse ? root.text : root.overlay }
-                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentUsageOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignRight }
-              }
-              MouseArea { id: usageHeaderMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.agentUsageOpen = !root.agentUsageOpen }
-            }
-
-            Column {
-              width: parent.width
-              spacing: 4
-              visible: root.agentUsageOpen
-              Repeater {
-                model: root.agentData.local.daily || []
-                Row {
-                  required property var modelData
-                  width: parent.width; height: 24; spacing: 8
-                  readonly property real peak: {
-                    var days = root.agentData.local.daily || []
-                    var value = 1
-                    for (var i = 0; i < days.length; i++) value = Math.max(value, Number(days[i].totalTokens || 0))
-                    return value
-                  }
-                  Text { width: 76; anchors.verticalCenter: parent.verticalCenter; text: modelData.date || ""; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                  MeterBar {
-                    width: parent.width - 150
+                  Column {
+                    anchors.left: parent.left
+                    anchors.right: usageDivider.left
                     anchors.verticalCenter: parent.verticalCenter
-                    ratio: Number(modelData.totalTokens || 0) / parent.peak
+                    spacing: 2
+
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.formatTokens(root.agentMetricData.totalTokens || 0); color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "tokens · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                   }
-                  Text { width: 58; anchors.verticalCenter: parent.verticalCenter; text: root.formatTokens(modelData.totalTokens || 0); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
+
+                  Rectangle {
+                    id: usageDivider
+
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: parent.height - root.spaceSmall
+                    color: root.separatorColor
+                  }
+
+                  Column {
+                    anchors.left: usageDivider.right
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "$" + Number(root.agentMetricData.totalCost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "estimated · " + root.agentMetricPeriodLabel(); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                  }
                 }
               }
             }
 
-            Item {
+            SectionRule {
               width: parent.width
-              height: 18
-              Row {
+              label: "LAST 7 DAYS"
+              collapsible: true
+              expanded: root.agentUsageOpen
+              onToggled: root.agentUsageOpen = !root.agentUsageOpen
+            }
+
+            Rectangle {
+              width: parent.width
+              height: dailyFold.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: root.cardColor
+              visible: root.agentUsageOpen && (root.agentData.local.daily || []).length > 0
+              antialiasing: true
+
+              CardEdge {}
+
+              Column {
+                id: dailyFold
+
+                // The tallest day scales every track, so it is measured once
+                // for the fold rather than once per row inside it.
+                readonly property real peak: {
+                  var days = root.agentData.local.daily || []
+                  var value = 1
+                  for (var i = 0; i < days.length; i++) value = Math.max(value, Number(days[i].totalTokens || 0))
+                  return value
+                }
+
                 anchors.fill: parent
-                SectionLabel { width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; text: "TOP MODELS"; color: modelsHeaderMouse.pressed ? root.accent : modelsHeaderMouse.containsMouse ? root.text : root.overlay }
-                Text { width: 20; anchors.verticalCenter: parent.verticalCenter; text: root.agentModelsOpen ? "󰅃" : "󰅀"; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textBody; horizontalAlignment: Text.AlignRight }
-              }
-              MouseArea { id: modelsHeaderMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.agentModelsOpen = !root.agentModelsOpen }
-            }
-            Column {
-              width: parent.width
-              spacing: 2
-              visible: root.agentModelsOpen
-              Repeater {
-                model: root.agentMetricData.models || []
-                Row {
-                  required property var modelData
-                  width: parent.width; height: 25
-                  Text { width: parent.width * 0.62; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
-                  Text { width: parent.width * 0.2; text: root.formatTokens(modelData.tokens); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
-                  Text { width: parent.width * 0.18; text: "$" + Number(modelData.cost || 0).toFixed(2); color: root.green; font.family: root.fontFamily; font.pixelSize: root.textLabel; horizontalAlignment: Text.AlignRight }
+                anchors.margins: root.cardPadding
+                spacing: root.spaceTight
+
+                Repeater {
+                  model: root.agentData.local.daily || []
+
+                  Item {
+                    required property var modelData
+
+                    width: parent.width
+                    height: 22
+
+                    Text {
+                      id: dailyDate
+
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 42
+                      text: String(modelData.date || "").substring(5)
+                      color: root.subtext
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                    }
+
+                    MeterBar {
+                      anchors.left: dailyDate.right
+                      anchors.right: dailyCost.left
+                      anchors.rightMargin: root.spaceMedium
+                      anchors.verticalCenter: parent.verticalCenter
+                      ratio: Number(modelData.totalTokens || 0) / dailyFold.peak
+                    }
+
+                    // Fixed columns: a cost that sized itself would move every
+                    // track's right edge and leave the days incomparable.
+                    Text {
+                      id: dailyCost
+
+                      anchors.right: dailyTokens.left
+                      anchors.rightMargin: root.spaceMedium
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 34
+                      text: "$" + Number(modelData.cost || 0).toFixed(0)
+                      color: root.overlay
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                      horizontalAlignment: Text.AlignRight
+                    }
+
+                    Text {
+                      id: dailyTokens
+
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 52
+                      text: root.formatTokens(modelData.totalTokens || 0)
+                      color: root.text
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                      horizontalAlignment: Text.AlignRight
+                    }
+                  }
                 }
               }
             }
 
+            SectionRule {
+              width: parent.width
+              label: "TOP MODELS"
+              collapsible: true
+              expanded: root.agentModelsOpen
+              onToggled: root.agentModelsOpen = !root.agentModelsOpen
+            }
+
+            Rectangle {
+              width: parent.width
+              height: modelFold.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: root.cardColor
+              visible: root.agentModelsOpen && (root.agentMetricData.models || []).length > 0
+              antialiasing: true
+
+              CardEdge {}
+
+              Column {
+                id: modelFold
+
+                readonly property real peak: {
+                  var models = root.agentMetricData.models || []
+                  var value = 1
+                  for (var i = 0; i < models.length; i++) value = Math.max(value, Number(models[i].tokens || 0))
+                  return value
+                }
+
+                anchors.fill: parent
+                anchors.margins: root.cardPadding
+                spacing: root.spaceTight
+
+                Repeater {
+                  model: root.agentMetricData.models || []
+
+                  Item {
+                    required property var modelData
+
+                    width: parent.width
+                    height: 22
+
+                    Text {
+                      id: modelName
+
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 132
+                      text: modelData.name
+                      elide: Text.ElideRight
+                      color: root.text
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                    }
+
+                    MeterBar {
+                      anchors.left: modelName.right
+                      anchors.right: modelCost.left
+                      anchors.rightMargin: root.spaceMedium
+                      anchors.verticalCenter: parent.verticalCenter
+                      ratio: Number(modelData.tokens || 0) / modelFold.peak
+                    }
+
+                    Text {
+                      id: modelCost
+
+                      anchors.right: modelTokens.left
+                      anchors.rightMargin: root.spaceMedium
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 34
+                      text: "$" + Number(modelData.cost || 0).toFixed(0)
+                      color: root.overlay
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                      horizontalAlignment: Text.AlignRight
+                    }
+
+                    Text {
+                      id: modelTokens
+
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 52
+                      text: root.formatTokens(modelData.tokens)
+                      color: root.text
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textLabel
+                      horizontalAlignment: Text.AlignRight
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

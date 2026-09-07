@@ -1,5 +1,5 @@
 use crate::command::{
-    atomic_write, epoch, exec, home, output, process_alive, state_home, timestamp,
+    atomic_write, epoch, exec, home, json_output, output, process_alive, state_home, timestamp,
 };
 use crate::Result;
 use serde_json::{json, Map, Value};
@@ -489,6 +489,40 @@ pub fn state(_arguments: &[String]) -> Result {
     atomic_write(&cache, &encoded)?;
     println!("{}", String::from_utf8(encoded)?);
     Ok(())
+}
+
+/// The window a session is running in. A harness is never a Hyprland client
+/// itself — it is a descendant of the terminal that opened it — so the record's
+/// pid is walked up until an ancestor is one the compositor knows about. A
+/// session behind a multiplexer resolves to nothing, because its server is not
+/// a child of any window, and the caller reports that rather than guessing.
+pub(crate) fn session_window(agent: &str) -> Option<String> {
+    let states = aggregate_states();
+    let record = states.get(agent)?;
+    if !record
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let mut pid = u32::try_from(record.get("pid").and_then(Value::as_u64)?).ok()?;
+    let clients = json_output("hyprctl", ["clients", "-j"], json!([]));
+    let clients = clients.as_array()?;
+    for _ in 0..24 {
+        let owner = clients
+            .iter()
+            .find(|client| client.get("pid").and_then(Value::as_u64) == Some(u64::from(pid)));
+        if let Some(address) = owner.and_then(|client| client.get("address")) {
+            return address.as_str().map(str::to_owned);
+        }
+        let (parent, _) = proc_stat(pid)?;
+        if parent <= 1 {
+            break;
+        }
+        pid = parent;
+    }
+    None
 }
 
 pub(crate) fn aggregate_states() -> Value {

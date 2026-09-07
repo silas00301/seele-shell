@@ -81,7 +81,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
     install -m644 ${./uri-picker.js} "$out/share/seele-shell/uri-picker.js"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
-    install -m644 ${./claude-code.svg} "$out/share/seele-shell/claude-code.svg"
+    install -m644 ${./claude.svg} "$out/share/seele-shell/claude.svg"
+    install -m644 ${./openai.svg} "$out/share/seele-shell/openai.svg"
+    install -m644 ${./opencode.svg} "$out/share/seele-shell/opencode.svg"
+    install -m644 ${./pi.svg} "$out/share/seele-shell/pi.svg"
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
@@ -158,7 +161,9 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/seele-shell/CenteredGlyph.qml"
     test -f "$out/share/seele-shell/SystemState.qml"
     test -f "$out/share/seele-shell/seele.svg"
-    test -f "$out/share/seele-shell/claude-code.svg"
+    for mark in claude openai opencode pi; do
+      test -f "$out/share/seele-shell/$mark.svg"
+    done
     test -s "$out/share/seele-shell/grain.png"
     head -c 8 "$out/share/seele-shell/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     test -f "$out/share/seele-shell/media.js"

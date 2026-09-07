@@ -964,6 +964,13 @@ pub fn run(arguments: &[String]) -> Result {
                 _ => return Err("invalid application action".into()),
             }
         }
+        "agent-focus" => {
+            let address = agents::session_window(arg(1)).ok_or("no window for that session")?;
+            let address = window_address(&address)?;
+            dispatch(&format!(
+                "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
+            ))?;
+        }
         "bluetooth-pairing-answer" => {
             if !matches!(arg(2), "accept" | "reject") {
                 return Err("accept or reject required".into());
@@ -1450,6 +1457,7 @@ pub fn run(arguments: &[String]) -> Result {
             | "agent-status"
             | "bluetooth-status"
             | "speedtest"
+            | "agent-focus"
             | "application"
             | "bluetooth-pair-worker"
             | "tray-menu"
