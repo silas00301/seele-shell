@@ -88,7 +88,10 @@ The resident `seele-uri-worker` is a separate Rust binary, so OCR never blocks
 the shell's render thread. It preloads up to six independent, single-threaded
 Tesseract engines. Grim captures outputs concurrently as uncompressed PPM;
 Qt displays those same files without a PNG encode/decode round trip. OCR runs
-in overlapping horizontal strips, interleaved across outputs. Each strip owns
+in overlapping horizontal strips, interleaved across outputs. A Rust grayscale
+pass normalizes dark backgrounds and enlarges each strip by 1.5× with bilinear
+interpolation, improving small-text recognition without changing the displayed
+capture. Each strip owns
 only links whose center lies in its core region, preventing duplicate numbers
 at seams. Results stream into a retained QML ListModel. Idle workers block on
 channels and retain models, while image allocations are released after OCR.
@@ -107,7 +110,8 @@ or reconstruct visibly truncated links. As with any OCR, very small text,
 complex backgrounds and links wrapped across lines may not be recognized.
 
 `tests/uri-picker.sh` runs real OCR against generated dark-screen fixtures on
-two simulated outputs, including a link crossing a strip boundary. It verifies
+two simulated outputs, including 16px text with query punctuation and a link
+crossing a strip boundary. It verifies
 capture identity, file permissions, numbering, cancellation during capture and
 OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
 selection and badge placement at screen edges. For a local OCR timing sample,

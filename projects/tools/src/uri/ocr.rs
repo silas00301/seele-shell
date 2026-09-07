@@ -112,16 +112,18 @@ impl Ocr {
         if y + height > image.height || height == 0 {
             return Err("invalid OCR strip".into());
         }
+        let prepared = image.prepare(y, height);
         unsafe {
             TessBaseAPISetImage(
                 self.0,
-                image.bytes.as_ptr().add(image.offset + y * image.width * 3),
-                image.width as c_int,
-                height as c_int,
-                3,
-                (image.width * 3) as c_int,
+                prepared.bytes.as_ptr(),
+                prepared.width as c_int,
+                prepared.height as c_int,
+                1,
+                prepared.width as c_int,
             );
-            TessBaseAPISetSourceResolution(self.0, 96);
+            drop(prepared); // SetImage owns a copy.
+            TessBaseAPISetSourceResolution(self.0, 144);
             let monitor = TessMonitorCreate();
             if monitor.is_null() {
                 TessBaseAPIClear(self.0);
@@ -160,6 +162,10 @@ impl Ocr {
                             &mut word.bottom,
                         ) != 0
                         {
+                            word.left = word.left * 2 / 3;
+                            word.top = word.top * 2 / 3;
+                            word.right = (word.right * 2 + 2) / 3;
+                            word.bottom = (word.bottom * 2 + 2) / 3;
                             words.push(word);
                         }
                     }

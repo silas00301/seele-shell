@@ -14,6 +14,7 @@ magick -size 1400x1100 xc:'#11111b' -font "$font" -pointsize 30 -fill '#cdd6f4' 
   -annotate +90+130 'https://example.org/alpha' \
   -annotate +90+520 'https://nixos.org' \
   -annotate +90+950 'https://example.com/beta' \
+  -pointsize 16 -annotate +90+750 'https://example.org/docs/page-4?view=plain#section' \
   -depth 8 "$work/frame.ppm"
 cat > "$work/bin/grim" <<'GRIM'
 #!/usr/bin/env bash
@@ -72,7 +73,7 @@ async function main() {
   const links = messages.filter(m => m.id === 1 && m.event === 'links').flatMap(m => m.links)
   assert.equal(new Set(links.map(l => l.number)).size, links.length)
   for (const output of ['DP-1', 'DP-2']) {
-    for (const uri of ['https://example.org/alpha', 'https://nixos.org', 'https://example.com/beta']) {
+    for (const uri of ['https://example.org/alpha', 'https://nixos.org', 'https://example.com/beta', 'https://example.org/docs/page-4?view=plain#section']) {
       const found = links.filter(l => l.output === output && l.uri === uri)
       assert.equal(found.length, 1, `${output}: ${uri}`)
       const link = found[0]

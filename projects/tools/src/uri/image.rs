@@ -61,6 +61,61 @@ impl Image {
     }
 }
 
+/// A modest enlargement makes small desktop glyphs legible to the LSTM.
+/// Grayscale reduces copy traffic; normalizing dark backgrounds avoids an
+/// extra inverted recognition pass. The original capture remains untouched.
+pub struct Prepared {
+    pub bytes: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl Image {
+    pub fn prepare(&self, y: usize, height: usize) -> Prepared {
+        let start = self.offset + y * self.width * 3;
+        let end = start + height * self.width * 3;
+        let mut gray: Vec<u8> = self.bytes[start..end]
+            .chunks_exact(3)
+            .map(|p| {
+                ((77 * u32::from(p[0]) + 150 * u32::from(p[1]) + 29 * u32::from(p[2])) >> 8) as u8
+            })
+            .collect();
+        let samples = gray.len().div_ceil(32);
+        if gray.iter().step_by(32).filter(|v| **v < 128).count() > samples / 2 {
+            for pixel in &mut gray {
+                *pixel = 255 - *pixel;
+            }
+        }
+        let width = self.width * 3 / 2;
+        let scaled_height = height * 3 / 2;
+        let mut bytes = Vec::with_capacity(width * scaled_height);
+        // Bilinear interpolation at pixel centers, using integer weights.
+        // A 3:2 scale keeps the input small and maps boxes back exactly.
+        for row in 0..scaled_height {
+            let sy = (row * 4).saturating_sub(1);
+            let top = sy / 6;
+            let bottom = (top + 1).min(height - 1);
+            let fy = (sy % 6) as u32;
+            for column in 0..width {
+                let sx = (column * 4).saturating_sub(1);
+                let left = sx / 6;
+                let right = (left + 1).min(self.width - 1);
+                let fx = (sx % 6) as u32;
+                let a = u32::from(gray[top * self.width + left]) * (6 - fx)
+                    + u32::from(gray[top * self.width + right]) * fx;
+                let b = u32::from(gray[bottom * self.width + left]) * (6 - fx)
+                    + u32::from(gray[bottom * self.width + right]) * fx;
+                bytes.push(((a * (6 - fy) + b * fy + 18) / 36) as u8);
+            }
+        }
+        Prepared {
+            bytes,
+            width,
+            height: scaled_height,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
