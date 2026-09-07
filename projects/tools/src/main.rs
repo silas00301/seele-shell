@@ -10,7 +10,6 @@ mod launch;
 mod live;
 mod mic_sync;
 mod nothing;
-mod notifications;
 mod pipewire;
 mod receiver;
 mod session;

@@ -21,10 +21,12 @@ Commands:
   microphone-state <muted|live> Show a device mute OSD
   voxtype                   Toggle voice dictation
   lock                      Lock the session
+  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, or dnd
+  notification-status       Print notification state as JSON
   ping                      Check shell IPC
 "#;
 
-fn ipc(quiet: bool, arguments: &[String]) -> Result {
+fn ipc_output(arguments: &[String]) -> Result<String> {
     let shell = env::var("SEELE_SHELL_PATH").map_err(|_| "SEELE_SHELL_PATH is not set")?;
     let mut args = vec![
         "ipc".into(),
@@ -36,18 +38,17 @@ fn ipc(quiet: bool, arguments: &[String]) -> Result {
         "seele-shell".into(),
     ];
     args.extend_from_slice(arguments);
-    match output("quickshell", &args) {
-        Some(value) => {
-            if !quiet && !value.trim().is_empty() {
-                print!("{value}");
-                if !value.ends_with('\n') {
-                    println!();
-                }
-            }
+    output("quickshell", &args).ok_or_else(|| "Seele Shell is not responding".into())
+}
+
+fn ipc(quiet: bool, arguments: &[String]) -> Result {
+    match ipc_output(arguments) {
+        Ok(value) => {
+            if !quiet && !value.trim().is_empty() { println!("{}", value.trim_end()); }
             Ok(())
         }
-        None if quiet => Ok(()),
-        None => Err("Seele Shell is not responding".into()),
+        Err(_) if quiet => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -126,6 +127,15 @@ pub fn run(arguments: &[String]) -> Result {
             call("updateStatus", &[result])
         }
         "lock" => exec("seele-control", &["lock".into()]),
+        "notification-status" => call("notificationStatus", &[]),
+        "notification" => {
+            let action = rest.first().ok_or("notification action required")?;
+            let id = rest.get(1).cloned().unwrap_or_default();
+            let key = rest.get(2).cloned().unwrap_or_else(|| "default".into());
+            let response = ipc_output(&["notificationCommand".into(), action.clone(), id, key])?;
+            if response.trim() != "ok" { return Err("notification action unavailable".into()); }
+            Ok(())
+        }
         "ping" => call("ping", &[]),
         "-h" | "--help" | "help" => {
             print!("{USAGE}");

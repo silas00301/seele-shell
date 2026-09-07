@@ -90,3 +90,31 @@ done
 : >"$MOCK_ACTIONS"
 if "$control" audio-device; then exit 1; fi
 test ! -s "$MOCK_ACTIONS"
+
+cat >"$work/bin/seele-shellctl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >>"$MOCK_ACTIONS"
+[[ "$*" == 'notification invoke 42 mail-reply-sender' ]] || exit 1
+exit "${MOCK_NOTIFICATION_EXIT:-0}"
+SH
+cat >"$work/bin/wl-copy" <<'SH'
+#!/usr/bin/env bash
+cat >"$MOCK_ACTIONS"
+exit "${MOCK_COPY_EXIT:-0}"
+SH
+for mock in seele-shellctl wl-copy; do
+  sed -i "1s|.*|#!$BASH|" "$work/bin/$mock"
+  chmod +x "$work/bin/$mock"
+done
+: >"$MOCK_ACTIONS"
+"$control" notification-action 42 mail-reply-sender
+test "$(cat "$MOCK_ACTIONS")" = $'notification\ninvoke\n42\nmail-reply-sender'
+for args in '42 absent' '43 mail-reply-sender' 'invalid mail-reply-sender'; do
+  read -r -a action_args <<<"$args"
+  if "$control" notification-action "${action_args[@]}"; then exit 1; fi
+done
+if MOCK_NOTIFICATION_EXIT=1 "$control" notification-action 42 mail-reply-sender; then exit 1; fi
+"$control" copy-code 012345
+test "$(cat "$MOCK_ACTIONS")" = '012345'
+if MOCK_COPY_EXIT=1 "$control" copy-code 012345; then exit 1; fi
+if "$control" copy-code '123;bad'; then exit 1; fi

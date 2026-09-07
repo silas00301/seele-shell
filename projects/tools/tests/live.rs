@@ -173,15 +173,6 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
         "busctl",
         "test ! -e \"$MOCK_DIR/offline\" || exit 1; cat \"$MOCK_DIR/bluez\"",
     );
-    stub(
-        &work.0,
-        "makoctl",
-        r#"case "$1" in
-      list) cat "$MOCK_DIR/notifications" ;;
-      history) printf '[]\n' ;;
-      mode) printf 'default\n' ;;
-    esac"#,
-    );
     stub(&work.0, "wpctl", "printf 'Volume: 0.50\\n'");
     stub(
         &work.0,
@@ -194,7 +185,6 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
         .unwrap()
         .success());
     bluez(&work.0, true);
-    fs::write(work.0.join("notifications"), "[]").unwrap();
     let mut controller = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_seele-tools"))
             .args(["control", "watch-status"])
@@ -250,7 +240,6 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
         s["volume"] == 50
             && s["bluetoothPowered"] == true
             && s["connection"] == "Fixture"
-            && s.get("notifications").is_some()
             && s.get("tailscale").is_some()
     });
     // No timer launches network, BlueZ, volume, or graph probes while idle.
@@ -259,7 +248,6 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
         calls(&work.0, "busctl"),
         calls(&work.0, "wpctl"),
         calls(&work.0, "pw-dump"),
-        calls(&work.0, "makoctl"),
     ];
     std::thread::sleep(Duration::from_millis(5300));
     assert_eq!(
@@ -269,16 +257,13 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
             calls(&work.0, "busctl"),
             calls(&work.0, "wpctl"),
             calls(&work.0, "pw-dump"),
-            calls(&work.0, "makoctl")
         ]
     );
-    fs::write(
-        work.0.join("notifications"),
-        "[{\"id\":1,\"summary\":\"Fixture\"}]",
-    )
-    .unwrap();
+    // The native notification server owns this bus name. Its traffic must
+    // not trigger any hardware probes or overwrite its shell-owned state.
     signal(&connection[2]);
-    wait_for(&receiver, &mut state, |s| s["notifications"]["count"] == 1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(state.get("notifications").is_none());
     assert_eq!(before[0], calls(&work.0, "nmcli"));
     assert_eq!(before[1], calls(&work.0, "busctl"));
     writeln!(controller.0.stdin.as_mut().unwrap(), "bluetooth").unwrap();
@@ -363,7 +348,6 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
             "volume",
             "bluetoothPowered",
             "connection",
-            "notifications",
             "tailscale",
         ]
         .iter()
