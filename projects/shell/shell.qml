@@ -2109,6 +2109,55 @@ ShellRoot {
   // light gathers along the top edge, thins out across the middle, and the
   // surface settles into ink at the bottom, so a tall panel is lit rather
   // than merely tinted.
+  // The neutral light that reports the pointer, laid over whatever the surface
+  // underneath is already saying rather than asked as one more branch of its
+  // fill. A fill that tests its own state first can never report a pointer on a
+  // control that is selected, on, or pinned — which is the control the pointer
+  // is most often aimed at. Declared before anything a use site adds, so the
+  // wash stays under the label it lights.
+  component HoverWash: Rectangle {
+    property bool hovered: false
+    // Neutral light, because reporting the pointer is not the same as saying
+    // what a control does. A destructive control is the one exception: dismiss
+    // and shut down say what they are for while the pointer is on them. The
+    // resting colour is the tint at zero alpha rather than `transparent`, so
+    // the fade is not dragged through black at both ends.
+    property color tint: root.hoverColor
+
+    anchors.fill: parent
+    radius: parent.radius
+    color: hovered ? tint : root.alpha(tint, 0)
+    antialiasing: true
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+  }
+
+  // The square that holds one glyph and answers a click: a panel header's
+  // refresh, a toast's dismiss, the notification centre's silence. Its resting
+  // state is whatever surface it sits on, `tint` is what it says while it is
+  // on, and the pointer is reported over that rather than instead of it — so a
+  // button that is already on still answers the pointer aimed at it.
+  component IconButton: Rectangle {
+    id: iconButton
+
+    property bool active: false
+    property bool hovered: false
+    property bool pressed: false
+    property color tint: root.accent
+    property color pressTint: root.pressColor
+    property color hoverTint: root.hoverColor
+
+    implicitWidth: root.controlHeight
+    implicitHeight: root.controlHeight
+    radius: root.radius
+    color: iconButton.pressed ? iconButton.pressTint : iconButton.active ? root.alpha(iconButton.tint, 0.14) : root.alpha(iconButton.tint, 0)
+    antialiasing: true
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    HoverWash { hovered: iconButton.hovered; tint: iconButton.hoverTint }
+  }
+
   component SurfaceWash: Rectangle {
     anchors.fill: parent
     anchors.margins: 1
@@ -2396,9 +2445,10 @@ ShellRoot {
     property color detailColor: root.overlay
     property bool collapsible: false
     property bool expanded: false
+    default property alias trailing: sectionRuleTrailing.data
     signal toggled()
 
-    height: 26
+    height: Math.max(26, sectionRuleTrailing.implicitHeight + root.spaceTight)
 
     SectionLabel {
       anchors.left: parent.left
@@ -2411,9 +2461,21 @@ ShellRoot {
           : root.overlay
     }
 
-    Text {
+    // Everything in the rule sits on its bottom edge, so a group's label, its
+    // summary, its fold arrow and whatever control governs it share one line
+    // and the rule's extra height stays above them all.
+    Row {
+      id: sectionRuleTrailing
+
       anchors.right: sectionRuleChevron.left
       anchors.rightMargin: sectionRule.collapsible ? root.spaceSmall : 0
+      anchors.bottom: parent.bottom
+      spacing: root.spaceMedium
+    }
+
+    Text {
+      anchors.right: sectionRuleTrailing.left
+      anchors.rightMargin: sectionRuleTrailing.width > 0 ? root.spaceMedium : 0
       anchors.bottom: parent.bottom
       text: sectionRule.detail
       color: sectionRule.detailColor
@@ -2505,6 +2567,59 @@ ShellRoot {
       height: 1
       color: root.edgeLight
     }
+  }
+
+  // A set of exclusive choices drawn as one well with the chosen one lit inside
+  // it. Several outlined boxes side by side spend an outline on every
+  // alternative to say what the fill of the one that is on already says, and
+  // the well is what makes the group read as a single control.
+  component SegmentWell: Rectangle {
+    default property alias content: segmentWellRow.data
+
+    implicitHeight: root.chipHeight
+    radius: root.radius
+    color: root.wellColor
+    border.width: 1
+    border.color: root.alpha(root.text, 0.05)
+    antialiasing: true
+
+    Row {
+      id: segmentWellRow
+
+      anchors.fill: parent
+      anchors.margins: 2
+    }
+  }
+
+  component Segment: Rectangle {
+    id: segment
+
+    property bool selected: false
+    property bool hovered: false
+    property bool pressed: false
+
+    height: parent ? parent.height : root.chipHeight
+    radius: root.radiusSmall
+    color: segment.pressed ? root.pressColor : segment.selected ? root.selectedColor : root.clearColor
+    antialiasing: true
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    HoverWash { hovered: segment.hovered }
+  }
+
+  // A list of choices sits in a card the way every other group on a panel does,
+  // so the rows inside it can take the lighter tint the elevation ramp gives
+  // them instead of floating on the panel's own material.
+  component DeviceListCard: Rectangle {
+    property real listHeight: 0
+
+    height: listHeight + root.cardPadding * 2
+    radius: root.radius
+    color: root.cardColor
+    antialiasing: true
+
+    CardEdge {}
   }
 
   component SpeedGauge: Rectangle {
@@ -3105,17 +3220,7 @@ ShellRoot {
       antialiasing: true
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-      // The pointer is reported in neutral light laid over whatever the knob is
-      // already saying, rather than as one more branch of its fill. A fill that
-      // asked `active` first could never report a pointer on a radio that was
-      // on, so the 30px at the head of every lit row answered nothing and the
-      // highlight only began once the pointer had crossed past it.
-      Rectangle {
-        anchors.fill: parent
-        radius: width / 2
-        color: connectivityKnobMouse.containsMouse ? root.hoverColor : root.clearColor
-        Behavior on color { ColorAnimation { duration: root.durationFast } }
-      }
+      HoverWash { hovered: connectivityKnobMouse.containsMouse }
 
       Text {
         visible: !connectivityRow.busy
@@ -3507,6 +3612,373 @@ ShellRoot {
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
 
+  component NotificationCard: Rectangle {
+    id: notificationCard
+
+    property var entry: ({})
+    property string group: ""
+    property bool history: false
+    property bool popup: false
+    property bool alwaysUnfolded: false
+    // A collapsed stack is not a notification: it stands for its group, opens
+    // that group on a click, and its dismiss takes the whole group with it.
+    property bool stacked: false
+    property bool collapsible: false
+    property int count: 1
+    property int depth: 0
+    signal toggled()
+
+    readonly property bool actionable: !notificationCard.stacked && !notificationCard.history && root.notificationActionable(entry)
+    readonly property var offeredActions: notificationCard.history ? [] : Notifications.actions(entry)
+    readonly property string verificationCode: Notifications.verificationCode(entry)
+    readonly property bool unfolded: notificationCard.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
+    // A single elided line reports its full width, which is the only way to
+    // know there is more to show without measuring the text twice.
+    readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
+    // Only a toast folds, and only when there is something folded away.
+    readonly property bool unfoldable: !notificationCard.alwaysUnfolded && (truncated || unfolded || !!entry.image)
+    readonly property string iconSource: {
+      var icon = String(entry.app_icon || "").trim()
+      return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
+    }
+    // The card is as tall as what it holds: its own padding above and below
+    // the text, and a little more once the text has unfolded into several
+    // lines and wants air under the last of them.
+    implicitHeight: Math.max(root.notificationRowHeight, notificationText.implicitHeight + root.cardPadding * 2 - (notificationCard.unfolded ? 0 : root.spaceTight))
+    height: implicitHeight
+    radius: root.radius
+    // Asked of the card rather than of the pointer area covering it. The
+    // unfold and dismiss buttons sit on top of that area with hover enabled
+    // of their own, and a hovered child takes the event away from the parent
+    // below it, so a fill reading `containsMouse` fell back to `cardColor`
+    // the moment the pointer reached a button and lit again when it left. A
+    // handler on the card is hovered for the whole card, buttons included.
+    readonly property bool hovered: notificationHover.hovered
+
+    readonly property bool pressable: notificationCard.actionable || notificationCard.stacked
+
+    color: notificationCard.pressable && notificationOpenMouse.pressed ? root.pressColor
+      : notificationCard.pressable && notificationCard.hovered ? root.hoveredColor(root.cardColor)
+      : root.cardColor
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    HoverHandler {
+      id: notificationHover
+      onHoveredChanged: if (notificationCard.popup) root.setNotificationPopupHovered(hovered)
+    }
+
+    Repeater {
+      model: notificationCard.depth
+      delegate: Rectangle {
+        required property int index
+        z: -1 - index
+        x: root.spaceTight * (index + 1)
+        y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
+        width: parent.width - x * 2
+        height: root.spaceSmall
+        radius: root.radius
+        color: root.cardColor
+        CardEdge {}
+      }
+    }
+    SurfaceWash { radius: root.radius - 1 }
+    CardEdge {}
+    SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
+    Component.onDestruction: if (notificationCard.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
+
+    Item {
+      id: notificationIconFrame
+      width: root.controlHeight
+      height: root.controlHeight
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.leftMargin: root.cardPadding
+      anchors.topMargin: root.cardPadding
+
+      Text {
+        anchors.fill: parent
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        text: "󰂚"
+        color: root.accent
+        font.family: root.fontFamily
+        font.pixelSize: root.textSubhead
+      }
+      IconImage {
+        anchors.fill: parent
+        source: notificationCard.iconSource
+      }
+    }
+
+    MouseArea {
+      id: notificationOpenMouse
+      anchors.fill: parent
+      enabled: notificationCard.pressable
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: {
+        if (notificationCard.stacked) notificationCard.toggled()
+        else root.activateNotification(notificationCard.entry.id)
+      }
+    }
+    HoverTip {
+      mouse: notificationOpenMouse
+      inOverlay: true
+      text: notificationCard.stacked
+        ? notificationCard.count + " from " + (notificationCard.entry.app_name || "this app") + " · click to open"
+        : ""
+    }
+
+    Column {
+      id: notificationText
+      anchors.left: notificationIconFrame.right
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.leftMargin: root.spaceMedium
+      anchors.rightMargin: root.cardPadding
+      anchors.topMargin: root.cardPadding
+      spacing: root.spaceTight
+      // The summary takes whatever the age and the two buttons leave, rather
+      // than a width counted from which of them happen to be showing.
+      Item {
+        width: parent.width
+        height: root.chipHeight - root.spaceMedium
+
+        Text {
+          anchors.left: parent.left
+          anchors.right: notificationRowControls.left
+          anchors.rightMargin: root.spaceSmall
+          anchors.verticalCenter: parent.verticalCenter
+          text: entry.summary || entry.app_name || "Notification"
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.text
+          font.family: root.fontFamily
+          font.pixelSize: root.textBody
+          font.weight: root.weightStrong
+        }
+
+        Row {
+          id: notificationRowControls
+
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          height: parent.height
+          spacing: root.spaceTight
+
+          // What the stack stands for, and the way back out of it once it is
+          // open. Between them they replace the pair of full-width buttons
+          // the group used to wear above its summary.
+          Rectangle {
+            visible: notificationCard.stacked
+            anchors.verticalCenter: parent.verticalCenter
+            width: visible ? Math.max(parent.height, stackCount.implicitWidth + root.spaceSmall) : 0
+            height: parent.height
+            radius: height / 2
+            color: root.alpha(root.text, 0.09)
+            antialiasing: true
+
+            Text {
+              id: stackCount
+              anchors.centerIn: parent
+              text: notificationCard.count
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textCaption
+              font.weight: root.weightStrong
+            }
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.agoText(entry.time)
+            color: root.overlay
+            font.family: root.fontFamily
+            font.pixelSize: root.textCaption
+          }
+
+          IconButton {
+            visible: notificationCard.collapsible
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            hovered: notificationCollapseMouse.containsMouse
+            pressed: notificationCollapseMouse.pressed
+
+            Text {
+              anchors.centerIn: parent
+              text: "󰅃"
+              color: notificationCollapseMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: notificationCollapseMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: notificationCard.toggled()
+            }
+            HoverTip { mouse: notificationCollapseMouse; inOverlay: true; text: "Close the stack" }
+          }
+
+          IconButton {
+            visible: notificationCard.unfoldable
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            hovered: notificationUnfoldMouse.containsMouse
+            pressed: notificationUnfoldMouse.pressed
+
+            Text {
+              anchors.centerIn: parent
+              text: notificationCard.unfolded ? "󰅃" : "󰅀"
+              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: notificationUnfoldMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleNotificationUnfolded(notificationCard.entry.id)
+            }
+            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationCard.unfolded ? "Show less" : "Show the whole notification" }
+          }
+
+          IconButton {
+            readonly property bool busy: !notificationCard.popup && root.controlBusy("notifications", "dismiss", String(notificationCard.entry.id))
+
+            visible: !notificationCard.history
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            // Destructive, so the pointer is answered in red rather than in
+            // neutral light: this is the one control that says what it will
+            // do before it is pressed.
+            tint: root.red
+            hoverTint: root.dangerColor
+            pressTint: root.dangerPress
+            active: busy
+            hovered: notificationDismissMouse.containsMouse
+            pressed: notificationDismissMouse.pressed
+
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
+            MouseArea {
+              id: notificationDismissMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (notificationCard.stacked) notificationStore.controller.group(notificationCard.group, notificationCard.popup)
+                else if (notificationCard.popup) root.retireNotificationPopup(notificationCard.entry.id)
+                else root.dismissNotification(notificationCard.entry.id)
+              }
+            }
+            HoverTip {
+              mouse: notificationDismissMouse
+              inOverlay: true
+              text: notificationCard.stacked
+                ? (notificationCard.popup ? "Hide all " + notificationCard.count : "Dismiss all " + notificationCard.count)
+                : notificationCard.popup ? "Hide toast" : "Dismiss"
+            }
+          }
+        }
+      }
+      Text {
+        id: notificationBody
+        width: parent.width
+        text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
+        textFormat: Text.StyledText
+        linkColor: root.accent
+        onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
+        HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        color: root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textCaption
+        wrapMode: notificationCard.unfolded ? Text.WordWrap : Text.NoWrap
+        elide: notificationCard.unfolded ? Text.ElideNone : Text.ElideRight
+        // Bounded, so one pathological notification cannot take the panel.
+        maximumLineCount: notificationCard.unfolded ? 1000 : 1
+      }
+      Item {
+        visible: !!notificationCard.entry.image && notificationCard.unfolded
+        width: parent.width
+        height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
+        Image {
+          id: notificationImage
+          anchors.fill: parent
+          visible: false
+          source: notificationCard.entry.image || ""
+          sourceSize.width: width * 2
+          fillMode: Image.PreserveAspectFit
+          asynchronous: true
+        }
+        RoundedSource { anchors.fill: parent; source: notificationImage }
+      }
+      Text {
+        visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || notificationCard.entry.resident
+        text: notificationCard.entry.urgency === 2 ? "Critical · until dismissed"
+          : Notifications.permanent(notificationCard.entry) ? "Until dismissed" : "Ongoing"
+        color: notificationCard.entry.urgency === 2 ? root.red : root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textMicro
+      }
+      Row {
+        visible: Number(notificationCard.entry.progress) >= 0
+        width: parent.width
+        spacing: root.spaceSmall
+        MeterBar {
+          width: parent.width - progressLabel.width - parent.spacing
+          anchors.verticalCenter: parent.verticalCenter
+          ratio: Number(notificationCard.entry.progress) / 100
+        }
+        Text {
+          id: progressLabel
+          text: Math.round(Number(notificationCard.entry.progress)) + "%"
+          color: root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textCaption
+        }
+      }
+      Flow {
+        width: parent.width
+        spacing: root.spaceTight
+        Repeater {
+          model: notificationCard.offeredActions
+          delegate: NotificationButton {
+            required property var modelData
+            label: modelData.label
+            controlAction: "notification-action"
+            value: String(notificationCard.entry.id)
+            extra: modelData.key
+            actionIcon: notificationCard.entry.action_icons ? modelData.key : ""
+          }
+        }
+        NotificationButton {
+          visible: !notificationCard.history && (notificationCard.entry.pinned || !Notifications.permanent(notificationCard.entry))
+          label: notificationCard.entry.pinned ? "Unpin" : "Keep visible"
+          onClicked: notificationStore.controller.pin(notificationCard.entry.id)
+        }
+        NotificationButton {
+          visible: notificationCard.verificationCode !== ""
+          label: "Copy " + notificationCard.verificationCode
+          controlAction: "copy-code"
+          value: notificationCard.verificationCode
+          extra: String(notificationCard.entry.id)
+          successLabel: "Copied"
+        }
+      }
+    }
+
+
+  }
+
   component NotificationList: SeeleListView {
     id: notificationList
 
@@ -3537,261 +4009,64 @@ ShellRoot {
     boundsBehavior: Flickable.StopAtBounds
     model: Notifications.stackedRows(entries, expandedGroups)
 
-    delegate: Rectangle {
-      id: notificationEntry
+    // One row per group, so opening a stack grows this item in place rather than
+    // inserting rows the list has to reflow around: nothing below it is
+    // displaced and the group cannot move out from under the pointer that just
+    // opened it. The height animates and the item clips, so the group unfolds.
+    delegate: Item {
+      id: notificationGroup
 
       required property var modelData
-      readonly property var entry: modelData.entry
-      readonly property bool actionable: !notificationList.history && root.notificationActionable(entry)
-      readonly property var offeredActions: notificationList.history ? [] : Notifications.actions(entry)
-      readonly property string verificationCode: Notifications.verificationCode(entry)
-      readonly property bool unfolded: notificationList.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
-      // A single elided line reports its full width, which is the only way to
-      // know there is more to show without measuring the text twice.
-      readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
-      // Only a toast folds, and only when there is something folded away.
-      readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded || !!entry.image)
-      readonly property string iconSource: {
-        var icon = String(entry.app_icon || "").trim()
-        return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
-      }
-      x: modelData.first ? 0 : root.spaceMedium
-      width: ListView.view.width - x
-      height: Math.max(root.notificationRowHeight, notificationText.implicitHeight + (notificationEntry.unfolded ? 18 : 12))
-      radius: root.radius
-      // Asked of the card rather than of the pointer area covering it. The
-      // unfold and dismiss buttons sit on top of that area with hover enabled
-      // of their own, and a hovered child takes the event away from the parent
-      // below it, so a fill reading `containsMouse` fell back to `cardColor`
-      // the moment the pointer reached a button and lit again when it left. A
-      // handler on the card is hovered for the whole card, buttons included.
-      readonly property bool hovered: notificationHover.hovered
+      readonly property bool open: modelData.expanded
+      // A collapsed stack draws its depth below the card, so the row reserves
+      // that much and the clip does not cut those edges off.
+      readonly property int stackReach: modelData.depth * root.spaceTight
 
-      color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
-        : notificationEntry.actionable && notificationEntry.hovered ? root.hoveredColor(root.cardColor)
-        : root.cardColor
+      width: ListView.view.width
+      height: notificationGroupColumn.implicitHeight + notificationGroup.stackReach
+      clip: true
 
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-      HoverHandler {
-        id: notificationHover
-        onHoveredChanged: if (notificationList.popup) root.setNotificationPopupHovered(hovered)
-      }
-
-      Repeater {
-        model: notificationEntry.modelData.depth
-        delegate: Rectangle {
-          required property int index
-          z: -1 - index
-          x: root.spaceTight * (index + 1)
-          y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
-          width: parent.width - x * 2
-          height: root.spaceSmall
-          radius: root.radius
-          color: root.cardColor
-          CardEdge {}
-        }
-      }
-      SurfaceWash { radius: root.radius - 1 }
-      CardEdge {}
-      SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
-      Component.onDestruction: if (notificationList.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
-
-      Item {
-        id: notificationIconFrame
-        width: 34
-        height: 34
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.leftMargin: 9
-        anchors.topMargin: 9
-
-        Text {
-          anchors.fill: parent
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-          text: "󰂚"
-          color: root.accent
-          font.family: root.fontFamily
-          font.pixelSize: root.textSubhead
-        }
-        IconImage {
-          anchors.fill: parent
-          source: notificationEntry.iconSource
-        }
-      }
-
-      MouseArea {
-        id: notificationOpenMouse
-        anchors.fill: parent
-        enabled: notificationEntry.actionable
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.activateNotification(notificationEntry.entry.id)
-      }
+      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
 
       Column {
-        id: notificationText
-        anchors.left: notificationIconFrame.right
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.leftMargin: root.spaceMedium
-        anchors.rightMargin: 9
-        anchors.topMargin: 9
-        spacing: root.spaceTight
-        Flow {
-          visible: notificationEntry.modelData.first && notificationEntry.modelData.count > 1
+        id: notificationGroupColumn
+
+        width: parent.width
+        spacing: root.spaceSmall
+
+        NotificationCard {
           width: parent.width
-          spacing: root.spaceTight
-          NotificationButton {
-            label: (notificationEntry.entry.app_name || "Notifications") + " · " + notificationEntry.modelData.count
-              + (notificationEntry.modelData.expanded ? " · Show less" : " · Show all")
-            onClicked: notificationList.toggleGroup(notificationEntry.modelData.group)
-          }
-          NotificationButton {
-            visible: !notificationList.history
-            label: notificationList.popup ? "Hide stack" : "Dismiss stack"
-            onClicked: notificationStore.controller.group(notificationEntry.modelData.group, notificationList.popup)
-          }
+          entry: notificationGroup.modelData.items[0]
+          group: notificationGroup.modelData.group
+          history: notificationList.history
+          popup: notificationList.popup
+          alwaysUnfolded: notificationList.alwaysUnfolded
+          stacked: !notificationGroup.open && notificationGroup.modelData.count > 1
+          collapsible: notificationGroup.open
+          count: notificationGroup.modelData.count
+          depth: notificationGroup.modelData.depth
+          onToggled: notificationList.toggleGroup(notificationGroup.modelData.group)
         }
-        Row {
-          width: parent.width
-          height: 20
-          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: entry.summary || entry.app_name || "Notification"; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
-          Item { width: 6; height: parent.height }
-          Text { width: 58; height: parent.height; text: root.agoText(entry.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
-          Rectangle {
-            visible: notificationEntry.unfoldable
-            width: visible ? 20 : 0
-            height: parent.height
-            radius: root.radiusSmall
-            color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : root.clearColor
-            Behavior on color { ColorAnimation { duration: root.durationFast } }
-            Text {
-              anchors.centerIn: parent
-              text: notificationEntry.unfolded ? "󰅃" : "󰅀"
-              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            MouseArea {
-              id: notificationUnfoldMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleNotificationUnfolded(notificationEntry.entry.id)
-            }
-            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
-          }
-          Item { visible: !notificationEntry.unfoldable; width: visible ? 6 : 0; height: parent.height }
-          Rectangle {
-            readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.entry.id))
-            visible: !notificationList.history
-            width: visible ? 20 : 0
-            height: parent.height
-            radius: root.radiusSmall
-            color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : root.clearDanger
-            Behavior on color { ColorAnimation { duration: root.durationFast } }
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-            MouseArea {
-              id: notificationDismissMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: notificationList.popup ? root.retireNotificationPopup(notificationEntry.entry.id) : root.dismissNotification(notificationEntry.entry.id)
-            }
-            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide toast" : "Dismiss" }
-          }
-        }
-        Text {
-          id: notificationBody
-          width: parent.width
-          text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
-          textFormat: Text.StyledText
-          linkColor: root.accent
-          onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
-          HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-          color: root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textCaption
-          wrapMode: notificationEntry.unfolded ? Text.WordWrap : Text.NoWrap
-          elide: notificationEntry.unfolded ? Text.ElideNone : Text.ElideRight
-          // Bounded, so one pathological notification cannot take the panel.
-          maximumLineCount: notificationEntry.unfolded ? 1000 : 1
-        }
-        Item {
-          visible: !!notificationEntry.entry.image && notificationEntry.unfolded
-          width: parent.width
-          height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
-          Image {
-            id: notificationImage
-            anchors.fill: parent
-            visible: false
-            source: notificationEntry.entry.image || ""
-            sourceSize.width: width * 2
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-          }
-          RoundedSource { anchors.fill: parent; source: notificationImage }
-        }
-        Text {
-          visible: notificationEntry.entry.urgency === 2 || Notifications.permanent(notificationEntry.entry) || notificationEntry.entry.resident
-          text: notificationEntry.entry.urgency === 2 ? "Critical · until dismissed"
-            : Notifications.permanent(notificationEntry.entry) ? "Until dismissed" : "Ongoing"
-          color: notificationEntry.entry.urgency === 2 ? root.red : root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textMicro
-        }
-        Row {
-          visible: Number(notificationEntry.entry.progress) >= 0
-          width: parent.width
-          spacing: root.spaceSmall
-          MeterBar {
-            width: parent.width - progressLabel.width - parent.spacing
-            anchors.verticalCenter: parent.verticalCenter
-            ratio: Number(notificationEntry.entry.progress) / 100
-          }
-          Text {
-            id: progressLabel
-            text: Math.round(Number(notificationEntry.entry.progress)) + "%"
-            color: root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textCaption
-          }
-        }
-        Flow {
-          width: parent.width
-          spacing: root.spaceTight
-          Repeater {
-            model: notificationEntry.offeredActions
-            delegate: NotificationButton {
-              required property var modelData
-              label: modelData.label
-              controlAction: "notification-action"
-              value: String(notificationEntry.entry.id)
-              extra: modelData.key
-              actionIcon: notificationEntry.entry.action_icons ? modelData.key : ""
-            }
-          }
-          NotificationButton {
-            visible: !notificationList.history && (notificationEntry.entry.pinned || !Notifications.permanent(notificationEntry.entry))
-            label: notificationEntry.entry.pinned ? "Unpin" : "Keep visible"
-            onClicked: notificationStore.controller.pin(notificationEntry.entry.id)
-          }
-          NotificationButton {
-            visible: notificationEntry.verificationCode !== ""
-            label: "Copy " + notificationEntry.verificationCode
-            controlAction: "copy-code"
-            value: notificationEntry.verificationCode
-            extra: String(notificationEntry.entry.id)
-            successLabel: "Copied"
+
+        Repeater {
+          model: notificationGroup.open ? notificationGroup.modelData.items.slice(1) : []
+
+          NotificationCard {
+            required property var modelData
+
+            x: root.spaceMedium
+            width: notificationGroupColumn.width - root.spaceMedium
+            entry: modelData
+            group: notificationGroup.modelData.group
+            history: notificationList.history
+            popup: notificationList.popup
+            alwaysUnfolded: notificationList.alwaysUnfolded
+
+            // The card arrives with the fold rather than at the end of it.
+            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: Easing.OutCubic }
           }
         }
       }
-
-
     }
   }
 
@@ -5847,8 +6122,9 @@ ShellRoot {
                 id: pinTimezoneButton
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 38; height: 30; radius: root.radius
-                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : pinTimezoneMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
+                HoverWash { hovered: pinTimezoneMouse.containsMouse }
                 Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: pinTimezoneMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pinTimezone(timezoneRow.modelData.id) }
               }
@@ -6091,13 +6367,12 @@ ShellRoot {
               detail: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.agentUpdatedText()
               detailColor: root.agentError !== "" ? root.red : root.subtext
 
-              Rectangle {
+              IconButton {
                 anchors.verticalCenter: parent.verticalCenter
-                width: root.controlHeight
-                height: root.controlHeight
-                radius: root.radius
-                color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : root.clearColor
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                active: root.agentRefreshing
+                hovered: refreshMouse.containsMouse
+                pressed: refreshMouse.pressed
+
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
                 MouseArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.refreshAgents() }
                 HoverTip { mouse: refreshMouse; text: "Refresh usage"; inOverlay: true }
@@ -6155,16 +6430,7 @@ ShellRoot {
                     antialiasing: true
                     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-                    // Laid over whatever the cell already says rather than
-                    // asked as another branch of its fill, so a lit session is
-                    // not the one cell that cannot report a pointer on it.
-                    Rectangle {
-                      anchors.fill: parent
-                      radius: parent.radius
-                      color: agentIndicatorMouse.containsMouse && agentIndicator.running ? root.hoverColor : root.clearColor
-                      antialiasing: true
-                      Behavior on color { ColorAnimation { duration: root.durationFast } }
-                    }
+                    HoverWash { hovered: agentIndicatorMouse.containsMouse && agentIndicator.running }
 
                     Row {
                       anchors.centerIn: parent
@@ -6426,71 +6692,42 @@ ShellRoot {
                 anchors.margins: root.cardPadding
                 spacing: root.spaceLarge
 
-                // One well holding four segments. The selected range is the
-                // only lit thing in it, so the choice reads off that fill
-                // rather than off an outline drawn around every alternative.
-                Rectangle {
+                SegmentWell {
                   width: parent.width
-                  height: root.chipHeight
-                  radius: root.radius
-                  color: root.wellColor
-                  border.width: 1
-                  border.color: root.alpha(root.text, 0.05)
-                  antialiasing: true
 
-                  Row {
-                    anchors.fill: parent
-                    anchors.margins: 2
+                  Repeater {
+                    model: [
+                      { id: "day", label: "Day" },
+                      { id: "week", label: "Week" },
+                      { id: "month", label: "Month" },
+                      { id: "all", label: "All time" }
+                    ]
 
-                    Repeater {
-                      model: [
-                        { id: "day", label: "Day" },
-                        { id: "week", label: "Week" },
-                        { id: "month", label: "Month" },
-                        { id: "all", label: "All time" }
-                      ]
+                    Segment {
+                      id: metricPeriod
 
-                      Rectangle {
-                        id: metricPeriod
+                      required property var modelData
 
-                        required property var modelData
-                        readonly property bool selected: root.agentMetricPeriod === modelData.id
+                      width: parent.width / 4
+                      selected: root.agentMetricPeriod === modelData.id
+                      hovered: metricPeriodMouse.containsMouse
+                      pressed: metricPeriodMouse.pressed
 
-                        width: parent.width / 4
-                        height: parent.height
-                        radius: root.radiusSmall
-                        color: metricPeriodMouse.pressed ? root.pressColor : metricPeriod.selected ? root.selectedColor : root.clearColor
-                        antialiasing: true
-                        Behavior on color { ColorAnimation { duration: root.durationFast } }
+                      Text {
+                        anchors.centerIn: parent
+                        text: metricPeriod.modelData.label
+                        color: metricPeriod.selected ? root.accent : root.subtext
+                        font.family: root.fontFamily
+                        font.pixelSize: root.textLabel
+                        font.weight: metricPeriod.selected ? root.weightStrong : root.weightRegular
+                      }
 
-                        // The pointer is reported in neutral light laid over
-                        // whatever the segment already says. Asked as one more
-                        // branch of the fill, the selected range would be the
-                        // one segment that answered nothing.
-                        Rectangle {
-                          anchors.fill: parent
-                          radius: parent.radius
-                          color: metricPeriodMouse.containsMouse ? root.hoverColor : root.clearColor
-                          antialiasing: true
-                          Behavior on color { ColorAnimation { duration: root.durationFast } }
-                        }
-
-                        Text {
-                          anchors.centerIn: parent
-                          text: metricPeriod.modelData.label
-                          color: metricPeriod.selected ? root.accent : root.subtext
-                          font.family: root.fontFamily
-                          font.pixelSize: root.textLabel
-                          font.weight: metricPeriod.selected ? root.weightStrong : root.weightRegular
-                        }
-
-                        MouseArea {
-                          id: metricPeriodMouse
-                          anchors.fill: parent
-                          hoverEnabled: true
-                          cursorShape: Qt.PointingHandCursor
-                          onClicked: root.agentMetricPeriod = metricPeriod.modelData.id
-                        }
+                      MouseArea {
+                        id: metricPeriodMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.agentMetricPeriod = metricPeriod.modelData.id
                       }
                     }
                   }
@@ -6872,11 +7109,24 @@ ShellRoot {
           PanelHeader { width: parent.width; glyph: "󰕾"; title: "Audio" }
           AudioLevelRow { width: parent.width }
           AudioLevelRow { width: parent.width; microphone: true }
-          RowLayout {
+          // The switch governs the group the rule opens, so it rides on the
+          // rule rather than standing in a row of its own above it.
+          SectionRule {
             width: parent.width
-            SectionLabel { text: "MULTIPLE OUTPUTS"; Layout.fillWidth: true }
-            RefreshGlyph { visible: root.pendingControlAction === "audio-outputs"; width: 16; height: 16; spinning: visible }
+            label: "OUTPUT DEVICES"
+            detail: root.failedControlAction === "audio-outputs" ? "Could not change outputs" : ""
+            detailColor: root.red
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Multiple"
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            RefreshGlyph { anchors.verticalCenter: parent.verticalCenter; visible: root.pendingControlAction === "audio-outputs"; width: 16; height: 16; spinning: visible }
             ControlSwitch {
+              anchors.verticalCenter: parent.verticalCenter
               checked: audioControlsWindow.multipleOutputs
               enabled: !controlProcess.running
               onToggled: {
@@ -6886,62 +7136,70 @@ ShellRoot {
               }
             }
           }
-          Text {
+          DeviceListCard {
             width: parent.width
-            visible: root.failedControlAction === "audio-outputs"
-            text: "Could not change outputs. Try again."
-            color: root.red; font.family: root.fontFamily; font.pixelSize: root.textLabel
-          }
-          SeeleListView {
-            width: parent.width
-            height: audioControlsWindow.outputHeight
-            spacing: root.spaceTight
-            clip: true
-            model: root.audioDevices("output")
-            delegate: Rectangle {
-              required property var modelData
-              readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
-              readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-              width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : (modelData.selected || modelData.default) || complete ? root.selectedColor : outputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              Row {
-                visible: !parent.busy
-                anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || (modelData.selected || modelData.default) ? "󰄬" : "󰓃"; color: parent.parent.complete || (modelData.selected || modelData.default) ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            listHeight: audioControlsWindow.outputHeight
+            visible: root.audioDevices("output").length > 0
+
+            SeeleListView {
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
+              spacing: root.spaceTight
+              clip: true
+              model: root.audioDevices("output")
+              delegate: Rectangle {
+                required property var modelData
+                readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
+                readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
+                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : (modelData.selected || modelData.default) || complete ? root.selectedColor : root.rowColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                HoverWash { hovered: outputDeviceMouse.containsMouse }
+                Row {
+                  visible: !parent.busy
+                  anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
+                  Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || (modelData.selected || modelData.default) ? "󰄬" : "󰓃"; color: parent.parent.complete || (modelData.selected || modelData.default) ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                  Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                }
+                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
+                MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !controlProcess.running
+                  onClicked: {
+                    if (!parent.modelData.node) root.setAudioDevice(parent.modelData.id, parent.modelData.profile)
+                    else if (audioControlsWindow.multipleOutputs) root.toggleAudioOutput(parent.modelData.node)
+                    else root.setAudioOutputs([parent.modelData.node])
+                  } }
               }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !controlProcess.running
-                onClicked: {
-                  if (!parent.modelData.node) root.setAudioDevice(parent.modelData.id, parent.modelData.profile)
-                  else if (audioControlsWindow.multipleOutputs) root.toggleAudioOutput(parent.modelData.node)
-                  else root.setAudioOutputs([parent.modelData.node])
-                } }
             }
           }
-          SectionLabel { text: "INPUT DEVICE" }
-          SeeleListView {
+          SectionRule { width: parent.width; label: "INPUT DEVICE" }
+          DeviceListCard {
             width: parent.width
-            height: audioControlsWindow.inputHeight
-            spacing: root.spaceTight
-            clip: true
-            model: root.audioDevices("input")
-            delegate: Rectangle {
-              required property var modelData
-              readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
-              readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-              width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : inputDeviceMouse.containsMouse ? root.cardColor : root.rowColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              Row {
-                visible: !parent.busy
-                anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰍬"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            listHeight: audioControlsWindow.inputHeight
+            visible: root.audioDevices("input").length > 0
+
+            SeeleListView {
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
+              spacing: root.spaceTight
+              clip: true
+              model: root.audioDevices("input")
+              delegate: Rectangle {
+                required property var modelData
+                readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
+                readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
+                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : root.rowColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                HoverWash { hovered: inputDeviceMouse.containsMouse }
+                Row {
+                  visible: !parent.busy
+                  anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
+                  Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.complete || modelData.default ? "󰄬" : "󰍬"; color: parent.parent.complete || modelData.default ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                  Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                }
+                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
+                MouseArea { id: inputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
               }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea { id: inputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
             }
           }
         }
@@ -6991,23 +7249,55 @@ ShellRoot {
               onToggled: if (root.runControl("wifi", "toggle")) root.patchSystemData({ wifiEnabled: !root.systemData.wifiEnabled })
             }
           }
-          Row {
-            width: parent.width; height: 22
-            Text { width: parent.width * 0.64; text: root.systemData.connection || "Disconnected"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textStrong; font.weight: root.weightStrong }
-            Text { width: parent.width * 0.36; text: root.systemData.connectivity; color: root.systemData.connectivity === "full" ? root.green : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
-          }
+          SectionRule { width: parent.width; label: "CONNECTION" }
+
+          // The connection's name led a line of its own above this card while
+          // the card held the addresses that belong to it. They are one thing,
+          // so they are one card, and it is as tall as what it holds.
           Rectangle {
             width: parent.width
-            height: 60
+            height: connectionContent.implicitHeight + root.cardPadding * 2
             radius: root.radius
             color: root.cardColor
+            antialiasing: true
 
             CardEdge {}
 
             Column {
+              id: connectionContent
+
               anchors.fill: parent
               anchors.margins: root.cardPadding
-              spacing: root.spaceTight
+              spacing: root.spaceSmall
+
+              Item {
+                width: parent.width
+                height: 20
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.right: connectivityState.left
+                  anchors.rightMargin: root.spaceMedium
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.systemData.connection || "Disconnected"
+                  elide: Text.ElideRight
+                  color: root.text
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textStrong
+                  font.weight: root.weightStrong
+                }
+
+                Text {
+                  id: connectivityState
+
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.systemData.connectivity
+                  color: root.systemData.connectivity === "full" ? root.green : root.yellow
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                }
+              }
 
               Repeater {
                 model: [
@@ -7025,6 +7315,8 @@ ShellRoot {
               }
             }
           }
+
+          SectionRule { width: parent.width; label: "SPEED TEST"; detail: root.speedtestData.server || "" }
 
           Rectangle {
             id: speedtestCard
@@ -7220,31 +7512,37 @@ ShellRoot {
                   }
                 }
               }
-              Row {
-                width: parent.width; spacing: 6
+              SegmentWell {
+                width: parent.width
+
                 Repeater {
                   model: [
                     { label: "Off", mode: "off", available: true },
                     { label: "Tailscale", mode: "tailscale", available: !!sshServerCard.state.tailscaleAvailable },
                     { label: "SSH", mode: "ssh", available: !!sshServerCard.state.sshAvailable }
                   ]
-                  Rectangle {
+
+                  Segment {
+                    id: sshMode
+
                     required property var modelData
-                    readonly property bool selected: sshServerCard.mode === modelData.mode
                     readonly property bool busy: root.controlBusy("ssh-server", modelData.mode)
-                    width: (parent.width - 12) / 3; height: root.chipHeight; radius: root.radius
+
+                    width: parent.width / 3
                     opacity: modelData.available ? 1 : 0.42
-                    color: sshModeMouse.pressed ? root.pressColor : busy || selected ? root.selectedColor : sshModeMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-                    Behavior on color { ColorAnimation { duration: root.durationFast } }
-                    Text { visible: !parent.busy; anchors.centerIn: parent; text: modelData.label; color: parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-                    RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
+                    selected: sshServerCard.mode === modelData.mode || busy
+                    hovered: sshModeMouse.containsMouse
+                    pressed: sshModeMouse.pressed
+
+                    Text { visible: !sshMode.busy; anchors.centerIn: parent; text: sshMode.modelData.label; color: sshMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: sshMode.selected ? root.weightStrong : root.weightRegular }
+                    RefreshGlyph { visible: sshMode.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
                     MouseArea {
                       id: sshModeMouse
                       anchors.fill: parent
-                      enabled: parent.modelData.available && !sshServerCard.busy && !parent.selected
+                      enabled: sshMode.modelData.available && !sshServerCard.busy && sshServerCard.mode !== sshMode.modelData.mode
                       hoverEnabled: true
                       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                      onClicked: root.runControl("ssh-server", parent.modelData.mode)
+                      onClicked: root.runControl("ssh-server", sshMode.modelData.mode)
                     }
                   }
                 }
@@ -7468,8 +7766,9 @@ ShellRoot {
                 anchors.rightMargin: 38
                 anchors.verticalCenter: parent.verticalCenter
                 width: 44; height: 24; radius: root.radius
-                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : autoConnectMouse.containsMouse ? root.hoveredColor(root.floatColor) : root.floatColor
+                color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : root.floatColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
+                HoverWash { hovered: autoConnectMouse.containsMouse }
                 Text { anchors.centerIn: parent; text: "Auto"; color: modelData.trusted ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 MouseArea { id: autoConnectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runBluetooth("trust", modelData.address) }
                 HoverTip { mouse: autoConnectMouse; inOverlay: true; text: modelData.trusted ? "Autoconnect on" : "Autoconnect off" }
@@ -7690,27 +7989,38 @@ ShellRoot {
             title: root.headphonesLabel()
             detail: root.headphonesBatteryText() || "Connected"
           }
-          SectionLabel {
-            text: "NOISE CONTROL" + (nothingHeadphones && !headphones.controls ? " · CONNECTING" : "")
-          }
-          Row {
+          SectionRule {
             width: parent.width
-            spacing: 6
+            label: "NOISE CONTROL"
+            detail: nothingHeadphones && !headphones.controls ? "Connecting…" : ""
+          }
+          SegmentWell {
+            width: parent.width
+            implicitHeight: root.rowHeight
             opacity: nothingHeadphones && !headphones.controls ? 0.42 : 1
+
             Repeater {
               model: [{label:"Off", mode:"off"}, {label:"ANC", mode:"anc"}, {label:"Aware", mode:"transparency"}, {label:"Adaptive", mode:"adaptive"}]
-              Rectangle {
+
+              Segment {
+                id: noiseMode
+
                 required property var modelData
                 readonly property bool busy: root.controlBusy("headphones", modelData.mode)
                 readonly property bool complete: root.controlCompleted("headphones", modelData.mode)
                 readonly property bool failed: root.controlFailed("headphones", modelData.mode)
-                readonly property bool selected: headphones.noiseMode === modelData.mode
-                width: (parent.width - 18) / 4; height: root.rowHeight; radius: root.radius
-                color: airpodsModeMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy || selected ? root.selectedColor : airpodsModeMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "×" : parent.complete ? "✓ " + modelData.label : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : parent.selected ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-                RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-                MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", parent.modelData.mode) }
+
+                width: parent.width / 4
+                // Acknowledgement outranks the resting choice for the moment it
+                // lasts, so a mode that failed says so where it was pressed.
+                color: noiseMode.failed ? root.dangerColor : noiseMode.complete ? root.successColor : noiseMode.pressed ? root.pressColor : noiseMode.selected ? root.selectedColor : root.clearColor
+                selected: headphones.noiseMode === modelData.mode || busy
+                hovered: airpodsModeMouse.containsMouse
+                pressed: airpodsModeMouse.pressed
+
+                Text { visible: !noiseMode.busy; anchors.centerIn: parent; text: noiseMode.failed ? "×" : noiseMode.complete ? "✓ " + noiseMode.modelData.label : noiseMode.modelData.label; color: noiseMode.failed ? root.red : noiseMode.complete ? root.green : noiseMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: noiseMode.selected ? root.weightStrong : root.weightRegular }
+                RefreshGlyph { visible: noiseMode.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
+                MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", noiseMode.modelData.mode) }
               }
             }
           }
@@ -7764,7 +8074,7 @@ ShellRoot {
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 330
-      implicitHeight: root.panelMargin * 2 + root.panelHeaderHeight + root.panelSpacing + listHeight
+      implicitHeight: batteryContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -7772,47 +8082,52 @@ ShellRoot {
 
       PanelSurface {
         Column {
+          id: batteryContent
+
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          PanelHeader { width: parent.width; glyph: "󰁹"; title: "Batteries" }
-          SeeleListView {
+          PanelHeader {
+            width: parent.width
+            glyph: "󰁹"
+            title: "Batteries"
+            detail: batteryWindow.entries.length === 0 ? "None reported" : batteryWindow.entries.length + " device" + (batteryWindow.entries.length === 1 ? "" : "s")
+          }
+          DeviceListCard {
             visible: batteryWindow.entries.length > 0
             width: parent.width
-            height: batteryWindow.listHeight
-            spacing: root.spaceSmall
-            clip: true
-            model: batteryWindow.entries
-            delegate: Column {
-              required property var modelData
-              width: ListView.view.width
-              height: batteryWindow.batteryRowHeight
+            listHeight: batteryWindow.listHeight
+
+            SeeleListView {
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
               spacing: root.spaceSmall
-              Row {
-                width: parent.width; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: root.batteryIcon(modelData); color: root.batteryColor(modelData); font.family: root.fontFamily; font.pixelSize: root.textIcon }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 90; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: 60
-                  text: Number(modelData.percent) + "%" + (root.batteryCharging(modelData) ? " ⚡" : "")
-                  color: root.batteryColor(modelData)
-                  font.family: root.fontFamily
-                  font.pixelSize: root.textBody
-                  horizontalAlignment: Text.AlignRight
+              clip: true
+              model: batteryWindow.entries
+              delegate: Column {
+                required property var modelData
+                width: ListView.view.width
+                height: batteryWindow.batteryRowHeight
+                spacing: root.spaceSmall
+                Row {
+                  width: parent.width; spacing: 8
+                  Text { anchors.verticalCenter: parent.verticalCenter; text: root.batteryIcon(modelData); color: root.batteryColor(modelData); font.family: root.fontFamily; font.pixelSize: root.textIcon }
+                  Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 90; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 60
+                    text: Number(modelData.percent) + "%" + (root.batteryCharging(modelData) ? " ⚡" : "")
+                    color: root.batteryColor(modelData)
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    horizontalAlignment: Text.AlignRight
+                  }
+                }
+                MeterBar {
+                  width: parent.width
+                  ratio: Number(modelData.percent) / 100
+                  fill: root.batteryColor(modelData)
                 }
               }
-              MeterBar {
-                width: parent.width
-                ratio: Number(modelData.percent) / 100
-                fill: root.batteryColor(modelData)
-              }
             }
-          }
-          Text {
-            visible: batteryWindow.entries.length === 0
-            text: "No batteries reported"
-            color: root.overlay
-            font.family: root.fontFamily
-            font.pixelSize: root.textLabel
           }
         }
       }
@@ -7830,9 +8145,11 @@ ShellRoot {
         ? (root.systemData.notifications.history || [])
         : (root.systemData.notifications.items || [])
       // Everything above the list: the panel's own padding, the header, the
-      // history and clear row, and the gap on either side of it.
-      readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
-        + root.panelSpacing + 36 + root.panelSpacing
+      // view switch and clear row, and the gap on either side of it. Measured
+      // from the parts themselves, because the header grows a detail line when
+      // there is a count to report and a counted constant would not follow it.
+      readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
+        + root.panelSpacing + notificationViews.height + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -7867,10 +8184,6 @@ ShellRoot {
         Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
-      function toggleHistory() {
-        root.notificationHistoryOpen = !root.notificationHistoryOpen
-      }
-
       onVisibleChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
@@ -7889,42 +8202,36 @@ ShellRoot {
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           PanelHeader {
+            id: notificationHeader
+
             width: parent.width
             glyph: root.systemData.dnd ? "󰂛" : "󰂚"
-            title: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
+            // The view switch below says which side is being read, so the
+            // title stays put and the count goes where every other panel puts
+            // what it is about.
+            title: "Notifications"
+            // The panel is an inbox, so the count says how much is still
+            // waiting rather than repeating the word above it.
+            detail: notificationWindow.entries.length === 0 ? ""
+              : root.notificationHistoryOpen
+                ? notificationWindow.entries.length + " in the past 24 hours"
+                : notificationWindow.entries.length + " waiting"
 
-            // The count is small print beside a large title, and centring
-            // both line boxes in the same row leaves the digits floating
-            // above the title: the shorter face has the shorter box, so its
-            // baseline lands higher. The offset is the distance between the
-            // two baselines, which puts the count on the title's line.
-            FontMetrics { id: notificationTitleMetrics; font.family: root.fontFamily; font.pixelSize: root.textTitle }
-            FontMetrics { id: notificationCountMetrics; font.family: root.fontFamily; font.pixelSize: root.textBody }
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.verticalCenterOffset: Math.round((notificationCountMetrics.height - notificationTitleMetrics.height) / 2
-                + notificationTitleMetrics.ascent - notificationCountMetrics.ascent)
-              text: String(notificationWindow.entries.length)
-              color: root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textBody
-            }
             // Silence is an action, not a setting with a caption: the header
             // mark already reports whether the shell is muted, so the control
             // beside it is the same square button every other panel header
             // uses rather than a labelled switch wedged into the title row.
-            Rectangle {
+            IconButton {
               readonly property bool busy: root.controlBusy("dnd", "")
 
               anchors.verticalCenter: parent.verticalCenter
               width: root.chipHeight
               height: root.chipHeight
-              radius: root.radius
-              color: dndMouse.pressed ? root.pressColor
-                : root.systemData.dnd ? root.alpha(root.yellow, dndMouse.containsMouse ? 0.24 : 0.14)
-                : dndMouse.containsMouse ? root.hoverColor
-                : root.clearColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              tint: root.yellow
+              active: root.systemData.dnd
+              hovered: dndMouse.containsMouse
+              pressed: dndMouse.pressed
+
               Text {
                 visible: !parent.busy
                 anchors.centerIn: parent
@@ -7946,40 +8253,83 @@ ShellRoot {
               HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
             }
           }
+          // Current and history are two views of one list, not two errands, so
+          // they are a well with the one being read lit inside it. Clear is a
+          // one-shot action and stays a button beside it.
           Row {
-            width: parent.width; spacing: 8
-            Rectangle {
-              width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : historyMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              Text {
-                anchors.centerIn: parent
-                text: root.notificationHistoryOpen ? "Back" : "History"
-                color: root.text
-                font.family: root.fontFamily
-                font.pixelSize: root.textLabel
-                font.weight: root.weightStrong
+            id: notificationViews
+
+            width: parent.width
+            spacing: root.spaceMedium
+
+            SegmentWell {
+              width: parent.width - notificationClear.width - parent.spacing
+
+              Repeater {
+                model: [
+                  { label: "Current", history: false },
+                  { label: "History", history: true }
+                ]
+
+                Segment {
+                  id: notificationView
+
+                  required property var modelData
+
+                  width: parent.width / 2
+                  selected: root.notificationHistoryOpen === modelData.history
+                  hovered: notificationViewMouse.containsMouse
+                  pressed: notificationViewMouse.pressed
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: notificationView.modelData.label
+                    color: notificationView.selected ? root.accent : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: notificationView.selected ? root.weightStrong : root.weightRegular
+                  }
+                  MouseArea {
+                    id: notificationViewMouse
+                    anchors.fill: parent
+                    enabled: !notificationView.selected
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.notificationHistoryOpen = notificationView.modelData.history
+                  }
+                  HoverTip { mouse: notificationViewMouse; inOverlay: true; text: notificationView.modelData.history ? "Show the past 24 hours" : "Show current notifications" }
+                }
               }
-              MouseArea { id: historyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: notificationWindow.toggleHistory() }
-              HoverTip { mouse: historyMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Show current notifications" : "Show the past 24 hours" }
             }
+
             Rectangle {
+              id: notificationClear
+
               readonly property bool busy: root.controlBusy("notifications", "clear")
               readonly property bool complete: root.controlCompleted("notifications", "clear")
               readonly property bool failed: root.controlFailed("notifications", "clear")
-              width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+
+              width: 96
+              height: root.chipHeight
+              radius: root.radius
+              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : root.cardColor
+              antialiasing: true
               Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+              CardEdge {}
+              HoverWash { hovered: clearMouse.containsMouse }
+
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
+              HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
             }
           }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
+            height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
@@ -8041,44 +8391,49 @@ ShellRoot {
           id: cameraContent
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
-          PanelHeader { width: parent.width; glyph: "󰄀"; title: "Camera" }
-          Text { text: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s"); color: root.systemData.cameraActive ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
-          SectionLabel { text: "PREVIEW DEVICE" }
-          SeeleListView {
+          PanelHeader {
+            width: parent.width
+            glyph: "󰄀"
+            title: "Camera"
+            // What the panel is about, said where every other panel says it,
+            // instead of on a line of its own under the title.
+            detail: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s")
+            detailColor: root.systemData.cameraActive ? root.red : root.subtext
+          }
+          SectionRule { width: parent.width; label: "PREVIEW DEVICE"; detail: cameraWindow.deviceCount === 0 ? "No camera detected" : "" }
+          DeviceListCard {
             visible: cameraWindow.deviceCount > 0
             width: parent.width
-            height: Math.max(0, Math.min(4, cameraWindow.deviceCount) * 32 - root.spaceTight)
-            spacing: root.spaceTight
-            clip: true
-            model: root.systemData.cameraDevices || []
-            delegate: Rectangle {
-              required property var modelData
-              readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
-              width: ListView.view.width; height: root.chipHeight; radius: root.radius
-              color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : cameraDeviceMouse.containsMouse ? root.hoveredColor(root.rowColor) : root.rowColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              Row {
-                anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
-                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            listHeight: Math.max(0, Math.min(4, cameraWindow.deviceCount) * 32 - root.spaceTight)
+
+            SeeleListView {
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
+              spacing: root.spaceTight
+              clip: true
+              model: root.systemData.cameraDevices || []
+              delegate: Rectangle {
+                required property var modelData
+                readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
+                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : root.rowColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+                HoverWash { hovered: cameraDeviceMouse.containsMouse }
+                Row {
+                  anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
+                  Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
+                  Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                }
+                MouseArea {
+                  id: cameraDeviceMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.cameraPreviewDevice = String(parent.modelData.device || "")
+                }
               }
-              MouseArea {
-                id: cameraDeviceMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.cameraPreviewDevice = String(parent.modelData.device || "")
-              }
+              ScrollBar.vertical: SlimScrollBar { popupHovered: cameraSurface.hovered }
             }
-            ScrollBar.vertical: SlimScrollBar { popupHovered: cameraSurface.hovered }
-          }
-          Text {
-            visible: cameraWindow.deviceCount === 0
-            width: parent.width
-            text: "No camera detected"
-            color: root.overlay
-            font.family: root.fontFamily
-            font.pixelSize: root.textLabel
           }
           ClippingRectangle {
             z: 2

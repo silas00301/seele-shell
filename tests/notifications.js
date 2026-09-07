@@ -23,12 +23,19 @@ assert.equal(notifications.actions({}).length, 0);
 assert.equal(notifications.actions({actions:['reply','Reply']}).length, 0);
 console.log('notification actions and verification codes passed');
 
-const rows = entries => JSON.parse(JSON.stringify(notifications.stackedRows(entries, {})));
+const rows = (entries, expanded = {}) => JSON.parse(JSON.stringify(notifications.stackedRows(entries, expanded)));
 const a = {id:1,app_name:'Chat',desktop_entry:'org.chat.desktop'};
 const b = {id:2,app_name:'Chat',desktop_entry:'org.chat'};
 const c = {id:3,app_name:'Mail'};
-assert.deepEqual(rows([a,c,b]).map(r => [r.entry.id,r.count,r.depth]), [[1,2,1],[3,1,0]]);
-assert.equal(notifications.stackedRows([a,c,b], {'desktop:org.chat':true}).length,3);
+assert.deepEqual(rows([a,c,b]).map(r => [r.items[0].id,r.count,r.depth]), [[1,2,1],[3,1,0]]);
+// Opening a stack must not change how many rows the list holds, so the group's
+// own card can grow in place instead of the list reflowing around it.
+assert.deepEqual(rows([a,c,b]).map(r => r.items.length), [2,1]);
+const opened = rows([a,c,b], {'desktop:org.chat':true});
+assert.equal(opened.length,2);
+assert.deepEqual(opened.map(r => [r.expanded,r.depth,r.items.length]), [[true,0,2],[false,0,1]]);
+// A group of one is never a stack, however stale the expanded set is.
+assert.equal(rows([c], {'app:mail':true})[0].expanded,false);
 assert.equal(rows([{id:4},{id:5}]).length,2, 'unidentified senders must not merge');
 assert.equal(rows([{id:4,app_name:'__proto__'}, {id:5,app_name:'__proto__'}])[0].count,2);
 assert.equal(notifications.localImage('https://example.invalid/tracker.png'),'');

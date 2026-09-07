@@ -37,24 +37,28 @@ function groupKey(entry) {
 }
 
 // Input is newest first. An app moves to the front only when it has new content.
+// One row per group, whether it is open or not: expanding a stack then grows
+// that group's own card instead of inserting rows into the list, so nothing
+// below it is displaced and the group cannot move out from under the pointer
+// that just opened it.
 function stackedRows(entries, expanded) {
-  var groups = [], byKey = Object.create(null), rows = []
+  var groups = [], byKey = Object.create(null)
   for (var i = 0; i < entries.length; i++) {
     var key = groupKey(entries[i])
     if (!byKey[key]) {
-      byKey[key] = { key: key, items: [] }
+      byKey[key] = { key: key, group: key, items: [] }
       groups.push(byKey[key])
     }
     byKey[key].items.push(entries[i])
   }
   for (var g = 0; g < groups.length; g++) {
-    var group = groups[g], open = !!expanded[group.key]
-    for (var j = 0; j < (open ? group.items.length : 1); j++) {
-      rows.push({ entry: group.items[j], group: group.key, count: group.items.length,
-        first: j === 0, expanded: open, depth: j === 0 && !open ? Math.min(2, group.items.length - 1) : 0 })
-    }
+    var group = groups[g]
+    group.count = group.items.length
+    // A single notification is never a stack, however its group was left.
+    group.expanded = group.count > 1 && !!expanded[group.key]
+    group.depth = group.expanded ? 0 : Math.min(2, group.count - 1)
   }
-  return rows
+  return groups
 }
 
 function localImage(source) {

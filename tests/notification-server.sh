@@ -2,7 +2,15 @@
 set -euo pipefail
 # A private bus and a windowless shell keep this away from the user's desktop.
 if [[ ${SEELE_NOTIFICATION_TEST_BUS:-0} != 1 ]]; then
-  exec dbus-run-session -- env SEELE_NOTIFICATION_TEST_BUS=1 bash "$0" "$@"
+  bus_config=$(mktemp)
+  trap 'rm -f "$bus_config"' EXIT
+  cat > "$bus_config" <<'CONF'
+<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow send_destination="*"/><allow receive_sender="*"/><allow own="*"/></policy>
+</busconfig>
+CONF
+  dbus-run-session --config-file="$bus_config" -- env SEELE_NOTIFICATION_TEST_BUS=1 bash "$0" "$@"
+  exit
 fi
 quickshell=${1:?quickshell executable required}
 shellctl=${2:?unwrapped shellctl executable required}
@@ -13,6 +21,7 @@ trap 'if [[ -n "$shell_pid" ]]; then kill "$shell_pid" 2>/dev/null || true; wait
 mkdir -p "$work/config" "$work/runtime"
 chmod 700 "$work/runtime"
 export XDG_RUNTIME_DIR="$work/runtime" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+export LC_ALL=C.UTF-8
 export SEELE_SHELL_PATH="$work/config"
 export PATH="$(dirname "$quickshell"):$PATH"
 cp "$sources/NotificationStore.qml" "$sources/notifications.js" "$work/config/"
