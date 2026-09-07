@@ -6082,6 +6082,61 @@ ShellRoot {
     model: Quickshell.screens
     PanelWindow {
       id: calendarWindow
+      property string selectedDate: ""
+      property string copyStatus: ""
+      property bool copyPending: false
+
+      function copyCalendarDate(cell) {
+        var value = Time.calendarCopyDate(cell)
+        if (!value || copyPending || calendarClipboard.running) return
+        selectedDate = value
+        copyStatus = "Copying " + value + "…"
+        copyPending = true
+        calendarClipboard.payload = value
+        calendarCopyTimeout.restart()
+        calendarClipboard.stdinEnabled = true
+        calendarClipboard.running = true
+      }
+
+      function moveCalendarSelection(days, today) {
+        if (copyPending || calendarClipboard.running) return
+        var selection = Time.moveCalendarDate(root.now, today ? "" : selectedDate, days)
+        if (!selection) return
+        selectedDate = selection.date
+        copyStatus = ""
+        calendarMonths.positionViewAtIndex(selection.monthOffset + 60, ListView.Contain)
+      }
+
+      function finishCalendarCopy(exitCode, exitStatus) {
+        if (!copyPending) return
+        calendarCopyTimeout.stop()
+        copyPending = false
+        copyStatus = exitCode === 0 && exitStatus === 0
+          ? "Copied " + calendarClipboard.payload : "Could not copy date"
+      }
+
+      Process {
+        id: calendarClipboard
+        property string payload: ""
+        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+        onStarted: {
+          write(payload)
+          stdinEnabled = false
+        }
+        onExited: (exitCode, exitStatus) => calendarWindow.finishCalendarCopy(exitCode, exitStatus)
+      }
+
+      // Failed startup has no exited signal. Bound the pending state as well
+      // as a compositor that does not acknowledge the clipboard request.
+      Timer {
+        id: calendarCopyTimeout
+        interval: 5000
+        onTriggered: {
+          calendarWindow.finishCalendarCopy(-1, 1)
+          calendarClipboard.running = false
+        }
+      }
+
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "calendar" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -6093,11 +6148,35 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-calendar"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-      onVisibleChanged: if (visible) Qt.callLater(function() { calendarMonths.positionViewAtIndex(60, ListView.Beginning) })
+      onVisibleChanged: if (visible) {
+        if (!copyPending) {
+          selectedDate = ""
+          copyStatus = ""
+        }
+        Qt.callLater(function() {
+          calendarMonths.positionViewAtIndex(60, ListView.Beginning)
+          calendarSurface.forceActiveFocus()
+        })
+      }
 
       PanelSurface {
         id: calendarSurface
+        focus: true
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ControlModifier)) return
+          if (event.key === Qt.Key_Escape) root.closeOverlays()
+          else if (event.key === Qt.Key_Left) calendarWindow.moveCalendarSelection(-1, false)
+          else if (event.key === Qt.Key_Right) calendarWindow.moveCalendarSelection(1, false)
+          else if (event.key === Qt.Key_Up) calendarWindow.moveCalendarSelection(-7, false)
+          else if (event.key === Qt.Key_Down) calendarWindow.moveCalendarSelection(7, false)
+          else if (event.key === Qt.Key_Home) calendarWindow.moveCalendarSelection(0, true)
+          else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+            calendarWindow.copyCalendarDate({ inMonth: true, date: calendarWindow.selectedDate || Time.calendarDate(root.now) })
+          else return
+          event.accepted = true
+        }
 
         Column {
           anchors.fill: parent
@@ -6109,7 +6188,9 @@ ShellRoot {
             width: parent.width
             glyph: "󰃭"
             title: Qt.formatDate(root.now, "dddd")
-            detail: Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now)
+            detail: calendarWindow.copyStatus || (calendarWindow.selectedDate
+              ? calendarWindow.selectedDate + " · Enter to copy"
+              : Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now))
 
             Rectangle {
               width: 84
@@ -6119,7 +6200,19 @@ ShellRoot {
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-              MouseArea { id: todayMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendarMonths.positionViewAtIndex(60, ListView.Beginning) }
+              MouseArea {
+                id: todayMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  if (!calendarWindow.copyPending) {
+                    calendarWindow.selectedDate = ""
+                    calendarWindow.copyStatus = ""
+                  }
+                  calendarMonths.positionViewAtIndex(60, ListView.Beginning)
+                }
+              }
             }
           }
 
@@ -6191,13 +6284,16 @@ ShellRoot {
                     Item {
                       id: calendarCell
                       required property var modelData
+                      readonly property string copyDate: Time.calendarCopyDate(modelData)
+                      readonly property bool selected: copyDate !== "" && copyDate === calendarWindow.selectedDate
                       width: monthGrid.width / 8
                       height: monthDelegate.cellHeight
                       Rectangle {
-                        visible: !calendarCell.modelData.week && calendarCell.modelData.today
+                        visible: !calendarCell.modelData.week && (calendarCell.modelData.today || calendarCell.selected || calendarDayHover.hovered)
                         anchors.centerIn: parent
                         width: 27; height: 27; radius: 13.5
-                        color: root.accent
+                        color: calendarCell.modelData.today ? root.accent : calendarCell.selected ? root.selectedColor : root.clearColor
+                        HoverWash { hovered: calendarDayHover.hovered }
                       }
                       Text {
                         anchors.centerIn: parent
@@ -6208,6 +6304,16 @@ ShellRoot {
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
                       }
+                      HoverHandler { id: calendarDayHover; enabled: calendarCell.copyDate !== "" }
+                      MouseArea {
+                        id: calendarDayMouse
+                        anchors.fill: parent
+                        enabled: calendarCell.copyDate !== "" && !calendarWindow.copyPending
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
+                      }
+                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Copy " + calendarCell.copyDate }
                     }
                   }
                 }

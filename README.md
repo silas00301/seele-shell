@@ -25,17 +25,6 @@ ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients mirror the subset of those tokens they use
 so all four read as one desktop.
 
-## Playback modes
-
-The media panel and Control Center offer shuffle and repeat for the selected
-MPRIS player. Repeat cycles off → playlist → one track → off. Active modes are
-highlighted; unsupported or read-only controls are disabled. Hover for the current
-mode, or use Tab and Space/Enter. State follows each player when switching clients.
-
-The helpers in `media.js` use the pinned Quickshell `shuffleSupported`,
-`loopSupported`, `canControl` and `MprisLoopState` APIs. `tests/media.js` checks
-capability guards, the complete repeat cycle and selected-player isolation.
-
 ## Status updates
 
 `projects/shell/SystemState.qml` owns the shell's status fields. Apply full
@@ -77,13 +66,20 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## GitHub pull requests
+## Calendar date copying
 
-The GitHub menu-bar mark opens requested reviews and authored pull requests,
-with checks and review decisions. `seele-shellctl control github` opens the same
-panel. Data refreshes only while the panel is open, through the existing GitHub
-CLI login. See [the integration guide](projects/github/README.md) for account
-setup, keyboard controls, refresh bounds, and tests.
+Click a day in the calendar to select it and copy its ISO date (`YYYY-MM-DD`).
+The header confirms completion or reports a clipboard failure; hovering a day
+shows the exact date. ISO week numbers and blank cells are not selectable.
+Arrow keys move the selection by one day or week and scroll its month into view;
+Enter copies it, Home selects today, and Escape closes the panel. Today returns
+to the current month and clears the selection. The selection is
+local to the open panel and does not write calendar data to disk.
+
+`time.js` formats dates from local calendar fields, so copying near midnight
+does not shift the day through UTC. The existing `wl-copy` dependency receives
+the date on stdin, and the panel waits for its exit before reporting success.
+`tests/time.js` covers date boundaries and the production clipboard callbacks.
 
 ## Screen links
 
