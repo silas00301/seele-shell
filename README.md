@@ -66,12 +66,13 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## Home Assistant
+## GitHub pull requests
 
-An optional Home Assistant panel shows selected entities and controls lights,
-switches, and input booleans. Its dedicated helper reads a private local connection
-file; credentials never enter QML or the Nix store. See
-[connection setup and validation](projects/home-assistant/README.md).
+The GitHub menu-bar mark opens requested reviews and authored pull requests,
+with checks and review decisions. `seele-shellctl control github` opens the same
+panel. Data refreshes only while the panel is open, through the existing GitHub
+CLI login. See [the integration guide](projects/github/README.md) for account
+setup, keyboard controls, refresh bounds, and tests.
 
 ## Screen links
 
@@ -168,13 +169,17 @@ build-all   # build every package
 test-shell  # run focused tests and syntax checks
 ```
 
-## Keyboard media seeking
+## Focus timer
 
-Open Now Playing with `seele-shellctl control media`. Left/Right seek five
-seconds, Shift+Left/Right seek thirty seconds, and Home/End seek to the track's
-start/end. Escape closes the panel. Clicking or tabbing to the Now Playing timeline also gives
-it these controls, with a visible focus edge and a tooltip showing the keys.
-Live streams and players without seek/position/length support never receive a
-position write. Seeking stays within the current track; modifier chords such
-as Ctrl+Left remain available to other controls. The player picker keeps its
-normal keyboard behavior while it has focus.
+Right-click the menu-bar clock, or run `seele-shellctl control focus`, to open
+25-minute and 50-minute focus sessions or a five-minute break. The countdown
+appears beside the clock while active; pause/resume and cancel stay in its panel.
+Keys 1/2/3 start presets, Space pauses/resumes (or starts 25 minutes), Delete
+cancels, and Escape closes the panel. Presets explicitly replace a running timer.
+
+The deadline includes time spent suspended. A completed session sends one desktop
+notification and retains its Done indicator until dismissed or restarted. It does
+not change Do Not Disturb or start another session automatically. State survives
+QML reloads in memory, but is never written to disk and resets on shell exit.
+`tests/focus.js` checks the production deadline state machine, pause/resume,
+completion, invalid input, clock rollback, and reload restoration.
