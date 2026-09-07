@@ -79,8 +79,8 @@
                 value = "${pkgs.dbus.dev}/lib/pkgconfig";
               }
               {
-                name = "NIX_LDFLAGS";
-                eval = "-L${pkgs.lib.getLib tesseract}/lib \${NIX_LDFLAGS:-}";
+                name = "NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}";
+                eval = ''"-L${pkgs.lib.getLib tesseract}/lib ''${NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}:-}"'';
               }
               {
                 name = "TESSDATA_PREFIX";
