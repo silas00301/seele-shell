@@ -76,7 +76,13 @@ the exact match: `1` + Enter selects 1 when 10 also exists. Numbers are stable
 as OCR results arrive. Enter or a click can open an already numbered link
 while other regions are still being recognized. Automatic number selection
 waits until the complete number set is known.
-If a scan finds no links, it releases the frozen screens and keyboard
+QR codes and barcodes share the same numbering as ordinary text links. Each
+code shows its decoded text below it, or above it when there is no room below.
+Selecting a code opens its URI, or copies its exact text when it has no URI.
+Ctrl + number copies any selection, including ordinary links. Ctrl stays in
+effect for the whole number even if released between digits; Enter still
+confirms an ambiguous number. Ctrl + click also copies a selection.
+If a scan finds no links or codes, it releases the frozen screens and keyboard
 immediately. A click-through result card remains for five seconds. Capture
 failures and timeouts follow the same dismissal behavior.
 
@@ -99,9 +105,12 @@ beside bright icons and borders. Each strip owns
 only links whose center lies in its core region, preventing duplicate numbers
 at seams. Results stream into a retained QML ListModel. Idle workers block on
 channels and retain models, while image allocations are released after OCR.
+The same bounded worker pool runs ZBar on each whole output, so code detection
+does not depend on OCR strip boundaries. Decoded payloads retain punctuation
+and line breaks; they do not go through OCR's prose cleanup.
 
-All added runtime dependencies come from official nixpkgs: Grim and Tesseract 5
-with its English data. There are no added flake inputs, Rust crates, downloads
+All added runtime dependencies come from official nixpkgs: Grim, ZBar and
+Tesseract 5 with its English data. There are no added flake inputs, Rust crates, downloads
 at runtime, or OCR services. Captures live in a private runtime directory and
 are removed on dismissal, errors, EOF, or graceful worker termination.
 
@@ -122,9 +131,10 @@ complex backgrounds and links wrapped across lines may not be recognized.
 two simulated outputs, including 16px text with query punctuation and a link
 crossing a strip boundary, quoted Nix assignments, and sentence boundaries. A
 separate dim address-bar fixture checks local contrast. The tests verify
+QR URI and Unicode text payloads, Code 128 barcodes alongside ordinary OCR,
 capture identity, file permissions, numbering, cancellation during capture and
 OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
-selection and badge placement at screen edges. For a local OCR timing sample,
+selection, copy actions, and badge and caption placement at screen edges. For a local OCR timing sample,
 `seele-uri-worker --image /path/to/frame.ppm` emits the same JSON events,
 including `captureMs` and total `elapsedMs`; this excludes compositor and
 rendering latency and is not a desktop latency benchmark.

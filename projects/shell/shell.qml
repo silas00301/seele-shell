@@ -4142,6 +4142,8 @@ ShellRoot {
           id: uriHint
           required property int number
           required property string uri
+          required property string text
+          required property bool code
           required property string output
           required property real x0
           required property real y0
@@ -4170,7 +4172,7 @@ ShellRoot {
               id: uriLinkMouse
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: uriPicker.launch({ uri: uriHint.uri })
+              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
             }
           }
 
@@ -4205,18 +4207,68 @@ ShellRoot {
               id: uriNumberMouse
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: uriPicker.launch({ uri: uriHint.uri })
+              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
             }
           }
 
-          onVisibleChanged: if (!visible && uriPicker.hoveredUri === uri) uriPicker.hoveredUri = ""
+          Rectangle {
+            id: codeCaption
+            readonly property var placement: Uris.caption(
+              { x: uriHint.x, y: uriHint.y, w: uriHint.width, h: uriHint.height },
+              uriWindow.width, uriWindow.height,
+              Math.min(codeText.implicitWidth + root.spaceSmall * 2, root.controlHeight * 12),
+              codeText.implicitHeight + root.spaceSmall * 2, root.spaceTight)
+            visible: uriHint.code
+            x: placement.x - uriHint.x
+            y: placement.y - uriHint.y
+            width: placement.w
+            height: placement.h
+            radius: root.radiusSmall
+            color: root.floatColor
+            border.width: 1
+            border.color: root.panelBorder
+            clip: true
+            SurfaceWash { radius: parent.radius - 1 }
+            Rectangle {
+              anchors.fill: parent
+              radius: parent.radius
+              color: codeMouse.pressed ? root.pressColor : codeHover.hovered ? root.hoverColor : root.clearColor
+            }
+            Text {
+              id: codeText
+              x: root.spaceSmall
+              y: root.spaceSmall
+              width: Math.max(0, codeCaption.width - root.spaceSmall * 2)
+              text: uriHint.text
+              textFormat: Text.PlainText
+              wrapMode: Text.WrapAnywhere
+              color: root.text
+              font.family: root.fontFamily
+              font.pixelSize: root.textBody
+            }
+            SurfaceEdge { radius: root.radiusSmall - 1 }
+            SurfaceGrain { inset: root.radiusSmall / 3 }
+            HoverHandler { id: codeHover }
+            MouseArea {
+              id: codeMouse
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+            }
+          }
+
+          onVisibleChanged: if (!visible && uriPicker.hoveredUri === text) uriPicker.hoveredUri = ""
           Connections {
             target: uriHover
-            function onHoveredChanged() { uriPicker.hoveredUri = uriHover.hovered ? uriHint.uri : "" }
+            function onHoveredChanged() { uriPicker.hoveredUri = uriHover.hovered ? uriHint.text : "" }
           }
           Connections {
             target: uriNumberHover
-            function onHoveredChanged() { uriPicker.hoveredUri = uriNumberHover.hovered ? uriHint.uri : "" }
+            function onHoveredChanged() { uriPicker.hoveredUri = uriNumberHover.hovered ? uriHint.text : "" }
+          }
+          Connections {
+            target: codeHover
+            function onHoveredChanged() { uriPicker.hoveredUri = codeHover.hovered ? uriHint.text : "" }
           }
         }
       }
@@ -4265,7 +4317,7 @@ ShellRoot {
           PanelHeader {
             width: parent.width
             glyph: "󰌷"
-            title: "Screen links"
+            title: "Screen links and codes"
             detail: uriPicker.detail
             detailColor: uriPicker.error !== "" ? root.red : root.subtext
             RefreshGlyph {

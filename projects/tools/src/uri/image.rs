@@ -71,15 +71,19 @@ pub struct Prepared {
 }
 
 impl Image {
-    pub fn prepare(&self, y: usize, height: usize) -> Prepared {
+    pub fn grayscale(&self, y: usize, height: usize) -> Vec<u8> {
         let start = self.offset + y * self.width * 3;
         let end = start + height * self.width * 3;
-        let mut gray: Vec<u8> = self.bytes[start..end]
+        self.bytes[start..end]
             .chunks_exact(3)
             .map(|p| {
                 ((77 * u32::from(p[0]) + 150 * u32::from(p[1]) + 29 * u32::from(p[2])) >> 8) as u8
             })
-            .collect();
+            .collect()
+    }
+
+    pub fn prepare(&self, y: usize, height: usize) -> Prepared {
+        let mut gray = self.grayscale(y, height);
         let samples = gray.len().div_ceil(32);
         if gray.iter().step_by(32).filter(|v| **v < 128).count() > samples / 2 {
             for pixel in &mut gray {

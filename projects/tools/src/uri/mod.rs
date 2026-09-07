@@ -1,3 +1,4 @@
+mod codes;
 mod image;
 mod links;
 mod ocr;
@@ -115,8 +116,7 @@ fn capture(output: String, path: PathBuf, cancel: &AtomicBool) -> Result<Capture
 
 struct Job {
     capture: Arc<Capture>,
-    core_start: usize,
-    core_end: usize,
+    strip: Option<(usize, usize)>,
     cancel: Arc<AtomicBool>,
     reply: mpsc::Sender<std::result::Result<Vec<Link>, String>>,
 }
@@ -149,8 +149,14 @@ impl Pool {
                             continue;
                         }
                         let image = &job.capture.image;
-                        let start = job.core_start.saturating_sub(OVERLAP);
-                        let end = (job.core_end + OVERLAP).min(image.height);
+                        let Some((core_start, core_end)) = job.strip else {
+                            let result = codes::scan(image, &job.capture.output, &job.cancel)
+                                .map_err(|e| e.to_string());
+                            let _ = job.reply.send(result);
+                            continue;
+                        };
+                        let start = core_start.saturating_sub(OVERLAP);
+                        let end = (core_end + OVERLAP).min(image.height);
                         let result = match &mut engine {
                             Ok(engine) => engine
                                 .words(image, start, end - start, &job.cancel)
@@ -161,8 +167,8 @@ impl Pool {
                                         image.width,
                                         image.height,
                                         start,
-                                        job.core_start,
-                                        job.core_end,
+                                        core_start,
+                                        core_end,
                                     )
                                 })
                                 .map_err(|e| e.to_string()),
@@ -203,6 +209,15 @@ fn scan(
     );
     let (reply, results) = mpsc::channel();
     let mut remaining = 0;
+    for capture in &captures {
+        jobs.send(Job {
+            capture: capture.clone(),
+            strip: None,
+            cancel: cancel.clone(),
+            reply: reply.clone(),
+        })?;
+        remaining += 1;
+    }
     // Interleave outputs so every monitor gets its first hints promptly.
     let max_height = captures.iter().map(|c| c.image.height).max().unwrap_or(0);
     for start in (0..max_height).step_by(STRIP) {
@@ -212,8 +227,7 @@ fn scan(
             }
             jobs.send(Job {
                 capture: capture.clone(),
-                core_start: start,
-                core_end: (start + STRIP).min(capture.image.height),
+                strip: Some((start, (start + STRIP).min(capture.image.height))),
                 cancel: cancel.clone(),
                 reply: reply.clone(),
             })?;

@@ -18,6 +18,18 @@ function overlap(a, b) {
     * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
 }
 
+// Keep the decoded text attached to its code and inside its own output.
+// Prefer below; when it does not fit, use the space above the code.
+function caption(box, width, height, textWidth, textHeight, gap) {
+  var w = Math.min(width, textWidth)
+  var below = Math.max(0, height - box.y - box.h - gap)
+  var above = Math.max(0, box.y - gap)
+  var useBelow = textHeight <= below || (textHeight > above && below >= above)
+  var h = Math.min(textHeight, useBelow ? below : above)
+  return { x: Math.max(0, Math.min(box.x + (box.w - w) / 2, width - w)),
+    y: useBelow ? box.y + box.h + gap : box.y - gap - h, w: w, h: h }
+}
+
 // Prefer the left or right margin of the URI. Dense rows and screen edges
 // fall back above/below it, minimizing collisions with both links and badges.
 function layout(links, output, width, height, badgeWidth, badgeHeight, gap) {

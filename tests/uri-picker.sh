@@ -41,6 +41,18 @@ magick -size 1400x1100 xc:'#11111b' -font "$font" -pointsize 30 -fill '#cdd6f4' 
   -annotate +90+670 'hello. Com' \
   -pointsize 16 -annotate +90+750 'https://example.org/docs/page-4?view=plain#section' \
   -depth 8 "$work/frame.ppm"
+
+# Decode codes from the same frozen frame as ordinary links. The URI QR spans
+# an OCR seam; the second QR preserves markup, Unicode and embedded newlines.
+zint -b QRCODE --quietzones --scale=2 -d 'https://example.org/code.;!' -o "$work/uri.png"
+printf '<b>Grüße</b>\nsecond line\n' > "$work/payload.txt"
+zint -b QRCODE --quietzones --scale=2 --eci=26 -i "$work/payload.txt" -o "$work/text.png"
+zint -b CODE128 --quietzones --notext --scale=2 -d 'SKU-042' -o "$work/barcode.png"
+magick "$work/frame.ppm" \
+  "$work/uri.png" -geometry +950+430 -composite \
+  "$work/text.png" -geometry +950+60 -composite \
+  "$work/barcode.png" -geometry +850+850 -composite \
+  -depth 8 "$work/frame.ppm"
 printf '#!%s\n' "$(command -v bash)" > "$work/bin/grim"
 cat >> "$work/bin/grim" <<'GRIM'
 set -euo pipefail
@@ -104,7 +116,15 @@ async function main() {
   assert.equal(new Set(links.map(l => l.number)).size, links.length)
   for (const output of ['DP-1', 'DP-2']) {
     const expected = ['https://example.org/alpha', 'https://nixos.org', 'https://example.com/beta', 'https://example.org/docs/page-4?view=plain#section', 'https://flakehub.com/f/DeterminateSystems/determinate/3']
-    assert.deepEqual(links.filter(l => l.output === output).map(l => l.uri).sort(), [...expected].sort())
+    assert.deepEqual(links.filter(l => l.output === output && !l.code).map(l => l.uri).sort(), [...expected].sort())
+    const codes = links.filter(l => l.output === output && l.code)
+    assert.deepEqual(codes.map(l => l.text).sort(), ['https://example.org/code.;!', '<b>Grüße</b>\nsecond line\n', 'SKU-042'].sort())
+    for (const code of codes) {
+      assert.equal(code.uri, code.text.startsWith('https:') ? code.text : '')
+      assert.ok(code.x0 > 0.6 && code.x0 + code.w <= 1)
+      assert.ok(code.y0 >= 0 && code.y0 + code.h <= 1)
+      if (code.uri) assert.ok(code.y0 < 512 / 1100 && code.y0 + code.h > 512 / 1100)
+    }
     for (const uri of expected) {
       const found = links.filter(l => l.output === output && l.uri === uri)
       assert.equal(found.length, 1, `${output}: ${uri}`)

@@ -14,6 +14,8 @@ pub struct Word {
 #[derive(Clone, Debug, Serialize)]
 pub struct Link {
     pub uri: String,
+    pub text: String,
+    pub code: bool,
     pub output: String,
     pub x0: f64,
     pub y0: f64,
@@ -75,6 +77,12 @@ pub fn normalize(text: &str) -> Option<String> {
             break;
         }
     }
+    destination(s)
+}
+
+/// Decoded payloads have no OCR/prose punctuation to strip. Keep their exact
+/// bytes for copying and preserve trailing punctuation in URI destinations.
+pub fn destination(s: &str) -> Option<String> {
     if s.is_empty()
         || s.len() > 8192
         || s.chars()
@@ -177,6 +185,8 @@ pub fn extract(
             }
             let uri = normalize(&word.text)?;
             Some(Link {
+                text: uri.clone(),
+                code: false,
                 uri,
                 output: output.into(),
                 x0: f64::from(word.left.max(0)) / width as f64,
@@ -192,6 +202,33 @@ pub fn extract(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoded_destinations_preserve_payload_punctuation() {
+        for uri in [
+            "https://example.org/end.;!",
+            "https://example.org/a_(b)",
+            "https://example.org/...",
+            "mailto:person@example.org",
+            "custom://open/item",
+        ] {
+            assert_eq!(destination(uri).as_deref(), Some(uri));
+        }
+        assert_eq!(
+            destination("example.org/end."),
+            Some("https://example.org/end.".into())
+        );
+        for text in [
+            "SKU-042",
+            "hello\nworld",
+            "<b>text</b>",
+            "WIFI:T:WPA;S:example;P:secret;;",
+            "--help",
+            " https://example.org ",
+        ] {
+            assert_eq!(destination(text), None);
+        }
+    }
 
     #[test]
     fn preserves_uri_syntax_and_strips_prose() {

@@ -65,6 +65,7 @@ pkgs.stdenvNoCC.mkDerivation {
     pkgs.makeWrapper
     pkgs.nodejs
     pkgs.qt6.qtdeclarative
+    (pkgs.zint-qt.override { withGUI = false; })
   ];
 
   installPhase = ''

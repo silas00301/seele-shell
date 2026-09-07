@@ -45,7 +45,8 @@ const model = { items: [], append(link) { this.items.push(link) }, clear() { thi
 const state = vm.createContext({
   Uris: context,
   active: false, presented: false, complete: false, generation: 0, notice: "",
-  digits: "", confirmPending: false, error: "", hoveredUri: "", failedAreas: 0,
+  digits: "", confirmPending: false, copyPending: false, error: "", hoveredUri: "", failedAreas: 0,
+  clipboard: { payload: "", running: false, stdinEnabled: false },
   frames: [], allLinks: [], loaded: {}, linkModel: model,
   worker: { running: true, write(message) { sent.push(JSON.parse(message)) } },
   watchdog: { restart() {}, stop() {} },
@@ -56,7 +57,7 @@ const state = vm.createContext({
 })
 state.picker = state
 vm.runInContext(methods, state)
-const press = key => state.key({ key, modifiers: 0, isAutoRepeat: false, accepted: false })
+const press = (key, modifiers = 0) => state.key({ key, modifiers, isAutoRepeat: false, accepted: false })
 state.open()
 assert.equal(sent.at(-1).command, "capture")
 assert.equal(sent.at(-1).outputs.length, 2)
@@ -115,7 +116,7 @@ state.accept({ id: emptyId, event: "done", failedAreas: 0 })
 assert.equal(state.active, false, "empty scan must release keyboard capture")
 assert.equal(state.presented, false, "empty scan must unfreeze immediately")
 assert.equal(state.frames.length, 0)
-assert.equal(state.notice, "No links found")
+assert.equal(state.notice, "No links or codes found")
 assert.equal(state.noticeTimer.running, true)
 assert.equal(sent.at(-1).command, "cancel")
 state.imageReady("DP-1")
@@ -138,3 +139,74 @@ assert.equal(state.notice, "Reading the screens timed out")
 state.close()
 assert.equal(state.notice, "")
 console.log("URI empty scans and failures unfreeze immediately; notices expire after five seconds")
+
+const ctrl = state.Qt.ControlModifier
+const copyCount = launched.length
+state.open()
+press(49, ctrl)
+press(49) // Releasing Ctrl must not lose the copy action for a multi-digit number.
+state.accept({ id: state.generation, event: "links", links: [{ number: 11, uri: literal }] })
+assert.equal(state.active, true)
+state.accept({ id: state.generation, event: "done", failedAreas: 0 })
+assert.equal(state.active, false)
+assert.equal(state.clipboard.payload, literal)
+assert.equal(state.clipboard.stdinEnabled, true)
+assert.equal(state.clipboard.running, true)
+assert.equal(launched.length, copyCount)
+
+state.open()
+press(49, ctrl)
+press(13) // Confirm a number before its result arrives.
+state.accept({ id: state.generation, event: "links", links: [{ number: 1, uri: literal }] })
+assert.equal(state.clipboard.payload, literal)
+assert.equal(state.active, false)
+assert.equal(launched.length, copyCount)
+
+state.open()
+press(49, ctrl)
+press(8)
+assert.equal(state.copyPending, false)
+state.accept({ id: state.generation, event: "links", links: [{ number: 1, uri: literal }] })
+press(49)
+press(13)
+assert.deepEqual(launched.at(-1), ["xdg-open", literal])
+
+const codeText = "<b>exact text</b>\n$(touch /tmp/never)\u0000\n"
+state.open()
+state.accept({ id: state.generation, event: "links", links: [{ number: 1, uri: "", text: codeText, code: true }] })
+press(49)
+state.accept({ id: state.generation, event: "done", failedAreas: 0 })
+assert.equal(state.clipboard.payload, codeText)
+assert.equal(state.active, false)
+
+const qr = { number: 1, uri: "https://example.org/end.;!", text: "https://example.org/end.;!", code: true }
+state.open()
+state.accept({ id: state.generation, event: "links", links: [qr] })
+press(49)
+press(13)
+assert.deepEqual(launched.at(-1), ["xdg-open", qr.uri])
+state.open()
+state.accept({ id: state.generation, event: "links", links: [qr] })
+press(49)
+press(13, ctrl)
+assert.equal(state.clipboard.payload, qr.text)
+assert.equal(state.active, false)
+state.open()
+assert.equal(state.copyPending, false)
+console.log("URI and code actions preserve copy mode, exact payloads and explicit confirmation")
+
+for (const [width, height] of [[1920, 1080], [1280, 720], [1080, 1920]]) {
+  const box = { x: width / 2, y: height / 2, w: 120, h: 100 }
+  const below = context.caption(box, width, height, 240, 60, 4)
+  assert.equal(below.y, box.y + box.h + 4)
+  assert.equal(context.overlap(box, below), 0)
+  const bottomBox = { ...box, x: width - 120, y: height - 100 }
+  const above = context.caption(bottomBox, width, height, 400, 80, 4)
+  assert.equal(above.y + above.h, bottomBox.y - 4)
+  assert.equal(context.overlap(bottomBox, above), 0)
+  assert.ok(above.x >= 0 && above.x + above.w <= width)
+  const long = context.caption(bottomBox, width, height, width * 2, height * 2, 4)
+  assert.ok(long.x >= 0 && long.y >= 0)
+  assert.ok(long.x + long.w <= width && long.y + long.h <= height)
+}
+console.log("Code captions prefer below and fit above codes at the output's bottom edge")

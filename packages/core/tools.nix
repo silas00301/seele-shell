@@ -13,6 +13,7 @@ pkgs.rustPlatform.buildRustPackage {
   nativeBuildInputs = [ pkgs.pkg-config ];
   buildInputs = [
     pkgs.dbus
+    pkgs.zbar
     tesseract
   ];
   nativeCheckInputs = [ pkgs.dbus ];

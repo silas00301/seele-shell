@@ -12,6 +12,7 @@ Scope {
   property int generation: 0
   property string digits: ""
   property bool confirmPending: false
+  property bool copyPending: false
   property string error: ""
   property string notice: ""
   property string hoveredUri: ""
@@ -21,10 +22,10 @@ Scope {
   property var loaded: ({})
   property alias links: linkModel
   readonly property string detail: notice !== "" ? notice : error !== "" ? error
-    : digits !== "" ? "Number " + digits + " · Enter to open · Backspace to edit"
-    : !complete ? "Finding links…"
-    : allLinks.length === 0 ? (failedAreas ? "Could not read this screen" : "No links found")
-    : "Type a number to open · Esc to dismiss" + (failedAreas ? " · Some areas unreadable" : "")
+    : digits !== "" ? "Number " + digits + " · Enter to " + (copyPending ? "copy" : "select") + " · Backspace to edit"
+    : !complete ? "Finding links and codes…"
+    : allLinks.length === 0 ? (failedAreas ? "Could not read this screen" : "No links or codes found")
+    : "Number to open URI or copy text · Ctrl + number to copy · Esc to dismiss" + (failedAreas ? " · Some areas unreadable" : "")
 
   ListModel { id: linkModel }
 
@@ -40,6 +41,7 @@ Scope {
     complete = false
     digits = ""
     confirmPending = false
+    copyPending = false
     error = ""
     hoveredUri = ""
     failedAreas = 0
@@ -115,7 +117,7 @@ Scope {
       failedAreas = message.failedAreas
       watchdog.stop()
       if (allLinks.length === 0) {
-        showNotice(failedAreas ? "Could not read this screen" : "No links found")
+        showNotice(failedAreas ? "Could not read this screen" : "No links or codes found")
         return
       }
       choose(confirmPending)
@@ -124,9 +126,16 @@ Scope {
     }
   }
 
-  function launch(link) {
+  function launch(link, copy) {
     var uri = link.uri
+    var text = link.code ? link.text : uri
     close()
+    if (copy || !uri) {
+      clipboard.payload = text
+      clipboard.stdinEnabled = true
+      clipboard.running = true
+      return
+    }
     // A separate argv element, never shell source. The worker only supplies
     // absolute URIs, so visible text cannot become xdg-open options.
     Quickshell.execDetached(["xdg-open", uri])
@@ -134,7 +143,7 @@ Scope {
 
   function choose(confirm) {
     var link = Uris.selection(allLinks, digits, complete, confirm)
-    if (link) launch(link)
+    if (link) launch(link, copyPending)
     else if (!complete) confirmPending = confirm
   }
 
@@ -142,14 +151,41 @@ Scope {
     event.accepted = true
     if (event.isAutoRepeat) return
     if (event.key === Qt.Key_Escape) { close(); return }
-    if (event.key === Qt.Key_Backspace) { digits = digits.slice(0, -1); confirmPending = false; return }
-    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { choose(true); return }
-    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+    if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return
+    if (event.key === Qt.Key_Backspace) {
+      digits = digits.slice(0, -1)
+      confirmPending = false
+      if (!digits) copyPending = false
+      return
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      copyPending = copyPending || !!(event.modifiers & Qt.ControlModifier)
+      choose(true)
+      return
+    }
     if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9 && digits.length < 6) {
       var digit = String(event.key - Qt.Key_0)
       if (digits === "" && digit === "0") return
+      copyPending = copyPending || !!(event.modifiers & Qt.ControlModifier)
       digits += digit
       choose(false)
+    }
+  }
+
+  Process {
+    id: clipboard
+    property string payload: ""
+    command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+    onStarted: {
+      write(payload)
+      stdinEnabled = false
+      payload = ""
+    }
+    onExited: (exitCode, exitStatus) => {
+      if (!picker.active) {
+        picker.complete = true
+        picker.showNotice(exitCode === 0 && exitStatus === 0 ? "Copied" : "Could not copy text")
+      }
     }
   }
 

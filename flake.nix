@@ -66,6 +66,7 @@
               rustc
               rustfmt
               tesseract
+              zbar
               inputs.quickshell.packages.${system}.default
             ];
 
@@ -84,7 +85,7 @@
               }
               {
                 name = "NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}";
-                eval = ''"-L${pkgs.lib.getLib tesseract}/lib ''${NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}:-}"'';
+                eval = ''"-L${pkgs.lib.getLib tesseract}/lib -L${pkgs.lib.getLib pkgs.zbar}/lib ''${NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}:-}"'';
               }
               {
                 name = "TESSDATA_PREFIX";
