@@ -66,6 +66,13 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
+## Home Assistant
+
+An optional Home Assistant panel shows selected entities and controls lights,
+switches, and input booleans. Its dedicated helper reads a private local connection
+file; credentials never enter QML or the Nix store. See
+[connection setup and validation](projects/home-assistant/README.md).
+
 ## Screen links
 
 Run `seele-shellctl uris` (Super + Ctrl + S on nerv) to freeze every output and

@@ -26,7 +26,6 @@ let
     pkgs.iproute2
     pkgs.jq
     pkgs.jujutsu
-    pkgs.libnotify
     librepods
     pkgs.networkmanager
     pkgs.networkmanagerapplet
@@ -90,10 +89,12 @@ pkgs.stdenvNoCC.mkDerivation {
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
-    install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
-    install -m644 ${./focus.js} "$out/share/seele-shell/focus.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
+    install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
+    install -m644 ${../home-assistant/control.py} "$out/libexec/seele-shell/home-assistant.py"
+    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-home-assistant" \
+      --add-flags "$out/libexec/seele-shell/home-assistant.py"
     install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
     install -m644 ${./pi-status.ts} "$out/share/seele-shell/pi-status.ts"
     install -m644 ${../tools/LICENSES/Something-X.txt} "$out/share/licenses/seele-shell/Something-X.txt"
@@ -183,7 +184,7 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/FocusTimer.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -210,7 +211,9 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
-    node ${../../tests/focus.js} "$out/share/seele-shell/focus.js"
+    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/home-assistant.py} "$out/libexec/seele-shell/home-assistant.py"
+    node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
+    test -x "$out/bin/seele-home-assistant"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"
     node ${../../tests/uri-picker.js} "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \
