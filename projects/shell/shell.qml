@@ -13,6 +13,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 import "media.js" as Media
 import "time.js" as Time
+import "uri-picker.js" as Uris
 
 ShellRoot {
   id: root
@@ -344,6 +345,7 @@ ShellRoot {
   }
 
   function closeOverlays() {
+    uriPicker.close()
     cancelModuleDrag()
     agentsOpen = false
     controlPanel = ""
@@ -357,6 +359,13 @@ ShellRoot {
     bluetoothForget = ""
     notificationHistoryOpen = false
     bluetoothForgetTimer.stop()
+  }
+
+  function toggleUris() {
+    // Capture the visible desktop, including any open shell panel. The frozen
+    // surface covers it without changing what will be restored on dismissal.
+    if (uriPicker.active) uriPicker.close()
+    else uriPicker.open()
   }
 
   function toggleLauncher(mode) {
@@ -1907,6 +1916,7 @@ ShellRoot {
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
     function toggleAgents(): void { root.toggleAgents() }
+    function toggleUris(): void { root.toggleUris() }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
     function launchAgent(id: string, prompt: string): void { root.runAgent(id, prompt) }
@@ -3522,7 +3532,7 @@ ShellRoot {
       required property var modelData
       readonly property var entries: root.notificationPopupEntries()
       screen: modelData
-      visible: !root.systemData.dnd
+      visible: !uriPicker.presented && !root.systemData.dnd
         && root.controlPanel !== "notifications"
         && entries.length > 0
         && root.pinnedScreen(root.notificationPopupScreen, modelData)
@@ -4072,6 +4082,197 @@ ShellRoot {
     onTriggered: {
       if (root.microphoneDrag < 0) return
       if (!root.runControl("microphone", String(root.microphoneDrag))) restart()
+    }
+  }
+
+  // Frozen URI picker --------------------------------------------------------
+  UriPicker { id: uriPicker }
+
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: uriWindow
+      required property var modelData
+      readonly property var frame: uriPicker.frame(modelData.name)
+      readonly property real badgeWidth: Math.max(root.chipHeight, uriNumberMetrics.advanceWidth + root.spaceSmall * 2)
+      readonly property real badgeHeight: root.textStrong + root.spaceSmall * 2
+      readonly property var positions: Uris.layout(uriPicker.allLinks, modelData.name,
+        width, height, badgeWidth, badgeHeight, root.spaceTight)
+      screen: modelData
+      anchors { top: true; bottom: true; left: true; right: true }
+      exclusionMode: ExclusionMode.Ignore
+      visible: uriPicker.active && uriPicker.presented
+      onVisibleChanged: if (visible) uriKeys.forceActiveFocus()
+      color: root.crust
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-uris"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+      TextMetrics {
+        id: uriNumberMetrics
+        font.family: root.fontFamily
+        font.pixelSize: root.textStrong
+        font.weight: root.weightStrong
+        text: String(Math.max(1, uriPicker.allLinks.length))
+      }
+
+      Image {
+        anchors.fill: parent
+        source: uriWindow.frame ? "file://" + uriWindow.frame.path.split("/").map(encodeURIComponent).join("/") : ""
+        asynchronous: true
+        cache: false
+        smooth: false
+        fillMode: Image.Stretch
+        onStatusChanged: {
+          if (status === Image.Ready) uriPicker.imageReady(uriWindow.modelData.name)
+          else if (status === Image.Error && uriPicker.active) uriPicker.fail("Could not display the capture · Esc to dismiss")
+        }
+      }
+
+      Item {
+        id: uriKeys
+        anchors.fill: parent
+        focus: true
+        Keys.onPressed: event => uriPicker.key(event)
+      }
+
+      Repeater {
+        model: uriPicker.links
+        delegate: Item {
+          id: uriHint
+          required property int number
+          required property string uri
+          required property string output
+          required property real x0
+          required property real y0
+          required property real w
+          required property real h
+          readonly property bool matching: !uriPicker.digits || String(number).indexOf(uriPicker.digits) === 0
+          readonly property var position: uriWindow.positions[number] || ({ x: 0, y: 0 })
+          visible: output === uriWindow.modelData.name
+          opacity: matching ? 1 : 0.25
+          x: x0 * uriWindow.width
+          y: y0 * uriWindow.height
+          width: w * uriWindow.width
+          height: h * uriWindow.height
+          z: 2
+
+          Rectangle {
+            anchors.fill: parent
+            anchors.margins: -1
+            radius: root.radiusSmall
+            color: uriLinkMouse.pressed ? root.pressColor : root.activeTint
+            border.width: 1
+            border.color: root.accent
+            Rectangle { anchors.fill: parent; radius: parent.radius; color: uriHover.hovered ? root.hoverColor : root.clearColor }
+            HoverHandler { id: uriHover }
+            MouseArea {
+              id: uriLinkMouse
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: uriPicker.launch({ uri: uriHint.uri })
+            }
+          }
+
+          Rectangle {
+            x: uriHint.position.x - uriHint.x
+            y: uriHint.position.y - uriHint.y
+            width: uriWindow.badgeWidth
+            height: uriWindow.badgeHeight
+            radius: root.radiusSmall
+            color: root.floatColor
+            border.width: 1
+            border.color: root.panelBorder
+            SurfaceWash { radius: parent.radius - 1 }
+            Rectangle {
+              anchors.fill: parent
+              radius: parent.radius
+              color: uriNumberMouse.pressed ? root.pressColor : uriNumberHover.hovered ? root.hoverColor : root.clearColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+            }
+            Text {
+              anchors.centerIn: parent
+              text: uriHint.number
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textStrong
+              font.weight: root.weightStrong
+            }
+            SurfaceEdge { radius: root.radiusSmall - 1 }
+            SurfaceGrain { inset: root.radiusSmall / 3 }
+            HoverHandler { id: uriNumberHover }
+            MouseArea {
+              id: uriNumberMouse
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: uriPicker.launch({ uri: uriHint.uri })
+            }
+          }
+
+          onVisibleChanged: if (!visible && uriPicker.hoveredUri === uri) uriPicker.hoveredUri = ""
+          Connections {
+            target: uriHover
+            function onHoveredChanged() { uriPicker.hoveredUri = uriHover.hovered ? uriHint.uri : "" }
+          }
+          Connections {
+            target: uriNumberHover
+            function onHoveredChanged() { uriPicker.hoveredUri = uriNumberHover.hovered ? uriHint.uri : "" }
+          }
+        }
+      }
+
+      Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.panelMargin
+        width: Math.min(uriWindow.width - root.panelMargin * 2, root.controlHeight * 16)
+        height: uriStatus.implicitHeight + root.cardPadding * 2
+        radius: root.radius
+        color: root.panelColor
+        border.width: 1
+        border.color: root.panelBorder
+        SurfaceWash { radius: root.radius - 1 }
+        Column {
+          id: uriStatus
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.cardPadding
+          spacing: root.spaceSmall
+          PanelHeader {
+            width: parent.width
+            glyph: "󰌷"
+            title: "Screen links"
+            detail: uriPicker.detail
+            detailColor: uriPicker.error !== "" ? root.red : root.subtext
+            RefreshGlyph {
+              anchors.verticalCenter: parent.verticalCenter
+              width: root.chipHeight
+              height: width
+              visible: !uriPicker.complete
+              spinning: visible
+            }
+          }
+          Text {
+            width: parent.width
+            visible: uriPicker.hoveredUri !== ""
+            text: uriPicker.hoveredUri
+            textFormat: Text.PlainText
+            elide: Text.ElideMiddle
+            color: root.accent
+            font.family: root.fontFamily
+            font.pixelSize: root.textBody
+          }
+        }
+        SurfaceEdge {}
+        SurfaceGrain { inset: root.radius / 3 }
+      }
+
+      Connections {
+        target: uriWindow.modelData
+        function onWidthChanged() { if (uriPicker.active) uriPicker.close() }
+        function onHeightChanged() { if (uriPicker.active) uriPicker.close() }
+      }
     }
   }
 
@@ -7245,7 +7446,7 @@ ShellRoot {
     PanelWindow {
       required property var modelData
       screen: modelData
-      visible: root.osdOpen && root.pinnedScreen(root.osdScreen, modelData)
+      visible: !uriPicker.presented && root.osdOpen && root.pinnedScreen(root.osdScreen, modelData)
       // The YubiKey OSD is the polkit dialog's card without the password field,
       // so it is placed where that dialog places its own: anchoring to no edge
       // leaves a layer surface centred on the output, which is where the dialog

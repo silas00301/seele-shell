@@ -21,6 +21,7 @@ let
     pkgs.gawk
     pkgs.ghostty
     pkgs.git
+    pkgs.grim
     pkgs.hyprland
     pkgs.iproute2
     pkgs.jq
@@ -59,6 +60,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontWrapQtApps = true;
   nativeBuildInputs = [
     pkgs.esbuild
+    pkgs.imagemagick
     pkgs.jq
     pkgs.makeWrapper
     pkgs.nodejs
@@ -72,6 +74,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
     install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
+    install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
+    install -m644 ${./uri-picker.js} "$out/share/seele-shell/uri-picker.js"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude-code.svg} "$out/share/seele-shell/claude-code.svg"
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
@@ -121,6 +125,11 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-shellctl --set SEELE_SHELL_PATH "$out/share/seele-shell"
     makeTool seele-clock --set TZDIR "${pkgs.tzdata}/share/zoneinfo"
     makeTool seele-yubikey-watch
+    makeWrapper ${tools}/bin/seele-uri-worker "$out/bin/seele-uri-worker" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.grim ]}" \
+      --set TESSDATA_PREFIX "${tools.tesseract}/share/tessdata" \
+      --set OMP_THREAD_LIMIT 1 \
+      --set OMP_NUM_THREADS 1
 
     runHook postInstall
   '';
@@ -150,7 +159,7 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/vicinae/extensions/seele-shell/seele.js"
     test -f "$out/share/vicinae/extensions/seele-shell/keybindings.js"
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml"
     bash ${../../tests/system-state.sh} \
       "$out/share/seele-shell/SystemState.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
@@ -159,7 +168,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${../../tests/tst_centeredglyph.qml}
-    for command in seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-uri-worker seele-shell seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -171,6 +180,9 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"
+    node ${../../tests/uri-picker.js} "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
+    TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \
+      ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
     node ${../../tests/status-patches.js} "$out/share/seele-shell/shell.qml"
     bash ${../../tests/clock.sh} "$out/bin/seele-clock"
     PATH="${runtimePath}:$PATH" bash ${../../tests/network-vpn.sh} "$out/libexec/seele-shell/seele-control"
