@@ -20,9 +20,9 @@ Scope {
   property var loaded: ({})
   property alias links: linkModel
   readonly property string detail: error !== "" ? error
+    : digits !== "" ? "Number " + digits + " · Enter to open · Backspace to edit"
     : !complete ? "Finding links…"
     : allLinks.length === 0 ? (failedAreas ? "Could not read this screen" : "No links found")
-    : digits !== "" ? "Number " + digits + " · Enter to open · Backspace to edit"
     : "Type a number to open · Esc to dismiss" + (failedAreas ? " · Some areas unreadable" : "")
 
   ListModel { id: linkModel }
