@@ -71,6 +71,10 @@
 
             env = [
               {
+                name = "URI_PUBLIC_SUFFIX_LIST";
+                value = "${pkgs.publicsuffix-list}/share/publicsuffix/public_suffix_list.dat";
+              }
+              {
                 name = "RUST_SRC_PATH";
                 value = pkgs.rustPlatform.rustLibSrc;
               }

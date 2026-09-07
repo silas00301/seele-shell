@@ -14,10 +14,13 @@ magick -size 1400x1100 xc:'#11111b' -font "$font" -pointsize 30 -fill '#cdd6f4' 
   -annotate +90+130 'https://example.org/alpha' \
   -annotate +90+520 'https://nixos.org' \
   -annotate +90+950 'https://example.com/beta' \
+  -pointsize 20 -annotate +90+300 'determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/3";' \
+  -annotate +90+620 'hello. World' \
+  -annotate +90+670 'hello. Com' \
   -pointsize 16 -annotate +90+750 'https://example.org/docs/page-4?view=plain#section' \
   -depth 8 "$work/frame.ppm"
-cat > "$work/bin/grim" <<'GRIM'
-#!/usr/bin/env bash
+printf '#!%s\n' "$(command -v bash)" > "$work/bin/grim"
+cat >> "$work/bin/grim" <<'GRIM'
 set -euo pipefail
 test "$1" = -t && test "$2" = ppm && test "$3" = -o && test "$5" = -
 case "$4" in
@@ -47,6 +50,11 @@ async function next(id, event) {
   for (;;) {
     const index = messages.findIndex(m => m.id === id && m.event === event)
     if (index >= 0) return messages.splice(index, 1)[0]
+    const failed = messages.findIndex(m => m.id === id && m.event === 'error')
+    if (failed >= 0 && event !== 'error') {
+      const message = messages.splice(failed, 1)[0]
+      throw Error(`worker failed before ${event}: ${message.message}`)
+    }
     await delay(10)
   }
 }
@@ -73,7 +81,9 @@ async function main() {
   const links = messages.filter(m => m.id === 1 && m.event === 'links').flatMap(m => m.links)
   assert.equal(new Set(links.map(l => l.number)).size, links.length)
   for (const output of ['DP-1', 'DP-2']) {
-    for (const uri of ['https://example.org/alpha', 'https://nixos.org', 'https://example.com/beta', 'https://example.org/docs/page-4?view=plain#section']) {
+    const expected = ['https://example.org/alpha', 'https://nixos.org', 'https://example.com/beta', 'https://example.org/docs/page-4?view=plain#section', 'https://flakehub.com/f/DeterminateSystems/determinate/3']
+    assert.deepEqual(links.filter(l => l.output === output).map(l => l.uri).sort(), [...expected].sort())
+    for (const uri of expected) {
       const found = links.filter(l => l.output === output && l.uri === uri)
       assert.equal(found.length, 1, `${output}: ${uri}`)
       const link = found[0]

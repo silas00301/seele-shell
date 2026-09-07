@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::{collections::HashSet, sync::OnceLock};
 
 #[derive(Clone, Debug)]
 pub struct Word {
@@ -28,6 +29,17 @@ fn scheme(s: &str) -> bool {
 }
 
 fn domain(s: &str) -> bool {
+    // Use the pinned nixpkgs list offline. Only ICANN rules establish public
+    // TLDs; private suffixes must not turn arbitrary attribute names into links.
+    static TLDS: OnceLock<HashSet<&str>> = OnceLock::new();
+    let tlds = TLDS.get_or_init(|| {
+        include_str!(env!("URI_PUBLIC_SUFFIX_LIST"))
+            .lines()
+            .take_while(|line| !line.contains("END ICANN DOMAINS"))
+            .filter(|line| !line.is_empty() && !line.starts_with("//"))
+            .filter_map(|line| line.rsplit('.').next())
+            .collect()
+    });
     let host = s.split(['/', '?', '#', ':']).next().unwrap_or_default();
     let labels: Vec<_> = host.split('.').collect();
     labels.len() >= 2
@@ -39,7 +51,7 @@ fn domain(s: &str) -> bool {
         })
         && labels
             .last()
-            .is_some_and(|tld| tld.len() >= 2 && tld.chars().all(char::is_alphabetic))
+            .is_some_and(|tld| tlds.contains(tld.to_lowercase().as_str()))
 }
 
 /// Convert visible links to absolute URIs. Never repair OCR substitutions or
@@ -47,13 +59,13 @@ fn domain(s: &str) -> bool {
 /// only surrounding prose punctuation and unmatched closing brackets go away.
 pub fn normalize(text: &str) -> Option<String> {
     let mut s = text.trim_matches(|c: char| c.is_whitespace() || "\"'`<>“”‘’".contains(c));
-    s = s.trim_start_matches(['(', '[', '{']);
+    s = s.trim_start_matches(|c| "([{\"'`<“‘".contains(c));
     if s.contains('…') || s.ends_with("...") {
         return None;
     }
     loop {
         let before = s;
-        s = s.trim_end_matches(['.', ',', ';', '!']);
+        s = s.trim_end_matches(|c| ".,;!\"'`<>“”‘’".contains(c));
         for (open, close) in [('(', ')'), ('[', ']'), ('{', '}')] {
             if s.ends_with(close) && s.matches(close).count() > s.matches(open).count() {
                 s = &s[..s.len() - close.len_utf8()];
@@ -111,6 +123,15 @@ fn can_join(a: &Word, b: &Word) -> bool {
     }
     let height = (a.bottom - a.top).max(b.bottom - b.top).max(1);
     let gap = b.left - a.right;
+    // A period followed by a word-sized space is a sentence boundary unless
+    // this run already has an explicit URI scheme. Some real TLDs are words.
+    if a.text.ends_with('.')
+        && b.text.starts_with(char::is_alphabetic)
+        && !a.text.contains("://")
+        && gap > height / 6
+    {
+        return false;
+    }
     let overlap = a.bottom.min(b.bottom) - a.top.max(b.top);
     let combined = format!("{}{}", a.text, b.text);
     let plausible =
@@ -185,6 +206,15 @@ mod tests {
             ),
             ("http://[::1]:8080/test", "http://[::1]:8080/test"),
             ("example.org/path", "https://example.org/path"),
+            ("EXAMPLE.COM", "https://EXAMPLE.COM"),
+            ("example.co.uk/path", "https://example.co.uk/path"),
+            ("example.world", "https://example.world"),
+            ("example.中国", "https://example.中国"),
+            ("\"https://example.org/path\";", "https://example.org/path"),
+            (
+                "(\"https://example.org/path\");",
+                "https://example.org/path",
+            ),
             ("user+tag@example.org", "mailto:user+tag@example.org"),
             ("file:///tmp/document.pdf", "file:///tmp/document.pdf"),
             ("vscode://file/a.rs", "vscode://file/a.rs"),
@@ -207,6 +237,8 @@ mod tests {
             "https:///missing-host",
             "999.99",
             "a..org",
+            "determinate.url",
+            "flake.nix",
         ] {
             assert_eq!(normalize(input), None, "{input}");
         }
@@ -221,6 +253,44 @@ mod tests {
             bottom: 30,
             line_start: false,
         }
+    }
+
+    #[test]
+    fn ignores_code_attributes_and_sentence_boundaries() {
+        for words in [
+            vec![word("determinate.url", 0, 150)],
+            vec![word("hello.", 0, 60), word("World", 67, 50)],
+            vec![word("hello.", 0, 60), word("Com", 67, 30)],
+        ] {
+            assert!(extract(words, "DP-1", 1000, 1000, 0, 0, 1000).is_empty());
+        }
+    }
+
+    #[test]
+    fn extracts_quoted_assignment_value() {
+        let links = extract(
+            vec![
+                word("determinate.url", 0, 150),
+                word("=", 160, 10),
+                word(
+                    "\"https://flakehub.com/f/DeterminateSystems/determinate/3\";",
+                    180,
+                    600,
+                ),
+            ],
+            "DP-1",
+            1000,
+            1000,
+            0,
+            0,
+            1000,
+        );
+        assert_eq!(links.len(), 1);
+        assert_eq!(
+            links[0].uri,
+            "https://flakehub.com/f/DeterminateSystems/determinate/3"
+        );
+        assert_eq!(links[0].x0, 0.18);
     }
 
     #[test]

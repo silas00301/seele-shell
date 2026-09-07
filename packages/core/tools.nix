@@ -8,6 +8,7 @@ pkgs.rustPlatform.buildRustPackage {
 
   src = ../../projects/tools;
   cargoLock.lockFile = ../../projects/tools/Cargo.lock;
+  URI_PUBLIC_SUFFIX_LIST = "${pkgs.publicsuffix-list}/share/publicsuffix/public_suffix_list.dat";
 
   nativeBuildInputs = [ pkgs.pkg-config ];
   buildInputs = [

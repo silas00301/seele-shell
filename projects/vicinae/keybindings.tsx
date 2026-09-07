@@ -47,6 +47,7 @@ const fallbackDescriptions: Record<string, string> = {
   "Super + B": "Open the web browser",
   "Super + L": "Lock the session",
   "Super + S": "Capture a screenshot",
+  "Super + Ctrl + S": "Open a visible URI from the frozen screens",
   "Super + Shift + S": "Capture and annotate a screenshot",
   "Super + Shift + Space": "Toggle floating for the focused window",
   "Super + F": "Toggle maximized for the focused window",

@@ -106,12 +106,17 @@ Recognition supports explicit hierarchical URIs (including custom handlers),
 (opened as HTTPS), and email addresses. It preserves paths, queries, fragments
 and balanced punctuation, and joins tightly spaced OCR tokens around URI
 punctuation. It deliberately does not guess replacements for misread characters
-or reconstruct visibly truncated links. As with any OCR, very small text,
+or reconstruct visibly truncated links. Bare domains and email hosts require
+a public TLD from the ICANN section of nixpkgs' public suffix list, embedded
+at build time. Code attributes such as `determinate.url` are ignored. Quoted
+assignment values keep their URI while surrounding quotes and semicolons are
+removed; ordinary sentence spacing after a period is preserved.
+As with any OCR, very small text,
 complex backgrounds and links wrapped across lines may not be recognized.
 
 `tests/uri-picker.sh` runs real OCR against generated dark-screen fixtures on
 two simulated outputs, including 16px text with query punctuation and a link
-crossing a strip boundary. It verifies
+crossing a strip boundary, quoted Nix assignments, and sentence boundaries. It verifies
 capture identity, file permissions, numbering, cancellation during capture and
 OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
 selection and badge placement at screen edges. For a local OCR timing sample,
