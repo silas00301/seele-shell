@@ -98,19 +98,24 @@ function popupDuration(entry) { return permanent(entry) ? -1 : entry.timeout > 0
 // Session state stays in memory; notification text and verification codes are
 // never written to disk. QObjects remain separate from the serializable view.
 function createStore(publish, arrived, now) {
-  var state = { current: [], history: [], dnd: false, paused: false, lastTick: now, restored: {} }
+  var state = { current: [], history: [], dnd: false, dndUntil: 0, paused: false, lastTick: now, restored: {} }
   state.save = function() {
     var metadata = {}
     state.current.forEach(function(record) {
       metadata[String(record.entry.id)] = { time: record.entry.time, pinned: record.entry.pinned,
         popup: record.popup && permanent(record.entry) }
     })
-    return { history: state.history, dnd: state.dnd, metadata: metadata }
+    return { history: state.history, dnd: state.dnd, dndUntil: state.dndUntil, metadata: metadata }
   }
   state.restore = function(saved) {
     if (!saved) return
     state.history = saved.history || []
     state.dnd = !!saved.dnd
+    state.dndUntil = state.dnd && Number.isFinite(saved.dndUntil) && saved.dndUntil > 0 ? saved.dndUntil : 0
+    if (state.dndUntil && state.dndUntil <= state.lastTick) {
+      state.dnd = false
+      state.dndUntil = 0
+    }
     state.restored = saved.metadata || {}
     state.publish()
   }
@@ -121,7 +126,7 @@ function createStore(publish, arrived, now) {
       if (!record.entry.transient) items.push(record.entry)
       if (record.popup) popups.push(record.entry)
     }
-    return { count: items.length, items: items, popups: popups, history: state.history }
+    return { count: items.length, items: items, popups: popups, history: state.history, dndUntil: state.dndUntil }
   }
   state.publish = function() { publish(state.view(), state.dnd) }
   state.find = function(id) {
@@ -185,6 +190,11 @@ function createStore(publish, arrived, now) {
   state.advance = function(timestamp) {
     var changed = false
     state.lastTick = timestamp
+    if (state.dndUntil > 0 && timestamp >= state.dndUntil) {
+      state.dnd = false
+      state.dndUntil = 0
+      changed = true
+    }
     state.current.slice().forEach(function(record) {
       var elapsed = Math.max(0, timestamp - record.clock)
       record.clock = timestamp
@@ -240,9 +250,22 @@ function createStore(publish, arrived, now) {
     return true
   }
   state.setDnd = function(enabled) {
-    state.dnd = enabled
+    // An explicit manual choice replaces any previous timed quiet period.
+    state.dndUntil = 0
+    state.dnd = !!enabled
     if (enabled) state.current.forEach(function(record) { record.popup = false })
     state.publish()
+  }
+  state.snooze = function(minutes, timestamp) {
+    minutes = Number(minutes)
+    timestamp = Number(timestamp)
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440
+        || !Number.isFinite(timestamp) || timestamp < 0) return false
+    state.dnd = true
+    state.dndUntil = timestamp + minutes * 60
+    state.current.forEach(function(record) { record.popup = false })
+    state.publish()
+    return true
   }
   state.clear = function(history) {
     if (history) { state.history = []; state.publish(); return }

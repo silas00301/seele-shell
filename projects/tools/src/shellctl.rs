@@ -21,7 +21,7 @@ Commands:
   microphone-state <muted|live> Show a device mute OSD
   voxtype                   Toggle voice dictation
   lock                      Lock the session
-  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, or dnd
+  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
   notification-status       Print notification state as JSON
   ping                      Check shell IPC
 "#;
