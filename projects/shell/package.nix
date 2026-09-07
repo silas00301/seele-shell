@@ -20,6 +20,7 @@ let
     pkgs.findutils
     pkgs.gawk
     pkgs.ghostty
+    pkgs.gh
     pkgs.git
     pkgs.grim
     pkgs.hyprland
@@ -66,6 +67,7 @@ pkgs.stdenvNoCC.mkDerivation {
     pkgs.jq
     pkgs.makeWrapper
     pkgs.nodejs
+    pkgs.python3
     pkgs.qt6.qtdeclarative
     (pkgs.zint-qt.override { withGUI = false; })
   ];
@@ -78,6 +80,12 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
+    install -m644 ${./github.js} "$out/share/seele-shell/github.js"
+    install -m644 ${../github/status.py} "$out/libexec/seele-shell/github-status.py"
+    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-github-status" \
+      --add-flags "$out/libexec/seele-shell/github-status.py" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.gh ]}"
     install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
     install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
     install -m644 ${./uri-picker.js} "$out/share/seele-shell/uri-picker.js"
@@ -91,10 +99,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
-    install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
-    install -m644 ${../home-assistant/control.py} "$out/libexec/seele-shell/home-assistant.py"
-    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-home-assistant" \
-      --add-flags "$out/libexec/seele-shell/home-assistant.py"
     install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
     install -m644 ${./pi-status.ts} "$out/share/seele-shell/pi-status.ts"
     install -m644 ${../tools/LICENSES/Something-X.txt} "$out/share/licenses/seele-shell/Something-X.txt"
@@ -184,7 +188,9 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/GitHubStore.qml"
+    PYTHONDONTWRITEBYTECODE=1 python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
+    node ${../../tests/github.js} "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -211,9 +217,6 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
-    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/home-assistant.py} "$out/libexec/seele-shell/home-assistant.py"
-    node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
-    test -x "$out/bin/seele-home-assistant"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"
     node ${../../tests/uri-picker.js} "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \

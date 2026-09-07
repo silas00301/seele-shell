@@ -15,6 +15,7 @@ import "media.js" as Media
 import "time.js" as Time
 import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
+import "github.js" as GitHub
 
 ShellRoot {
   id: root
@@ -1947,6 +1948,11 @@ ShellRoot {
         root.windowsCountdown--
       }
     }
+  }
+
+  GitHubStore {
+    id: githubStore
+    active: root.controlPanel === "github"
   }
 
   NotificationStore {
@@ -5688,6 +5694,22 @@ ShellRoot {
           }
 
           BarItem {
+            width: githubBarContent.implicitWidth + root.spaceLarge
+            hovered: githubBarHover.hovered
+            active: root.panelHere("github", barWindow.modelData)
+            Row {
+              id: githubBarContent
+              anchors.centerIn: parent
+              spacing: root.spaceTight
+              CenteredGlyph { width: root.textIcon; height: root.barItemHeight; text: "󰊤"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              Text { visible: githubStore.snapshot.reviewTotal > 0; anchors.verticalCenter: parent.verticalCenter; text: githubStore.snapshot.reviewTotal; color: githubStore.snapshot.stale ? root.subtext : root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+            }
+            HoverHandler { id: githubBarHover }
+            MouseArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: githubBarMouse; text: "GitHub · pull requests and requested reviews" }
+          }
+
+          BarItem {
             width: notificationBarContent.implicitWidth + 14
             hovered: notificationMouse.containsMouse
             active: root.panelHere("notifications", barWindow.modelData)
@@ -7150,6 +7172,157 @@ ShellRoot {
                 }
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  // GitHub pull requests ------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: githubWindow
+      required property var modelData
+      property string tab: "reviews"
+      readonly property var entries: tab === "reviews" ? githubStore.snapshot.reviews : githubStore.snapshot.authored
+      readonly property int total: tab === "reviews" ? githubStore.snapshot.reviewTotal : githubStore.snapshot.authoredTotal
+      screen: modelData
+      visible: root.controlPanel === "github" && root.pinnedScreen(root.overlayScreen, modelData)
+      onVisibleChanged: if (visible) Qt.callLater(function() { githubSurface.forceActiveFocus() })
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 440
+      implicitHeight: githubContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-github"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+      PanelSurface {
+        id: githubSurface
+        focus: true
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+          if (event.isAutoRepeat && event.key !== Qt.Key_J && event.key !== Qt.Key_K
+              && event.key !== Qt.Key_Up && event.key !== Qt.Key_Down) return
+          if (event.key === Qt.Key_Escape) { root.closeOverlays(); event.accepted = true }
+          else if (event.key === Qt.Key_J || event.key === Qt.Key_Down) { githubList.incrementCurrentIndex(); event.accepted = true }
+          else if (event.key === Qt.Key_K || event.key === Qt.Key_Up) { githubList.decrementCurrentIndex(); event.accepted = true }
+          else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) { githubWindow.tab = githubWindow.tab === "reviews" ? "authored" : "reviews"; githubList.currentIndex = 0; event.accepted = true }
+          else if (event.key === Qt.Key_R) { githubStore.refresh(true); event.accepted = true }
+          else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && githubList.currentIndex >= 0 && githubList.currentIndex < githubWindow.entries.length) { githubStore.openPull(githubWindow.entries[githubList.currentIndex].url); event.accepted = true }
+        }
+        Column {
+          id: githubContent
+          anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+
+          PanelHeader {
+            width: parent.width
+            glyph: "󰊤"
+            title: "GitHub"
+            detail: githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
+            Rectangle {
+              width: root.chipHeight; height: root.chipHeight; radius: root.radius
+              color: githubRefreshHover.hovered ? root.hoverColor : root.clearColor
+              RefreshGlyph { anchors.centerIn: parent; width: root.textCard; height: width; spinning: githubStore.refreshing; color: githubStore.canRefresh ? root.text : root.subtext }
+              HoverHandler { id: githubRefreshHover }
+              MouseArea { id: githubRefreshMouse; anchors.fill: parent; hoverEnabled: true; enabled: githubStore.canRefresh; cursorShape: Qt.PointingHandCursor; onClicked: githubStore.refresh(true) }
+              HoverTip { mouse: githubRefreshMouse; text: "Refresh GitHub"; inOverlay: true }
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [{ id: "reviews", label: "Requested reviews" }, { id: "authored", label: "My pull requests" }]
+              Rectangle {
+                required property var modelData
+                width: (githubContent.width - root.spaceSmall) / 2
+                height: root.controlHeight
+                radius: root.radius
+                color: githubWindow.tab === modelData.id ? root.selectedColor : root.wellColor
+                Rectangle { anchors.fill: parent; radius: parent.radius; color: githubTabHover.hovered ? root.hoverColor : root.clearColor }
+                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: githubWindow.tab === modelData.id ? root.weightStrong : root.weightMedium }
+                HoverHandler { id: githubTabHover }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubWindow.tab = modelData.id; githubList.currentIndex = 0; githubSurface.forceActiveFocus() } }
+              }
+            }
+          }
+
+          Text {
+            visible: githubStore.snapshot.state !== "ready"
+            width: parent.width
+            text: githubStore.refreshing && githubStore.snapshot.state === "idle" ? "Loading pull requests…" : githubStore.snapshot.message + (githubStore.snapshot.stale ? " Showing the last successful refresh." : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: githubStore.snapshot.state === "idle" ? root.subtext : root.yellow
+            font.family: root.fontFamily; font.pixelSize: root.textBody
+          }
+
+          Text {
+            visible: githubStore.snapshot.state === "auth-required"
+            width: parent.width
+            text: "Run gh auth login --hostname " + githubStore.snapshot.host + " in a terminal to connect your account."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.subtext
+            font.family: root.fontFamily; font.pixelSize: root.textCaption
+          }
+
+          SeeleListView {
+            id: githubList
+            width: parent.width
+            height: Math.min(contentHeight, root.rowHeight * 7)
+            visible: githubWindow.entries.length > 0
+            clip: true
+            spacing: root.spaceSmall
+            model: githubWindow.entries
+            currentIndex: 0
+            keyNavigationEnabled: true
+            ScrollBar.vertical: SlimScrollBar { popupHovered: githubSurface.hovered }
+            delegate: Rectangle {
+              id: githubPullRow
+              required property var modelData
+              required property int index
+              width: githubList.width - root.scrollGutter
+              height: githubPullContent.implicitHeight + root.spaceMedium * 2
+              radius: root.radius
+              color: githubSurface.activeFocus && githubList.currentIndex === index ? root.selectedColor : root.rowColor
+              Rectangle { anchors.fill: parent; radius: parent.radius; color: githubPullHover.hovered ? root.hoverColor : root.clearColor }
+              Column {
+                id: githubPullContent
+                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                anchors.margins: root.spaceMedium
+                spacing: root.spaceTight
+                Text { width: parent.width; text: githubPullRow.modelData.title; textFormat: Text.PlainText; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+                Text { width: parent.width; text: githubPullRow.modelData.repository + " #" + githubPullRow.modelData.number; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                Text { width: parent.width; text: GitHub.checksLabel(githubPullRow.modelData.checks) + " · " + GitHub.reviewLabel(githubPullRow.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: ["FAILURE", "ERROR"].indexOf(githubPullRow.modelData.checks) >= 0 ? root.red : githubPullRow.modelData.checks === "SUCCESS" ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+              }
+              HoverHandler { id: githubPullHover }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubList.currentIndex = githubPullRow.index; githubStore.openPull(githubPullRow.modelData.url) } }
+            }
+          }
+
+          Text {
+            visible: githubWindow.entries.length === 0 && githubStore.snapshot.state === "ready"
+            width: parent.width
+            text: githubWindow.tab === "reviews" ? "No reviews are waiting for you." : "You have no open pull requests."
+            textFormat: Text.PlainText
+            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody
+          }
+
+          Text {
+            visible: githubStore.snapshot.updatedAt !== ""
+            width: parent.width
+            text: "Showing " + githubWindow.entries.length + " of " + githubWindow.total + " · " + (githubStore.snapshot.stale ? "Last updated " : "Updated ") + Qt.formatTime(new Date(githubStore.snapshot.updatedAt), "HH:mm") + " · Tab to switch · R to refresh"
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption
           }
         }
       }
