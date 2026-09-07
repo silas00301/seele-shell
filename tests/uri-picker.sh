@@ -8,6 +8,28 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin" "$work/runtime"
 
+# Dim browser address text alongside bright chrome. The old whole-image
+# threshold misses this; keep the fixture synthetic rather than saving a capture.
+magick -size 1272x40 xc:'#555779' -fill none -stroke '#aeb1c8' \
+  -draw 'roundrectangle 1,1 1270,37 6,6' -stroke none \
+  -font "$font" -pointsize 16 -fill '#80839f' \
+  -annotate +43+25 'www.example.org/channel' -fill '#ffffff' \
+  -draw 'rectangle 1214,10 1229,24 rectangle 1243,10 1256,24' \
+  -depth 8 "$work/address-bar.ppm"
+node - "$worker" "$work/address-bar.ppm" <<'NODE'
+const { spawnSync } = require('node:child_process')
+const assert = require('node:assert/strict')
+const result = spawnSync(process.argv[2], ['--image', process.argv[3]], { encoding: 'utf8', timeout: 15000 })
+assert.ifError(result.error)
+assert.equal(result.status, 0, result.stderr)
+const messages = result.stdout.trim().split('\n').map(line => JSON.parse(line))
+const links = messages.flatMap(message => message.links || [])
+assert.deepEqual(links.map(link => link.uri), ['https://www.example.org/channel'])
+assert.ok(links[0].x0 > 0.03 && links[0].x0 < 0.04)
+assert.equal(messages.at(-1).failedAreas, 0)
+console.log('URI dim browser address-bar OCR passed')
+NODE
+
 # Real OCR, including a line crossing the 512px strip boundary. No captured
 # personal data, network access or graphical session is needed for this test.
 magick -size 1400x1100 xc:'#11111b' -font "$font" -pointsize 30 -fill '#cdd6f4' \

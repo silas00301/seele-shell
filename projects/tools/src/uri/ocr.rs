@@ -81,6 +81,10 @@ impl Ocr {
             {
                 return Err("cannot load nixpkgs English OCR data".into());
             }
+            // Local thresholds preserve dim address-bar text beside bright
+            // icons and borders that dominate a whole-strip Otsu threshold.
+            api.set("thresholding_method", "2")?; // Sauvola
+            api.set("thresholding_kfactor", "0.15")?;
             TessBaseAPISetPageSegMode(api.0, 11); // sparse screen text, no orientation pass
             Ok(api)
         }

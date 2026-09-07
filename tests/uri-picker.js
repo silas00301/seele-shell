@@ -44,11 +44,12 @@ const launched = []
 const model = { items: [], append(link) { this.items.push(link) }, clear() { this.items = [] } }
 const state = vm.createContext({
   Uris: context,
-  active: false, presented: false, complete: false, generation: 0,
+  active: false, presented: false, complete: false, generation: 0, notice: "",
   digits: "", confirmPending: false, error: "", hoveredUri: "", failedAreas: 0,
   frames: [], allLinks: [], loaded: {}, linkModel: model,
   worker: { running: true, write(message) { sent.push(JSON.parse(message)) } },
   watchdog: { restart() {}, stop() {} },
+  noticeTimer: { running: false, restart() { this.running = true }, stop() { this.running = false } },
   Quickshell: { screens: [{ name: "DP-1" }, { name: "DP-2" }], execDetached(argv) { launched.push(Array.from(argv)) } },
   Qt: { Key_Escape: 27, Key_Backspace: 8, Key_Return: 13, Key_Enter: 14,
     Key_0: 48, Key_9: 57, ControlModifier: 0x04000000, AltModifier: 0x08000000, MetaModifier: 0x10000000 }
@@ -105,3 +106,35 @@ assert.equal(launched.length, launchCount)
 press(27)
 assert.equal(state.active, false)
 console.log("URI controller capture barriers, stale generations, buffered input and argv launches passed")
+
+state.open()
+const emptyId = state.generation
+state.accept({ id: emptyId, event: "frames", frames: [{ output: "DP-1" }] })
+state.imageReady("DP-1")
+state.accept({ id: emptyId, event: "done", failedAreas: 0 })
+assert.equal(state.active, false, "empty scan must release keyboard capture")
+assert.equal(state.presented, false, "empty scan must unfreeze immediately")
+assert.equal(state.frames.length, 0)
+assert.equal(state.notice, "No links found")
+assert.equal(state.noticeTimer.running, true)
+assert.equal(sent.at(-1).command, "cancel")
+state.imageReady("DP-1")
+state.accept({ id: emptyId, event: "links", links: [{ number: 1, uri: literal }] })
+assert.equal(state.presented, false)
+assert.equal(model.items.length, 0)
+assert.match(controller, /id: noticeTimer\s+interval: 5000\s+onTriggered: picker.dismissNotice\(\)/)
+state.dismissNotice()
+assert.equal(state.notice, "")
+state.open()
+state.accept({ id: state.generation, event: "done", failedAreas: 1 })
+assert.equal(state.notice, "Could not read this screen")
+state.open()
+assert.equal(state.notice, "")
+assert.equal(state.noticeTimer.running, false)
+state.fail("Reading the screens timed out")
+assert.equal(state.active, false)
+assert.equal(state.presented, false)
+assert.equal(state.notice, "Reading the screens timed out")
+state.close()
+assert.equal(state.notice, "")
+console.log("URI empty scans and failures unfreeze immediately; notices expire after five seconds")

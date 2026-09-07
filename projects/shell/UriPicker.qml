@@ -13,13 +13,14 @@ Scope {
   property string digits: ""
   property bool confirmPending: false
   property string error: ""
+  property string notice: ""
   property string hoveredUri: ""
   property int failedAreas: 0
   property var frames: []
   property var allLinks: []
   property var loaded: ({})
   property alias links: linkModel
-  readonly property string detail: error !== "" ? error
+  readonly property string detail: notice !== "" ? notice : error !== "" ? error
     : digits !== "" ? "Number " + digits + " · Enter to open · Backspace to edit"
     : !complete ? "Finding links…"
     : allLinks.length === 0 ? (failedAreas ? "Could not read this screen" : "No links found")
@@ -32,6 +33,7 @@ Scope {
   }
 
   function open() {
+    dismissNotice()
     generation++
     active = true
     presented = false
@@ -56,6 +58,7 @@ Scope {
   }
 
   function close() {
+    dismissNotice()
     if (!active) return
     active = false
     presented = false
@@ -66,6 +69,17 @@ Scope {
     linkModel.clear()
     hoveredUri = ""
     send({ command: "cancel", id: generation })
+  }
+
+  function dismissNotice() {
+    noticeTimer.stop()
+    notice = ""
+  }
+
+  function showNotice(message) {
+    close()
+    notice = message
+    noticeTimer.restart()
   }
 
   function frame(output) {
@@ -85,9 +99,7 @@ Scope {
     error = message
     complete = true
     watchdog.stop()
-    // Preserve successfully loaded frames while keeping Escape available.
-    presented = true
-    send({ command: "cancel", id: generation })
+    showNotice(message)
   }
 
   function accept(message) {
@@ -102,9 +114,13 @@ Scope {
       complete = true
       failedAreas = message.failedAreas
       watchdog.stop()
+      if (allLinks.length === 0) {
+        showNotice(failedAreas ? "Could not read this screen" : "No links found")
+        return
+      }
       choose(confirmPending)
     } else if (message.event === "error") {
-      fail("Screen links unavailable · Esc to dismiss")
+      fail("Screen links unavailable")
     }
   }
 
@@ -146,18 +162,24 @@ Scope {
     stdout: SplitParser {
       onRead: data => {
         try { picker.accept(JSON.parse(data)) }
-        catch (_) { if (picker.active) picker.fail("Screen links unavailable · Esc to dismiss") }
+        catch (_) { if (picker.active) picker.fail("Screen links unavailable") }
       }
     }
     onRunningChanged: {
-      if (!running && picker.active) picker.fail("Screen links unavailable · Esc to dismiss")
+      if (!running && picker.active) picker.fail("Screen links unavailable")
     }
   }
 
   Timer {
     id: watchdog
     interval: 15000
-    onTriggered: picker.fail("Reading the screens timed out · Esc to dismiss")
+    onTriggered: picker.fail("Reading the screens timed out")
+  }
+
+  Timer {
+    id: noticeTimer
+    interval: 5000
+    onTriggered: picker.dismissNotice()
   }
 
   Connections {

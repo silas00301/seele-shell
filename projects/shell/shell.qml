@@ -4125,7 +4125,7 @@ ShellRoot {
         fillMode: Image.Stretch
         onStatusChanged: {
           if (status === Image.Ready) uriPicker.imageReady(uriWindow.modelData.name)
-          else if (status === Image.Error && uriPicker.active) uriPicker.fail("Could not display the capture · Esc to dismiss")
+          else if (status === Image.Error && uriPicker.active) uriPicker.fail("Could not display the capture")
         }
       }
 
@@ -4221,12 +4221,35 @@ ShellRoot {
         }
       }
 
+      Connections {
+        target: uriWindow.modelData
+        function onWidthChanged() { if (uriPicker.active) uriPicker.close() }
+        function onHeightChanged() { if (uriPicker.active) uriPicker.close() }
+      }
+    }
+  }
+
+  // The status card has its own input-transparent surface so an empty scan
+  // can release the frozen images and keyboard while its result remains visible.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      anchors.bottom: true
+      margins.bottom: root.panelMargin
+      implicitWidth: Math.min(modelData.width - root.panelMargin * 2, root.controlHeight * 16)
+      implicitHeight: uriStatus.implicitHeight + root.cardPadding * 2
+      visible: uriPicker.presented || uriPicker.notice !== ""
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      mask: Region {}
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-uris-status"
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
       Rectangle {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.panelMargin
-        width: Math.min(uriWindow.width - root.panelMargin * 2, root.controlHeight * 16)
-        height: uriStatus.implicitHeight + root.cardPadding * 2
+        anchors.fill: parent
         radius: root.radius
         color: root.panelColor
         border.width: 1
@@ -4266,12 +4289,6 @@ ShellRoot {
         }
         SurfaceEdge {}
         SurfaceGrain { inset: root.radius / 3 }
-      }
-
-      Connections {
-        target: uriWindow.modelData
-        function onWidthChanged() { if (uriPicker.active) uriPicker.close() }
-        function onHeightChanged() { if (uriPicker.active) uriPicker.close() }
       }
     }
   }

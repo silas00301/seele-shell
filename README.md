@@ -76,6 +76,9 @@ the exact match: `1` + Enter selects 1 when 10 also exists. Numbers are stable
 as OCR results arrive. Enter or a click can open an already numbered link
 while other regions are still being recognized. Automatic number selection
 waits until the complete number set is known.
+If a scan finds no links, it releases the frozen screens and keyboard
+immediately. A click-through result card remains for five seconds. Capture
+failures and timeouts follow the same dismissal behavior.
 
 The overlay uses the shell's existing palette, Maple typography, surface tokens,
 header, edges and grain. It has no opening animation or full-screen blur pass.
@@ -91,7 +94,8 @@ Qt displays those same files without a PNG encode/decode round trip. OCR runs
 in overlapping horizontal strips, interleaved across outputs. A Rust grayscale
 pass normalizes dark backgrounds and enlarges each strip by 1.5× with bilinear
 interpolation, improving small-text recognition without changing the displayed
-capture. Each strip owns
+capture. Tesseract uses local adaptive thresholds to retain dim address-bar text
+beside bright icons and borders. Each strip owns
 only links whose center lies in its core region, preventing duplicate numbers
 at seams. Results stream into a retained QML ListModel. Idle workers block on
 channels and retain models, while image allocations are released after OCR.
@@ -116,7 +120,8 @@ complex backgrounds and links wrapped across lines may not be recognized.
 
 `tests/uri-picker.sh` runs real OCR against generated dark-screen fixtures on
 two simulated outputs, including 16px text with query punctuation and a link
-crossing a strip boundary, quoted Nix assignments, and sentence boundaries. It verifies
+crossing a strip boundary, quoted Nix assignments, and sentence boundaries. A
+separate dim address-bar fixture checks local contrast. The tests verify
 capture identity, file permissions, numbering, cancellation during capture and
 OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
 selection and badge placement at screen edges. For a local OCR timing sample,
