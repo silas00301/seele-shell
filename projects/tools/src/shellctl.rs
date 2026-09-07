@@ -1,4 +1,4 @@
-use crate::command::{exec, output};
+use crate::command::{detached, exec, output};
 use crate::Result;
 use std::env;
 use std::process::Command;
@@ -19,6 +19,7 @@ Commands:
   volume <up|down|mute>     Change volume and show its OSD
   microphone <up|down|mute> Change the microphone and show its OSD
   microphone-state <muted|live> Show a device mute OSD
+  notes                     Open the standalone Notes and voice memo app
   voxtype                   Toggle voice dictation
   lock                      Lock the session
   notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
@@ -103,7 +104,11 @@ pub fn run(arguments: &[String]) -> Result {
             }
             let state = output("wpctl", ["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
                 .ok_or("microphone state unavailable")?;
-            let muted = if state.contains("MUTED") { "muted" } else { "live" };
+            let muted = if state.contains("MUTED") {
+                "muted"
+            } else {
+                "live"
+            };
             call("showMicrophone", &[muted.into()])?;
             call("refreshStatus", &[])
         }
@@ -122,6 +127,7 @@ pub fn run(arguments: &[String]) -> Result {
             "showMicrophone",
             &[rest.first().ok_or("muted or live required")?.clone()],
         ),
+        "notes" => detached("seele-notes", &[]),
         "voxtype" => {
             let result = output("seele-control", ["voxtype"]).ok_or("voxtype control failed")?;
             call("updateStatus", &[result])

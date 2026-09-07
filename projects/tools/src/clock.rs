@@ -1,4 +1,4 @@
-use crate::command::{atomic_write, output, state_home};
+use crate::command::{atomic_write, state_home};
 use crate::Result;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -39,9 +39,13 @@ struct Zone {
 }
 
 fn zoneinfo() -> PathBuf {
-    env::var_os("TZDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/etc/zoneinfo"))
+    env::var_os("TZDIR").map(PathBuf::from).unwrap_or_else(|| {
+        ["/etc/zoneinfo", "/usr/share/zoneinfo"]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|path| path.join("zone.tab").is_file())
+            .unwrap_or_else(|| PathBuf::from("/usr/share/zoneinfo"))
+    })
 }
 
 fn flag(code: &str) -> String {
@@ -61,9 +65,19 @@ fn sources() -> Result<Vec<ZoneSource>> {
         .filter(|line| !line.starts_with('#'))
         .filter_map(|line| line.split_once('\t'))
         .collect();
-    let table = fs::read_to_string(directory.join("zone1970.tab"))?;
-    let mut zones = Vec::new();
-    for line in table.lines().filter(|line| !line.starts_with('#')) {
+    // zone1970.tab merges cities whose rules have agreed since 1970. The
+    // geographic table retains those cities and their own country labels.
+    let geographic = fs::read_to_string(directory.join("zone.tab")).unwrap_or_default();
+    let historical = fs::read_to_string(directory.join("zone1970.tab")).unwrap_or_default();
+    if geographic.is_empty() && historical.is_empty() {
+        return Err("No timezone table found in TZDIR".into());
+    }
+    let mut zones: Vec<ZoneSource> = Vec::new();
+    for line in geographic
+        .lines()
+        .chain(historical.lines())
+        .filter(|line| !line.starts_with('#'))
+    {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() < 3 {
             continue;
@@ -77,6 +91,10 @@ fn sources() -> Result<Vec<ZoneSource>> {
             .collect::<Vec<_>>()
             .join(" ");
         let comment = fields.get(3).copied().unwrap_or("");
+        if let Some(existing) = zones.iter_mut().find(|zone| zone.id == id) {
+            existing.aliases.push_str(&format!(" {names} {comment}"));
+            continue;
+        }
         zones.push(ZoneSource {
             id: id.into(),
             zone: id.into(),
@@ -85,6 +103,24 @@ fn sources() -> Result<Vec<ZoneSource>> {
             aliases: format!("{} {} {}", id.replace(['_', '/'], " "), names, comment),
             kind: "city".into(),
         });
+    }
+    // tzdata supplies backward-compatible spellings (Kiev, Calcutta,
+    // US/Eastern, …). Associate those names with the actual database entry.
+    if let Ok(links) = fs::read_to_string(directory.join("tzdata.zi")) {
+        let links: Vec<_> = links
+            .lines()
+            .filter_map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                (fields.len() >= 3 && matches!(fields[0], "L" | "Link"))
+                    .then(|| (fields[1].to_owned(), fields[2].to_owned()))
+            })
+            .collect();
+        for (target, alias) in links {
+            if let Some(zone) = zones.iter_mut().find(|zone| zone.id == target) {
+                zone.aliases
+                    .push_str(&format!(" {alias} {}", alias.replace(['_', '/'], " ")));
+            }
+        }
     }
     zones.sort_by(|left, right| left.label.cmp(&right.label));
     zones.push(ZoneSource {
@@ -135,24 +171,28 @@ fn format_time(epoch: i64, format: &str) -> String {
 }
 
 fn zone_time(epoch: i64) -> [String; 4] {
-    let combined = format_time(epoch, "%H:%M\n%a %d %b\n%Z\n%z");
+    let combined = format_time(epoch, "%H:%M\n%Y-%m-%d\n%Z\n%z");
     let fields: Vec<_> = combined.split('\n').map(str::to_owned).collect();
     fields.try_into().unwrap_or_else(|_| {
         // Preserve the individual conversions for unusually long locale data
         // or a timezone abbreviation containing the separator.
-        ["%H:%M", "%a %d %b", "%Z", "%z"].map(|pattern| format_time(epoch, pattern))
+        ["%H:%M", "%Y-%m-%d", "%Z", "%z"].map(|pattern| format_time(epoch, pattern))
     })
 }
 
 fn seasonal_aliases(zones: &mut [ZoneSource], now: i64) {
     let directory = zoneinfo();
     let year = format_time(now, "%Y");
-    let winter = output("date", ["-d", &format!("{year}-01-15 12:00"), "+%s"])
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(now);
-    let summer = output("date", ["-d", &format!("{year}-07-15 12:00"), "+%s"])
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(now);
+    let season = |month| {
+        let mut date: libc::tm = unsafe { std::mem::zeroed() };
+        date.tm_year = year.parse::<i32>().unwrap_or(1970) - 1900;
+        date.tm_mon = month;
+        date.tm_mday = 15;
+        date.tm_hour = 12;
+        unsafe { libc::timegm(&mut date) as i64 }
+    };
+    let winter = season(0);
+    let summer = season(6);
     let previous_tz = env::var_os("TZ");
     for source in zones {
         let timezone = if source.zone.contains('/') {
@@ -202,14 +242,21 @@ struct CatalogKey {
 fn catalog_key(now: i64) -> CatalogKey {
     let directory = fs::canonicalize(zoneinfo()).unwrap_or_else(|_| zoneinfo());
     CatalogKey {
-        files: ["", "iso3166.tab", "zone1970.tab", "tzdata.zi", "Etc"]
-            .iter()
-            .map(|name| {
-                fs::metadata(directory.join(name))
-                    .ok()
-                    .and_then(|info| Some((info.len(), info.modified().ok()?)))
-            })
-            .collect(),
+        files: [
+            "",
+            "iso3166.tab",
+            "zone.tab",
+            "zone1970.tab",
+            "tzdata.zi",
+            "Etc",
+        ]
+        .iter()
+        .map(|name| {
+            fs::metadata(directory.join(name))
+                .ok()
+                .and_then(|info| Some((info.len(), info.modified().ok()?)))
+        })
+        .collect(),
         directory,
         context: ["TZ", "LC_ALL", "LC_TIME", "LANG"]
             .iter()
@@ -265,7 +312,10 @@ impl Catalog {
             })
             .collect();
         restore_timezone(previous_tz);
-        Ok(json!({"pinned":pins(&self.zones),"zones":zones}))
+        let [time, day, abbreviation, offset] = zone_time(now);
+        Ok(json!({"pinned":pins(&self.zones),"zones":zones,
+            "local":{"time":time,"day":day,"abbreviation":abbreviation,"offset":offset},
+            "epoch":now}))
     }
 }
 
@@ -286,9 +336,14 @@ fn resolve(wanted: &str, zones: &[ZoneSource]) -> Option<String> {
         .iter()
         .find(|zone| zone.id.eq_ignore_ascii_case(wanted))
         .or_else(|| {
-            zones
-                .iter()
-                .find(|zone| zone.zone.eq_ignore_ascii_case(wanted))
+            zones.iter().find(|zone| {
+                zone.zone.eq_ignore_ascii_case(wanted)
+                    || (wanted.contains('/')
+                        && zone
+                            .aliases
+                            .split_whitespace()
+                            .any(|alias| alias.eq_ignore_ascii_case(wanted)))
+            })
         })
         .map(|zone| zone.id.clone())
 }
@@ -299,9 +354,13 @@ fn pins(zones: &[ZoneSource]) -> Vec<String> {
     };
     if let Ok(values) = serde_json::from_str::<Vec<Value>>(&text) {
         let mut result = Vec::new();
-        for value in values.iter().filter_map(Value::as_str) {
-            if !result.iter().any(|item| item == value) {
-                result.push(value.to_owned());
+        for id in values
+            .iter()
+            .filter_map(Value::as_str)
+            .filter_map(|value| resolve(value, zones))
+        {
+            if !result.contains(&id) {
+                result.push(id);
             }
         }
         result

@@ -7,6 +7,12 @@ import Windows from "./windows";
 
 const commands = [
   {
+    title: "Notes and Voice Memos",
+    subtitle: "Write, record, and keep ideas locally",
+    icon: Icon.Document,
+    args: ["notes"],
+  },
+  {
     title: "Control Center",
     subtitle: "Network, Bluetooth, camera, headphones, sound, and now playing",
     icon: Icon.Gauge,

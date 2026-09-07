@@ -1,12 +1,14 @@
 # Seele Shell
 
 Seele is a Quickshell desktop shell packaged as a Nix flake. The flake exposes
-the main shell plus separate greeter, lock-screen, and polkit packages.
+the main shell plus separate Notes, greeter, lock-screen, and polkit packages.
 
 ## Layout
 
 - `packages/core/`: shared Rust package definition and local upstream patches.
 - `projects/shell/`: main Quickshell UI, agent integrations, and package definition.
+- `projects/notes/`: standalone Notes and voice memo application.
+- `projects/shared/`: theme, surface, typography, control, and waveform components shared by the shell and Notes.
 - `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, URI picking, and shell-control commands.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
@@ -17,10 +19,10 @@ definition in `projects/shell/` combines the runtime tools. The greeter, lock,
 and polkit packages use `packages/core/` directly and do not import the main
 shell.
 
-`projects/shell/shell.qml` opens with the design tokens every surface reads
+`projects/shared/Theme.qml` owns the design tokens the shell and Notes read
 from — the type ramp, weights, tracking, spacing, control heights, elevation
-fills, surface edges, and the two motion durations — followed by the shared
-components those surfaces are assembled out of. `CenteredGlyph.qml` keeps icon
+fills, surface edges, and the two motion durations — with shared
+components beside it. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
 ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients mirror the subset of those tokens they use
 so all four read as one desktop.
@@ -64,7 +66,58 @@ callback's handling of partial updates.
 memory. It emits an initial snapshot and handles `refresh` lines on stdin.
 Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
-shell keeps its 30-second clock refresh and restarts either worker if it exits.
+shell refreshes at minute boundaries and whenever the clock panel opens. Times,
+ISO dates, and offsets come from the same snapshot. Local seconds tick only
+while the clock is expanded; calendar models change only when the date changes.
+The catalog merges `zone.tab` and `zone1970.tab`, adds aliases from `tzdata.zi`,
+and normalizes saved pins. City and country names come from the database.
+
+## Notes and voice memos
+
+Run `seele-notes`, choose **Seele Notes** in the application launcher, or use
+`seele-shellctl notes`. The flake exposes `packages.<system>.notes`. This is a
+separate desktop application: it can run without Seele Shell, and repeated
+launches reopen its existing window. It reads the same `seele-shell/theme.json`
+and imports the same QML materials and tokens.
+
+Notes support editable titles and text, full-text search, autosave, and
+recoverable Trash. Ctrl+N creates a note, Ctrl+F searches, Ctrl+S retries a save,
+Ctrl+Enter starts/stops a voice memo, and Ctrl+W closes the window. Closing the
+window saves text and finishes recording. The idle process stays available for
+reopening; it does not keep the microphone open.
+
+`seele-notes-store watch` exchanges JSON lines on stdin/stdout. Notes live in
+`$XDG_DATA_HOME/seele-shell/notes` (default `~/.local/share/seele-shell/notes`),
+with 0700 directories and 0600 atomic JSON/WAV files. A note's directory contains
+`note.json` and its voice memos. Trash is reversible and never deletes audio.
+Text stays out of process arguments. Save acknowledgements carry request IDs so
+an older response cannot replace newer edits. Failed saves retain the draft
+and block a pending move to Trash.
+
+Recording uses the default PipeWire/PulseAudio microphone through `parecord`.
+The worker owns and reaps the child, streams real levels, and finalizes a mono
+16 kHz PCM WAV on Stop, stdin EOF, or SIGTERM. Recording is capped at one hour;
+a locked recording note cannot be trashed. `.part` files are excluded from the
+library until a complete WAV is saved. Playback supports pause and seeking and
+is isolated from the editor if QtMultimedia cannot load. No cloud service,
+transcription, or telemetry is involved.
+
+`tests/notes.py` checks the production storage and recorder with a synthetic
+microphone, including permissions, restore, failure, EOF, and signal cleanup.
+`tests/notes-store.js` tests the QML save/reconnect callbacks and
+`tests/notes.js` covers search and draft merging. Build with
+`nix build .#notes --no-link --no-write-lock-file`.
+
+## Dictation waveform
+
+`DictationState.qml` follows `voxtype status --follow --format json`. The
+bottom overlay stays on the output where dictation began, accepts no pointer
+or keyboard input, and shows Listening or Transcribing. Its waveform consumes
+Voxtype 0.7's `voxtype/audio.sock` native frames through the Rust
+`seele-dictation-levels` bridge. It drains the 100 Hz feed and sends 20 Hz peaks
+to the shared waveform; no second microphone capture or persistent audio file
+is created. Socket reconnects, malformed samples, and EOF cleanup are covered
+by `tests/dictation.py`. Voxtype's own OSD remains disabled.
 
 ## Copy notification text
 

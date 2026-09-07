@@ -9,6 +9,7 @@ mod grain;
 mod launch;
 mod live;
 mod mic_sync;
+mod notes;
 mod nothing;
 mod pipewire;
 mod receiver;
@@ -47,6 +48,7 @@ fn run() -> Result {
         "seele-os-session" => Some("os-session"),
         "seele-shellctl" => Some("shellctl"),
         "seele-clock" => Some("clock"),
+        "seele-notes-store" => Some("notes"),
         "seele-yubikey-watch" => Some("yubikey-watch"),
         "seele-lock-run" => Some("lock-run"),
         "seele-greeter-run" => Some("greeter-run"),
@@ -75,6 +77,7 @@ fn run() -> Result {
         "os-session" => session::run(&arguments),
         "shellctl" => shellctl::run(&arguments),
         "clock" => clock::run(&arguments),
+        "notes" => notes::run(&arguments),
         "yubikey-watch" => bluetooth::watch_yubikey(),
         "lock-run" => launch::lock(&arguments),
         "greeter-run" => launch::greeter(&arguments),

@@ -11,171 +11,14 @@ import Quickshell.Services.Mpris
 import Quickshell.Services.SystemTray
 import Quickshell.Wayland
 import Quickshell.Widgets
+import "../shared" as Shared
 import "media.js" as Media
-import "media-speed.js" as MediaSpeed
 import "time.js" as Time
 import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
-import "github.js" as GitHub
 
-ShellRoot {
+Shared.Theme {
   id: root
-
-  // Seele's native desktop shell.
-  property color base: "#1e1e2e"
-  property color mantle: "#181825"
-  // The darkest step in the palette. Chrome is cut out of the wallpaper with
-  // it, wells are cut back to it, and every surface is grounded on it, so the
-  // shell's depth comes from ink rather than from grey.
-  property color crust: "#11111b"
-  property color surface: "#313244"
-  property color overlay: "#6c7086"
-  property color text: "#cdd6f4"
-  property color subtext: "#a6adc8"
-  property color accent: "#b4befe"
-  property color red: "#f38ba8"
-  property color green: "#a6e3a1"
-  property color yellow: "#f9e2af"
-  property string fontFamily: "Maple Mono NF CN"
-  // iOS-style privacy indicator colours, deliberately outside the theme palette.
-  property color iosOrange: "#ff9f0a"
-  property color iosGreen: "#30d158"
-  property color iosRed: "#ff453a"
-  property string wallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || "/etc/wallpaper/wallpaper.jpg"
-
-  // Shared shape and surface tokens. Hyprland rounds windows at 8px, so every
-  // panel, button, and bar entry rounds the same way, and each hover, press,
-  // and selection tint is defined once instead of per widget.
-  readonly property int radius: 8
-  readonly property int radiusSmall: 6
-  readonly property int barHeight: 30
-  readonly property int barItemHeight: 22
-  readonly property int barSpacing: 2
-  readonly property int barPadding: 4
-  readonly property int panelGap: 5
-  // One spring for every scrollable. Qt's default overshoot drifts long enough
-  // to read as lag rather than as feedback, so the flick decelerates hard and
-  // the rebound is short.
-  readonly property int scrollRebound: 130
-  readonly property int scrollDeceleration: 9000
-  readonly property int scrollFlickVelocity: 2200
-  readonly property int osdGap: 16
-  readonly property int panelMargin: 16
-  readonly property int panelSpacing: 10
-  readonly property int scrollGutter: 8
-  readonly property int scrollInset: 4
-  readonly property int panelHeaderHeight: 28
-  // One type ramp for the whole shell. Steps are named for the role they play
-  // rather than for their value, so a surface picks a level instead of
-  // inventing a number, and the ramp is the only place a size is decided. A
-  // glyph normally takes the step above the text it sits beside, because an
-  // icon drawn at the same pixel size reads smaller than a letter does.
-  readonly property int textMicro: 8       // a numeral riding beside a label
-  readonly property int textCaption: 9     // row detail and secondary state
-  readonly property int textLabel: 10      // button, chip and section labels
-  readonly property int textBody: 11       // row titles and primary body text
-  readonly property int textStrong: 12     // emphasised body, menu bar clock
-  readonly property int textLead: 13       // a card's own subject
-  readonly property int textIcon: 14       // menu bar and list-row glyphs
-  readonly property int textSubhead: 15    // a card's lead subject
-  readonly property int textCard: 17       // the glyph a card leads with
-  readonly property int textTitle: 18      // panel titles
-  readonly property int textDisplay: 20    // panel glyphs and hero numerals
-  readonly property int textCode: 26       // a pairing code, read at arm's length
-  readonly property int textHero: 34       // the single glyph a prompt leads with
-  // Weight carries hierarchy instead of bolding everything: DemiBold for a
-  // title or an active label, Medium for a quiet one, Light only for the large
-  // numerals that would otherwise read as a wall.
-  readonly property int weightRegular: Font.Normal
-  readonly property int weightMedium: Font.Medium
-  readonly property int weightStrong: Font.DemiBold
-  readonly property int weightLight: Font.Light
-  // Uppercase section labels are the one place tracking earns its width, and
-  // they earn more of it than a run of capitals at ordinary spacing would: a
-  // rule reads as a rule, rather than as a shouted word, once the letters are
-  // far enough apart to be seen individually.
-  readonly property real trackingLabel: 1.4
-  // Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`.
-  readonly property int spaceTight: 4
-  readonly property int spaceSmall: 6
-  readonly property int spaceMedium: 8
-  readonly property int spaceLarge: 12
-  readonly property int cardPadding: 10
-  // The three heights a chip, a button and a list row take, so a panel keeps
-  // its rhythm no matter which surface assembled it. A tile or a card still
-  // sizes to what it holds.
-  readonly property int chipHeight: 28
-  readonly property int controlHeight: 34
-  readonly property int rowHeight: 40
-  // A notification card is as tall as what it holds, but never shorter than
-  // this: one line of summary over one line of body, beside the app icon. An
-  // empty list is measured against it too, so "nothing here" costs one card.
-  readonly property int notificationRowHeight: 54
-  // Text needs more contrast than decorative borders and inactive glyphs.
-  readonly property color mutedText: subtext
-  // Textured chrome. Surfaces stay translucent so the compositor's blur
-  // shows through, a quiet vertical wash gives them depth, and a fixed grain
-  // film keeps a large panel from reading as flat plastic. The film is fine
-  // and clumped rather than raw noise, so it carries further before it is
-  // seen: it is laid on a little heavier than a coarse one could be.
-  readonly property string grain: "grain.png"
-  readonly property real grainOpacity: 0.07
-  readonly property color panelColor: alpha(mantle, 0.88)
-  // Edges. A surface is cut out of the wallpaper by a grounding ring in the
-  // palette's darkest ink, and lit again on the inside by a hairline that is
-  // brightest along the top, where light would actually land. Neither edge
-  // carries the accent: outlining every panel in lavender spends the accent
-  // on chrome, and it is worth more kept for state.
-  readonly property color panelBorder: alpha(crust, 0.9)
-  readonly property color edgeLight: alpha(text, 0.08)
-  readonly property color edgeCrown: alpha(text, 0.16)
-  // Interaction. The pointer is reported in neutral light and the commit is
-  // reported in accent, so hovering the shell does not set it glowing and a
-  // press still reads as something having been asked for. `hoverColor` is a
-  // wash: filled controls composite it over their resting material instead of
-  // replacing that material with a nearly transparent colour.
-  readonly property color hoverColor: alpha(text, 0.07)
-  // Where a tint rests on nothing at all it fades to its own colour at zero
-  // alpha rather than to `transparent`. Qt interpolates a colour channel by
-  // channel and `transparent` is black, so a tint animated against it is
-  // dragged down through grey on the way in and back up through it on the way
-  // out. The pill then reads as a smudge lifting off the strip instead of as
-  // light arriving on it.
-  readonly property color clearColor: alpha(text, 0)
-  readonly property color clearDanger: alpha(red, 0)
-  readonly property color pressColor: alpha(accent, 0.3)
-  readonly property color selectedColor: alpha(accent, 0.2)
-  readonly property color activeTint: alpha(accent, 0.12)
-  readonly property color fillColor: alpha(accent, 0.45)
-  readonly property color fillDanger: alpha(red, 0.45)
-  readonly property color successColor: alpha(green, 0.25)
-  readonly property color dangerTint: alpha(red, 0.14)
-  readonly property color dangerColor: alpha(red, 0.28)
-  readonly property color dangerPress: alpha(red, 0.48)
-  // Elevation. A panel is translucent, so a card on it is a tint of the same
-  // material rather than an opaque block, a row inside that card is a lighter
-  // tint again, and a track or well is cut back to the ink. Depth then
-  // comes from how much of the wallpaper each layer still lets through instead
-  // of from a stack of flat greys. `floatColor` is the one nearly solid step,
-  // for a control that overlaps a row whose own fill moves under the pointer.
-  readonly property color cardColor: alpha(surface, 0.5)
-  readonly property color rowColor: alpha(surface, 0.3)
-  readonly property color wellColor: alpha(crust, 0.62)
-  readonly property color floatColor: alpha(surface, 0.92)
-  readonly property color cardBorder: alpha(text, 0.06)
-  readonly property color separatorColor: alpha(text, 0.09)
-  // Motion. Only in-surface state changes animate, and they share one pair of
-  // durations so the whole shell settles at the same speed.
-  readonly property int durationFast: 110
-  readonly property int durationNormal: 180
-  // The media block is one object at one size, so its height is decided here
-  // rather than by whichever surface happens to be holding it.
-  readonly property int mediaBodyHeight: 148
-
-  FocusTimer {
-    id: focusTimer
-    onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
-  }
 
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
@@ -229,7 +72,10 @@ ShellRoot {
   // so the panel shows a notification whole and only the toast keeps it to one
   // line until asked.
   property var notificationUnfolded: ({})
-  property var clockData: ({ pinned: [], zones: [] })
+  property var clockData: ({ pinned: [], zones: [], local: {} })
+  property string clockError: ""
+  readonly property string calendarDay: Qt.formatDate(now, "yyyy-MM-dd")
+  readonly property date calendarDate: new Date(calendarDay + "T12:00:00")
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
@@ -283,25 +129,6 @@ ShellRoot {
   property string speedtestPhase: ""
   property bool speedtestReceived: false
   property date now: new Date()
-
-  function alpha(color, opacity) {
-    return Qt.rgba(color.r, color.g, color.b, opacity)
-  }
-
-  function layeredColor(base, tint) {
-    var opacity = tint.a + base.a * (1 - tint.a)
-    if (opacity <= 0) return Qt.rgba(0, 0, 0, 0)
-    return Qt.rgba(
-      (tint.r * tint.a + base.r * base.a * (1 - tint.a)) / opacity,
-      (tint.g * tint.a + base.g * base.a * (1 - tint.a)) / opacity,
-      (tint.b * tint.a + base.b * base.a * (1 - tint.a)) / opacity,
-      opacity
-    )
-  }
-
-  function hoveredColor(base) {
-    return layeredColor(base, hoverColor)
-  }
 
   function focusedScreen(screen) {
     return !Hyprland.focusedMonitor || Hyprland.focusedMonitor.name === screen.name
@@ -391,6 +218,7 @@ ShellRoot {
     closeOverlays()
     controlPanel = shouldOpen ? panel : ""
     if (controlPanel === "") return
+    if (panel === "clock") refreshClock()
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
     var group = panel === "notifications" ? "notifications"
@@ -1637,7 +1465,7 @@ ShellRoot {
   function parseClockData(output) {
     try {
       var parsed = JSON.parse(String(output || ""))
-      if (parsed && parsed.zones) root.clockData = parsed
+      if (parsed && parsed.zones) { root.clockData = parsed; root.clockError = "" }
     } catch (error) {
       console.warn("seele-shell/clock", error)
     }
@@ -1663,31 +1491,6 @@ ShellRoot {
     clockActionProcess.running = true
   }
 
-  FileView {
-    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/seele-shell/theme.json"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: {
-      try {
-        var theme = JSON.parse(text())
-        root.base = theme.base || root.base
-        root.mantle = theme.mantle || root.mantle
-        root.crust = theme.crust || root.crust
-        root.surface = theme.surface || root.surface
-        root.overlay = theme.overlay || root.overlay
-        root.text = theme.text || root.text
-        root.subtext = theme.subtext || root.subtext
-        root.accent = theme.accent || root.accent
-        root.red = theme.red || root.red
-        root.green = theme.green || root.green
-        root.yellow = theme.yellow || root.yellow
-        root.fontFamily = theme.fontFamily || root.fontFamily
-      } catch (error) {
-        console.warn("seele-shell/theme", error)
-      }
-    }
-  }
 
   Process {
     id: agentProcess
@@ -1710,7 +1513,8 @@ ShellRoot {
     stdout: SplitParser {
       onRead: data => root.parseClockData(data)
     }
-    onExited: clockRestartTimer.restart()
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.clockError = text.trim() }
+    onExited: { root.clockError = "World clocks are unavailable. Retrying…"; clockRestartTimer.restart() }
   }
 
   Timer {
@@ -1721,7 +1525,8 @@ ShellRoot {
 
   Process {
     id: clockActionProcess
-    onExited: root.refreshClock()
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.clockError = text.trim() }
+    onExited: code => { if (code === 0) root.refreshClock() }
   }
 
   Process {
@@ -1854,23 +1659,18 @@ ShellRoot {
   }
 
   Timer {
-    interval: 30000
+    interval: 1000
     repeat: true
     running: true
     triggeredOnStart: true
     onTriggered: {
-      root.now = new Date()
-      root.refreshClock()
+      var next = new Date()
+      var oldMinute = Math.floor(root.now.getTime() / 60000)
+      if (root.controlPanel === "clock" || Math.floor(next.getTime() / 60000) !== oldMinute) root.now = next
+      if (root.clockData.zones.length === 0 || Math.floor(next.getTime() / 60000) !== oldMinute) root.refreshClock()
     }
   }
 
-  Timer {
-    interval: 1000
-    repeat: true
-    running: root.controlPanel === "clock"
-    triggeredOnStart: true
-    onTriggered: root.now = new Date()
-  }
 
   Timer {
     id: controlFeedbackTimer
@@ -1937,11 +1737,6 @@ ShellRoot {
     }
   }
 
-  GitHubStore {
-    id: githubStore
-    active: root.controlPanel === "github"
-  }
-
   NotificationStore {
     id: notificationStore
     onPublished: (view, dnd) => {
@@ -1995,76 +1790,13 @@ ShellRoot {
 
   // Scrollables differ in what they hold, never in how they move. Both carry
   // the same spring, so a list and a free-form panel rebound identically.
-  component SeeleListView: ListView {
-    boundsBehavior: Flickable.DragAndOvershootBounds
-    flickDeceleration: root.scrollDeceleration
-    maximumFlickVelocity: root.scrollFlickVelocity
-    rebound: Transition {
-      NumberAnimation { properties: "x,y"; duration: root.scrollRebound; easing.type: Easing.OutCubic }
-    }
-  }
+  component CenteredGlyph: Shared.CenteredGlyph {}
 
-  component SeeleFlickable: Flickable {
-    boundsBehavior: Flickable.DragAndOvershootBounds
-    flickDeceleration: root.scrollDeceleration
-    maximumFlickVelocity: root.scrollFlickVelocity
-    rebound: Transition {
-      NumberAnimation { properties: "x,y"; duration: root.scrollRebound; easing.type: Easing.OutCubic }
-    }
-  }
+  component SeeleListView: Shared.SeeleListView { theme: root }
 
-  component RefreshGlyph: Item {
-    id: refreshGlyph
+  component SeeleFlickable: Shared.SeeleFlickable { theme: root }
 
-    property bool spinning: false
-    property color color: root.accent
-    property alias font: idleRefresh.font
-    onColorChanged: activitySpinner.requestPaint()
-
-    Text {
-      id: idleRefresh
-
-      visible: !refreshGlyph.spinning
-      anchors.fill: parent
-      text: "󰑐"
-      color: refreshGlyph.color
-      font.family: root.fontFamily
-      font.pixelSize: root.textSubhead
-      horizontalAlignment: Text.AlignHCenter
-      verticalAlignment: Text.AlignVCenter
-    }
-
-    Canvas {
-      id: activitySpinner
-
-      visible: refreshGlyph.spinning
-      anchors.centerIn: parent
-      width: Math.min(parent.width, parent.height, idleRefresh.font.pixelSize)
-      height: width
-      antialiasing: true
-      transformOrigin: Item.Center
-      onVisibleChanged: if (visible) requestPaint()
-      onWidthChanged: requestPaint()
-      onPaint: {
-        var context = getContext("2d")
-        context.clearRect(0, 0, width, height)
-        context.beginPath()
-        context.lineWidth = Math.max(1.5, width * 0.14)
-        context.lineCap = "round"
-        context.strokeStyle = refreshGlyph.color
-        context.arc(width / 2, height / 2, Math.max(1, width / 2 - context.lineWidth), -Math.PI / 2, Math.PI)
-        context.stroke()
-      }
-
-      NumberAnimation on rotation {
-        from: 0
-        to: 360
-        duration: 720
-        loops: Animation.Infinite
-        running: activitySpinner.visible
-      }
-    }
-  }
+  component RefreshGlyph: Shared.RefreshGlyph { theme: root }
 
   component ControlSwitch: Rectangle {
     id: control
@@ -2121,125 +1853,23 @@ ShellRoot {
   // light gathers along the top edge, thins out across the middle, and the
   // surface settles into ink at the bottom, so a tall panel is lit rather
   // than merely tinted.
-  // The neutral light that reports the pointer, laid over whatever the surface
-  // underneath is already saying rather than asked as one more branch of its
-  // fill. A fill that tests its own state first can never report a pointer on a
-  // control that is selected, on, or pinned — which is the control the pointer
-  // is most often aimed at. Declared before anything a use site adds, so the
-  // wash stays under the label it lights.
-  component HoverWash: Rectangle {
-    property bool hovered: false
-    // Neutral light, because reporting the pointer is not the same as saying
-    // what a control does. A destructive control is the one exception: dismiss
-    // and shut down say what they are for while the pointer is on them. The
-    // resting colour is the tint at zero alpha rather than `transparent`, so
-    // the fade is not dragged through black at both ends.
-    property color tint: root.hoverColor
+  component HoverWash: Shared.HoverWash { theme: root }
 
-    anchors.fill: parent
-    radius: parent.radius
-    color: hovered ? tint : root.alpha(tint, 0)
-    antialiasing: true
-
-    Behavior on color { ColorAnimation { duration: root.durationFast } }
-  }
-
-  // The square that holds one glyph and answers a click: a panel header's
-  // refresh, a toast's dismiss, the notification centre's silence. Its resting
-  // state is whatever surface it sits on, `tint` is what it says while it is
-  // on, and the pointer is reported over that rather than instead of it — so a
-  // button that is already on still answers the pointer aimed at it.
-  component IconButton: Rectangle {
-    id: iconButton
-
-    property bool active: false
-    property bool hovered: false
-    property bool pressed: false
-    property color tint: root.accent
-    property color pressTint: root.pressColor
-    property color hoverTint: root.hoverColor
-
-    implicitWidth: root.controlHeight
-    implicitHeight: root.controlHeight
-    radius: root.radius
-    color: iconButton.pressed ? iconButton.pressTint : iconButton.active ? root.alpha(iconButton.tint, 0.14) : root.alpha(iconButton.tint, 0)
-    antialiasing: true
-
-    Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-    HoverWash { hovered: iconButton.hovered; tint: iconButton.hoverTint }
-  }
-
-  component SurfaceWash: Rectangle {
-    anchors.fill: parent
-    anchors.margins: 1
-    color: "transparent"
-
-    gradient: Gradient {
-      GradientStop { position: 0.0; color: root.alpha(root.text, 0.075) }
-      GradientStop { position: 0.28; color: root.alpha(root.text, 0.02) }
-      GradientStop { position: 0.6; color: "transparent" }
-      GradientStop { position: 1.0; color: root.alpha(root.crust, 0.5) }
-    }
-  }
+  component SurfaceWash: Shared.SurfaceWash { theme: root }
 
   // The light on a surface's inside edge. The grounding ring outside is what
   // cuts the panel out of the wallpaper; this is what keeps the cut reading as
   // glass rather than as a hole. A hairline runs the whole perimeter and a
   // brighter crown sits along the top, held clear of the corner arcs, because
   // a straight line drawn into a rounded corner reads as a nick in it.
-  component SurfaceEdge: Item {
-    id: surfaceEdge
-
-    property real radius: root.radius - 1
-
-    anchors.fill: parent
-    z: 1
-
-    Rectangle {
-      anchors.fill: parent
-      anchors.margins: 1
-      radius: surfaceEdge.radius
-      color: "transparent"
-      border.width: 1
-      border.color: root.edgeLight
-      antialiasing: true
-    }
-
-    Rectangle {
-      anchors.top: parent.top
-      anchors.topMargin: 1
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.leftMargin: surfaceEdge.radius
-      anchors.rightMargin: surfaceEdge.radius
-      height: 1
-      color: root.edgeCrown
-    }
-  }
+  component SurfaceEdge: Shared.SurfaceEdge { theme: root }
 
   // Grain film, drawn over a surface's content so the texture is even across
   // the panel and the cards inside it. It accepts no input, so everything
   // underneath stays clickable. A tiled image cannot follow a rounded corner,
   // so `inset` pulls the film inside the arc: anything past
   // radius * (1 - 1 / sqrt(2)) stays within the surface.
-  component SurfaceGrain: Item {
-    id: grainLayer
-
-    property real inset: 0
-
-    anchors.fill: parent
-    z: 1
-
-    Image {
-      anchors.fill: parent
-      anchors.margins: grainLayer.inset
-      source: root.grain
-      fillMode: Image.Tile
-      opacity: root.grainOpacity
-      smooth: false
-    }
-  }
+  component SurfaceGrain: Shared.SurfaceGrain { theme: root }
 
   component HoverTip: PopupWindow {
     id: hoverTip
@@ -2348,101 +1978,12 @@ ShellRoot {
   // for whatever that panel keeps beside its title. Panels used to assemble this
   // row by hand and had drifted apart on glyph size, header height and
   // baseline, so the header is a component and the drift has nowhere to live.
-  component PanelHeader: Item {
-    id: panelHeader
-
-    property string glyph: ""
-    // A panel whose subject is drawn rather than typed -- the headphone
-    // silhouette -- hands its mark over instead of a glyph.
-    property Component mark: null
-    property string title: ""
-    property string detail: ""
-    property color detailColor: root.subtext
-    default property alias trailing: panelHeaderTrailing.data
-
-    height: panelHeader.detail !== "" ? 42 : root.panelHeaderHeight
-
-    // The panel's mark sits in a tinted well rather than loose on the
-    // material. The well is what carries the weight in the row, so the glyph
-    // inside it takes a step below the title instead of the step above it a
-    // glyph beside text would take, and a panel whose subject is drawn rather
-    // than typed lands in the same well.
-    Rectangle {
-      id: panelHeaderGlyph
-
-      anchors.left: parent.left
-      anchors.verticalCenter: parent.verticalCenter
-      width: root.chipHeight - 2
-      height: width
-      radius: root.radiusSmall
-      color: root.alpha(root.accent, 0.1)
-      border.width: 1
-      border.color: root.alpha(root.accent, 0.22)
-      antialiasing: true
-
-      CenteredGlyph {
-        visible: panelHeader.mark === null
-        anchors.fill: parent
-        text: panelHeader.glyph
-        color: root.accent
-        font.family: root.fontFamily
-        font.pixelSize: root.textSubhead
-      }
-
-      Loader {
-        anchors.centerIn: parent
-        sourceComponent: panelHeader.mark
-      }
-    }
-
-    Column {
-      anchors.left: panelHeaderGlyph.right
-      anchors.leftMargin: root.spaceMedium
-      anchors.right: panelHeaderTrailing.left
-      anchors.rightMargin: panelHeaderTrailing.width > 0 ? root.spaceLarge : 0
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: 1
-
-      Text {
-        width: parent.width
-        text: panelHeader.title
-        elide: Text.ElideRight
-        color: root.text
-        font.family: root.fontFamily
-        font.pixelSize: root.textTitle
-        font.weight: root.weightStrong
-      }
-
-      Text {
-        visible: panelHeader.detail !== ""
-        width: parent.width
-        text: panelHeader.detail
-        elide: Text.ElideRight
-        color: panelHeader.detailColor
-        font.family: root.fontFamily
-        font.pixelSize: root.textCaption
-      }
-    }
-
-    Row {
-      id: panelHeaderTrailing
-
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: root.spaceMedium
-    }
-  }
+  component PanelHeader: Shared.PanelHeader { theme: root }
 
   // The uppercase rule that introduces a group inside a panel. It had drifted
   // between two sizes and two colours; here it is one thing, and the tracking
   // is what keeps a run of capitals from reading as a shout.
-  component SectionLabel: Text {
-    color: root.overlay
-    font.family: root.fontFamily
-    font.pixelSize: root.textCaption
-    font.weight: root.weightMedium
-    font.letterSpacing: root.trackingLabel
-  }
+  component SectionLabel: Shared.SectionLabel { theme: root }
 
   // The rule with everything a group's heading carries: the uppercase label,
   // the group's own live summary held at the far end of it, and, where the
@@ -2559,27 +2100,7 @@ ShellRoot {
   // one step quieter. Drawn as a child rather than as the card's own border,
   // so a card whose fill already tracks hover and press state keeps that
   // binding and still gets the edge.
-  component CardEdge: Rectangle {
-    id: cardEdge
-
-    anchors.fill: parent
-    radius: root.radius
-    color: "transparent"
-    border.width: 1
-    border.color: root.cardBorder
-    antialiasing: true
-
-    Rectangle {
-      anchors.top: parent.top
-      anchors.topMargin: 1
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.leftMargin: cardEdge.radius
-      anchors.rightMargin: cardEdge.radius
-      height: 1
-      color: root.edgeLight
-    }
-  }
+  component CardEdge: Shared.CardEdge { theme: root }
 
   // A set of exclusive choices drawn as one well with the chosen one lit inside
   // it. Several outlined boxes side by side spend an outline on every
@@ -2737,53 +2258,12 @@ ShellRoot {
 
   // Shared chrome for every floating panel, so panels differ only in what
   // they hold, never in how they are framed.
-  component PanelSurface: Rectangle {
-    id: panelSurface
-
-    readonly property bool hovered: panelHover.hovered
-
-    anchors.fill: parent
-    radius: root.radius
-    color: root.panelColor
-    border.color: root.panelBorder
-    border.width: 1
-    antialiasing: true
-
-    SurfaceWash { radius: root.radius - 1 }
-    SurfaceEdge {}
-    SurfaceGrain { inset: 3 }
-    HoverHandler { id: panelHover }
-  }
+  component PanelSurface: Shared.PanelSurface { theme: root }
 
   // Scroll indicators are hairlines rather than the platform's full-width
   // bars, and panels reserve `scrollGutter` for them so a bar never sits on
   // top of the content's own edge.
-  component SlimScrollBar: ScrollBar {
-    id: scrollBar
-
-    required property bool popupHovered
-
-    policy: ScrollBar.AsNeeded
-    implicitWidth: root.scrollGutter
-    padding: 2
-    opacity: popupHovered || pressed ? 1 : 0
-    enabled: popupHovered || pressed
-    visible: policy !== ScrollBar.AlwaysOff && (policy === ScrollBar.AlwaysOn || size < 1)
-    // An attached indicator is a sibling of the view's content, so without
-    // this it renders behind the rows it belongs to.
-    z: 2
-    // A list of every timezone would otherwise grind the handle down to a few
-    // pixels.
-    minimumSize: height > 0 ? Math.min(0.5, 36 / height) : 0
-
-    background: Item {}
-    contentItem: Rectangle {
-      implicitWidth: root.scrollGutter - 4
-      radius: width / 2
-      opacity: 1
-      color: root.alpha(root.text, scrollBar.pressed ? 0.6 : 0.32)
-    }
-  }
+  component SlimScrollBar: Shared.SlimScrollBar { theme: root }
 
   // Every bar entry is a rounded pill on the same radius as windows, buttons,
   // and panels, and takes its hover, press, and open state from here so the
@@ -3624,396 +3104,6 @@ ShellRoot {
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
 
-  component NotificationCard: Rectangle {
-    id: notificationCard
-
-    property var entry: ({})
-    property string group: ""
-    property bool history: false
-    property bool popup: false
-    property bool alwaysUnfolded: false
-    // A collapsed stack is not a notification: it stands for its group, opens
-    // that group on a click, and its dismiss takes the whole group with it.
-    property bool stacked: false
-    property bool collapsible: false
-    property int count: 1
-    property int depth: 0
-    signal toggled()
-
-    readonly property bool actionable: !notificationCard.stacked && !notificationCard.history && root.notificationActionable(entry)
-    readonly property var offeredActions: notificationCard.history ? [] : Notifications.actions(entry)
-    readonly property string verificationCode: Notifications.verificationCode(entry)
-    readonly property bool unfolded: notificationCard.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
-    // A single elided line reports its full width, which is the only way to
-    // know there is more to show without measuring the text twice.
-    readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
-    // Only a toast folds, and only when there is something folded away.
-    readonly property bool unfoldable: !notificationCard.alwaysUnfolded && (truncated || unfolded || !!entry.image)
-    readonly property string iconSource: {
-      var icon = String(entry.app_icon || "").trim()
-      return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
-    }
-    // The card is as tall as what it holds: its own padding above and below
-    // the text, and a little more once the text has unfolded into several
-    // lines and wants air under the last of them.
-    implicitHeight: Math.max(root.notificationRowHeight, notificationText.implicitHeight + root.cardPadding * 2 - (notificationCard.unfolded ? 0 : root.spaceTight))
-    height: implicitHeight
-    radius: root.radius
-    // Asked of the card rather than of the pointer area covering it. The
-    // unfold and dismiss buttons sit on top of that area with hover enabled
-    // of their own, and a hovered child takes the event away from the parent
-    // below it, so a fill reading `containsMouse` fell back to `cardColor`
-    // the moment the pointer reached a button and lit again when it left. A
-    // handler on the card is hovered for the whole card, buttons included.
-    readonly property bool hovered: notificationHover.hovered
-
-    readonly property bool pressable: notificationCard.actionable || notificationCard.stacked
-
-    color: notificationCard.pressable && notificationOpenMouse.pressed ? root.pressColor
-      : notificationCard.pressable && notificationCard.hovered ? root.hoveredColor(root.cardColor)
-      : root.cardColor
-
-    Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-    HoverHandler {
-      id: notificationHover
-      onHoveredChanged: if (notificationCard.popup) root.setNotificationPopupHovered(hovered)
-    }
-
-    Repeater {
-      model: notificationCard.depth
-      delegate: Rectangle {
-        required property int index
-        z: -1 - index
-        x: root.spaceTight * (index + 1)
-        y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
-        width: parent.width - x * 2
-        height: root.spaceSmall
-        radius: root.radius
-        color: root.cardColor
-        CardEdge {}
-      }
-    }
-    SurfaceWash { radius: root.radius - 1 }
-    CardEdge {}
-    SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
-    Component.onDestruction: if (notificationCard.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
-
-    Item {
-      id: notificationIconFrame
-      width: root.controlHeight
-      height: root.controlHeight
-      anchors.left: parent.left
-      anchors.top: parent.top
-      anchors.leftMargin: root.cardPadding
-      anchors.topMargin: root.cardPadding
-
-      Text {
-        anchors.fill: parent
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        text: "󰂚"
-        color: root.accent
-        font.family: root.fontFamily
-        font.pixelSize: root.textSubhead
-      }
-      IconImage {
-        anchors.fill: parent
-        source: notificationCard.iconSource
-      }
-    }
-
-    MouseArea {
-      id: notificationOpenMouse
-      anchors.fill: parent
-      enabled: notificationCard.pressable
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: {
-        if (notificationCard.stacked) notificationCard.toggled()
-        else root.activateNotification(notificationCard.entry.id)
-      }
-    }
-    HoverTip {
-      mouse: notificationOpenMouse
-      inOverlay: true
-      text: notificationCard.stacked
-        ? notificationCard.count + " from " + (notificationCard.entry.app_name || "this app") + " · click to open"
-        : ""
-    }
-
-    Column {
-      id: notificationText
-      anchors.left: notificationIconFrame.right
-      anchors.right: parent.right
-      anchors.top: parent.top
-      anchors.leftMargin: root.spaceMedium
-      anchors.rightMargin: root.cardPadding
-      anchors.topMargin: root.cardPadding
-      spacing: root.spaceTight
-      // The summary takes whatever the age and the two buttons leave, rather
-      // than a width counted from which of them happen to be showing.
-      Item {
-        width: parent.width
-        height: root.chipHeight - root.spaceMedium
-
-        Text {
-          anchors.left: parent.left
-          anchors.right: notificationRowControls.left
-          anchors.rightMargin: root.spaceSmall
-          anchors.verticalCenter: parent.verticalCenter
-          text: entry.summary || entry.app_name || "Notification"
-          textFormat: Text.PlainText
-          elide: Text.ElideRight
-          color: root.text
-          font.family: root.fontFamily
-          font.pixelSize: root.textBody
-          font.weight: root.weightStrong
-        }
-
-        Row {
-          id: notificationRowControls
-
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          height: parent.height
-          spacing: root.spaceTight
-
-          // What the stack stands for, and the way back out of it once it is
-          // open. Between them they replace the pair of full-width buttons
-          // the group used to wear above its summary.
-          Rectangle {
-            visible: notificationCard.stacked
-            anchors.verticalCenter: parent.verticalCenter
-            width: visible ? Math.max(parent.height, stackCount.implicitWidth + root.spaceSmall) : 0
-            height: parent.height
-            radius: height / 2
-            color: root.alpha(root.text, 0.09)
-            antialiasing: true
-
-            Text {
-              id: stackCount
-              anchors.centerIn: parent
-              text: notificationCard.count
-              color: root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textCaption
-              font.weight: root.weightStrong
-            }
-          }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.agoText(entry.time)
-            color: root.overlay
-            font.family: root.fontFamily
-            font.pixelSize: root.textCaption
-          }
-
-          IconButton {
-            visible: notificationCard.collapsible
-            width: visible ? root.chipHeight - root.spaceMedium : 0
-            height: parent.height
-            radius: root.radiusSmall
-            hovered: notificationCollapseMouse.containsMouse
-            pressed: notificationCollapseMouse.pressed
-
-            Text {
-              anchors.centerIn: parent
-              text: "󰅃"
-              color: notificationCollapseMouse.containsMouse ? root.accent : root.subtext
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            MouseArea {
-              id: notificationCollapseMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: notificationCard.toggled()
-            }
-            HoverTip { mouse: notificationCollapseMouse; inOverlay: true; text: "Close the stack" }
-          }
-
-          IconButton {
-            visible: notificationCard.unfoldable
-            width: visible ? root.chipHeight - root.spaceMedium : 0
-            height: parent.height
-            radius: root.radiusSmall
-            hovered: notificationUnfoldMouse.containsMouse
-            pressed: notificationUnfoldMouse.pressed
-
-            Text {
-              anchors.centerIn: parent
-              text: notificationCard.unfolded ? "󰅃" : "󰅀"
-              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            MouseArea {
-              id: notificationUnfoldMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleNotificationUnfolded(notificationCard.entry.id)
-            }
-            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationCard.unfolded ? "Show less" : "Show the whole notification" }
-          }
-
-          IconButton {
-            readonly property bool busy: !notificationCard.popup && root.controlBusy("notifications", "dismiss", String(notificationCard.entry.id))
-
-            visible: !notificationCard.history
-            width: visible ? root.chipHeight - root.spaceMedium : 0
-            height: parent.height
-            radius: root.radiusSmall
-            // Destructive, so the pointer is answered in red rather than in
-            // neutral light: this is the one control that says what it will
-            // do before it is pressed.
-            tint: root.red
-            hoverTint: root.dangerColor
-            pressTint: root.dangerPress
-            active: busy
-            hovered: notificationDismissMouse.containsMouse
-            pressed: notificationDismissMouse.pressed
-
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-            MouseArea {
-              id: notificationDismissMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                if (notificationCard.stacked) notificationStore.controller.group(notificationCard.group, notificationCard.popup)
-                else if (notificationCard.popup) root.retireNotificationPopup(notificationCard.entry.id)
-                else root.dismissNotification(notificationCard.entry.id)
-              }
-            }
-            HoverTip {
-              mouse: notificationDismissMouse
-              inOverlay: true
-              text: notificationCard.stacked
-                ? (notificationCard.popup ? "Hide all " + notificationCard.count : "Dismiss all " + notificationCard.count)
-                : notificationCard.popup ? "Hide toast" : "Dismiss"
-            }
-          }
-        }
-      }
-      Text {
-        id: notificationBody
-        width: parent.width
-        text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
-        textFormat: Text.StyledText
-        linkColor: root.accent
-        onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
-        HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-        color: root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textCaption
-        wrapMode: notificationCard.unfolded ? Text.WordWrap : Text.NoWrap
-        elide: notificationCard.unfolded ? Text.ElideNone : Text.ElideRight
-        // Bounded, so one pathological notification cannot take the panel.
-        maximumLineCount: notificationCard.unfolded ? 1000 : 1
-      }
-      Item {
-        visible: !!notificationCard.entry.image && notificationCard.unfolded
-        width: parent.width
-        height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
-        Image {
-          id: notificationImage
-          anchors.fill: parent
-          visible: false
-          source: notificationCard.entry.image || ""
-          sourceSize.width: width * 2
-          fillMode: Image.PreserveAspectFit
-          asynchronous: true
-        }
-        RoundedSource { anchors.fill: parent; source: notificationImage }
-      }
-      Text {
-        visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || notificationCard.entry.resident
-        text: notificationCard.entry.urgency === 2 ? "Critical · until dismissed"
-          : Notifications.permanent(notificationCard.entry) ? "Until dismissed" : "Ongoing"
-        color: notificationCard.entry.urgency === 2 ? root.red : root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textMicro
-      }
-      Row {
-        visible: Number(notificationCard.entry.progress) >= 0
-        width: parent.width
-        spacing: root.spaceSmall
-        MeterBar {
-          width: parent.width - progressLabel.width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
-          ratio: Number(notificationCard.entry.progress) / 100
-        }
-        Text {
-          id: progressLabel
-          text: Math.round(Number(notificationCard.entry.progress)) + "%"
-          color: root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textCaption
-        }
-      }
-      Flow {
-        width: parent.width
-        spacing: root.spaceTight
-        Repeater {
-          model: notificationCard.offeredActions
-          delegate: NotificationButton {
-            required property var modelData
-            label: modelData.label
-            controlAction: "notification-action"
-            value: String(notificationCard.entry.id)
-            extra: modelData.key
-            actionIcon: notificationCard.entry.action_icons ? modelData.key : ""
-          }
-        }
-        NotificationButton {
-          visible: !notificationCard.history && (notificationCard.entry.pinned || !Notifications.permanent(notificationCard.entry))
-          label: notificationCard.entry.pinned ? "Unpin" : "Keep visible"
-          onClicked: notificationStore.controller.pin(notificationCard.entry.id)
-        }
-        Repeater {
-          model: notificationCard.unfolded ? ["title", "body"] : []
-          delegate: NotificationButton {
-            id: notificationCopyButton
-            required property string modelData
-            readonly property string copyKey: String(notificationCard.entry.id) + ":" + modelData
-            readonly property bool selected: notificationClipboard.key === copyKey
-            visible: modelData === "title" ? !!notificationCard.entry.summary : !!notificationCard.entry.body
-            label: modelData === "title" ? "Copy title" : "Copy message"
-            feedbackEnabled: true
-            enabled: !notificationClipboard.pending
-            localBusy: selected && notificationClipboard.pending
-            localFailed: selected && notificationClipboard.status === "error"
-            localComplete: selected && notificationClipboard.status === "success"
-            successLabel: "Copied"
-            onClicked: notificationClipboard.copy(notificationCard.entry, modelData)
-            HoverTip {
-              mouse: notificationCopyButton
-              inOverlay: true
-              text: notificationCopyButton.selected ? notificationClipboard.message : ""
-            }
-          }
-        }
-        NotificationButton {
-          visible: notificationCard.verificationCode !== ""
-          label: "Copy " + notificationCard.verificationCode
-          controlAction: "copy-code"
-          value: notificationCard.verificationCode
-          extra: String(notificationCard.entry.id)
-          successLabel: "Copied"
-        }
-      }
-    }
-
-
-  }
-
   component NotificationList: SeeleListView {
     id: notificationList
 
@@ -4044,64 +3134,261 @@ ShellRoot {
     boundsBehavior: Flickable.StopAtBounds
     model: Notifications.stackedRows(entries, expandedGroups)
 
-    // One row per group, so opening a stack grows this item in place rather than
-    // inserting rows the list has to reflow around: nothing below it is
-    // displaced and the group cannot move out from under the pointer that just
-    // opened it. The height animates and the item clips, so the group unfolds.
-    delegate: Item {
-      id: notificationGroup
+    delegate: Rectangle {
+      id: notificationEntry
 
       required property var modelData
-      readonly property bool open: modelData.expanded
-      // A collapsed stack draws its depth below the card, so the row reserves
-      // that much and the clip does not cut those edges off.
-      readonly property int stackReach: modelData.depth * root.spaceTight
+      readonly property var entry: modelData.entry
+      readonly property bool actionable: !notificationList.history && root.notificationActionable(entry)
+      readonly property var offeredActions: notificationList.history ? [] : Notifications.actions(entry)
+      readonly property string verificationCode: Notifications.verificationCode(entry)
+      readonly property bool unfolded: notificationList.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
+      // A single elided line reports its full width, which is the only way to
+      // know there is more to show without measuring the text twice.
+      readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
+      // Only a toast folds, and only when there is something folded away.
+      readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded || !!entry.image)
+      readonly property string iconSource: {
+        var icon = String(entry.app_icon || "").trim()
+        return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
+      }
+      x: modelData.first ? 0 : root.spaceMedium
+      width: ListView.view.width - x
+      height: Math.max(root.notificationRowHeight, notificationText.implicitHeight + (notificationEntry.unfolded ? 18 : 12))
+      radius: root.radius
+      // Asked of the card rather than of the pointer area covering it. The
+      // unfold and dismiss buttons sit on top of that area with hover enabled
+      // of their own, and a hovered child takes the event away from the parent
+      // below it, so a fill reading `containsMouse` fell back to `cardColor`
+      // the moment the pointer reached a button and lit again when it left. A
+      // handler on the card is hovered for the whole card, buttons included.
+      readonly property bool hovered: notificationHover.hovered
 
-      width: ListView.view.width
-      height: notificationGroupColumn.implicitHeight + notificationGroup.stackReach
-      clip: true
+      color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
+        : notificationEntry.actionable && notificationEntry.hovered ? root.hoveredColor(root.cardColor)
+        : root.cardColor
 
-      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverHandler {
+        id: notificationHover
+        onHoveredChanged: if (notificationList.popup) root.setNotificationPopupHovered(hovered)
+      }
+
+      Repeater {
+        model: notificationEntry.modelData.depth
+        delegate: Rectangle {
+          required property int index
+          z: -1 - index
+          x: root.spaceTight * (index + 1)
+          y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
+          width: parent.width - x * 2
+          height: root.spaceSmall
+          radius: root.radius
+          color: root.cardColor
+          CardEdge {}
+        }
+      }
+      SurfaceWash { radius: root.radius - 1 }
+      CardEdge {}
+      SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
+      Component.onDestruction: if (notificationList.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
+
+      Item {
+        id: notificationIconFrame
+        width: 34
+        height: 34
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: 9
+        anchors.topMargin: 9
+
+        Text {
+          anchors.fill: parent
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          text: "󰂚"
+          color: root.accent
+          font.family: root.fontFamily
+          font.pixelSize: root.textSubhead
+        }
+        IconImage {
+          anchors.fill: parent
+          source: notificationEntry.iconSource
+        }
+      }
+
+      MouseArea {
+        id: notificationOpenMouse
+        anchors.fill: parent
+        enabled: notificationEntry.actionable
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.activateNotification(notificationEntry.entry.id)
+      }
 
       Column {
-        id: notificationGroupColumn
-
-        width: parent.width
-        spacing: root.spaceSmall
-
-        NotificationCard {
+        id: notificationText
+        anchors.left: notificationIconFrame.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.leftMargin: root.spaceMedium
+        anchors.rightMargin: 9
+        anchors.topMargin: 9
+        spacing: root.spaceTight
+        Flow {
+          visible: notificationEntry.modelData.first && notificationEntry.modelData.count > 1
           width: parent.width
-          entry: notificationGroup.modelData.items[0]
-          group: notificationGroup.modelData.group
-          history: notificationList.history
-          popup: notificationList.popup
-          alwaysUnfolded: notificationList.alwaysUnfolded
-          stacked: !notificationGroup.open && notificationGroup.modelData.count > 1
-          collapsible: notificationGroup.open
-          count: notificationGroup.modelData.count
-          depth: notificationGroup.modelData.depth
-          onToggled: notificationList.toggleGroup(notificationGroup.modelData.group)
+          spacing: root.spaceTight
+          NotificationButton {
+            label: (notificationEntry.entry.app_name || "Notifications") + " · " + notificationEntry.modelData.count
+              + (notificationEntry.modelData.expanded ? " · Show less" : " · Show all")
+            onClicked: notificationList.toggleGroup(notificationEntry.modelData.group)
+          }
+          NotificationButton {
+            visible: !notificationList.history
+            label: notificationList.popup ? "Hide stack" : "Dismiss stack"
+            onClicked: notificationStore.controller.group(notificationEntry.modelData.group, notificationList.popup)
+          }
         }
-
-        Repeater {
-          model: notificationGroup.open ? notificationGroup.modelData.items.slice(1) : []
-
-          NotificationCard {
-            required property var modelData
-
-            x: root.spaceMedium
-            width: notificationGroupColumn.width - root.spaceMedium
-            entry: modelData
-            group: notificationGroup.modelData.group
-            history: notificationList.history
-            popup: notificationList.popup
-            alwaysUnfolded: notificationList.alwaysUnfolded
-
-            // The card arrives with the fold rather than at the end of it.
-            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: Easing.OutCubic }
+        Row {
+          width: parent.width
+          height: 20
+          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: entry.summary || entry.app_name || "Notification"; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
+          Item { width: 6; height: parent.height }
+          Text { width: 58; height: parent.height; text: root.agoText(entry.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
+          Rectangle {
+            visible: notificationEntry.unfoldable
+            width: visible ? 20 : 0
+            height: parent.height
+            radius: root.radiusSmall
+            color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : root.clearColor
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            Text {
+              anchors.centerIn: parent
+              text: notificationEntry.unfolded ? "󰅃" : "󰅀"
+              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: notificationUnfoldMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleNotificationUnfolded(notificationEntry.entry.id)
+            }
+            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
+          }
+          Item { visible: !notificationEntry.unfoldable; width: visible ? 6 : 0; height: parent.height }
+          Rectangle {
+            readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.entry.id))
+            visible: !notificationList.history
+            width: visible ? 20 : 0
+            height: parent.height
+            radius: root.radiusSmall
+            color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : root.clearDanger
+            Behavior on color { ColorAnimation { duration: root.durationFast } }
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
+            MouseArea {
+              id: notificationDismissMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: notificationList.popup ? root.retireNotificationPopup(notificationEntry.entry.id) : root.dismissNotification(notificationEntry.entry.id)
+            }
+            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide toast" : "Dismiss" }
+          }
+        }
+        Text {
+          id: notificationBody
+          width: parent.width
+          text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
+          textFormat: Text.StyledText
+          linkColor: root.accent
+          onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
+          HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+          color: root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textCaption
+          wrapMode: notificationEntry.unfolded ? Text.WordWrap : Text.NoWrap
+          elide: notificationEntry.unfolded ? Text.ElideNone : Text.ElideRight
+          // Bounded, so one pathological notification cannot take the panel.
+          maximumLineCount: notificationEntry.unfolded ? 1000 : 1
+        }
+        Item {
+          visible: !!notificationEntry.entry.image && notificationEntry.unfolded
+          width: parent.width
+          height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
+          Image {
+            id: notificationImage
+            anchors.fill: parent
+            visible: false
+            source: notificationEntry.entry.image || ""
+            sourceSize.width: width * 2
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+          }
+          RoundedSource { anchors.fill: parent; source: notificationImage }
+        }
+        Text {
+          visible: notificationEntry.entry.urgency === 2 || Notifications.permanent(notificationEntry.entry) || notificationEntry.entry.resident
+          text: notificationEntry.entry.urgency === 2 ? "Critical · until dismissed"
+            : Notifications.permanent(notificationEntry.entry) ? "Until dismissed" : "Ongoing"
+          color: notificationEntry.entry.urgency === 2 ? root.red : root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textMicro
+        }
+        Row {
+          visible: Number(notificationEntry.entry.progress) >= 0
+          width: parent.width
+          spacing: root.spaceSmall
+          MeterBar {
+            width: parent.width - progressLabel.width - parent.spacing
+            anchors.verticalCenter: parent.verticalCenter
+            ratio: Number(notificationEntry.entry.progress) / 100
+          }
+          Text {
+            id: progressLabel
+            text: Math.round(Number(notificationEntry.entry.progress)) + "%"
+            color: root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textCaption
+          }
+        }
+        Flow {
+          width: parent.width
+          spacing: root.spaceTight
+          Repeater {
+            model: notificationEntry.offeredActions
+            delegate: NotificationButton {
+              required property var modelData
+              label: modelData.label
+              controlAction: "notification-action"
+              value: String(notificationEntry.entry.id)
+              extra: modelData.key
+              actionIcon: notificationEntry.entry.action_icons ? modelData.key : ""
+            }
+          }
+          NotificationButton {
+            visible: !notificationList.history && (notificationEntry.entry.pinned || !Notifications.permanent(notificationEntry.entry))
+            label: notificationEntry.entry.pinned ? "Unpin" : "Keep visible"
+            onClicked: notificationStore.controller.pin(notificationEntry.entry.id)
+          }
+          NotificationButton {
+            visible: notificationEntry.verificationCode !== ""
+            label: "Copy " + notificationEntry.verificationCode
+            controlAction: "copy-code"
+            value: notificationEntry.verificationCode
+            extra: String(notificationEntry.entry.id)
+            successLabel: "Copied"
           }
         }
       }
+
+
     }
   }
 
@@ -4233,26 +3520,14 @@ ShellRoot {
     property string icon: ""
     property bool primary: false
     property bool flat: false
-    property bool active: false
-    property string hint: ""
     signal activated()
 
     width: mediaButton.flat ? (mediaButton.primary ? 38 : 34) : mediaButton.primary ? 34 : 28
     height: mediaButton.flat ? 32 : 28
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
-    activeFocusOnTab: enabled
-    Keys.onPressed: event => {
-      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-        mediaButton.activated()
-        event.accepted = true
-      }
-    }
     color: mediaButtonMouse.pressed ? root.pressColor
-      : mediaButton.active || mediaButton.activeFocus
-        ? mediaButtonHover.hovered ? root.hoveredColor(root.selectedColor) : root.selectedColor
-      : mediaButtonHover.hovered
+      : mediaButtonMouse.containsMouse
         ? mediaButton.flat
           ? root.hoverColor
           : root.hoveredColor(mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor)
@@ -4262,16 +3537,14 @@ ShellRoot {
     Text {
       anchors.centerIn: parent
       text: mediaButton.icon
-      color: mediaButton.active ? root.accent : root.text
+      color: root.text
       font.family: root.fontFamily
       font.pixelSize: mediaButton.flat
         ? (mediaButton.primary ? root.textDisplay : root.textTitle)
         : mediaButton.primary ? root.textSubhead : root.textLead
     }
 
-    HoverHandler { id: mediaButtonHover }
     MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
-    HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
 
   component MediaTimeline: Column {
@@ -4633,21 +3906,11 @@ ShellRoot {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: 4
-        spacing: root.spaceTight
+        spacing: root.spaceMedium
 
         MediaButton {
           flat: true
-          width: root.controlHeight
-          icon: "󰒟"
-          hint: !mediaBody.player || !mediaBody.player.shuffleSupported ? "Shuffle unavailable" : mediaBody.player.shuffle ? "Shuffle on" : "Shuffle off"
-          active: !!mediaBody.player && mediaBody.player.shuffleSupported && mediaBody.player.shuffle
-          enabled: Media.canShuffle(mediaBody.player)
-          onActivated: Media.toggleShuffle(mediaBody.player)
-        }
-        MediaButton {
-          flat: true
           icon: "󰒮"
-          hint: "Previous track"
           enabled: !!mediaBody.player && mediaBody.player.canGoPrevious
           onActivated: mediaBody.player.previous()
         }
@@ -4655,25 +3918,14 @@ ShellRoot {
           flat: true
           icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
           primary: true
-          hint: mediaBody.player && mediaBody.player.isPlaying ? "Pause" : "Play"
-          enabled: !!mediaBody.player && mediaBody.player.canTogglePlaying
+          enabled: !!mediaBody.player
           onActivated: mediaBody.player.togglePlaying()
         }
         MediaButton {
           flat: true
           icon: "󰒭"
-          hint: "Next track"
           enabled: !!mediaBody.player && mediaBody.player.canGoNext
           onActivated: mediaBody.player.next()
-        }
-        MediaButton {
-          flat: true
-          width: root.controlHeight
-          icon: mediaBody.player && mediaBody.player.loopState === MprisLoopState.Track ? "󰑘" : "󰑖"
-          hint: Media.repeatLabel(mediaBody.player, MprisLoopState)
-          active: !!mediaBody.player && mediaBody.player.loopSupported && mediaBody.player.loopState !== MprisLoopState.None
-          enabled: Media.canRepeat(mediaBody.player)
-          onActivated: Media.cycleRepeat(mediaBody.player, MprisLoopState)
         }
       }
 
@@ -5151,13 +4403,13 @@ ShellRoot {
             hovered: voxtypeMouse.containsMouse
             Text {
               anchors.centerIn: parent
-              text: root.systemData.voxtypeStatus === "recording" ? "󰍬" : root.systemData.voxtypeStatus === "transcribing" ? "󰔟" : "󰍭"
-              color: root.systemData.voxtypeStatus === "recording" ? root.red : root.systemData.voxtypeStatus === "transcribing" ? root.yellow : root.subtext
+              text: dictation.status === "recording" ? "󰍬" : dictation.status === "transcribing" ? "󰔟" : "󰍭"
+              color: dictation.status === "recording" ? root.red : dictation.status === "transcribing" ? root.yellow : root.subtext
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
             MouseArea { id: voxtypeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("voxtype") }
-            HoverTip { mouse: voxtypeMouse; text: "Voxtype: " + root.systemData.voxtypeStatus }
+            HoverTip { mouse: voxtypeMouse; text: "Voxtype: " + dictation.status }
           }
         }
 
@@ -5180,15 +4432,8 @@ ShellRoot {
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            MouseArea {
-              id: clockMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              acceptedButtons: Qt.LeftButton | Qt.RightButton
-              onClicked: mouse => root.toggleControl(mouse.button === Qt.RightButton ? "focus" : "clock", barWindow.modelData.name, root.barItemCenter(parent))
-            }
-            HoverTip { mouse: clockMouse; text: "Time zones · Right click for focus timer" }
+            MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: clockMouse; text: "Time zones" }
           }
 
           BarItem {
@@ -5205,29 +4450,6 @@ ShellRoot {
             }
             MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
-          }
-
-          BarItem {
-            visible: focusTimer.timerState.status !== "idle"
-            width: visible ? focusBarLabel.implicitWidth + 14 : 0
-            hovered: focusBarMouse.containsMouse
-            active: root.panelHere("focus", barWindow.modelData)
-            Text {
-              id: focusBarLabel
-              anchors.centerIn: parent
-              text: "󰔟 " + focusTimer.label
-              color: focusTimer.timerState.status === "done" ? root.green : root.accent
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            MouseArea {
-              id: focusBarMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleControl("focus", barWindow.modelData.name, root.barItemCenter(parent))
-            }
-            HoverTip { mouse: focusBarMouse; text: "Focus timer · " + focusTimer.timerState.status }
           }
 
           BarItem {
@@ -5711,22 +4933,6 @@ ShellRoot {
           }
 
           BarItem {
-            width: githubBarContent.implicitWidth + root.spaceLarge
-            hovered: githubBarHover.hovered
-            active: root.panelHere("github", barWindow.modelData)
-            Row {
-              id: githubBarContent
-              anchors.centerIn: parent
-              spacing: root.spaceTight
-              CenteredGlyph { width: root.textIcon; height: root.barItemHeight; text: "󰊤"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-              Text { visible: githubStore.snapshot.reviewTotal > 0; anchors.verticalCenter: parent.verticalCenter; text: githubStore.snapshot.reviewTotal; color: githubStore.snapshot.stale ? root.subtext : root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-            }
-            HoverHandler { id: githubBarHover }
-            MouseArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: githubBarMouse; text: "GitHub · pull requests and requested reviews" }
-          }
-
-          BarItem {
             width: notificationBarContent.implicitWidth + 14
             hovered: notificationMouse.containsMouse
             active: root.panelHere("notifications", barWindow.modelData)
@@ -5989,178 +5195,11 @@ ShellRoot {
     }
   }
 
-  // Focus timer ---------------------------------------------------------------
-  Variants {
-    model: Quickshell.screens
-    PanelWindow {
-      id: focusWindow
-      required property var modelData
-      screen: modelData
-      visible: root.panelHere("focus", modelData)
-      anchors { top: true; left: true }
-      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 350
-      implicitHeight: focusContent.implicitHeight + root.panelMargin * 2
-      exclusionMode: ExclusionMode.Ignore
-      color: "transparent"
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      WlrLayershell.namespace: "seele-shell-focus"
-      onVisibleChanged: if (visible) Qt.callLater(function() { focusContent.forceActiveFocus() })
-
-      PanelSurface {
-        Column {
-          id: focusContent
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.top: parent.top
-          anchors.margins: root.panelMargin
-          spacing: root.panelSpacing
-          Keys.onEscapePressed: root.closeOverlays()
-          Keys.onPressed: event => {
-            if (event.isAutoRepeat || event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
-            if (event.key === Qt.Key_1) focusTimer.command("start", 25)
-            else if (event.key === Qt.Key_2) focusTimer.command("start", 50)
-            else if (event.key === Qt.Key_3) focusTimer.command("start", 5)
-            else if (event.key === Qt.Key_Delete) focusTimer.command("cancel")
-            else if (event.key === Qt.Key_Space) {
-              if (focusTimer.timerState.status === "running") focusTimer.command("pause")
-              else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
-              else focusTimer.command("start", 25)
-            } else return
-            event.accepted = true
-          }
-          PanelHeader { width: parent.width; glyph: "󰔟"; title: "Focus timer"; detail: "Focus, then take a break" }
-          Text {
-            width: parent.width
-            text: focusTimer.label
-            color: focusTimer.timerState.status === "done" ? root.green : root.accent
-            font.family: root.fontFamily
-            font.pixelSize: root.textHero
-            font.weight: root.weightLight
-            horizontalAlignment: Text.AlignHCenter
-          }
-          Text {
-            width: parent.width
-            text: focusTimer.timerState.status === "idle" ? "Choose a duration" : focusTimer.timerState.status === "done" ? "Time is up" : focusTimer.timerState.status === "paused" ? "Paused" : "In progress"
-            color: root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textBody
-            horizontalAlignment: Text.AlignHCenter
-          }
-          Row {
-            width: parent.width
-            spacing: root.spaceSmall
-            Repeater {
-              model: [{minutes:25,label:"25 min"}, {minutes:50,label:"50 min"}, {minutes:5,label:"5 min break"}]
-              Rectangle {
-                required property var modelData
-                width: (parent.width - root.spaceSmall * 2) / 3
-                height: root.controlHeight
-                radius: root.radius
-                color: presetMouse.pressed ? root.pressColor : presetHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-                CardEdge {}
-                HoverHandler { id: presetHover }
-                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                MouseArea { id: presetMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: focusTimer.command("start", modelData.minutes) }
-              }
-            }
-          }
-          Row {
-            width: parent.width
-            spacing: root.spaceSmall
-            Repeater {
-              model: [focusTimer.timerState.status === "running" ? "Pause" : focusTimer.timerState.status === "paused" ? "Resume" : "Start", focusTimer.timerState.status === "done" ? "Done" : "Cancel"]
-              Rectangle {
-                required property string modelData
-                required property int index
-                width: (parent.width - root.spaceSmall) / 2
-                height: root.controlHeight
-                radius: root.radius
-                color: actionMouse.pressed ? root.pressColor : actionHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-                CardEdge {}
-                HoverHandler { id: actionHover }
-                Text { anchors.centerIn: parent; text: modelData; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                MouseArea {
-                  id: actionMouse
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: {
-                    if (index === 1) focusTimer.command("cancel")
-                    else if (focusTimer.timerState.status === "running") focusTimer.command("pause")
-                    else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
-                    else focusTimer.command("start", 25)
-                  }
-                }
-              }
-            }
-          }
-          Text { width: parent.width; text: "1 / 2 / 3 presets · Space pause/resume · Delete cancel"; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textCaption; wrapMode: Text.Wrap }
-        }
-      }
-    }
-  }
-
   // Calendar ------------------------------------------------------------------
   Variants {
     model: Quickshell.screens
     PanelWindow {
       id: calendarWindow
-      property string selectedDate: ""
-      property string copyStatus: ""
-      property bool copyPending: false
-
-      function copyCalendarDate(cell) {
-        var value = Time.calendarCopyDate(cell)
-        if (!value || copyPending || calendarClipboard.running) return
-        selectedDate = value
-        copyStatus = "Copying " + value + "…"
-        copyPending = true
-        calendarClipboard.payload = value
-        calendarCopyTimeout.restart()
-        calendarClipboard.stdinEnabled = true
-        calendarClipboard.running = true
-      }
-
-      function moveCalendarSelection(days, today) {
-        if (copyPending || calendarClipboard.running) return
-        var selection = Time.moveCalendarDate(root.now, today ? "" : selectedDate, days)
-        if (!selection) return
-        selectedDate = selection.date
-        copyStatus = ""
-        calendarMonths.positionViewAtIndex(selection.monthOffset + 60, ListView.Contain)
-      }
-
-      function finishCalendarCopy(exitCode, exitStatus) {
-        if (!copyPending) return
-        calendarCopyTimeout.stop()
-        copyPending = false
-        copyStatus = exitCode === 0 && exitStatus === 0
-          ? "Copied " + calendarClipboard.payload : "Could not copy date"
-      }
-
-      Process {
-        id: calendarClipboard
-        property string payload: ""
-        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
-        onStarted: {
-          write(payload)
-          stdinEnabled = false
-        }
-        onExited: (exitCode, exitStatus) => calendarWindow.finishCalendarCopy(exitCode, exitStatus)
-      }
-
-      // Failed startup has no exited signal. Bound the pending state as well
-      // as a compositor that does not acknowledge the clipboard request.
-      Timer {
-        id: calendarCopyTimeout
-        interval: 5000
-        onTriggered: {
-          calendarWindow.finishCalendarCopy(-1, 1)
-          calendarClipboard.running = false
-        }
-      }
-
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "calendar" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -6172,35 +5211,11 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-calendar"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-      onVisibleChanged: if (visible) {
-        if (!copyPending) {
-          selectedDate = ""
-          copyStatus = ""
-        }
-        Qt.callLater(function() {
-          calendarMonths.positionViewAtIndex(60, ListView.Beginning)
-          calendarSurface.forceActiveFocus()
-        })
-      }
+      onVisibleChanged: if (visible) Qt.callLater(function() { calendarMonths.positionViewAtIndex(60, ListView.Beginning) })
 
       PanelSurface {
         id: calendarSurface
-        focus: true
-        Keys.onPressed: event => {
-          if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ControlModifier)) return
-          if (event.key === Qt.Key_Escape) root.closeOverlays()
-          else if (event.key === Qt.Key_Left) calendarWindow.moveCalendarSelection(-1, false)
-          else if (event.key === Qt.Key_Right) calendarWindow.moveCalendarSelection(1, false)
-          else if (event.key === Qt.Key_Up) calendarWindow.moveCalendarSelection(-7, false)
-          else if (event.key === Qt.Key_Down) calendarWindow.moveCalendarSelection(7, false)
-          else if (event.key === Qt.Key_Home) calendarWindow.moveCalendarSelection(0, true)
-          else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-            calendarWindow.copyCalendarDate({ inMonth: true, date: calendarWindow.selectedDate || Time.calendarDate(root.now) })
-          else return
-          event.accepted = true
-        }
 
         Column {
           anchors.fill: parent
@@ -6212,9 +5227,7 @@ ShellRoot {
             width: parent.width
             glyph: "󰃭"
             title: Qt.formatDate(root.now, "dddd")
-            detail: calendarWindow.copyStatus || (calendarWindow.selectedDate
-              ? calendarWindow.selectedDate + " · Enter to copy"
-              : Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now))
+            detail: Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now)
 
             Rectangle {
               width: 84
@@ -6224,19 +5237,7 @@ ShellRoot {
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-              MouseArea {
-                id: todayMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                  if (!calendarWindow.copyPending) {
-                    calendarWindow.selectedDate = ""
-                    calendarWindow.copyStatus = ""
-                  }
-                  calendarMonths.positionViewAtIndex(60, ListView.Beginning)
-                }
-              }
+              MouseArea { id: todayMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendarMonths.positionViewAtIndex(60, ListView.Beginning) }
             }
           }
 
@@ -6254,13 +5255,13 @@ ShellRoot {
               id: monthDelegate
               required property int modelData
               readonly property int monthOffset: modelData - 60
-              readonly property date month: Time.monthDate(root.now, monthOffset)
+              readonly property date month: Time.monthDate(root.calendarDate, monthOffset)
               // A month occupies four, five or six Monday-first rows, and is
               // drawn at the height it needs rather than padded out to a fixed
               // block with the neighbouring months' days.
-              readonly property int weeks: Time.calendarWeeks(root.now, monthOffset)
-              readonly property int weekdayHeight: 22
-              readonly property int cellHeight: 33
+              readonly property int weeks: Time.calendarWeeks(root.calendarDate, monthOffset)
+              readonly property int weekdayHeight: root.barItemHeight
+              readonly property int cellHeight: root.controlHeight
               width: ListView.view.width
               height: root.chipHeight + root.spaceSmall + weekdayHeight
                 + root.spaceSmall + weeks * cellHeight
@@ -6304,20 +5305,17 @@ ShellRoot {
                   height: monthDelegate.weeks * monthDelegate.cellHeight
                   columns: 8
                   Repeater {
-                    model: Time.calendarCells(root.now, monthDelegate.monthOffset)
+                    model: Time.calendarCells(root.calendarDate, monthDelegate.monthOffset)
                     Item {
                       id: calendarCell
                       required property var modelData
-                      readonly property string copyDate: Time.calendarCopyDate(modelData)
-                      readonly property bool selected: copyDate !== "" && copyDate === calendarWindow.selectedDate
                       width: monthGrid.width / 8
                       height: monthDelegate.cellHeight
                       Rectangle {
-                        visible: !calendarCell.modelData.week && (calendarCell.modelData.today || calendarCell.selected || calendarDayHover.hovered)
+                        visible: !calendarCell.modelData.week && calendarCell.modelData.today
                         anchors.centerIn: parent
-                        width: 27; height: 27; radius: 13.5
-                        color: calendarCell.modelData.today ? root.accent : calendarCell.selected ? root.selectedColor : root.clearColor
-                        HoverWash { hovered: calendarDayHover.hovered }
+                        width: root.chipHeight; height: width; radius: width / 2
+                        color: root.accent
                       }
                       Text {
                         anchors.centerIn: parent
@@ -6328,16 +5326,6 @@ ShellRoot {
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
                       }
-                      HoverHandler { id: calendarDayHover; enabled: calendarCell.copyDate !== "" }
-                      MouseArea {
-                        id: calendarDayMouse
-                        anchors.fill: parent
-                        enabled: calendarCell.copyDate !== "" && !calendarWindow.copyPending
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
-                      }
-                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Copy " + calendarCell.copyDate }
                     }
                   }
                 }
@@ -6350,215 +5338,169 @@ ShellRoot {
     }
   }
 
+  DictationState { id: dictation; currentScreen: () => root.currentScreen() }
+
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      visible: dictation.active && root.pinnedScreen(dictation.output, modelData)
+      anchors { bottom: true }
+      margins.bottom: root.osdGap
+      implicitWidth: root.waveformWidth + root.panelMargin * 2
+      implicitHeight: dictationContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      mask: Region {}
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      WlrLayershell.namespace: "seele-shell-dictation"
+      PanelSurface {
+        Column {
+          id: dictationContent
+          anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.spaceSmall
+          Shared.Waveform {
+            id: dictationWave
+            theme: root
+            width: parent.width
+            height: root.rowHeight
+            visible: dictation.status === "recording"
+            Connections {
+              target: dictation
+              function onLevel(value) { dictationWave.push(value) }
+              function onStatusChanged() { if (dictation.status === "recording") dictationWave.clear() }
+            }
+          }
+          Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: root.spaceMedium
+            RefreshGlyph { visible: dictation.status === "transcribing"; width: root.textIcon; height: width; spinning: visible }
+            Text {
+              text: dictation.status === "recording" ? "Listening" : "Transcribing…"
+              color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody
+            }
+          }
+        }
+      }
+    }
+  }
+
   // World clock ---------------------------------------------------------------
   Variants {
     model: Quickshell.screens
     PanelWindow {
       id: clockWindow
-      property string copyStatus: ""
-      property bool copyPending: false
-
-      function copyClockTimestamp(offset, label) {
-        var value = Time.clockTimestamp(root.now, offset)
-        if (!value || copyPending || clockClipboard.running) return
-        copyStatus = "Copying timestamp…"
-        copyPending = true
-        clockClipboard.payload = value
-        clockClipboard.label = label
-        clockCopyTimeout.restart()
-        clockClipboard.stdinEnabled = true
-        clockClipboard.running = true
-      }
-
-      function copyClockSelection() {
-        var zone = timezoneList.model[timezoneList.currentIndex]
-        if (zone) copyClockTimestamp(zone.offset, zone.label)
-      }
-
-      function finishClockCopy(exitCode, exitStatus) {
-        if (!copyPending) return
-        clockCopyTimeout.stop()
-        copyPending = false
-        copyStatus = exitCode === 0 && exitStatus === 0
-          ? "Copied " + clockClipboard.label : "Could not copy timestamp"
-      }
-
-      Process {
-        id: clockClipboard
-        property string payload: ""
-        property string label: ""
-        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
-        onStarted: {
-          write(payload)
-          stdinEnabled = false
-        }
-        onExited: (exitCode, exitStatus) => clockWindow.finishClockCopy(exitCode, exitStatus)
-      }
-
-      Timer {
-        id: clockCopyTimeout
-        interval: 5000
-        onTriggered: {
-          clockWindow.finishClockCopy(-1, 1)
-          clockClipboard.running = false
-        }
-      }
-
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "clock" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 430
-      implicitHeight: Math.min(modelData.height - 60, 560)
+      implicitWidth: Math.min(root.clockWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap * 2,
+        root.panelMargin * 2 + clockHeader.height + localClockCard.height + timezoneSearch.height
+        + clockStatus.height + timezoneHeading.height + root.panelSpacing * 5
+        + root.clockRows * (root.notificationRowHeight + root.spaceTight))
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-clock"
-      onVisibleChanged: if (visible) Qt.callLater(function() {
-        if (!clockWindow.copyPending) clockWindow.copyStatus = ""
-        timezoneSearch.forceActiveFocus()
-        timezoneSearch.selectAll()
-      })
+      onVisibleChanged: if (visible) Qt.callLater(function() { timezoneSearch.forceActiveFocus(); timezoneSearch.selectAll() })
 
       PanelSurface {
         id: clockSurface
-
         Column {
           anchors.fill: parent
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
-
-          PanelHeader {
-            id: clockHeader
+          PanelHeader { id: clockHeader; width: parent.width; glyph: "󰥔"; title: "World clock"; detail: "Your time, everywhere" }
+          Rectangle {
+            id: localClockCard
             width: parent.width
-            glyph: "󰥔"
-            title: "World clock"
-            detail: clockWindow.copyStatus || "Enter copies zone · Ctrl+Enter local"
-
-            Text {
-              text: Qt.formatDateTime(root.now, "HH:mm:ss")
-              color: root.accent
-              font.family: root.fontFamily
-              font.pixelSize: root.textTitle
-              font.weight: root.weightStrong
-              MouseArea {
-                id: localTimeCopyMouse
-                anchors.fill: parent
-                enabled: !clockWindow.copyPending
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: clockWindow.copyClockTimestamp(undefined, "local time")
+            height: localClockContents.implicitHeight + root.cardPadding * 2
+            radius: root.radius
+            color: root.cardColor
+            RowLayout {
+              id: localClockContents
+              anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: root.cardPadding
+              Column {
+                Layout.fillWidth: true
+                spacing: root.spaceTight
+                SectionLabel { text: "LOCAL TIME" }
+                Text { text: Qt.formatDate(root.now, "yyyy-MM-dd") + " · " + ((root.clockData.local || {}).abbreviation || ""); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
               }
-              HoverTip { mouse: localTimeCopyMouse; inOverlay: true; text: "Copy local ISO timestamp" }
+              Text { text: Qt.formatTime(root.now, "HH:mm:ss"); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textHero; font.weight: root.weightLight }
             }
+            CardEdge {}
           }
-
           TextField {
             id: timezoneSearch
             width: parent.width
-            height: 38
-            placeholderText: "Search PST, UTC, Europe/London, city…"
-            color: root.text
-            placeholderTextColor: root.overlay
-            selectionColor: root.accent
-            selectedTextColor: root.base
-            font.family: root.fontFamily
-            font.pixelSize: root.textLabel
-            leftPadding: 12
-            rightPadding: 12
+            height: root.controlHeight
+            placeholderText: "Search city, country, zone, or UTC offset…"
+            color: root.text; placeholderTextColor: root.subtext
+            selectionColor: root.accent; selectedTextColor: root.base
+            font.family: root.fontFamily; font.pixelSize: root.textBody
+            leftPadding: root.spaceLarge; rightPadding: root.spaceLarge
             background: Rectangle { radius: root.radius; color: root.wellColor; border.color: timezoneSearch.activeFocus ? root.accent : root.cardBorder; border.width: 1 }
-
-            onTextChanged: timezoneList.currentIndex = 0
-            Keys.onPressed: event => {
-              if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return
-              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                if (event.modifiers & Qt.ControlModifier) clockWindow.copyClockTimestamp(undefined, "local time")
-                else clockWindow.copyClockSelection()
-              } else if (event.key === Qt.Key_Down) {
-                timezoneList.currentIndex = Math.min(timezoneList.count - 1, timezoneList.currentIndex + 1)
-                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
-              } else if (event.key === Qt.Key_Up) {
-                timezoneList.currentIndex = Math.max(0, timezoneList.currentIndex - 1)
-                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
-              } else if (event.key === Qt.Key_Escape) root.closeOverlays()
-              else return
-              event.accepted = true
-            }
+            onTextChanged: timezoneList.positionViewAtBeginning()
+            Keys.onEscapePressed: root.closeOverlays()
           }
-
+          Text {
+            id: clockStatus
+            width: parent.width
+            height: visible ? implicitHeight : 0
+            visible: root.clockError !== "" || root.clockData.zones.length === 0 || timezoneList.count === 0
+            text: root.clockError || (root.clockData.zones.length === 0 ? "Loading timezones…" : "No matching timezones")
+            color: root.clockError ? root.red : root.subtext
+            font.family: root.fontFamily; font.pixelSize: root.textBody; wrapMode: Text.Wrap
+          }
+          SectionLabel { id: timezoneHeading; text: timezoneSearch.text.trim() ? "SEARCH RESULTS" : (root.clockData.pinned.length ? "PINNED FIRST · ALL TIMEZONES" : "TIMEZONES"); width: parent.width }
           SeeleListView {
             id: timezoneList
             width: parent.width
-            height: parent.height - clockHeader.height - timezoneSearch.height - root.panelSpacing * 2
+            height: Math.max(0, parent.height - y)
             model: root.filteredTimezones(timezoneSearch.text)
-            spacing: 4
+            spacing: root.spaceTight
             clip: true
             delegate: Rectangle {
               id: timezoneRow
               required property var modelData
-              required property int index
               readonly property bool pinned: root.timezonePinned(modelData.id)
               width: ListView.view.width
-              height: 54
+              height: root.notificationRowHeight
               radius: root.radius
-              color: timezoneList.currentIndex === index ? root.selectedColor : timezoneRowHover.hovered ? root.cardColor : root.rowColor
+              color: rowHover.hovered ? root.hoveredColor(root.rowColor) : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
-              HoverWash { hovered: timezoneList.currentIndex === timezoneRow.index && timezoneRowHover.hovered }
-
-              Text { visible: modelData.kind === "city"; anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 25; text: modelData.flag; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
-              Column {
-                anchors.left: parent.left
-                anchors.leftMargin: modelData.kind === "city" ? 43 : 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - (modelData.kind === "city" ? 176 : 145)
-                Text { width: parent.width; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; elide: Text.ElideRight }
-                Text { width: parent.width; text: modelData.id + " · " + modelData.abbreviation + " " + modelData.offset; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textMicro; elide: Text.ElideRight }
-              }
-              Item {
-                anchors.right: pinTimezoneButton.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                width: 76
-                height: zoneTimeLabels.implicitHeight
-                Rectangle {
-                  anchors.fill: parent
-                  radius: root.radiusSmall
-                  color: root.clearColor
-                  HoverWash { hovered: zoneTimeHover.hovered }
+              RowLayout {
+                anchors.fill: parent
+                anchors.margins: root.spaceMedium
+                spacing: root.spaceMedium
+                Text { text: timezoneRow.modelData.flag || "◷"; Layout.preferredWidth: root.chipHeight; color: root.subtext; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
+                ColumnLayout {
+                  Layout.fillWidth: true
+                  spacing: root.spaceTight
+                  Text { Layout.fillWidth: true; text: timezoneRow.modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; elide: Text.ElideRight }
+                  Text { Layout.fillWidth: true; text: timezoneRow.modelData.id + " · " + Time.formatOffset(timezoneRow.modelData.offset); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; elide: Text.ElideMiddle }
                 }
                 Column {
-                  id: zoneTimeLabels
-                  width: parent.width
-                  Text { width: parent.width; text: Time.offsetTime(root.now, timezoneRow.modelData.offset, false) || timezoneRow.modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong; horizontalAlignment: Text.AlignRight }
-                  Text { width: parent.width; text: timezoneRow.modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textMicro; horizontalAlignment: Text.AlignRight }
+                  spacing: root.spaceTight
+                  Text { width: parent.width; text: timezoneRow.modelData.time; color: timezoneRow.pinned ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight; horizontalAlignment: Text.AlignRight }
+                  Text { text: timezoneRow.modelData.day; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
                 }
-                HoverHandler { id: zoneTimeHover }
-                MouseArea {
-                  id: zoneTimeCopyMouse
-                  anchors.fill: parent
-                  enabled: !clockWindow.copyPending
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: clockWindow.copyClockTimestamp(timezoneRow.modelData.offset, timezoneRow.modelData.label)
+                Shared.ActionButton {
+                  theme: root
+                  text: timezoneRow.pinned ? "Unpin" : "Pin"
+                  selected: timezoneRow.pinned
+                  enabled: !clockActionProcess.running
+                  onClicked: root.pinTimezone(timezoneRow.modelData.id)
                 }
-                HoverTip { mouse: zoneTimeCopyMouse; inOverlay: true; text: "Copy ISO timestamp · " + timezoneRow.modelData.id }
               }
-              // The row lifts for a pointer anywhere on it, Pin button
-              // included. A hover area stopped at that button's edge dropped
-              // the lift again as soon as the pointer crossed it.
-              HoverHandler { id: timezoneRowHover }
-              Rectangle {
-                id: pinTimezoneButton
-                anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                width: 38; height: 30; radius: root.radius
-                color: pinTimezoneMouse.pressed ? root.pressColor : timezoneRow.pinned ? root.selectedColor : root.cardColor
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
-                HoverWash { hovered: pinTimezoneMouse.containsMouse }
-                Text { anchors.centerIn: parent; text: timezoneRow.pinned ? "Unpin" : "Pin"; color: timezoneRow.pinned ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-                MouseArea { id: pinTimezoneMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pinTimezone(timezoneRow.modelData.id) }
-              }
+              HoverHandler { id: rowHover }
             }
             ScrollBar.vertical: SlimScrollBar { popupHovered: clockSurface.hovered }
           }
@@ -6798,12 +5740,13 @@ ShellRoot {
               detail: root.agentRefreshing ? "Refreshing usage…" : root.agentError !== "" ? "Usage unavailable" : root.agentUpdatedText()
               detailColor: root.agentError !== "" ? root.red : root.subtext
 
-              IconButton {
+              Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                active: root.agentRefreshing
-                hovered: refreshMouse.containsMouse
-                pressed: refreshMouse.pressed
-
+                width: root.controlHeight
+                height: root.controlHeight
+                radius: root.radius
+                color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : root.clearColor
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
                 MouseArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.refreshAgents() }
                 HoverTip { mouse: refreshMouse; text: "Refresh usage"; inOverlay: true }
@@ -7398,157 +6341,6 @@ ShellRoot {
     }
   }
 
-  // GitHub pull requests ------------------------------------------------------
-  Variants {
-    model: Quickshell.screens
-    PanelWindow {
-      id: githubWindow
-      required property var modelData
-      property string tab: "reviews"
-      readonly property var entries: tab === "reviews" ? githubStore.snapshot.reviews : githubStore.snapshot.authored
-      readonly property int total: tab === "reviews" ? githubStore.snapshot.reviewTotal : githubStore.snapshot.authoredTotal
-      screen: modelData
-      visible: root.controlPanel === "github" && root.pinnedScreen(root.overlayScreen, modelData)
-      onVisibleChanged: if (visible) Qt.callLater(function() { githubSurface.forceActiveFocus() })
-      anchors { top: true; left: true }
-      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 440
-      implicitHeight: githubContent.implicitHeight + root.panelMargin * 2
-      exclusionMode: ExclusionMode.Ignore
-      color: "transparent"
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.namespace: "seele-shell-github"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-
-      PanelSurface {
-        id: githubSurface
-        focus: true
-        Keys.onPressed: event => {
-          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
-          if (event.isAutoRepeat && event.key !== Qt.Key_J && event.key !== Qt.Key_K
-              && event.key !== Qt.Key_Up && event.key !== Qt.Key_Down) return
-          if (event.key === Qt.Key_Escape) { root.closeOverlays(); event.accepted = true }
-          else if (event.key === Qt.Key_J || event.key === Qt.Key_Down) { githubList.incrementCurrentIndex(); event.accepted = true }
-          else if (event.key === Qt.Key_K || event.key === Qt.Key_Up) { githubList.decrementCurrentIndex(); event.accepted = true }
-          else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) { githubWindow.tab = githubWindow.tab === "reviews" ? "authored" : "reviews"; githubList.currentIndex = 0; event.accepted = true }
-          else if (event.key === Qt.Key_R) { githubStore.refresh(true); event.accepted = true }
-          else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && githubList.currentIndex >= 0 && githubList.currentIndex < githubWindow.entries.length) { githubStore.openPull(githubWindow.entries[githubList.currentIndex].url); event.accepted = true }
-        }
-        Column {
-          id: githubContent
-          anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-          anchors.margins: root.panelMargin
-          spacing: root.panelSpacing
-
-          PanelHeader {
-            width: parent.width
-            glyph: "󰊤"
-            title: "GitHub"
-            detail: githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
-            Rectangle {
-              width: root.chipHeight; height: root.chipHeight; radius: root.radius
-              color: githubRefreshHover.hovered ? root.hoverColor : root.clearColor
-              RefreshGlyph { anchors.centerIn: parent; width: root.textCard; height: width; spinning: githubStore.refreshing; color: githubStore.canRefresh ? root.text : root.subtext }
-              HoverHandler { id: githubRefreshHover }
-              MouseArea { id: githubRefreshMouse; anchors.fill: parent; hoverEnabled: true; enabled: githubStore.canRefresh; cursorShape: Qt.PointingHandCursor; onClicked: githubStore.refresh(true) }
-              HoverTip { mouse: githubRefreshMouse; text: "Refresh GitHub"; inOverlay: true }
-            }
-          }
-
-          Row {
-            width: parent.width
-            spacing: root.spaceSmall
-            Repeater {
-              model: [{ id: "reviews", label: "Requested reviews" }, { id: "authored", label: "My pull requests" }]
-              Rectangle {
-                required property var modelData
-                width: (githubContent.width - root.spaceSmall) / 2
-                height: root.controlHeight
-                radius: root.radius
-                color: githubWindow.tab === modelData.id ? root.selectedColor : root.wellColor
-                Rectangle { anchors.fill: parent; radius: parent.radius; color: githubTabHover.hovered ? root.hoverColor : root.clearColor }
-                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: githubWindow.tab === modelData.id ? root.weightStrong : root.weightMedium }
-                HoverHandler { id: githubTabHover }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubWindow.tab = modelData.id; githubList.currentIndex = 0; githubSurface.forceActiveFocus() } }
-              }
-            }
-          }
-
-          Text {
-            visible: githubStore.snapshot.state !== "ready"
-            width: parent.width
-            text: githubStore.refreshing && githubStore.snapshot.state === "idle" ? "Loading pull requests…" : githubStore.snapshot.message + (githubStore.snapshot.stale ? " Showing the last successful refresh." : "")
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            color: githubStore.snapshot.state === "idle" ? root.subtext : root.yellow
-            font.family: root.fontFamily; font.pixelSize: root.textBody
-          }
-
-          Text {
-            visible: githubStore.snapshot.state === "auth-required"
-            width: parent.width
-            text: "Run gh auth login --hostname " + githubStore.snapshot.host + " in a terminal to connect your account."
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            color: root.subtext
-            font.family: root.fontFamily; font.pixelSize: root.textCaption
-          }
-
-          SeeleListView {
-            id: githubList
-            width: parent.width
-            height: Math.min(contentHeight, root.rowHeight * 7)
-            visible: githubWindow.entries.length > 0
-            clip: true
-            spacing: root.spaceSmall
-            model: githubWindow.entries
-            currentIndex: 0
-            keyNavigationEnabled: true
-            ScrollBar.vertical: SlimScrollBar { popupHovered: githubSurface.hovered }
-            delegate: Rectangle {
-              id: githubPullRow
-              required property var modelData
-              required property int index
-              width: githubList.width - root.scrollGutter
-              height: githubPullContent.implicitHeight + root.spaceMedium * 2
-              radius: root.radius
-              color: githubSurface.activeFocus && githubList.currentIndex === index ? root.selectedColor : root.rowColor
-              Rectangle { anchors.fill: parent; radius: parent.radius; color: githubPullHover.hovered ? root.hoverColor : root.clearColor }
-              Column {
-                id: githubPullContent
-                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-                anchors.margins: root.spaceMedium
-                spacing: root.spaceTight
-                Text { width: parent.width; text: githubPullRow.modelData.title; textFormat: Text.PlainText; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-                Text { width: parent.width; text: githubPullRow.modelData.repository + " #" + githubPullRow.modelData.number; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-                Text { width: parent.width; text: GitHub.checksLabel(githubPullRow.modelData.checks) + " · " + GitHub.reviewLabel(githubPullRow.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: ["FAILURE", "ERROR"].indexOf(githubPullRow.modelData.checks) >= 0 ? root.red : githubPullRow.modelData.checks === "SUCCESS" ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-              }
-              HoverHandler { id: githubPullHover }
-              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubList.currentIndex = githubPullRow.index; githubStore.openPull(githubPullRow.modelData.url) } }
-            }
-          }
-
-          Text {
-            visible: githubWindow.entries.length === 0 && githubStore.snapshot.state === "ready"
-            width: parent.width
-            text: githubWindow.tab === "reviews" ? "No reviews are waiting for you." : "You have no open pull requests."
-            textFormat: Text.PlainText
-            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody
-          }
-
-          Text {
-            visible: githubStore.snapshot.updatedAt !== ""
-            width: parent.width
-            text: "Showing " + githubWindow.entries.length + " of " + githubWindow.total + " · " + (githubStore.snapshot.stale ? "Last updated " : "Updated ") + Qt.formatTime(new Date(githubStore.snapshot.updatedAt), "HH:mm") + " · Tab to switch · R to refresh"
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption
-          }
-        }
-      }
-    }
-  }
-
   // Control Center ---------------------------------------------------------------
   // Every module here also keeps its own menu bar entry and its own panel. This
   // panel is the one place that carries all of them at once, so its modules stay
@@ -7580,8 +6372,6 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-control-center"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) Qt.callLater(function() { controlCenterContent.forceActiveFocus() })
       mask: Region {
         y: controlCenterWindow.dragging ? 0 : controlCenterWindow.barReach
         width: controlCenterWindow.width
@@ -7595,7 +6385,6 @@ ShellRoot {
         PanelSurface {
           Column {
             id: controlCenterContent
-            Keys.onEscapePressed: root.closeOverlays()
 
             anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
@@ -7617,10 +6406,6 @@ ShellRoot {
     PanelWindow {
       id: mediaWindow
 
-      function cyclePlaybackSpeed() {
-        return MediaSpeed.cycle(mediaWindow.player)
-      }
-
       required property var modelData
       readonly property var players: root.availableMediaPlayers()
       readonly property var player: root.nowPlayingPlayer()
@@ -7634,13 +6419,10 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-media"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) Qt.callLater(function() { mediaContent.forceActiveFocus() })
 
       PanelSurface {
         Column {
           id: mediaContent
-          Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent
           anchors.margins: root.panelMargin
@@ -7663,41 +6445,6 @@ ShellRoot {
             width: parent.width
             height: root.mediaBodyHeight
             player: mediaWindow.player
-          }
-          Rectangle {
-            width: parent.width
-            height: root.controlHeight + root.spaceMedium * 2
-            radius: root.radius
-            color: root.cardColor
-            CardEdge {}
-            Text {
-              anchors { left: parent.left; right: playbackSpeedButton.left; verticalCenter: parent.verticalCenter; margins: root.spaceMedium }
-              text: "Playback speed"
-              color: root.text
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-              elide: Text.ElideRight
-            }
-            NotificationButton {
-              id: playbackSpeedButton
-              readonly property bool containsMouse: hovered
-              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.spaceMedium }
-              label: MediaSpeed.label(mediaWindow.player)
-              enabled: MediaSpeed.nextRate(mediaWindow.player) !== null
-              autoRepeat: false
-              onClicked: mediaWindow.cyclePlaybackSpeed()
-              Keys.onPressed: event => {
-                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
-                event.accepted = true
-                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                mediaWindow.cyclePlaybackSpeed()
-              }
-              HoverTip {
-                mouse: playbackSpeedButton
-                inOverlay: true
-                text: "Cycle supported speeds · " + MediaSpeed.rates(mediaWindow.player).join("× / ") + "×"
-              }
-            }
           }
         }
       }
@@ -8772,11 +7519,9 @@ ShellRoot {
         ? (root.systemData.notifications.history || [])
         : (root.systemData.notifications.items || [])
       // Everything above the list: the panel's own padding, the header, the
-      // view switch and clear row, and the gap on either side of it. Measured
-      // from the parts themselves, because the header grows a detail line when
-      // there is a count to report and a counted constant would not follow it.
-      readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
-        + root.panelSpacing + notificationViews.height + root.panelSpacing + quietPresets.height + root.panelSpacing
+      // history and clear row, and the gap on either side of it.
+      readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
+        + root.panelSpacing + 36 + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -8811,6 +7556,10 @@ ShellRoot {
         Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
+      function toggleHistory() {
+        root.notificationHistoryOpen = !root.notificationHistoryOpen
+      }
+
       onVisibleChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
@@ -8829,36 +7578,42 @@ ShellRoot {
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           PanelHeader {
-            id: notificationHeader
-
             width: parent.width
             glyph: root.systemData.dnd ? "󰂛" : "󰂚"
-            // The view switch below says which side is being read, so the
-            // title stays put and the count goes where every other panel puts
-            // what it is about.
-            title: "Notifications"
-            // The panel is an inbox, so the count says how much is still
-            // waiting rather than repeating the word above it.
-            detail: notificationWindow.entries.length === 0 ? ""
-              : root.notificationHistoryOpen
-                ? notificationWindow.entries.length + " in the past 24 hours"
-                : notificationWindow.entries.length + " waiting"
+            title: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
 
+            // The count is small print beside a large title, and centring
+            // both line boxes in the same row leaves the digits floating
+            // above the title: the shorter face has the shorter box, so its
+            // baseline lands higher. The offset is the distance between the
+            // two baselines, which puts the count on the title's line.
+            FontMetrics { id: notificationTitleMetrics; font.family: root.fontFamily; font.pixelSize: root.textTitle }
+            FontMetrics { id: notificationCountMetrics; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: Math.round((notificationCountMetrics.height - notificationTitleMetrics.height) / 2
+                + notificationTitleMetrics.ascent - notificationCountMetrics.ascent)
+              text: String(notificationWindow.entries.length)
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textBody
+            }
             // Silence is an action, not a setting with a caption: the header
             // mark already reports whether the shell is muted, so the control
             // beside it is the same square button every other panel header
             // uses rather than a labelled switch wedged into the title row.
-            IconButton {
+            Rectangle {
               readonly property bool busy: root.controlBusy("dnd", "")
 
               anchors.verticalCenter: parent.verticalCenter
               width: root.chipHeight
               height: root.chipHeight
-              tint: root.yellow
-              active: root.systemData.dnd
-              hovered: dndMouse.containsMouse
-              pressed: dndMouse.pressed
-
+              radius: root.radius
+              color: dndMouse.pressed ? root.pressColor
+                : root.systemData.dnd ? root.alpha(root.yellow, dndMouse.containsMouse ? 0.24 : 0.14)
+                : dndMouse.containsMouse ? root.hoverColor
+                : root.clearColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text {
                 visible: !parent.busy
                 anchors.centerIn: parent
@@ -8880,114 +7635,41 @@ ShellRoot {
               HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
             }
           }
-          // Current and history are two views of one list, not two errands, so
-          // they are a well with the one being read lit inside it. Clear is a
-          // one-shot action and stays a button beside it.
           Row {
-            id: notificationViews
-
-            width: parent.width
-            spacing: root.spaceMedium
-
-            SegmentWell {
-              width: parent.width - notificationClear.width - parent.spacing
-
-              Repeater {
-                model: [
-                  { label: "Current", history: false },
-                  { label: "History", history: true }
-                ]
-
-                Segment {
-                  id: notificationView
-
-                  required property var modelData
-
-                  width: parent.width / 2
-                  selected: root.notificationHistoryOpen === modelData.history
-                  hovered: notificationViewMouse.containsMouse
-                  pressed: notificationViewMouse.pressed
-
-                  Text {
-                    anchors.centerIn: parent
-                    text: notificationView.modelData.label
-                    color: notificationView.selected ? root.accent : root.subtext
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textLabel
-                    font.weight: notificationView.selected ? root.weightStrong : root.weightRegular
-                  }
-                  MouseArea {
-                    id: notificationViewMouse
-                    anchors.fill: parent
-                    enabled: !notificationView.selected
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.notificationHistoryOpen = notificationView.modelData.history
-                  }
-                  HoverTip { mouse: notificationViewMouse; inOverlay: true; text: notificationView.modelData.history ? "Show the past 24 hours" : "Show current notifications" }
-                }
-              }
-            }
-
+            width: parent.width; spacing: 8
             Rectangle {
-              id: notificationClear
-
+              width: (parent.width - 8) / 2; height: 36; radius: root.radius
+              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : root.cardColor
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              HoverWash { hovered: historyMouse.containsMouse }
+              Text {
+                anchors.centerIn: parent
+                text: root.notificationHistoryOpen ? "Back" : "History"
+                color: root.text
+                font.family: root.fontFamily
+                font.pixelSize: root.textLabel
+                font.weight: root.weightStrong
+              }
+              MouseArea { id: historyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: notificationWindow.toggleHistory() }
+              HoverTip { mouse: historyMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Show current notifications" : "Show the past 24 hours" }
+            }
+            Rectangle {
               readonly property bool busy: root.controlBusy("notifications", "clear")
               readonly property bool complete: root.controlCompleted("notifications", "clear")
               readonly property bool failed: root.controlFailed("notifications", "clear")
-
-              width: 96
-              height: root.chipHeight
-              radius: root.radius
-              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : root.cardColor
-              antialiasing: true
+              width: (parent.width - 8) / 2; height: 36; radius: root.radius
+              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-              CardEdge {}
-              HoverWash { hovered: clearMouse.containsMouse }
-
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
-              HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
-            }
-          }
-          Row {
-            id: quietPresets
-            width: parent.width
-            height: root.chipHeight
-            spacing: root.spaceSmall
-            Text {
-              width: 104
-              height: parent.height
-              text: root.systemData.notifications.dndUntil > 0
-                ? "Until " + Qt.formatDateTime(new Date(root.systemData.notifications.dndUntil * 1000), "HH:mm") : "Quiet for"
-              color: root.systemData.dnd ? root.yellow : root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-              verticalAlignment: Text.AlignVCenter
-            }
-            Repeater {
-              model: [{minutes:15,label:"15 min"}, {minutes:60,label:"1 hour"}, {minutes:240,label:"4 hours"}]
-              Rectangle {
-                required property var modelData
-                width: (quietPresets.width - 104 - root.spaceSmall * 3) / 3
-                height: root.chipHeight
-                radius: root.radiusSmall
-                color: quietMouse.pressed ? root.pressColor : quietHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-                function activate() { notificationStore.controller.snooze(modelData.minutes, Date.now() / 1000) }
-                CardEdge {}
-                HoverHandler { id: quietHover }
-                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                MouseArea { id: quietMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: parent.activate() }
-              }
             }
           }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing - quietPresets.height - root.panelSpacing
+            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
