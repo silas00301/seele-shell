@@ -54,3 +54,82 @@ const instant = new Date("2026-08-23T21:30:07Z");
 assert(time.offsetTime(instant, "+0530", true) === "03:00:07", "expanded clocks must include seconds across a day boundary");
 assert(time.offsetTime(instant, "-0700", false) === "14:30", "compact offset times must omit seconds");
 assert(time.offsetTime(instant, "invalid", true) === "", "invalid UTC offsets must not produce a clock");
+
+// Date copying follows the calendar's local day, including leap days and years.
+assert(time.calendarDate(new Date(2026, 0, 1, 0, 1)) === "2026-01-01", "midnight uses local date fields");
+assert(time.calendarDate(new Date(2028, 1, 29, 23, 59)) === "2028-02-29", "leap dates remain valid near midnight");
+assert(time.calendarDate(new Date(NaN)) === "", "invalid dates cannot reach the clipboard");
+assert(days.filter(cell => cell.inMonth).map(time.calendarCopyDate).every((value, i) => value === `2026-08-${String(i + 1).padStart(2, "0")}`), "each real day carries its exact ISO date");
+assert(cells.filter(cell => cell.week || !cell.inMonth).every(cell => time.calendarCopyDate(cell) === ""), "week numbers and blank cells cannot be copied");
+assert(time.calendarCells(new Date(2026, 11, 31, 23, 59), 1).some(cell => cell.date === "2027-01-01"), "scrolling across a year supplies the next year's dates");
+
+// Execute the actual QML request/completion methods, with only the process and
+// timer replaced. This guards acknowledgement, overlap, failure and stdin data.
+const shellSource = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
+const calendarContext = {
+  Time: time,
+  selectedDate: "",
+  copyStatus: "",
+  copyPending: false,
+  calendarClipboard: { payload: "", stdinEnabled: false, running: false },
+  calendarCopyTimeout: { restart() { this.active = true; }, stop() { this.active = false; } },
+};
+vm.createContext(calendarContext);
+for (const name of ["copyCalendarDate", "finishCalendarCopy"]) {
+  const match = shellSource.match(new RegExp(`      function ${name}\\([^]*?\\n      }`));
+  assert(match, `production ${name} handler exists`);
+  vm.runInContext(match[0], calendarContext);
+}
+calendarContext.copyCalendarDate(cells[0]);
+assert(!calendarContext.copyPending, "week click cannot start a process");
+calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-23" });
+assert(calendarContext.selectedDate === "2026-08-23" && calendarContext.copyPending, "click selects the requested day and begins copy");
+assert(calendarContext.calendarClipboard.payload === "2026-08-23" && calendarContext.calendarClipboard.stdinEnabled, "clipboard text is exact stdin payload");
+assert(!calendarContext.copyStatus.startsWith("Copied"), "starting a process must not claim success");
+calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
+assert(calendarContext.calendarClipboard.payload === "2026-08-23", "a second click cannot replace an in-flight payload");
+calendarContext.calendarClipboard.running = false;
+calendarContext.finishCalendarCopy(0, 0);
+assert(calendarContext.copyStatus === "Copied 2026-08-23" && !calendarContext.copyPending && !calendarContext.calendarCopyTimeout.active, "only successful completion acknowledges the exact date");
+calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
+calendarContext.calendarClipboard.running = false;
+calendarContext.finishCalendarCopy(1, 0);
+assert(calendarContext.copyStatus === "Could not copy date", "nonzero clipboard exit reports failure");
+calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
+calendarContext.calendarClipboard.running = false;
+calendarContext.finishCalendarCopy(0, 1);
+assert(calendarContext.copyStatus === "Could not copy date", "a crashed process cannot report success");
+calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
+calendarContext.calendarClipboard.running = false;
+calendarContext.finishCalendarCopy(-1, 1);
+calendarContext.calendarClipboard.running = false;
+calendarContext.finishCalendarCopy(0, 0);
+assert(calendarContext.copyStatus === "Could not copy date" && !calendarContext.copyPending, "timeout releases the request and ignores late completion");
+const calendarProcess = shellSource.match(/id: calendarClipboard[^]*?onStarted: \{([^]*?)\n        }/);
+assert(calendarProcess, "production clipboard process exists");
+let calendarWritten = "";
+const stdin = { payload: "2026-08-23", stdinEnabled: true, write(value) { calendarWritten = value; } };
+vm.createContext(stdin);
+vm.runInContext(calendarProcess[1], stdin);
+assert(calendarWritten === "2026-08-23" && !stdin.stdinEnabled, "process writes exact date then closes stdin");
+console.log("Calendar date and clipboard tests passed");
+
+assert(time.moveCalendarDate(new Date(2026, 7, 23), "2026-08-31", 1).date === "2026-09-01", "keyboard movement crosses a month");
+assert(time.moveCalendarDate(new Date(2026, 7, 23), "2026-12-31", 1).monthOffset === 5, "keyboard movement scrolls into the correct next-year month");
+assert(time.moveCalendarDate(new Date(2028, 1, 1), "2028-02-28", 1).date === "2028-02-29", "keyboard movement retains leap day");
+assert(time.moveCalendarDate(new Date(2026, 2, 1), "2026-03-28", 1).date === "2026-03-29", "DST movement counts calendar days");
+assert(time.moveCalendarDate(now, "", 0).date === "2026-08-23", "Home selects local today");
+assert(time.moveCalendarDate(now, "2031-08-31", 1) === null, "navigation stays inside the rendered month range");
+assert(time.moveCalendarDate(now, "2026-02-30", 1) === null, "invalid selected dates cannot roll into another month");
+calendarContext.root = { now };
+calendarContext.ListView = { Contain: 2 };
+calendarContext.calendarMonths = { positionViewAtIndex(index, mode) { this.index = index; this.mode = mode; } };
+vm.runInContext(shellSource.match(/      function moveCalendarSelection\([^]*?\n      }/)[0], calendarContext);
+calendarContext.selectedDate = "2026-08-31";
+calendarContext.moveCalendarSelection(1, false);
+assert(calendarContext.selectedDate === "2026-09-01" && calendarContext.calendarMonths.index === 61, "production arrow handler moves selection and scrolls the month");
+calendarContext.moveCalendarSelection(0, true);
+assert(calendarContext.selectedDate === "2026-08-23" && calendarContext.calendarMonths.index === 60, "production Home handler returns to today");
+calendarContext.copyPending = true;
+calendarContext.moveCalendarSelection(1, false);
+assert(calendarContext.selectedDate === "2026-08-23", "keyboard movement cannot relabel a pending copy");
