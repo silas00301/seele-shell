@@ -2,10 +2,13 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "seele-shell",
   "title": "Seele Shell",
-  "description": "Desktop controls and searchable Hyprland keybindings",
+  "description": "Live desktop controls, audio devices, windows, workspaces, and Hyprland keybindings",
   "icon": "seele.svg",
   "author": "seele",
-  "categories": ["System", "Productivity"],
+  "categories": [
+    "System",
+    "Productivity"
+  ],
   "license": "MIT",
   "dependencies": {
     "@raycast/api": "^1.103.6",
@@ -23,6 +26,42 @@
       "title": "Search Keybindings",
       "description": "Search active Hyprland keybindings",
       "mode": "view"
+    },
+    {
+      "name": "windows",
+      "title": "Seele Windows and Workspaces",
+      "description": "Search running windows and switch workspaces",
+      "mode": "view"
+    },
+    {
+      "name": "audio",
+      "title": "Seele Audio Devices",
+      "description": "Switch speakers, headphones, and microphones",
+      "mode": "view"
+    },
+    {
+      "name": "screen-links",
+      "title": "Seele Screen Links and Codes",
+      "description": "Open or copy a numbered link, QR code, or barcode on screen",
+      "mode": "no-view"
+    },
+    {
+      "name": "control-center",
+      "title": "Seele Control Center",
+      "description": "Open the desktop control center",
+      "mode": "no-view"
+    },
+    {
+      "name": "agents",
+      "title": "Seele AI Cockpit",
+      "description": "Open agent sessions, usage, and limits",
+      "mode": "no-view"
+    },
+    {
+      "name": "session",
+      "title": "Seele Session Controls",
+      "description": "Open lock, suspend, restart, and shutdown controls",
+      "mode": "no-view"
     }
   ]
 }

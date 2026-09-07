@@ -89,13 +89,21 @@ pkgs.stdenvNoCC.mkDerivation {
 
     cp ${../vicinae/package.json} "$out/share/vicinae/extensions/seele-shell/package.json"
     cp ${../vicinae/seele.svg} "$out/share/vicinae/extensions/seele-shell/assets/seele.svg"
-    substitute ${../vicinae/seele.tsx} seele.tsx \
-      --replace-fail '@SEELE_SHELLCTL@' "$out/bin/seele-shellctl"
-    substitute ${../vicinae/keybindings.tsx} keybindings.tsx \
+    cp -r ${../vicinae} vicinae
+    chmod -R u+w vicinae
+    substituteInPlace vicinae/runtime.ts \
+      --replace-fail '@SEELE_SHELLCTL@' "$out/bin/seele-shellctl" \
+      --replace-fail '@SEELE_CONTROL@' "$out/bin/seele-control" \
       --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl' \
       --replace-fail '@WTYPE@' '${pkgs.wtype}/bin/wtype'
-    esbuild seele.tsx --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/seele.js"
-    esbuild keybindings.tsx --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/keybindings.js"
+    for command in $(jq -r '.commands[].name' vicinae/package.json); do
+      esbuild "vicinae/$command.tsx" --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/$command.js"
+    done
+    esbuild vicinae/desktop.ts --bundle --platform=node --format=cjs --outfile=desktop.cjs
+    node ${../../tests/vicinae.cjs} "$PWD/desktop.cjs"
+    esbuild vicinae/runtime.ts --bundle --platform=node --format=cjs --external:@raycast/api --external:react --outfile=runtime.cjs
+    esbuild vicinae/status.ts --bundle --platform=node --format=cjs --external:./runtime --external:react --outfile=status.cjs
+    node ${../../tests/vicinae-runtime.cjs} "$PWD/runtime.cjs" "$PWD/status.cjs"
 
     makeWrapper ${quickshell}/bin/quickshell "$out/bin/seele-shell" \
       --add-flags "-n -p $out/share/seele-shell" \
@@ -158,7 +166,9 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/licenses/seele-shell/Something-X.txt"
     test -f "$out/share/vicinae/extensions/seele-shell/package.json"
     test -f "$out/share/vicinae/extensions/seele-shell/seele.js"
-    test -f "$out/share/vicinae/extensions/seele-shell/keybindings.js"
+    for command in $(jq -r '.commands[].name' "$out/share/vicinae/extensions/seele-shell/package.json"); do
+      test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
+    done
     ${quickshell}/bin/quickshell --private-check-compat
     qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml"
     bash ${../../tests/system-state.sh} \

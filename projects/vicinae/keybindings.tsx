@@ -1,9 +1,7 @@
 import { Action, ActionPanel, Clipboard, Icon, List } from "@raycast/api";
-import { execFileSync } from "node:child_process";
 import React from "react";
 
-const hyprctl = "@HYPRCTL@";
-const wtype = "@WTYPE@";
+import { binaries, perform, run, useQuery } from "./runtime";
 
 type Binding = {
   modmask?: number;
@@ -68,14 +66,14 @@ const fallbackDescriptions: Record<string, string> = {
   "Super + Shift + L": "Grow the focused window horizontally",
   "Super + Tab": "Move the workspace to the next monitor",
   "Super + Shift + Tab": "Move the workspace to the previous monitor",
-  "XF86AudioRaiseVolume": "Raise the volume",
-  "XF86AudioLowerVolume": "Lower the volume",
-  "XF86AudioMute": "Toggle mute",
-  "XF86AudioMicMute": "Toggle microphone mute",
-  "XF86AudioPlay": "Toggle media playback",
-  "XF86AudioPause": "Toggle media playback",
-  "XF86AudioNext": "Play the next track",
-  "XF86AudioPrev": "Play the previous track",
+  XF86AudioRaiseVolume: "Raise the volume",
+  XF86AudioLowerVolume: "Lower the volume",
+  XF86AudioMute: "Toggle mute",
+  XF86AudioMicMute: "Toggle microphone mute",
+  XF86AudioPlay: "Toggle media playback",
+  XF86AudioPause: "Toggle media playback",
+  XF86AudioNext: "Play the next track",
+  XF86AudioPrev: "Play the previous track",
   "Alt + Space": "Open the Vicinae application launcher",
   "Super + A": "Open the AI cockpit",
   "Super + Shift + A": "Launch Pi",
@@ -87,17 +85,21 @@ const fallbackDescriptions: Record<string, string> = {
 
 for (let workspace = 1; workspace <= 4; workspace += 1) {
   fallbackDescriptions[`Super + ${workspace}`] = `Focus workspace ${workspace}`;
-  fallbackDescriptions[`Super + Shift + ${workspace}`] = `Move the focused window to workspace ${workspace}`;
+  fallbackDescriptions[`Super + Shift + ${workspace}`] =
+    `Move the focused window to workspace ${workspace}`;
 }
 for (let workspace = 5; workspace <= 8; workspace += 1) {
   const key = workspace - 4;
   fallbackDescriptions[`Super + Alt + ${key}`] = `Focus workspace ${workspace}`;
-  fallbackDescriptions[`Super + Alt + Shift + ${key}`] = `Move the focused window to workspace ${workspace}`;
+  fallbackDescriptions[`Super + Alt + Shift + ${key}`] =
+    `Move the focused window to workspace ${workspace}`;
 }
 for (let workspace = 9; workspace <= 12; workspace += 1) {
   const key = workspace - 8;
-  fallbackDescriptions[`Super + Ctrl + ${key}`] = `Focus workspace ${workspace}`;
-  fallbackDescriptions[`Super + Ctrl + Shift + ${key}`] = `Move the focused window to workspace ${workspace}`;
+  fallbackDescriptions[`Super + Ctrl + ${key}`] =
+    `Focus workspace ${workspace}`;
+  fallbackDescriptions[`Super + Ctrl + Shift + ${key}`] =
+    `Move the focused window to workspace ${workspace}`;
 }
 
 function modifiers(mask = 0) {
@@ -122,7 +124,13 @@ const inputKeyNames: Record<string, string> = {
   ESCAPE: "Escape",
   SPACE: "space",
   TAB: "Tab",
-  F12: "F12",
+  HOME: "Home",
+  END: "End",
+  DELETE: "Delete",
+  BACKSPACE: "BackSpace",
+  INSERT: "Insert",
+  PAGE_UP: "Page_Up",
+  PAGE_DOWN: "Page_Down",
   XF86AudioRaiseVolume: "XF86AudioRaiseVolume",
   XF86AudioLowerVolume: "XF86AudioLowerVolume",
   XF86AudioMute: "XF86AudioMute",
@@ -140,43 +148,93 @@ const inputModifiers: Record<string, string> = {
   Shift: "shift",
 };
 
-function executeBinding(binding: DisplayBinding) {
+async function executeBinding(binding: DisplayBinding) {
   const key = binding.key;
   if (!key || key.startsWith("mouse:") || key.startsWith("code:")) return;
 
-  const argumentsList = modifiers(binding.modmask).flatMap((modifier) => ["-M", inputModifiers[modifier]]);
-  argumentsList.push("-k", inputKeyNames[key] || key.toLowerCase());
-  execFileSync(wtype, argumentsList, { stdio: "ignore" });
+  const argumentsList = modifiers(binding.modmask).flatMap((modifier) => [
+    "-M",
+    inputModifiers[modifier],
+  ]);
+  argumentsList.push(
+    "-k",
+    inputKeyNames[key] ||
+      inputKeyNames[key.toUpperCase()] ||
+      (key.length === 1 ? key.toLowerCase() : key),
+  );
+  for (const modifier of modifiers(binding.modmask).reverse())
+    argumentsList.push("-m", inputModifiers[modifier]);
+  await perform(
+    "Input keybinding",
+    () => run(binaries.wtype, argumentsList),
+    true,
+  );
 }
 
-function loadBindings(): DisplayBinding[] {
-  try {
-    const rows = JSON.parse(execFileSync(hyprctl, ["binds", "-j"], { encoding: "utf8" })) as Binding[];
-    return rows
-      .filter((row) => row.key && !row.key.startsWith("mouse:"))
-      .map((row, index) => {
-        const rawKey = row.key || `code:${row.keycode}`;
-        const shortcut = [...modifiers(row.modmask), formatKey(rawKey)].join(" + ");
-        const action = [row.dispatcher, row.arg].filter(Boolean).join(" ");
-        const configuredDescription = row.description?.trim() || "";
-        const description =
-          configuredDescription && !isGeneratedLuaDescription(configuredDescription)
-            ? configuredDescription
-            : fallbackDescriptions[shortcut] || "Hyprland keybinding";
-        return { ...row, id: `${shortcut}-${action}-${index}`, shortcut, action, description };
-      })
-      .sort((a, b) => a.shortcut.localeCompare(b.shortcut) || a.description.localeCompare(b.description));
-  } catch {
-    return [];
-  }
+async function loadBindings(signal: AbortSignal): Promise<DisplayBinding[]> {
+  const rows = JSON.parse(
+    await run(binaries.hyprctl, ["binds", "-j"], signal),
+  ) as Binding[];
+  return rows
+    .filter((row) => row.key && !row.key.startsWith("mouse:"))
+    .map((row, index) => {
+      const rawKey = row.key || `code:${row.keycode}`;
+      const shortcut = [...modifiers(row.modmask), formatKey(rawKey)].join(
+        " + ",
+      );
+      const action = [row.dispatcher, row.arg].filter(Boolean).join(" ");
+      const configuredDescription = row.description?.trim() || "";
+      const description =
+        configuredDescription &&
+        !isGeneratedLuaDescription(configuredDescription)
+          ? configuredDescription
+          : fallbackDescriptions[shortcut] || "Hyprland keybinding";
+      return {
+        ...row,
+        id: `${shortcut}-${action}-${index}`,
+        shortcut,
+        action,
+        description,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.shortcut.localeCompare(b.shortcut) ||
+        a.description.localeCompare(b.description),
+    );
 }
 
 export default function Command() {
-  const [bindings, setBindings] = React.useState<DisplayBinding[]>(() => loadBindings());
+  const {
+    data: bindings = [],
+    error,
+    loading,
+    refresh,
+  } = useQuery(loadBindings, 0);
 
   return (
-    <List searchBarPlaceholder="Search keys or actions…">
-      <List.Section title="Active Hyprland keybindings" subtitle={String(bindings.length)}>
+    <List isLoading={loading} searchBarPlaceholder="Search keys or actions...">
+      {error && (
+        <List.Item
+          title="Keybindings unavailable"
+          subtitle="Check Hyprland, then refresh"
+          icon={Icon.Warning}
+          actions={
+            <ActionPanel>
+              <Action
+                title="Refresh Keybindings"
+                icon={Icon.ArrowClockwise}
+                onAction={refresh}
+              />
+            </ActionPanel>
+          }
+        />
+      )}
+      <List.EmptyView title="No matching keybindings" />
+      <List.Section
+        title="Active Hyprland keybindings"
+        subtitle={String(bindings.length)}
+      >
         {bindings.map((binding) => (
           <List.Item
             key={binding.id}
@@ -186,10 +244,16 @@ export default function Command() {
             keywords={[binding.shortcut, binding.action, binding.description]}
             actions={
               <ActionPanel>
-                <Action title="Input Keybinding" icon={Icon.Play} onAction={() => executeBinding(binding)} />
+                {binding.key && !binding.key.startsWith("code:") && (
+                  <Action
+                    title="Input Keybinding"
+                    icon={Icon.Play}
+                    onAction={() => executeBinding(binding)}
+                  />
+                )}
                 <Action
                   title="Copy Keybinding"
-                  icon={Icon.Clipboard}
+                  icon={Icon.CopyClipboard}
                   shortcut={{ modifiers: ["shift"], key: "enter" }}
                   onAction={() => Clipboard.copy(binding.shortcut)}
                 />
@@ -197,7 +261,7 @@ export default function Command() {
                   title="Refresh Keybindings"
                   icon={Icon.ArrowClockwise}
                   shortcut={{ modifiers: ["ctrl"], key: "r" }}
-                  onAction={() => setBindings(loadBindings())}
+                  onAction={refresh}
                 />
               </ActionPanel>
             }
