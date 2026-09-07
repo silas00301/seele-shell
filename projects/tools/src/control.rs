@@ -743,10 +743,6 @@ pub(crate) fn auxiliary_status() -> Value {
         "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or("")})
 }
 
-pub(crate) fn notification_status() -> Value {
-    crate::notifications::Snapshot::read().patch()
-}
-
 pub(crate) fn graph_status(dump: &Value) -> Value {
     let array = dump.as_array().map(Vec::as_slice).unwrap_or_default();
     let microphone_active = array.iter().any(|object| {
@@ -804,7 +800,6 @@ fn status_value() -> Value {
     merge_status([
         network,
         bluetooth,
-        notification_status(),
         audio.join().expect("audio status worker panicked"),
         auxiliary.join().expect("auxiliary status worker panicked"),
         graph.join().expect("PipeWire status worker panicked"),
@@ -946,7 +941,11 @@ pub fn run(arguments: &[String]) -> Result {
     match command {
         "watch-status" => return crate::live::run(),
         "notifications-status" => {
-            println!("{}", notification_status());
+            println!(
+                "{}",
+                output("seele-shellctl", ["notification-status"])
+                    .ok_or("notification service unavailable")?
+            );
             return Ok(());
         }
         "status" => println!("{}", status_value()),
@@ -1393,23 +1392,33 @@ pub fn run(arguments: &[String]) -> Result {
             };
             detached("cameraview", &["-d".into(), device])?;
         }
-        "notifications" => match arg(1) {
-            "restore" => {
-                require_status("makoctl", ["restore"])?;
+        "notification-action" => {
+            let _: u32 = arg(1).parse().map_err(|_| "invalid notification id")?;
+            if arg(2).is_empty() { return Err("notification action required".into()); }
+            require_status("seele-shellctl", ["notification", "invoke", arg(1), arg(2)])?;
+            return Ok(());
+        }
+        "copy-code" => {
+            let code = arg(1);
+            if !(4..=8).contains(&code.len()) || !code.bytes().all(|c| c.is_ascii_alphanumeric()) {
+                return Err("invalid verification code".into());
             }
-            "dismiss" => {
-                require_status("makoctl", ["dismiss", "-n", arg(2)])?;
+            let mut child = Command::new("wl-copy").args(["--type", "text/plain"])
+                .stdin(Stdio::piped()).spawn()?;
+            child.stdin.take().ok_or("clipboard input unavailable")?.write_all(code.as_bytes())?;
+            if !child.wait()?.success() { return Err("clipboard copy failed".into()); }
+        }
+        "notifications" => {
+            let action = arg(1);
+            if !matches!(action, "dismiss" | "invoke" | "clear" | "clear-history" | "retire" | "pin") {
+                return Err("invalid notification action".into());
             }
-            "invoke" => {
-                require_status("makoctl", ["invoke", "-n", arg(2)])?;
-            }
-            "clear" => {
-                require_status("makoctl", ["dismiss", "--all", "--no-history"])?;
-            }
-            _ => return Err("invalid notification action".into()),
-        },
+            require_status("seele-shellctl", ["notification", action, arg(2), "default"])?;
+            return Ok(());
+        }
         "dnd" => {
-            require_status("makoctl", ["mode", "-t", "do-not-disturb"])?;
+            require_status("seele-shellctl", ["notification", "dnd"])?;
+            return Ok(());
         }
         "network-settings" => detached("nm-connection-editor", &[])?,
         "outages" => detached("xdg-open", &["https://xn--allestrungen-9ib.de/".to_owned()])?,

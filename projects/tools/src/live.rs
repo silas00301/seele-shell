@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 
 const NETWORK: usize = 0;
 const BLUETOOTH: usize = 1;
-const NOTIFICATIONS: usize = 2;
 #[derive(Default)]
 struct GroupFlag {
     dirty: AtomicBool,
@@ -32,7 +31,7 @@ impl GroupFlag {
             .then(|| self.force.swap(false, Ordering::Relaxed))
     }
 }
-type Dirty = Arc<[GroupFlag; 3]>;
+type Dirty = Arc<[GroupFlag; 2]>;
 type Bluetooth = Arc<Mutex<Option<Value>>>;
 
 enum Event {
@@ -45,7 +44,6 @@ fn refresh(dirty: &Dirty, command: &str) -> bool {
     let group = match command {
         "network" => NETWORK,
         "bluetooth" => BLUETOOTH,
-        "notifications" => NOTIFICATIONS,
         "aux" => return true,
         "all" => {
             for flag in dirty.iter() {
@@ -74,7 +72,6 @@ fn send_snapshot(
     };
     let patch = match group {
         NETWORK => control::network_status(),
-        NOTIFICATIONS => control::notification_status(),
         BLUETOOTH => {
             let snapshot = control::bluetooth_state();
             let mut cached = bluetooth.lock().unwrap();
@@ -127,38 +124,10 @@ fn watch_bus(
             // stays queued. Owner changes also bootstrap a restarted daemon.
             dirty[group].mark(false);
             let mut last = Instant::now() - Duration::from_secs(1);
-            let mut notifications: Option<crate::notifications::Snapshot> = None;
             loop {
-                // History ages out after 24h even if mako emits no signal.
-                // Refilter the cached lists, without launching another probe.
-                if group == NOTIFICATIONS
-                    && last.elapsed() >= Duration::from_secs(5)
-                    && !dirty[group].dirty.load(Ordering::Acquire)
-                {
-                    if let Some(snapshot) = notifications.as_mut() {
-                        if sender.send(Event::Patch(snapshot.patch())).is_err() {
-                            return Ok(());
-                        }
-                        last = Instant::now();
-                    }
-                }
                 if last.elapsed() >= Duration::from_millis(50) {
                     if let Some(force) = dirty[group].take() {
-                        if group == NOTIFICATIONS {
-                            let mut snapshot = crate::notifications::Snapshot::read();
-                            let patch = snapshot.patch();
-                            notifications = Some(snapshot);
-                            let event = if force {
-                                Event::Refresh(patch)
-                            } else {
-                                Event::Patch(patch)
-                            };
-                            if sender.send(event).is_err() {
-                                return Ok(());
-                            }
-                        } else if !send_snapshot(group, force, &bluetooth, &sender) {
-                            return Ok(());
-                        }
+                        if !send_snapshot(group, force, &bluetooth, &sender) { return Ok(()); }
                         last = Instant::now();
                     }
                 }
@@ -298,7 +267,6 @@ pub(crate) fn run() -> Result {
     for (service, session, group) in [
         ("org.freedesktop.NetworkManager", false, NETWORK),
         ("org.bluez", false, BLUETOOTH),
-        ("org.freedesktop.Notifications", true, NOTIFICATIONS),
     ] {
         let (dirty, bluetooth, sender) = (dirty.clone(), bluetooth.clone(), sender.clone());
         thread::spawn(move || watch_bus(service, session, group, dirty, bluetooth, sender));
@@ -352,11 +320,8 @@ mod tests {
         for _ in 0..100 {
             assert!(!refresh(&dirty, "notifications"));
         }
-        for index in 0..3 {
-            assert_eq!(
-                dirty[index].dirty.load(Ordering::Relaxed),
-                index == NOTIFICATIONS
-            );
+        for flag in dirty.iter() {
+            assert!(!flag.dirty.load(Ordering::Relaxed));
         }
         assert!(refresh(&dirty, "all"));
         assert!(dirty

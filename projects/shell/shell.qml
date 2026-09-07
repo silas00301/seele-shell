@@ -13,6 +13,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 import "media.js" as Media
 import "time.js" as Time
+import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
 
 ShellRoot {
@@ -215,15 +216,8 @@ ShellRoot {
   property bool agentModelsOpen: false
   property string agentMetricPeriod: "day"
   property bool notificationHistoryOpen: false
-  // Mako no longer expires anything, so the popup owns its own lifetime. The
-  // notification itself stays current in the panel either way: retiring a
-  // popup hides a toast, it does not dismiss what raised it.
-  readonly property int notificationPopupSeconds: 10
-  property double notificationNow: 0
+  // Toast timers live with notification state, separately from inbox lifetime.
   property int notificationPopupHoverCount: 0
-  property double notificationPopupPausedAt: 0
-  property double notificationPopupPausedSeconds: 0
-  property var notificationPopupRetired: ({})
   // A toast is a place to notice something and the panel is a place to read it,
   // so the panel shows a notification whole and only the toast keeps it to one
   // line until asked.
@@ -465,24 +459,9 @@ ShellRoot {
     root.refreshStatus("bluetooth")
   }
 
-  function notificationPopupClock() {
-    var now = Date.now() / 1000
-    var currentPause = root.notificationPopupPausedAt > 0 ? now - root.notificationPopupPausedAt : 0
-    return now - root.notificationPopupPausedSeconds - currentPause
-  }
-
   function setNotificationPopupHovered(hovered) {
-    if (hovered) {
-      root.notificationPopupHoverCount += 1
-      if (root.notificationPopupHoverCount === 1) root.notificationPopupPausedAt = Date.now() / 1000
-    } else {
-      root.notificationPopupHoverCount = Math.max(0, root.notificationPopupHoverCount - 1)
-      if (root.notificationPopupHoverCount === 0 && root.notificationPopupPausedAt > 0) {
-        root.notificationPopupPausedSeconds += Date.now() / 1000 - root.notificationPopupPausedAt
-        root.notificationPopupPausedAt = 0
-      }
-    }
-    root.notificationNow = root.notificationPopupClock()
+    root.notificationPopupHoverCount = Math.max(0, root.notificationPopupHoverCount + (hovered ? 1 : -1))
+    notificationStore.controller.pause(root.notificationPopupHoverCount > 0, Date.now() / 1000)
   }
 
   function parseAgentData(output) {
@@ -511,24 +490,7 @@ ShellRoot {
           }
           root.statusInitialized = true
         }
-        if (parsed.notifications !== undefined) {
-          var previousNotifications = (root.systemData.notifications || {}).items || []
-          var nextNotifications = (parsed.notifications || {}).items || []
-          var previousIds = {}
-          for (var i = 0; i < previousNotifications.length; i++) previousIds[String(previousNotifications[i].id)] = true
-          for (var j = 0; j < nextNotifications.length; j++) {
-            if (!previousIds[String(nextNotifications[j].id)]) {
-              root.notificationPopupScreen = root.currentScreen()
-              break
-            }
-          }
-          // Stamp before publishing new items to the popup bindings.
-          root.notificationNow = root.notificationPopupClock()
-        }
         root.systemData.apply(parsed)
-        if (parsed.notifications !== undefined) root.pruneNotificationPopups(parsed.notifications)
-        if ((parsed.notifications !== undefined || parsed.dnd !== undefined) && root.systemData.dnd)
-          root.retireNotificationPopupsForDnd(root.systemData.notifications)
         if (parsed.volume !== undefined && root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
         if (parsed.microphoneVolume !== undefined && root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
         if (parsed.bluetoothScanning !== undefined) root.reconcileBluetoothScanIntent(!!parsed.bluetoothScanning)
@@ -999,33 +961,15 @@ ShellRoot {
   // A notification is worth clicking only when it carries an action to invoke.
   function notificationActionable(entry) {
     var actions = entry && entry.actions
-    if (!actions) return false
-    for (var key in actions) return true
-    return false
+    return !!actions && typeof actions.default === "string"
   }
 
   function activateNotification(id) {
-    id = String(id)
-    if (!root.runControl("notifications", "invoke", id)) return
-    // Invoking an action closes the notification, so drop it locally rather
-    // than waiting for the next status read to notice.
-    var notifications = root.systemData.notifications || { count: 0, items: [], history: [] }
-    var items = []
-    for (var i = 0; i < (notifications.items || []).length; i++) {
-      if (String(notifications.items[i].id) !== id) items.push(notifications.items[i])
-    }
-    root.patchSystemData({ notifications: { count: items.length, items: items, history: notifications.history || [] } })
-    root.closeOverlays()
+    if (notificationStore.controller.invoke(id, "default")) root.closeOverlays()
   }
+
   function notificationPopupEntries() {
-    var items = (root.systemData.notifications || {}).items || []
-    var live = []
-    for (var i = 0; i < items.length; i++) {
-      if (root.notificationPopupRetired[String(items[i].id)]) continue
-      if (root.notificationNow - Number(items[i].time || 0) >= root.notificationPopupSeconds) continue
-      live.push(items[i])
-    }
-    return live
+    return root.systemData.notifications.popups || []
   }
 
   function toggleNotificationUnfolded(id) {
@@ -1037,60 +981,9 @@ ShellRoot {
     root.notificationUnfolded = unfolded
   }
 
-  function retireNotificationPopup(id) {
-    var retired = {}
-    for (var key in root.notificationPopupRetired) retired[key] = true
-    retired[String(id)] = true
-    root.notificationPopupRetired = retired
-  }
-
-  // Only ids that are still current need remembering; anything dismissed or
-  // invoked has left the panel and would otherwise accumulate here forever.
-  function pruneNotificationPopups(notifications) {
-    var items = (notifications || {}).items || []
-    var present = {}
-    for (var i = 0; i < items.length; i++) present[String(items[i].id)] = true
-    var retired = {}
-    var dropped = false
-    for (var key in root.notificationPopupRetired) {
-      if (present[key]) retired[key] = true
-      else dropped = true
-    }
-    if (dropped) root.notificationPopupRetired = retired
-  }
-
-  // Do not disturb silences a notification for good, not merely until the
-  // mode ends. The popup surface is hidden while the mode is on, but the
-  // entries behind it were still inside their ten seconds, so switching the
-  // mode off toasted everything that had arrived meanwhile at once.
-  function retireNotificationPopupsForDnd(notifications) {
-    var items = (notifications || {}).items || []
-    var retired = {}
-    var added = false
-    for (var key in root.notificationPopupRetired) retired[key] = true
-    for (var i = 0; i < items.length; i++) {
-      var id = String(items[i].id)
-      if (retired[id]) continue
-      retired[id] = true
-      added = true
-    }
-    if (added) root.notificationPopupRetired = retired
-  }
-
-  function dismissNotification(id) {
-    id = String(id)
-    if (!root.runControl("notifications", "dismiss", id)) return
-    var notifications = root.systemData.notifications || { count: 0, items: [], history: [] }
-    var items = []
-    for (var i = 0; i < (notifications.items || []).length; i++) {
-      if (String(notifications.items[i].id) !== id) items.push(notifications.items[i])
-    }
-    root.patchSystemData({ notifications: { count: items.length, items: items, history: notifications.history || [] } })
-  }
-
-  function clearNotifications() {
-    root.runControl("notifications", "clear")
-  }
+  function retireNotificationPopup(id) { notificationStore.controller.retire(id) }
+  function dismissNotification(id) { notificationStore.controller.dismiss(id) }
+  function clearNotifications() { notificationStore.controller.clear(root.notificationHistoryOpen) }
 
   function batteryEntries() {
     return root.systemData.batteries || []
@@ -1964,16 +1857,6 @@ ShellRoot {
     }
   }
 
-  // `now` moves in half-minute steps, which cannot retire a ten second popup.
-  // This runs only while something is on screen to retire.
-  Timer {
-    interval: 500
-    repeat: true
-    running: root.notificationPopupEntries().length > 0
-    triggeredOnStart: true
-    onTriggered: root.notificationNow = root.notificationPopupClock()
-  }
-
   Timer {
     interval: 1000
     repeat: true
@@ -2047,8 +1930,35 @@ ShellRoot {
     }
   }
 
+  NotificationStore {
+    id: notificationStore
+    onPublished: (view, dnd) => {
+      root.systemData.apply({ notifications: view, dnd: dnd })
+      var present = {}, unfolded = {}
+      for (var i = 0; i < view.items.length; i++) present[String(view.items[i].id)] = true
+      for (var j = 0; j < view.popups.length; j++) present[String(view.popups[j].id)] = true
+      for (var key in root.notificationUnfolded) if (present[key]) unfolded[key] = true
+      root.notificationUnfolded = unfolded
+    }
+    onArrived: root.notificationPopupScreen = root.currentScreen()
+  }
+
   IpcHandler {
     target: "seele-shell"
+    function notificationStatus(): string {
+      return JSON.stringify({ notifications: notificationStore.controller.view(), dnd: notificationStore.controller.dnd })
+    }
+    function notificationCommand(action: string, id: string, key: string): string {
+      var state = notificationStore.controller
+      if (action === "invoke") return state.invoke(id, key || "default") ? "ok" : "unavailable"
+      if (action === "dismiss") return state.dismiss(id) ? "ok" : "unavailable"
+      if (action === "retire") return state.retire(id) ? "ok" : "unavailable"
+      if (action === "pin") return state.pin(id) ? "ok" : "unavailable"
+      if (action === "clear") { state.clear(false); return "ok" }
+      if (action === "clear-history") { state.clear(true); return "ok" }
+      if (action === "dnd") { state.setDnd(!state.dnd); return "ok" }
+      return "unavailable"
+    }
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
     function toggleAgents(): void { root.toggleAgents() }
@@ -3538,6 +3448,65 @@ ShellRoot {
     }
   }
 
+  component NotificationButton: Button {
+    id: notificationButton
+    required property string label
+    property string controlAction: ""
+    property string value: ""
+    property string extra: ""
+    property string successLabel: "Done"
+    property string actionIcon: ""
+    readonly property bool busy: controlAction !== "" && root.controlBusy(controlAction, value, extra)
+    readonly property bool failed: controlAction !== "" && root.controlFailed(controlAction, value, extra)
+    readonly property bool complete: controlAction !== "" && root.controlCompleted(controlAction, value, extra)
+    implicitWidth: Math.max(buttonMeasure.width, feedbackMeasure.width) + root.spaceMedium * 2 + (actionIcon ? root.textLabel + root.spaceTight : 0)
+    width: Math.min(implicitWidth, parent.width)
+    implicitHeight: root.chipHeight
+    TextMetrics {
+      id: feedbackMeasure
+      text: notificationButton.controlAction ? "Failed · retry" : ""
+      font.family: root.fontFamily
+      font.pixelSize: root.textCaption
+    }
+    TextMetrics {
+      id: buttonMeasure
+      text: notificationButton.label
+      font.family: root.fontFamily
+      font.pixelSize: root.textCaption
+    }
+    hoverEnabled: true
+    activeFocusOnTab: true
+    onClicked: if (controlAction !== "") root.runControl(controlAction, value, extra)
+    contentItem: Text {
+      id: buttonLabel
+      leftPadding: notificationButton.actionIcon ? root.textLabel + root.spaceTight : 0
+      IconImage {
+        visible: notificationButton.actionIcon !== ""
+        width: root.textLabel
+        height: width
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        source: notificationButton.actionIcon ? Quickshell.iconPath(notificationButton.actionIcon) : ""
+      }
+      textFormat: Text.PlainText
+      elide: Text.ElideRight
+      text: notificationButton.busy ? "Working…" : notificationButton.failed ? "Failed · retry" : notificationButton.complete ? notificationButton.successLabel : notificationButton.label
+      color: notificationButton.failed ? root.red : notificationButton.complete ? root.green : root.text
+      font.family: root.fontFamily
+      font.pixelSize: root.textCaption
+      verticalAlignment: Text.AlignVCenter
+      horizontalAlignment: Text.AlignHCenter
+    }
+    background: Rectangle {
+      radius: root.radius
+      color: notificationButton.down ? root.pressColor : notificationButton.hovered ? root.hoveredColor(root.wellColor) : root.wellColor
+      border.width: notificationButton.activeFocus ? 1 : 0
+      border.color: root.accent
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+    }
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
+  }
+
   component NotificationList: SeeleListView {
     id: notificationList
 
@@ -3547,29 +3516,47 @@ ShellRoot {
     // asked: the panel is where you go to read what you missed.
     readonly property bool alwaysUnfolded: !notificationList.popup
 
-    spacing: 6
+    property var expandedGroups: ({})
+    readonly property var entries: notificationList.history ? (root.systemData.notifications.history || [])
+      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || [])
+    function toggleGroup(key) {
+      var expanded = Object.assign({}, expandedGroups)
+      if (expanded[key]) delete expanded[key]
+      else expanded[key] = true
+      expandedGroups = expanded
+    }
+    onEntriesChanged: {
+      var present = {}, expanded = {}
+      for (var i = 0; i < entries.length; i++) present[Notifications.groupKey(entries[i])] = true
+      for (var key in expandedGroups) if (present[key]) expanded[key] = true
+      expandedGroups = expanded
+    }
+    spacing: root.spaceMedium
+    footer: Item { height: root.spaceSmall }
     clip: true
     boundsBehavior: Flickable.StopAtBounds
-    model: notificationList.history ? (root.systemData.notifications.history || [])
-      : notificationList.popup ? root.notificationPopupEntries()
-      : (root.systemData.notifications.items || [])
+    model: Notifications.stackedRows(entries, expandedGroups)
 
     delegate: Rectangle {
       id: notificationEntry
 
       required property var modelData
-      readonly property bool actionable: !notificationList.history && root.notificationActionable(modelData)
-      readonly property bool unfolded: notificationList.alwaysUnfolded || !!root.notificationUnfolded[String(modelData.id)]
+      readonly property var entry: modelData.entry
+      readonly property bool actionable: !notificationList.history && root.notificationActionable(entry)
+      readonly property var offeredActions: notificationList.history ? [] : Notifications.actions(entry)
+      readonly property string verificationCode: Notifications.verificationCode(entry)
+      readonly property bool unfolded: notificationList.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
       // A single elided line reports its full width, which is the only way to
       // know there is more to show without measuring the text twice.
       readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
       // Only a toast folds, and only when there is something folded away.
-      readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded)
+      readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded || !!entry.image)
       readonly property string iconSource: {
-        var icon = String(modelData.app_icon || "").trim()
-        return icon !== "" && icon.indexOf("/tmp/") !== 0 ? Quickshell.iconPath(icon) : ""
+        var icon = String(entry.app_icon || "").trim()
+        return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
       }
-      width: ListView.view.width
+      x: modelData.first ? 0 : root.spaceMedium
+      width: ListView.view.width - x
       height: Math.max(root.notificationRowHeight, notificationText.implicitHeight + (notificationEntry.unfolded ? 18 : 12))
       radius: root.radius
       // Asked of the card rather than of the pointer area covering it. The
@@ -3591,7 +3578,24 @@ ShellRoot {
         onHoveredChanged: if (notificationList.popup) root.setNotificationPopupHovered(hovered)
       }
 
+      Repeater {
+        model: notificationEntry.modelData.depth
+        delegate: Rectangle {
+          required property int index
+          z: -1 - index
+          x: root.spaceTight * (index + 1)
+          y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
+          width: parent.width - x * 2
+          height: root.spaceSmall
+          radius: root.radius
+          color: root.cardColor
+          CardEdge {}
+        }
+      }
+      SurfaceWash { radius: root.radius - 1 }
       CardEdge {}
+      SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
+      Component.onDestruction: if (notificationList.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
 
       Item {
         id: notificationIconFrame
@@ -3623,7 +3627,7 @@ ShellRoot {
         enabled: notificationEntry.actionable
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.activateNotification(notificationEntry.modelData.id)
+        onClicked: root.activateNotification(notificationEntry.entry.id)
       }
 
       Column {
@@ -3634,13 +3638,28 @@ ShellRoot {
         anchors.leftMargin: root.spaceMedium
         anchors.rightMargin: 9
         anchors.topMargin: 9
-        spacing: 3
+        spacing: root.spaceTight
+        Flow {
+          visible: notificationEntry.modelData.first && notificationEntry.modelData.count > 1
+          width: parent.width
+          spacing: root.spaceTight
+          NotificationButton {
+            label: (notificationEntry.entry.app_name || "Notifications") + " · " + notificationEntry.modelData.count
+              + (notificationEntry.modelData.expanded ? " · Show less" : " · Show all")
+            onClicked: notificationList.toggleGroup(notificationEntry.modelData.group)
+          }
+          NotificationButton {
+            visible: !notificationList.history
+            label: notificationList.popup ? "Hide stack" : "Dismiss stack"
+            onClicked: notificationStore.controller.group(notificationEntry.modelData.group, notificationList.popup)
+          }
+        }
         Row {
           width: parent.width
           height: 20
-          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: modelData.summary || modelData.app_name || "Notification"; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
+          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: entry.summary || entry.app_name || "Notification"; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
           Item { width: 6; height: parent.height }
-          Text { width: 58; height: parent.height; text: root.agoText(modelData.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
+          Text { width: 58; height: parent.height; text: root.agoText(entry.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
           Rectangle {
             visible: notificationEntry.unfoldable
             width: visible ? 20 : 0
@@ -3661,13 +3680,13 @@ ShellRoot {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleNotificationUnfolded(notificationEntry.modelData.id)
+              onClicked: root.toggleNotificationUnfolded(notificationEntry.entry.id)
             }
             HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
           }
           Item { visible: !notificationEntry.unfoldable; width: visible ? 6 : 0; height: parent.height }
           Rectangle {
-            readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.modelData.id))
+            readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.entry.id))
             visible: !notificationList.history
             width: visible ? 20 : 0
             height: parent.height
@@ -3681,22 +3700,94 @@ ShellRoot {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.dismissNotification(notificationEntry.modelData.id)
+              onClicked: notificationList.popup ? root.retireNotificationPopup(notificationEntry.entry.id) : root.dismissNotification(notificationEntry.entry.id)
             }
-            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: "Dismiss" }
+            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide toast" : "Dismiss" }
           }
         }
         Text {
           id: notificationBody
           width: parent.width
-          text: modelData.body || modelData.app_name || ""
+          text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
+          textFormat: Text.StyledText
+          linkColor: root.accent
+          onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
+          HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
           color: root.subtext
           font.family: root.fontFamily
           font.pixelSize: root.textCaption
           wrapMode: notificationEntry.unfolded ? Text.WordWrap : Text.NoWrap
           elide: notificationEntry.unfolded ? Text.ElideNone : Text.ElideRight
           // Bounded, so one pathological notification cannot take the panel.
-          maximumLineCount: notificationEntry.unfolded ? 8 : 1
+          maximumLineCount: notificationEntry.unfolded ? 1000 : 1
+        }
+        Item {
+          visible: !!notificationEntry.entry.image && notificationEntry.unfolded
+          width: parent.width
+          height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
+          Image {
+            id: notificationImage
+            anchors.fill: parent
+            visible: false
+            source: notificationEntry.entry.image || ""
+            sourceSize.width: width * 2
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+          }
+          RoundedSource { anchors.fill: parent; source: notificationImage }
+        }
+        Text {
+          visible: notificationEntry.entry.urgency === 2 || Notifications.permanent(notificationEntry.entry) || notificationEntry.entry.resident
+          text: notificationEntry.entry.urgency === 2 ? "Critical · until dismissed"
+            : Notifications.permanent(notificationEntry.entry) ? "Until dismissed" : "Ongoing"
+          color: notificationEntry.entry.urgency === 2 ? root.red : root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textMicro
+        }
+        Row {
+          visible: Number(notificationEntry.entry.progress) >= 0
+          width: parent.width
+          spacing: root.spaceSmall
+          MeterBar {
+            width: parent.width - progressLabel.width - parent.spacing
+            anchors.verticalCenter: parent.verticalCenter
+            ratio: Number(notificationEntry.entry.progress) / 100
+          }
+          Text {
+            id: progressLabel
+            text: Math.round(Number(notificationEntry.entry.progress)) + "%"
+            color: root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textCaption
+          }
+        }
+        Flow {
+          width: parent.width
+          spacing: root.spaceTight
+          Repeater {
+            model: notificationEntry.offeredActions
+            delegate: NotificationButton {
+              required property var modelData
+              label: modelData.label
+              controlAction: "notification-action"
+              value: String(notificationEntry.entry.id)
+              extra: modelData.key
+              actionIcon: notificationEntry.entry.action_icons ? modelData.key : ""
+            }
+          }
+          NotificationButton {
+            visible: !notificationList.history && (notificationEntry.entry.pinned || !Notifications.permanent(notificationEntry.entry))
+            label: notificationEntry.entry.pinned ? "Unpin" : "Keep visible"
+            onClicked: notificationStore.controller.pin(notificationEntry.entry.id)
+          }
+          NotificationButton {
+            visible: notificationEntry.verificationCode !== ""
+            label: "Copy " + notificationEntry.verificationCode
+            controlAction: "copy-code"
+            value: notificationEntry.verificationCode
+            extra: String(notificationEntry.entry.id)
+            successLabel: "Copied"
+          }
         }
       }
 
@@ -3712,6 +3803,10 @@ ShellRoot {
 
       required property var modelData
       readonly property var entries: root.notificationPopupEntries()
+      onVisibleChanged: if (!visible && root.pinnedScreen(root.notificationPopupScreen, modelData)) {
+        root.notificationPopupHoverCount = 0
+        notificationStore.controller.pause(false, Date.now() / 1000)
+      }
       screen: modelData
       visible: !uriPicker.presented && !root.systemData.dnd
         && root.controlPanel !== "notifications"
@@ -3722,19 +3817,18 @@ ShellRoot {
       implicitWidth: 400
       // Rows size themselves to whatever is unfolded, so the surface follows
       // the list's own content rather than a fixed row height.
-      implicitHeight: Math.min(430, Math.max(66, notificationPopupList.contentHeight)) + root.panelMargin * 2
+      implicitHeight: Math.min(430, Math.max(root.notificationRowHeight, notificationPopupList.contentHeight))
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-notifications"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-      PanelSurface {
-        NotificationList {
-          id: notificationPopupList
-          popup: true
-          anchors.fill: parent
-          anchors.margins: root.panelMargin
-        }
+      NotificationList {
+        id: notificationPopupList
+        popup: true
+        anchors.fill: parent
+        ScrollBar.vertical: SlimScrollBar { popupHovered: root.notificationPopupHoverCount > 0 }
       }
     }
   }
@@ -7754,6 +7848,7 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-notifications"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
       // Rows are as tall as the notification they hold, so the opening height
       // comes from what the list actually measured rather than a row count.
@@ -7846,7 +7941,7 @@ ShellRoot {
                 enabled: !parent.busy
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.runControl("dnd", "")) root.patchSystemData({ dnd: !root.systemData.dnd })
+                onClicked: notificationStore.controller.setDnd(!notificationStore.controller.dnd)
               }
               HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
             }
@@ -7888,12 +7983,14 @@ ShellRoot {
             clip: true
             NotificationList {
               id: notificationCurrentList
+              onContentHeightChanged: notificationWindow.remeasure()
               visible: !root.notificationHistoryOpen && (root.systemData.notifications.items || []).length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
             NotificationList {
               id: notificationHistoryList
+              onContentHeightChanged: notificationWindow.remeasure()
               history: true
               visible: root.notificationHistoryOpen && (root.systemData.notifications.history || []).length > 0
               anchors.fill: parent
