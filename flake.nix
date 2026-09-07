@@ -112,6 +112,7 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/media.js projects/shell/media.js
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
+                  node tests/focus.js projects/shell/focus.js
                   node tests/time.js projects/shell/time.js
                   node tests/uri-picker.js projects/shell/uri-picker.js projects/shell/UriPicker.qml
                   node tests/status-patches.js projects/shell/shell.qml
