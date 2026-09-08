@@ -13,12 +13,22 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 import "../shared" as Shared
 import "media.js" as Media
+import "media-speed.js" as MediaSpeed
+import "player-volume.js" as PlayerVolume
+import "network.js" as Network
 import "time.js" as Time
 import "notifications.js" as Notifications
+import "notification-search.js" as NotificationSearch
 import "uri-picker.js" as Uris
+import "github.js" as GitHub
 
 Shared.Theme {
   id: root
+
+  FocusTimer {
+    id: focusTimer
+    onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+  }
 
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
@@ -221,6 +231,10 @@ Shared.Theme {
     if (panel === "clock") refreshClock()
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
+    if (panel === "home-assistant") {
+      homeAssistantStore.refresh()
+      return
+    }
     var group = panel === "notifications" ? "notifications"
       : panel === "audio" ? "audio"
       : ["bluetooth", "airpods"].indexOf(panel) >= 0 ? "bluetooth"
@@ -496,6 +510,16 @@ Shared.Theme {
     var minutes = Math.floor(seconds / 60)
     var remainder = seconds % 60
     return minutes + ":" + (remainder < 10 ? "0" : "") + remainder
+  }
+
+  function seekMediaKey(player, event) {
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+    var command = event.key === Qt.Key_Left ? "back" : event.key === Qt.Key_Right ? "forward"
+      : event.key === Qt.Key_Home ? "start" : event.key === Qt.Key_End ? "end" : ""
+    var target = Media.seekTarget(player, command, !!(event.modifiers & Qt.ShiftModifier))
+    if (target === null) return
+    player.position = target
+    event.accepted = true
   }
 
   function mediaTimelineAvailable(player) {
@@ -1737,6 +1761,11 @@ Shared.Theme {
     }
   }
 
+  GitHubStore {
+    id: githubStore
+    active: root.controlPanel === "github"
+  }
+
   NotificationStore {
     id: notificationStore
     onPublished: (view, dnd) => {
@@ -1749,6 +1778,9 @@ Shared.Theme {
     }
     onArrived: root.notificationPopupScreen = root.currentScreen()
   }
+
+  HomeAssistantStore { id: homeAssistantStore }
+  NotificationClipboard { id: notificationClipboard }
 
   IpcHandler {
     target: "seele-shell"
@@ -3053,9 +3085,12 @@ Shared.Theme {
     property string extra: ""
     property string successLabel: "Done"
     property string actionIcon: ""
-    readonly property bool busy: controlAction !== "" && root.controlBusy(controlAction, value, extra)
-    readonly property bool failed: controlAction !== "" && root.controlFailed(controlAction, value, extra)
-    readonly property bool complete: controlAction !== "" && root.controlCompleted(controlAction, value, extra)
+    property bool localBusy: false
+    property bool localFailed: false
+    property bool localComplete: false
+    readonly property bool busy: localBusy || (controlAction !== "" && root.controlBusy(controlAction, value, extra))
+    readonly property bool failed: localFailed || (controlAction !== "" && root.controlFailed(controlAction, value, extra))
+    readonly property bool complete: localComplete || (controlAction !== "" && root.controlCompleted(controlAction, value, extra))
     implicitWidth: Math.max(buttonMeasure.width, feedbackMeasure.width) + root.spaceMedium * 2 + (actionIcon ? root.textLabel + root.spaceTight : 0)
     width: Math.min(implicitWidth, parent.width)
     implicitHeight: root.chipHeight
@@ -3109,13 +3144,14 @@ Shared.Theme {
 
     property bool history: false
     property bool popup: false
+    property string query: ""
     // Everywhere except a toast, a notification is shown in full without being
     // asked: the panel is where you go to read what you missed.
     readonly property bool alwaysUnfolded: !notificationList.popup
 
     property var expandedGroups: ({})
-    readonly property var entries: notificationList.history ? (root.systemData.notifications.history || [])
-      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || [])
+    readonly property var entries: NotificationSearch.filter(notificationList.history ? (root.systemData.notifications.history || [])
+      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || []), query)
     function toggleGroup(key) {
       var expanded = Object.assign({}, expandedGroups)
       if (expanded[key]) delete expanded[key]
@@ -3246,7 +3282,7 @@ Shared.Theme {
             onClicked: notificationList.toggleGroup(notificationEntry.modelData.group)
           }
           NotificationButton {
-            visible: !notificationList.history
+            visible: !notificationList.history && notificationList.query.trim() === ""
             label: notificationList.popup ? "Hide stack" : "Dismiss stack"
             onClicked: notificationStore.controller.group(notificationEntry.modelData.group, notificationList.popup)
           }
@@ -3376,6 +3412,28 @@ Shared.Theme {
             visible: !notificationList.history && (notificationEntry.entry.pinned || !Notifications.permanent(notificationEntry.entry))
             label: notificationEntry.entry.pinned ? "Unpin" : "Keep visible"
             onClicked: notificationStore.controller.pin(notificationEntry.entry.id)
+          }
+          Repeater {
+            model: notificationEntry.unfolded ? ["title", "body"] : []
+            delegate: NotificationButton {
+              id: notificationCopyButton
+              required property string modelData
+              readonly property string copyKey: String(notificationEntry.entry.id) + ":" + modelData
+              readonly property bool selected: notificationClipboard.key === copyKey
+              visible: modelData === "title" ? !!notificationEntry.entry.summary : !!notificationEntry.entry.body
+              label: modelData === "title" ? "Copy title" : "Copy message"
+              enabled: !notificationClipboard.pending
+              localBusy: selected && notificationClipboard.pending
+              localFailed: selected && notificationClipboard.status === "error"
+              localComplete: selected && notificationClipboard.status === "success"
+              successLabel: "Copied"
+              onClicked: notificationClipboard.copy(notificationEntry.entry, modelData)
+              HoverTip {
+                mouse: notificationCopyButton
+                inOverlay: true
+                text: notificationCopyButton.selected ? notificationClipboard.message : ""
+              }
+            }
           }
           NotificationButton {
             visible: notificationEntry.verificationCode !== ""
@@ -3520,6 +3578,8 @@ Shared.Theme {
     property string icon: ""
     property bool primary: false
     property bool flat: false
+    property bool active: false
+    property string hint: ""
     signal activated()
 
     width: mediaButton.flat ? (mediaButton.primary ? 38 : 34) : mediaButton.primary ? 34 : 28
@@ -3545,14 +3605,16 @@ Shared.Theme {
     Text {
       anchors.centerIn: parent
       text: mediaButton.icon
-      color: root.text
+      color: mediaButton.active ? root.accent : root.text
       font.family: root.fontFamily
       font.pixelSize: mediaButton.flat
         ? (mediaButton.primary ? root.textDisplay : root.textTitle)
         : mediaButton.primary ? root.textSubhead : root.textLead
     }
 
+    HoverHandler { id: mediaButtonHover }
     MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
+    HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
 
   component MediaTimeline: Column {
@@ -3573,6 +3635,8 @@ Shared.Theme {
       : Math.max(0, Math.min(mediaTimeline.length, mediaTimeline.reportedPosition))
 
     visible: available
+    activeFocusOnTab: available && !live
+    Keys.onPressed: event => root.seekMediaKey(player, event)
     spacing: 3
 
     Rectangle {
@@ -3589,7 +3653,7 @@ Shared.Theme {
         radius: height / 2
         color: root.wellColor
         border.width: 1
-        border.color: root.alpha(root.text, 0.05)
+        border.color: mediaTimeline.activeFocus ? root.accent : root.alpha(root.text, 0.05)
         antialiasing: true
 
         Rectangle {
@@ -3624,7 +3688,10 @@ Shared.Theme {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         function positionAt(x) { return Math.max(0, Math.min(mediaTimeline.length, x / width * mediaTimeline.length)) }
-        onPressed: function(mouse) { mediaTimeline.draggedPosition = positionAt(mouse.x) }
+        onPressed: function(mouse) {
+          mediaTimeline.forceActiveFocus()
+          mediaTimeline.draggedPosition = positionAt(mouse.x)
+        }
         onPositionChanged: function(mouse) {
           if (pressed) mediaTimeline.draggedPosition = positionAt(mouse.x)
         }
@@ -3636,6 +3703,7 @@ Shared.Theme {
         }
         onCanceled: mediaTimeline.draggedPosition = -1
       }
+      HoverTip { mouse: timelineMouse; inOverlay: true; text: "Seek · Left/Right 5s · Shift 30s · Home/End" }
 
       Text {
         id: liveTimelineLabel
@@ -3914,11 +3982,21 @@ Shared.Theme {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: 4
-        spacing: root.spaceMedium
+        spacing: root.spaceTight
 
         MediaButton {
           flat: true
+          width: root.controlHeight
+          icon: "󰒟"
+          hint: !mediaBody.player || !mediaBody.player.shuffleSupported ? "Shuffle unavailable" : mediaBody.player.shuffle ? "Shuffle on" : "Shuffle off"
+          active: !!mediaBody.player && mediaBody.player.shuffleSupported && mediaBody.player.shuffle
+          enabled: Media.canShuffle(mediaBody.player)
+          onActivated: Media.toggleShuffle(mediaBody.player)
+        }
+        MediaButton {
+          flat: true
           icon: "󰒮"
+          hint: "Previous track"
           enabled: !!mediaBody.player && mediaBody.player.canGoPrevious
           onActivated: mediaBody.player.previous()
         }
@@ -3926,14 +4004,25 @@ Shared.Theme {
           flat: true
           icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
           primary: true
-          enabled: !!mediaBody.player
+          hint: mediaBody.player && mediaBody.player.isPlaying ? "Pause" : "Play"
+          enabled: !!mediaBody.player && mediaBody.player.canTogglePlaying
           onActivated: mediaBody.player.togglePlaying()
         }
         MediaButton {
           flat: true
           icon: "󰒭"
+          hint: "Next track"
           enabled: !!mediaBody.player && mediaBody.player.canGoNext
           onActivated: mediaBody.player.next()
+        }
+        MediaButton {
+          flat: true
+          width: root.controlHeight
+          icon: mediaBody.player && mediaBody.player.loopState === MprisLoopState.Track ? "󰑘" : "󰑖"
+          hint: Media.repeatLabel(mediaBody.player, MprisLoopState)
+          active: !!mediaBody.player && mediaBody.player.loopSupported && mediaBody.player.loopState !== MprisLoopState.None
+          enabled: Media.canRepeat(mediaBody.player)
+          onActivated: Media.cycleRepeat(mediaBody.player, MprisLoopState)
         }
       }
 
@@ -4407,6 +4496,26 @@ Shared.Theme {
           }
 
           BarItem {
+            visible: homeAssistantStore.configured
+            width: visible ? root.chipHeight : 0
+            hovered: homeAssistantMouse.containsMouse
+            active: root.panelHere("home-assistant", barWindow.modelData)
+            CenteredGlyph {
+              anchors.centerIn: parent
+              text: "󰋜"
+              color: homeAssistantStore.connected ? root.subtext : root.yellow
+              font.pixelSize: root.textStrong
+            }
+            MouseArea {
+              id: homeAssistantMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: homeAssistantMouse; text: homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · unavailable" }
+          }
+          BarItem {
             width: 30
             hovered: voxtypeMouse.containsMouse
             Text {
@@ -4440,8 +4549,15 @@ Shared.Theme {
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            MouseArea { id: clockMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("clock", barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: clockMouse; text: "Time zones" }
+            MouseArea {
+              id: clockMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              acceptedButtons: Qt.LeftButton | Qt.RightButton
+              onClicked: mouse => root.toggleControl(mouse.button === Qt.RightButton ? "focus" : "clock", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: clockMouse; text: "Time zones · Right click for focus timer" }
           }
 
           BarItem {
@@ -4458,6 +4574,29 @@ Shared.Theme {
             }
             MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
+          }
+
+          BarItem {
+            visible: focusTimer.timerState.status !== "idle"
+            width: visible ? focusBarLabel.implicitWidth + 14 : 0
+            hovered: focusBarMouse.containsMouse
+            active: root.panelHere("focus", barWindow.modelData)
+            Text {
+              id: focusBarLabel
+              anchors.centerIn: parent
+              text: "󰔟 " + focusTimer.label
+              color: focusTimer.timerState.status === "done" ? root.green : root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: focusBarMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleControl("focus", barWindow.modelData.name, root.barItemCenter(parent))
+            }
+            HoverTip { mouse: focusBarMouse; text: "Focus timer · " + focusTimer.timerState.status }
           }
 
           BarItem {
@@ -4941,6 +5080,22 @@ Shared.Theme {
           }
 
           BarItem {
+            width: githubBarContent.implicitWidth + root.spaceLarge
+            hovered: githubBarHover.hovered
+            active: root.panelHere("github", barWindow.modelData)
+            Row {
+              id: githubBarContent
+              anchors.centerIn: parent
+              spacing: root.spaceTight
+              CenteredGlyph { width: root.textIcon; height: root.barItemHeight; text: "󰊤"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+              Text { visible: githubStore.snapshot.reviewTotal > 0; anchors.verticalCenter: parent.verticalCenter; text: githubStore.snapshot.reviewTotal; color: githubStore.snapshot.stale ? root.subtext : root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+            }
+            HoverHandler { id: githubBarHover }
+            MouseArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: githubBarMouse; text: "GitHub · pull requests and requested reviews" }
+          }
+
+          BarItem {
             width: notificationBarContent.implicitWidth + 14
             hovered: notificationMouse.containsMouse
             active: root.panelHere("notifications", barWindow.modelData)
@@ -5203,11 +5358,178 @@ Shared.Theme {
     }
   }
 
+  // Focus timer ---------------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: focusWindow
+      required property var modelData
+      screen: modelData
+      visible: root.panelHere("focus", modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 350
+      implicitHeight: focusContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.namespace: "seele-shell-focus"
+      onVisibleChanged: if (visible) Qt.callLater(function() { focusContent.forceActiveFocus() })
+
+      PanelSurface {
+        Column {
+          id: focusContent
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          Keys.onPressed: event => {
+            if (event.isAutoRepeat || event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+            if (event.key === Qt.Key_1) focusTimer.command("start", 25)
+            else if (event.key === Qt.Key_2) focusTimer.command("start", 50)
+            else if (event.key === Qt.Key_3) focusTimer.command("start", 5)
+            else if (event.key === Qt.Key_Delete) focusTimer.command("cancel")
+            else if (event.key === Qt.Key_Space) {
+              if (focusTimer.timerState.status === "running") focusTimer.command("pause")
+              else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
+              else focusTimer.command("start", 25)
+            } else return
+            event.accepted = true
+          }
+          PanelHeader { width: parent.width; glyph: "󰔟"; title: "Focus timer"; detail: "Focus, then take a break" }
+          Text {
+            width: parent.width
+            text: focusTimer.label
+            color: focusTimer.timerState.status === "done" ? root.green : root.accent
+            font.family: root.fontFamily
+            font.pixelSize: root.textHero
+            font.weight: root.weightLight
+            horizontalAlignment: Text.AlignHCenter
+          }
+          Text {
+            width: parent.width
+            text: focusTimer.timerState.status === "idle" ? "Choose a duration" : focusTimer.timerState.status === "done" ? "Time is up" : focusTimer.timerState.status === "paused" ? "Paused" : "In progress"
+            color: root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textBody
+            horizontalAlignment: Text.AlignHCenter
+          }
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [{minutes:25,label:"25 min"}, {minutes:50,label:"50 min"}, {minutes:5,label:"5 min break"}]
+              Rectangle {
+                required property var modelData
+                width: (parent.width - root.spaceSmall * 2) / 3
+                height: root.controlHeight
+                radius: root.radius
+                color: presetMouse.pressed ? root.pressColor : presetHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+                CardEdge {}
+                HoverHandler { id: presetHover }
+                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                MouseArea { id: presetMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: focusTimer.command("start", modelData.minutes) }
+              }
+            }
+          }
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [focusTimer.timerState.status === "running" ? "Pause" : focusTimer.timerState.status === "paused" ? "Resume" : "Start", focusTimer.timerState.status === "done" ? "Done" : "Cancel"]
+              Rectangle {
+                required property string modelData
+                required property int index
+                width: (parent.width - root.spaceSmall) / 2
+                height: root.controlHeight
+                radius: root.radius
+                color: actionMouse.pressed ? root.pressColor : actionHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+                CardEdge {}
+                HoverHandler { id: actionHover }
+                Text { anchors.centerIn: parent; text: modelData; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                MouseArea {
+                  id: actionMouse
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (index === 1) focusTimer.command("cancel")
+                    else if (focusTimer.timerState.status === "running") focusTimer.command("pause")
+                    else if (focusTimer.timerState.status === "paused") focusTimer.command("resume")
+                    else focusTimer.command("start", 25)
+                  }
+                }
+              }
+            }
+          }
+          Text { width: parent.width; text: "1 / 2 / 3 presets · Space pause/resume · Delete cancel"; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textCaption; wrapMode: Text.Wrap }
+        }
+      }
+    }
+  }
+
   // Calendar ------------------------------------------------------------------
   Variants {
     model: Quickshell.screens
     PanelWindow {
       id: calendarWindow
+      property string selectedDate: ""
+      property string copyStatus: ""
+      property bool copyPending: false
+
+      function copyCalendarDate(cell) {
+        var value = Time.calendarCopyDate(cell)
+        if (!value || copyPending || calendarClipboard.running) return
+        selectedDate = value
+        copyStatus = "Copying " + value + "…"
+        copyPending = true
+        calendarClipboard.payload = value
+        calendarCopyTimeout.restart()
+        calendarClipboard.stdinEnabled = true
+        calendarClipboard.running = true
+      }
+
+      function moveCalendarSelection(days, today) {
+        if (copyPending || calendarClipboard.running) return
+        var selection = Time.moveCalendarDate(root.now, today ? "" : selectedDate, days)
+        if (!selection) return
+        selectedDate = selection.date
+        copyStatus = ""
+        calendarMonths.positionViewAtIndex(selection.monthOffset + 60, ListView.Contain)
+      }
+
+      function finishCalendarCopy(exitCode, exitStatus) {
+        if (!copyPending) return
+        calendarCopyTimeout.stop()
+        copyPending = false
+        copyStatus = exitCode === 0 && exitStatus === 0
+          ? "Copied " + calendarClipboard.payload : "Could not copy date"
+      }
+
+      Process {
+        id: calendarClipboard
+        property string payload: ""
+        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+        onStarted: {
+          write(payload)
+          stdinEnabled = false
+        }
+        onExited: (exitCode, exitStatus) => calendarWindow.finishCalendarCopy(exitCode, exitStatus)
+      }
+
+      // Failed startup has no exited signal. Bound the pending state as well
+      // as a compositor that does not acknowledge the clipboard request.
+      Timer {
+        id: calendarCopyTimeout
+        interval: 5000
+        onTriggered: {
+          calendarWindow.finishCalendarCopy(-1, 1)
+          calendarClipboard.running = false
+        }
+      }
+
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "calendar" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -5219,11 +5541,35 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-calendar"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-      onVisibleChanged: if (visible) Qt.callLater(function() { calendarMonths.positionViewAtIndex(60, ListView.Beginning) })
+      onVisibleChanged: if (visible) {
+        if (!copyPending) {
+          selectedDate = ""
+          copyStatus = ""
+        }
+        Qt.callLater(function() {
+          calendarMonths.positionViewAtIndex(60, ListView.Beginning)
+          calendarSurface.forceActiveFocus()
+        })
+      }
 
       PanelSurface {
         id: calendarSurface
+        focus: true
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ControlModifier)) return
+          if (event.key === Qt.Key_Escape) root.closeOverlays()
+          else if (event.key === Qt.Key_Left) calendarWindow.moveCalendarSelection(-1, false)
+          else if (event.key === Qt.Key_Right) calendarWindow.moveCalendarSelection(1, false)
+          else if (event.key === Qt.Key_Up) calendarWindow.moveCalendarSelection(-7, false)
+          else if (event.key === Qt.Key_Down) calendarWindow.moveCalendarSelection(7, false)
+          else if (event.key === Qt.Key_Home) calendarWindow.moveCalendarSelection(0, true)
+          else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+            calendarWindow.copyCalendarDate({ inMonth: true, date: calendarWindow.selectedDate || Time.calendarDate(root.now) })
+          else return
+          event.accepted = true
+        }
 
         Column {
           anchors.fill: parent
@@ -5235,7 +5581,9 @@ Shared.Theme {
             width: parent.width
             glyph: "󰃭"
             title: Qt.formatDate(root.now, "dddd")
-            detail: Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now)
+            detail: calendarWindow.copyStatus || (calendarWindow.selectedDate
+              ? calendarWindow.selectedDate + " · Enter to copy"
+              : Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now))
 
             Rectangle {
               width: 84
@@ -5245,7 +5593,19 @@ Shared.Theme {
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-              MouseArea { id: todayMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendarMonths.positionViewAtIndex(60, ListView.Beginning) }
+              MouseArea {
+                id: todayMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                  if (!calendarWindow.copyPending) {
+                    calendarWindow.selectedDate = ""
+                    calendarWindow.copyStatus = ""
+                  }
+                  calendarMonths.positionViewAtIndex(60, ListView.Beginning)
+                }
+              }
             }
           }
 
@@ -5317,6 +5677,8 @@ Shared.Theme {
                     Item {
                       id: calendarCell
                       required property var modelData
+                      readonly property string copyDate: Time.calendarCopyDate(modelData)
+                      readonly property bool selected: copyDate !== "" && copyDate === calendarWindow.selectedDate
                       width: monthGrid.width / 8
                       height: monthDelegate.cellHeight
                       Rectangle {
@@ -5334,6 +5696,16 @@ Shared.Theme {
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
                       }
+                      HoverHandler { id: calendarDayHover; enabled: calendarCell.copyDate !== "" }
+                      MouseArea {
+                        id: calendarDayMouse
+                        anchors.fill: parent
+                        enabled: calendarCell.copyDate !== "" && !calendarWindow.copyPending
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
+                      }
+                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Copy " + calendarCell.copyDate }
                     }
                   }
                 }
@@ -5401,6 +5773,55 @@ Shared.Theme {
     model: Quickshell.screens
     PanelWindow {
       id: clockWindow
+      property string copyStatus: ""
+      property bool copyPending: false
+
+      function copyClockTimestamp(offset, label) {
+        var value = Time.clockTimestamp(root.now, offset)
+        if (!value || copyPending || clockClipboard.running) return
+        copyStatus = "Copying timestamp…"
+        copyPending = true
+        clockClipboard.payload = value
+        clockClipboard.label = label
+        clockCopyTimeout.restart()
+        clockClipboard.stdinEnabled = true
+        clockClipboard.running = true
+      }
+
+      function copyClockSelection() {
+        var zone = timezoneList.model[timezoneList.currentIndex]
+        if (zone) copyClockTimestamp(zone.offset, zone.label)
+      }
+
+      function finishClockCopy(exitCode, exitStatus) {
+        if (!copyPending) return
+        clockCopyTimeout.stop()
+        copyPending = false
+        copyStatus = exitCode === 0 && exitStatus === 0
+          ? "Copied " + clockClipboard.label : "Could not copy timestamp"
+      }
+
+      Process {
+        id: clockClipboard
+        property string payload: ""
+        property string label: ""
+        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+        onStarted: {
+          write(payload)
+          stdinEnabled = false
+        }
+        onExited: (exitCode, exitStatus) => clockWindow.finishClockCopy(exitCode, exitStatus)
+      }
+
+      Timer {
+        id: clockCopyTimeout
+        interval: 5000
+        onTriggered: {
+          clockWindow.finishClockCopy(-1, 1)
+          clockClipboard.running = false
+        }
+      }
+
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "clock" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -5416,7 +5837,11 @@ Shared.Theme {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-clock"
-      onVisibleChanged: if (visible) Qt.callLater(function() { timezoneSearch.forceActiveFocus(); timezoneSearch.selectAll() })
+      onVisibleChanged: if (visible) Qt.callLater(function() {
+        if (!clockWindow.copyPending) clockWindow.copyStatus = ""
+        timezoneSearch.forceActiveFocus()
+        timezoneSearch.selectAll()
+      })
 
       PanelSurface {
         id: clockSurface
@@ -5424,7 +5849,13 @@ Shared.Theme {
           anchors.fill: parent
           anchors.margins: root.panelMargin
           spacing: root.panelSpacing
-          PanelHeader { id: clockHeader; width: parent.width; glyph: "󰥔"; title: "World clock"; detail: "Your time, everywhere" }
+          PanelHeader {
+            id: clockHeader
+            width: parent.width
+            glyph: "󰥔"
+            title: "World clock"
+            detail: clockWindow.copyStatus || "Enter copies zone · Ctrl+Enter local"
+          }
           Rectangle {
             id: localClockCard
             width: parent.width
@@ -5441,7 +5872,22 @@ Shared.Theme {
                 SectionLabel { text: "LOCAL TIME" }
                 Text { text: Qt.formatDate(root.now, "yyyy-MM-dd") + " · " + ((root.clockData.local || {}).abbreviation || ""); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
               }
-              Text { text: Qt.formatTime(root.now, "HH:mm:ss"); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textHero; font.weight: root.weightLight }
+              Text {
+                text: Qt.formatTime(root.now, "HH:mm:ss")
+                color: root.text
+                font.family: root.fontFamily
+                font.pixelSize: root.textHero
+                font.weight: root.weightLight
+                MouseArea {
+                  id: localTimeCopyMouse
+                  anchors.fill: parent
+                  enabled: !clockWindow.copyPending
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: clockWindow.copyClockTimestamp(undefined, "local time")
+                }
+                HoverTip { mouse: localTimeCopyMouse; inOverlay: true; text: "Copy local ISO timestamp" }
+              }
             }
             CardEdge {}
           }
@@ -5455,8 +5901,25 @@ Shared.Theme {
             font.family: root.fontFamily; font.pixelSize: root.textBody
             leftPadding: root.spaceLarge; rightPadding: root.spaceLarge
             background: Rectangle { radius: root.radius; color: root.wellColor; border.color: timezoneSearch.activeFocus ? root.accent : root.cardBorder; border.width: 1 }
-            onTextChanged: timezoneList.positionViewAtBeginning()
-            Keys.onEscapePressed: root.closeOverlays()
+            onTextChanged: {
+              timezoneList.currentIndex = 0
+              timezoneList.positionViewAtBeginning()
+            }
+            Keys.onPressed: event => {
+              if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return
+              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (event.modifiers & Qt.ControlModifier) clockWindow.copyClockTimestamp(undefined, "local time")
+                else clockWindow.copyClockSelection()
+              } else if (event.key === Qt.Key_Down) {
+                timezoneList.currentIndex = Math.min(timezoneList.count - 1, timezoneList.currentIndex + 1)
+                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
+              } else if (event.key === Qt.Key_Up) {
+                timezoneList.currentIndex = Math.max(0, timezoneList.currentIndex - 1)
+                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
+              } else if (event.key === Qt.Key_Escape) root.closeOverlays()
+              else return
+              event.accepted = true
+            }
           }
           Text {
             id: clockStatus
@@ -5473,16 +5936,18 @@ Shared.Theme {
             width: parent.width
             height: Math.max(0, parent.height - y)
             model: root.filteredTimezones(timezoneSearch.text)
+            currentIndex: 0
             spacing: root.spaceTight
             clip: true
             delegate: Rectangle {
               id: timezoneRow
               required property var modelData
+              required property int index
               readonly property bool pinned: root.timezonePinned(modelData.id)
               width: ListView.view.width
               height: root.notificationRowHeight
               radius: root.radius
-              color: rowHover.hovered ? root.hoveredColor(root.rowColor) : root.rowColor
+              color: timezoneList.currentIndex === index ? root.selectedColor : rowHover.hovered ? root.hoveredColor(root.rowColor) : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               RowLayout {
                 anchors.fill: parent
@@ -5496,9 +5961,23 @@ Shared.Theme {
                   Text { Layout.fillWidth: true; text: timezoneRow.modelData.id + " · " + Time.formatOffset(timezoneRow.modelData.offset); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; elide: Text.ElideMiddle }
                 }
                 Column {
+                  id: zoneTimeLabels
                   spacing: root.spaceTight
                   Text { width: parent.width; text: timezoneRow.modelData.time; color: timezoneRow.pinned ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight; horizontalAlignment: Text.AlignRight }
                   Text { text: timezoneRow.modelData.day; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                  HoverHandler { id: zoneTimeHover }
+                  MouseArea {
+                    id: zoneTimeCopyMouse
+                    anchors.fill: parent
+                    enabled: !clockWindow.copyPending
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      timezoneList.currentIndex = timezoneRow.index
+                      clockWindow.copyClockTimestamp(timezoneRow.modelData.offset, timezoneRow.modelData.label)
+                    }
+                  }
+                  HoverTip { mouse: zoneTimeCopyMouse; inOverlay: true; text: "Copy ISO timestamp · " + timezoneRow.modelData.id }
                 }
                 Shared.ActionButton {
                   theme: root
@@ -6349,6 +6828,157 @@ Shared.Theme {
     }
   }
 
+  // GitHub pull requests ------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: githubWindow
+      required property var modelData
+      property string tab: "reviews"
+      readonly property var entries: tab === "reviews" ? githubStore.snapshot.reviews : githubStore.snapshot.authored
+      readonly property int total: tab === "reviews" ? githubStore.snapshot.reviewTotal : githubStore.snapshot.authoredTotal
+      screen: modelData
+      visible: root.controlPanel === "github" && root.pinnedScreen(root.overlayScreen, modelData)
+      onVisibleChanged: if (visible) Qt.callLater(function() { githubSurface.forceActiveFocus() })
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 440
+      implicitHeight: githubContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-github"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+      PanelSurface {
+        id: githubSurface
+        focus: true
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+          if (event.isAutoRepeat && event.key !== Qt.Key_J && event.key !== Qt.Key_K
+              && event.key !== Qt.Key_Up && event.key !== Qt.Key_Down) return
+          if (event.key === Qt.Key_Escape) { root.closeOverlays(); event.accepted = true }
+          else if (event.key === Qt.Key_J || event.key === Qt.Key_Down) { githubList.incrementCurrentIndex(); event.accepted = true }
+          else if (event.key === Qt.Key_K || event.key === Qt.Key_Up) { githubList.decrementCurrentIndex(); event.accepted = true }
+          else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) { githubWindow.tab = githubWindow.tab === "reviews" ? "authored" : "reviews"; githubList.currentIndex = 0; event.accepted = true }
+          else if (event.key === Qt.Key_R) { githubStore.refresh(true); event.accepted = true }
+          else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && githubList.currentIndex >= 0 && githubList.currentIndex < githubWindow.entries.length) { githubStore.openPull(githubWindow.entries[githubList.currentIndex].url); event.accepted = true }
+        }
+        Column {
+          id: githubContent
+          anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+          anchors.margins: root.panelMargin
+          spacing: root.panelSpacing
+
+          PanelHeader {
+            width: parent.width
+            glyph: "󰊤"
+            title: "GitHub"
+            detail: githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
+            Rectangle {
+              width: root.chipHeight; height: root.chipHeight; radius: root.radius
+              color: githubRefreshHover.hovered ? root.hoverColor : root.clearColor
+              RefreshGlyph { anchors.centerIn: parent; width: root.textCard; height: width; spinning: githubStore.refreshing; color: githubStore.canRefresh ? root.text : root.subtext }
+              HoverHandler { id: githubRefreshHover }
+              MouseArea { id: githubRefreshMouse; anchors.fill: parent; hoverEnabled: true; enabled: githubStore.canRefresh; cursorShape: Qt.PointingHandCursor; onClicked: githubStore.refresh(true) }
+              HoverTip { mouse: githubRefreshMouse; text: "Refresh GitHub"; inOverlay: true }
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Repeater {
+              model: [{ id: "reviews", label: "Requested reviews" }, { id: "authored", label: "My pull requests" }]
+              Rectangle {
+                required property var modelData
+                width: (githubContent.width - root.spaceSmall) / 2
+                height: root.controlHeight
+                radius: root.radius
+                color: githubWindow.tab === modelData.id ? root.selectedColor : root.wellColor
+                Rectangle { anchors.fill: parent; radius: parent.radius; color: githubTabHover.hovered ? root.hoverColor : root.clearColor }
+                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: githubWindow.tab === modelData.id ? root.weightStrong : root.weightMedium }
+                HoverHandler { id: githubTabHover }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubWindow.tab = modelData.id; githubList.currentIndex = 0; githubSurface.forceActiveFocus() } }
+              }
+            }
+          }
+
+          Text {
+            visible: githubStore.snapshot.state !== "ready"
+            width: parent.width
+            text: githubStore.refreshing && githubStore.snapshot.state === "idle" ? "Loading pull requests…" : githubStore.snapshot.message + (githubStore.snapshot.stale ? " Showing the last successful refresh." : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: githubStore.snapshot.state === "idle" ? root.subtext : root.yellow
+            font.family: root.fontFamily; font.pixelSize: root.textBody
+          }
+
+          Text {
+            visible: githubStore.snapshot.state === "auth-required"
+            width: parent.width
+            text: "Run gh auth login --hostname " + githubStore.snapshot.host + " in a terminal to connect your account."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.subtext
+            font.family: root.fontFamily; font.pixelSize: root.textCaption
+          }
+
+          SeeleListView {
+            id: githubList
+            width: parent.width
+            height: Math.min(contentHeight, root.rowHeight * 7)
+            visible: githubWindow.entries.length > 0
+            clip: true
+            spacing: root.spaceSmall
+            model: githubWindow.entries
+            currentIndex: 0
+            keyNavigationEnabled: true
+            ScrollBar.vertical: SlimScrollBar { popupHovered: githubSurface.hovered }
+            delegate: Rectangle {
+              id: githubPullRow
+              required property var modelData
+              required property int index
+              width: githubList.width - root.scrollGutter
+              height: githubPullContent.implicitHeight + root.spaceMedium * 2
+              radius: root.radius
+              color: githubSurface.activeFocus && githubList.currentIndex === index ? root.selectedColor : root.rowColor
+              Rectangle { anchors.fill: parent; radius: parent.radius; color: githubPullHover.hovered ? root.hoverColor : root.clearColor }
+              Column {
+                id: githubPullContent
+                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                anchors.margins: root.spaceMedium
+                spacing: root.spaceTight
+                Text { width: parent.width; text: githubPullRow.modelData.title; textFormat: Text.PlainText; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+                Text { width: parent.width; text: githubPullRow.modelData.repository + " #" + githubPullRow.modelData.number; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                Text { width: parent.width; text: GitHub.checksLabel(githubPullRow.modelData.checks) + " · " + GitHub.reviewLabel(githubPullRow.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: ["FAILURE", "ERROR"].indexOf(githubPullRow.modelData.checks) >= 0 ? root.red : githubPullRow.modelData.checks === "SUCCESS" ? root.green : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+              }
+              HoverHandler { id: githubPullHover }
+              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { githubList.currentIndex = githubPullRow.index; githubStore.openPull(githubPullRow.modelData.url) } }
+            }
+          }
+
+          Text {
+            visible: githubWindow.entries.length === 0 && githubStore.snapshot.state === "ready"
+            width: parent.width
+            text: githubWindow.tab === "reviews" ? "No reviews are waiting for you." : "You have no open pull requests."
+            textFormat: Text.PlainText
+            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody
+          }
+
+          Text {
+            visible: githubStore.snapshot.updatedAt !== ""
+            width: parent.width
+            text: "Showing " + githubWindow.entries.length + " of " + githubWindow.total + " · " + (githubStore.snapshot.stale ? "Last updated " : "Updated ") + Qt.formatTime(new Date(githubStore.snapshot.updatedAt), "HH:mm") + " · Tab to switch · R to refresh"
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption
+          }
+        }
+      }
+    }
+  }
+
   // Control Center ---------------------------------------------------------------
   // Every module here also keeps its own menu bar entry and its own panel. This
   // panel is the one place that carries all of them at once, so its modules stay
@@ -6380,6 +7010,8 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-control-center"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { controlCenterContent.forceActiveFocus() })
       mask: Region {
         y: controlCenterWindow.dragging ? 0 : controlCenterWindow.barReach
         width: controlCenterWindow.width
@@ -6393,6 +7025,7 @@ Shared.Theme {
         PanelSurface {
           Column {
             id: controlCenterContent
+            Keys.onEscapePressed: root.closeOverlays()
 
             anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
@@ -6414,6 +7047,10 @@ Shared.Theme {
     PanelWindow {
       id: mediaWindow
 
+      function cyclePlaybackSpeed() {
+        return MediaSpeed.cycle(mediaWindow.player)
+      }
+
       required property var modelData
       readonly property var players: root.availableMediaPlayers()
       readonly property var player: root.nowPlayingPlayer()
@@ -6427,10 +7064,13 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-media"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { mediaContent.forceActiveFocus() })
 
       PanelSurface {
         Column {
           id: mediaContent
+          Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent
           anchors.margins: root.panelMargin
@@ -6453,6 +7093,84 @@ Shared.Theme {
             width: parent.width
             height: root.mediaBodyHeight
             player: mediaWindow.player
+          }
+          Rectangle {
+            id: playerVolumeCard
+            readonly property var player: mediaWindow.player
+            readonly property bool writable: PlayerVolume.writable(player)
+            width: parent.width
+            height: root.controlHeight + root.cardPadding * 2
+            radius: root.radius
+            color: playerVolumeHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+            HoverHandler { id: playerVolumeHover }
+            CardEdge {}
+            Text {
+              anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding }
+              text: "Player volume"
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            Row {
+              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
+              spacing: root.spaceSmall
+              NotificationButton {
+                label: "−"
+                Accessible.name: "Decrease player volume"
+                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume > 0
+                onClicked: PlayerVolume.adjust(playerVolumeCard.player, -0.05)
+              }
+              Text {
+                width: root.controlHeight * 2
+                anchors.verticalCenter: parent.verticalCenter
+                text: PlayerVolume.supported(playerVolumeCard.player) ? PlayerVolume.percent(playerVolumeCard.player) + "%" : "Unavailable"
+                horizontalAlignment: Text.AlignHCenter
+                color: playerVolumeCard.writable ? root.text : root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
+              NotificationButton {
+                label: "+"
+                Accessible.name: "Increase player volume"
+                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume < 1
+                onClicked: PlayerVolume.adjust(playerVolumeCard.player, 0.05)
+              }
+            }
+          }
+          Rectangle {
+            width: parent.width
+            height: root.controlHeight + root.spaceMedium * 2
+            radius: root.radius
+            color: root.cardColor
+            CardEdge {}
+            Text {
+              anchors { left: parent.left; right: playbackSpeedButton.left; verticalCenter: parent.verticalCenter; margins: root.spaceMedium }
+              text: "Playback speed"
+              color: root.text
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+              elide: Text.ElideRight
+            }
+            NotificationButton {
+              id: playbackSpeedButton
+              readonly property bool containsMouse: hovered
+              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.spaceMedium }
+              label: MediaSpeed.label(mediaWindow.player)
+              enabled: MediaSpeed.nextRate(mediaWindow.player) !== null
+              autoRepeat: false
+              onClicked: mediaWindow.cyclePlaybackSpeed()
+              Keys.onPressed: event => {
+                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+                event.accepted = true
+                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                mediaWindow.cyclePlaybackSpeed()
+              }
+              HoverTip {
+                mouse: playbackSpeedButton
+                inOverlay: true
+                text: "Cycle supported speeds · " + MediaSpeed.rates(mediaWindow.player).join("× / ") + "×"
+              }
+            }
           }
         }
       }
@@ -6604,10 +7322,16 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-network"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) {
+        root.refreshStatus("aux")
+        Qt.callLater(function() { networkContent.forceActiveFocus() })
+      }
 
       PanelSurface {
         Column {
           id: networkContent
+          Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           PanelHeader {
@@ -6681,19 +7405,60 @@ Shared.Theme {
                 }
               }
 
+              Text {
+                width: parent.width
+                text: root.systemData.networkInterface ? "Route via " + root.systemData.networkInterface : "No routed interface"
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
               Repeater {
-                model: [
-                  { label: "IP address", value: root.systemData.ipAddress || "Unavailable" },
-                  { label: "Gateway", value: (root.systemData.gateway || "Unavailable") + " · " + (root.systemData.connectionType || "None") }
-                ]
-
-                Row {
+                model: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface)
+                Item {
+                  id: addressRow
                   required property var modelData
                   width: parent.width
-                  height: 18
-                  Text { width: 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-                  Text { width: parent.width - 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.value; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                  height: root.controlHeight
+                  Text {
+                    anchors { left: parent.left; right: addressCopy.left; verticalCenter: parent.verticalCenter; rightMargin: root.spaceSmall }
+                    text: addressRow.modelData.label + " · " + addressRow.modelData.value
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    MouseArea { id: addressHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                    HoverTip { mouse: addressHover; inOverlay: true; text: addressRow.modelData.detail }
+                  }
+                  NotificationButton {
+                    id: addressCopy
+                    anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                    label: "Copy"
+                    successLabel: "Copied"
+                    controlAction: "copy-address"
+                    value: addressRow.modelData.value
+                    enabled: !controlProcess.running
+                  }
                 }
+              }
+              Text {
+                width: parent.width
+                visible: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface).length === 0
+                text: "No usable IP addresses"
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
+              Text {
+                width: parent.width
+                text: "Gateway · " + (root.systemData.gateway || "Unavailable")
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
               }
             }
           }
@@ -6764,7 +7529,6 @@ Shared.Theme {
             width: parent.width; spacing: 8
             Repeater {
               model: [
-                {label:"Copy IP", action:"copy-ip", value:""},
                 {label:"Settings", action:"network-settings", value:""},
                 {label:"Allestörungen", action:"outages", value:""}
               ]
@@ -6773,10 +7537,10 @@ Shared.Theme {
                 readonly property bool busy: root.controlBusy(modelData.action, modelData.value)
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
-                width: (parent.width - 16) / 3; height: 38; radius: root.radius
+                width: (parent.width - 8) / 2; height: 38; radius: root.radius
                 color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: root.textLead }
                 MouseArea {
                   id: networkActionMouse
@@ -6969,6 +7733,7 @@ Shared.Theme {
               }
             }
           }
+
         }
       }
     }
@@ -7516,6 +8281,105 @@ Shared.Theme {
     }
   }
 
+  // Selected Home Assistant entities -----------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: homeAssistantWindow
+      required property var modelData
+      screen: modelData
+      visible: root.panelHere("home-assistant", modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 400
+      implicitHeight: homeAssistantContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-home-assistant"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { homeAssistantContent.forceActiveFocus() })
+
+      PanelSurface {
+        HoverHandler { id: homeAssistantHover }
+        Column {
+          id: homeAssistantContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader {
+            width: parent.width
+            glyph: "󰋜"
+            title: "Home Assistant"
+            detail: homeAssistantStore.busy ? "Updating…" : homeAssistantStore.connected ? "Selected entities" : "Unavailable"
+            detailColor: homeAssistantStore.connected ? root.subtext : root.yellow
+            NotificationButton {
+              id: homeAssistantRefresh
+              label: "Refresh"
+              enabled: !homeAssistantStore.busy
+              onClicked: homeAssistantStore.refresh()
+            }
+          }
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: homeAssistantStore.error || (!homeAssistantStore.configured ? "Add a private home-assistant.json configuration to connect." : homeAssistantStore.entities.length === 0 && !homeAssistantStore.busy ? "No selected entities." : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: homeAssistantStore.error ? root.yellow : root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
+          }
+          SeeleListView {
+            width: parent.width
+            height: Math.min(contentHeight, root.rowHeight * 6)
+            visible: homeAssistantStore.entities.length > 0
+            clip: true
+            spacing: root.spaceSmall
+            model: homeAssistantStore.entities
+            delegate: Rectangle {
+              id: homeAssistantRow
+              required property var modelData
+              width: ListView.view.width - root.scrollGutter
+              height: root.rowHeight + root.spaceMedium
+              radius: root.radiusSmall
+              color: activeFocus ? root.selectedColor : root.cardColor
+              readonly property bool actionable: homeAssistantStore.connected && modelData.available && modelData.controllable && !homeAssistantStore.busy
+              activeFocusOnTab: actionable
+              function changeState() {
+                if (actionable) homeAssistantStore.setState(modelData, modelData.state === "on" ? "off" : "on")
+              }
+              Keys.onPressed: event => {
+                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                  changeState()
+                  event.accepted = true
+                }
+              }
+              CardEdge {}
+              Column {
+                anchors { left: parent.left; right: homeAssistantToggle.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding; rightMargin: root.spaceMedium }
+                spacing: root.spaceTight
+                Text { width: parent.width; text: homeAssistantRow.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                Text { width: parent.width; text: homeAssistantRow.modelData.state + (homeAssistantRow.modelData.unit ? " " + homeAssistantRow.modelData.unit : "") + (!homeAssistantStore.connected ? " · stale" : ""); textFormat: Text.PlainText; elide: Text.ElideRight; color: homeAssistantStore.connected && homeAssistantRow.modelData.available ? root.subtext : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+              }
+              ControlSwitch {
+                id: homeAssistantToggle
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
+                visible: homeAssistantRow.modelData.controllable
+                enabled: homeAssistantRow.actionable
+                checked: homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id ? homeAssistantStore.pendingValue === "on" : homeAssistantRow.modelData.state === "on"
+                busy: homeAssistantStore.busy && homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id
+                onToggled: homeAssistantRow.changeState()
+              }
+            }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: homeAssistantHover.hovered }
+          }
+        }
+      }
+    }
+  }
+
   // Notification center --------------------------------------------------------
   Variants {
     model: Quickshell.screens
@@ -7523,13 +8387,14 @@ Shared.Theme {
       id: notificationWindow
 
       required property var modelData
-      readonly property var entries: root.notificationHistoryOpen
+      readonly property var entries: NotificationSearch.filter(root.notificationHistoryOpen
         ? (root.systemData.notifications.history || [])
-        : (root.systemData.notifications.items || [])
+        : (root.systemData.notifications.items || []), notificationSearch.text)
       // Everything above the list: the panel's own padding, the header, the
       // history and clear row, and the gap on either side of it.
       readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
         + root.panelSpacing + 36 + root.panelSpacing + root.chipHeight + root.panelSpacing
+        + root.rowHeight + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -7568,7 +8433,10 @@ Shared.Theme {
         root.notificationHistoryOpen = !root.notificationHistoryOpen
       }
 
-      onVisibleChanged: remeasure()
+      onVisibleChanged: {
+        remeasure()
+        if (visible) Qt.callLater(function() { notificationSearch.forceActiveFocus(); notificationSearch.selectAll() })
+      }
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
       // list says it changed.
@@ -7712,24 +8580,50 @@ Shared.Theme {
               }
             }
           }
+          TextField {
+            id: notificationSearch
+            width: parent.width
+            height: root.rowHeight
+            maximumLength: 256
+            placeholderText: "Search app, title, or message…"
+            color: root.text
+            placeholderTextColor: root.overlay
+            selectionColor: root.accent
+            selectedTextColor: root.base
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
+            leftPadding: root.spaceMedium
+            rightPadding: root.spaceMedium
+            background: Rectangle {
+              radius: root.radius
+              color: root.wellColor
+              border.color: notificationSearch.activeFocus ? root.accent : root.cardBorder
+              border.width: 1
+            }
+            onTextChanged: { notificationCurrentList.positionViewAtBeginning(); notificationHistoryList.positionViewAtBeginning(); notificationWindow.remeasure() }
+            Keys.onEscapePressed: { if (text !== "") clear(); else root.closeOverlays() }
+          }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing - quietPresets.height - root.panelSpacing
+            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
+              - quietPresets.height - root.panelSpacing - notificationSearch.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
+              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
-              visible: !root.notificationHistoryOpen && (root.systemData.notifications.items || []).length > 0
+              visible: !root.notificationHistoryOpen && entries.length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
             NotificationList {
               id: notificationHistoryList
+              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
               history: true
-              visible: root.notificationHistoryOpen && (root.systemData.notifications.history || []).length > 0
+              visible: root.notificationHistoryOpen && entries.length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
@@ -7739,7 +8633,7 @@ Shared.Theme {
               Text {
                 anchors.centerIn: parent
                 width: parent.width
-                text: root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
+                text: notificationSearch.text.trim() !== "" ? "No notifications match your search" : root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
                 color: root.overlay
                 font.family: root.fontFamily
                 font.pixelSize: root.textLabel

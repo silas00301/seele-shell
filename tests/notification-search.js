@@ -27,7 +27,7 @@ const before = JSON.stringify(inbox);
 const history = [{id:10, app_name:'Chat', summary:'Dismissed planning', body:'five'}];
 assert.deepEqual(ids(history, 'chat five'), [10], 'same filter supports historical records');
 const matched = search.filter(inbox, 'old');
-assert.equal(notifications.stackedRows(matched, {})[0].entry.id, 3, 'matching older records are filtered before stacking');
+assert.equal(notifications.stackedRows(matched, {})[0].items[0].id, 3, 'matching older records are filtered before stacking');
 assert.equal(JSON.stringify(inbox), before, 'filter does not mutate the store or dismiss notifications');
 const shell = fs.readFileSync(process.argv[4], 'utf8');
 assert.equal((shell.match(/query: notificationSearch.text/g) || []).length, 2);

@@ -21,10 +21,12 @@ pkgs.stdenvNoCC.mkDerivation {
 
   installPhase = ''
     runHook preInstall
-    mkdir -p "$out/share/seele-notes" "$out/share/shared" "$out/bin" "$out/libexec"
-    cp ${../shared}/*.qml "$out/share/shared/"
-    ${tools}/bin/seele-tools grain "$out/share/shared/grain.png"
+    mkdir -p "$out/share/seele-notes/shared" "$out/bin" "$out/libexec"
+    cp ${../shared}/*.qml "$out/share/seele-notes/shared/"
+    ${tools}/bin/seele-tools grain "$out/share/seele-notes/shared/grain.png"
     install -m644 ${./shell.qml} "$out/share/seele-notes/shell.qml"
+    substituteInPlace "$out/share/seele-notes/shell.qml" \
+      --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./NotesStore.qml} "$out/share/seele-notes/NotesStore.qml"
     install -m644 ${./MemoPlayer.qml} "$out/share/seele-notes/MemoPlayer.qml"
     install -m644 ${./notes.js} "$out/share/seele-notes/notes.js"
@@ -61,8 +63,10 @@ pkgs.stdenvNoCC.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
+    grep -Fqx 'import "shared" as Shared' "$out/share/seele-notes/shell.qml"
+    ! grep -Fq 'import "../shared"' "$out/share/seele-notes/shell.qml"
     qmllint -I ${quickshell}/lib/qt-6/qml -I ${pkgs.qt6.qtmultimedia}/lib/qt-6/qml \
-      "$out/share/seele-notes/"*.qml "$out/share/shared/"*.qml
+      "$out/share/seele-notes/"*.qml "$out/share/seele-notes/shared/"*.qml
     node ${../../tests/notes.js} "$out/share/seele-notes/notes.js"
     node ${../../tests/notes-store.js} "$out/share/seele-notes/NotesStore.qml" "$out/share/seele-notes/notes.js"
     python3 ${../../tests/notes.py} "$out/libexec/seele-notes-store"

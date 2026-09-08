@@ -2,6 +2,18 @@ function monthDate(now, offset) {
   return new Date(now.getFullYear(), now.getMonth() + Number(offset || 0), 1, 12)
 }
 
+// Use local calendar fields: UTC conversion can move a date across midnight.
+function calendarDate(date) {
+  if (!date || !Number.isFinite(date.getTime())) return ""
+  return String(date.getFullYear()).padStart(4, "0") + "-"
+    + String(date.getMonth() + 1).padStart(2, "0") + "-"
+    + String(date.getDate()).padStart(2, "0")
+}
+
+function calendarCopyDate(cell) {
+  return cell && !cell.week && cell.inMonth ? String(cell.date || "") : ""
+}
+
 function sameDay(left, right) {
   return left.getFullYear() === right.getFullYear()
     && left.getMonth() === right.getMonth()
@@ -47,6 +59,7 @@ function calendarCells(now, offset) {
         week: false,
         inMonth: inMonth,
         day: inMonth ? value.getDate() : 0,
+        date: inMonth ? calendarDate(value) : "",
         today: inMonth && sameDay(value, now)
       })
     }
@@ -101,6 +114,45 @@ function orderZones(zones, pinned, query) {
     if (!seen[filtered[zone].id]) ordered.push(filtered[zone])
   }
   return ordered
+}
+
+// Calendar keyboard navigation stays at local noon across DST boundaries.
+function moveCalendarDate(now, selected, days) {
+  var match = String(selected || calendarDate(now)).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match || !Number.isInteger(days)) return null
+  var date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12)
+  date.setFullYear(Number(match[1]))
+  if (calendarDate(date) !== match[0]) return null
+  date.setDate(date.getDate() + days)
+  var offset = (date.getFullYear() - now.getFullYear()) * 12 + date.getMonth() - now.getMonth()
+  if (offset < -60 || offset > 60) return null
+  return { date: calendarDate(date), monthOffset: offset }
+}
+
+// An ISO timestamp records both the date and the zone offset at the instant
+// clicked. Omitted offset means the local zone, including its current DST.
+function clockTimestamp(now, offset) {
+  if (!now || !Number.isFinite(now.getTime())) return ""
+  if (offset === undefined) {
+    var localMinutes = -now.getTimezoneOffset()
+    var absolute = Math.abs(localMinutes)
+    offset = (localMinutes < 0 ? "-" : "+")
+      + String(Math.floor(absolute / 60)).padStart(2, "0")
+      + String(absolute % 60).padStart(2, "0")
+  }
+  var match = String(offset || "").match(/^([+-])(\d{2})(\d{2})$/)
+  if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return ""
+  var minutes = Number(match[2]) * 60 + Number(match[3])
+  if (match[1] === "-") minutes = -minutes
+  var shifted = new Date(now.getTime() + minutes * 60000)
+  if (!Number.isFinite(shifted.getTime()) || shifted.getUTCFullYear() < 0 || shifted.getUTCFullYear() > 9999) return ""
+  return String(shifted.getUTCFullYear()).padStart(4, "0") + "-"
+    + String(shifted.getUTCMonth() + 1).padStart(2, "0") + "-"
+    + String(shifted.getUTCDate()).padStart(2, "0") + "T"
+    + String(shifted.getUTCHours()).padStart(2, "0") + ":"
+    + String(shifted.getUTCMinutes()).padStart(2, "0") + ":"
+    + String(shifted.getUTCSeconds()).padStart(2, "0")
+    + match[1] + match[2] + ":" + match[3]
 }
 
 function formatOffset(offset) {

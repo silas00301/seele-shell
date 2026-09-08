@@ -111,11 +111,19 @@
                 command = ''
                   set -e
                   cargo test --manifest-path projects/tools/Cargo.toml
+                  node tests/feature-integrations.js projects/shell/shell.qml projects/shell/package.nix
+                  node tests/focus.js projects/shell/focus.js
+                  PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/home-assistant.py projects/home-assistant/control.py
+                  node tests/home-assistant-store.js projects/shell/HomeAssistantStore.qml
+                  PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/github.py projects/github/status.py
+                  node tests/github.js projects/shell/github.js projects/shell/GitHubStore.qml
                   node tests/network-addresses.js projects/shell/network.js
                   node tests/media.js projects/shell/media.js
-                  node tests/notification-copy.js projects/shell/notification-copy.js projects/shell/NotificationClipboard.qml projects/shell/shell.qml
-                  node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
                   node tests/player-volume.js projects/shell/player-volume.js
+                  node tests/media-speed.js projects/shell/media-speed.js projects/shell/shell.qml
+                  node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
+                  node tests/notification-search.js projects/shell/notification-search.js projects/shell/notifications.js projects/shell/shell.qml
+                  node tests/notification-copy.js projects/shell/notification-copy.js projects/shell/NotificationClipboard.qml projects/shell/shell.qml
                   node tests/time.js projects/shell/time.js
                   node tests/notes.js projects/notes/notes.js
                   node tests/notes-store.js projects/notes/NotesStore.qml projects/notes/notes.js
