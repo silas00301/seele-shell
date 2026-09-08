@@ -168,17 +168,13 @@ build-all   # build every package
 test-shell  # run focused tests and syntax checks
 ```
 
-## Focus timer
+## Keyboard media seeking
 
-Right-click the menu-bar clock, or run `seele-shellctl control focus`, to open
-25-minute and 50-minute focus sessions or a five-minute break. The countdown
-appears beside the clock while active; pause/resume and cancel stay in its panel.
-Keys 1/2/3 start presets, Space pauses/resumes (or starts 25 minutes), Delete
-cancels, and Escape closes the panel. Presets explicitly replace a running timer.
-
-The deadline includes time spent suspended. A completed session sends one desktop
-notification and retains its Done indicator until dismissed or restarted. It does
-not change Do Not Disturb or start another session automatically. State survives
-QML reloads in memory, but is never written to disk and resets on shell exit.
-`tests/focus.js` checks the production deadline state machine, pause/resume,
-completion, invalid input, clock rollback, and reload restoration.
+Open Now Playing with `seele-shellctl control media`. Left/Right seek five
+seconds, Shift+Left/Right seek thirty seconds, and Home/End seek to the track's
+start/end. Escape closes the panel. Clicking or tabbing to the Now Playing timeline also gives
+it these controls, with a visible focus edge and a tooltip showing the keys.
+Live streams and players without seek/position/length support never receive a
+position write. Seeking stays within the current track; modifier chords such
+as Ctrl+Left remain available to other controls. The player picker keeps its
+normal keyboard behavior while it has focus.

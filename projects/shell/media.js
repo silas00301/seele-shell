@@ -180,3 +180,15 @@ function presentPlayer(players, player) {
   }
   return null
 }
+
+// Keyboard seeking only writes positions for players with a finite timeline.
+function seekTarget(player, command, coarse) {
+  if (!timelineAvailable(player) || liveStream(player)) return null
+  var length = Number(player.length), position = Number(player.position)
+  if (!Number.isFinite(length) || length <= 0 || !Number.isFinite(position)) return null
+  var step = coarse ? 30 : 5
+  if (command === "start") return 0
+  if (command === "end") return length
+  if (command !== "back" && command !== "forward") return null
+  return Math.max(0, Math.min(length, position + (command === "back" ? -step : step)))
+}
