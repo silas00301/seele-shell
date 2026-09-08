@@ -668,6 +668,16 @@ ShellRoot {
     return minutes + ":" + (remainder < 10 ? "0" : "") + remainder
   }
 
+  function seekMediaKey(player, event) {
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+    var command = event.key === Qt.Key_Left ? "back" : event.key === Qt.Key_Right ? "forward"
+      : event.key === Qt.Key_Home ? "start" : event.key === Qt.Key_End ? "end" : ""
+    var target = Media.seekTarget(player, command, !!(event.modifiers & Qt.ShiftModifier))
+    if (target === null) return
+    player.position = target
+    event.accepted = true
+  }
+
   function mediaTimelineAvailable(player) {
     return Media.timelineAvailable(player)
   }
@@ -4248,6 +4258,8 @@ ShellRoot {
       : Math.max(0, Math.min(mediaTimeline.length, mediaTimeline.reportedPosition))
 
     visible: available
+    activeFocusOnTab: available && !live
+    Keys.onPressed: event => root.seekMediaKey(player, event)
     spacing: 3
 
     Rectangle {
@@ -4264,7 +4276,7 @@ ShellRoot {
         radius: height / 2
         color: root.wellColor
         border.width: 1
-        border.color: root.alpha(root.text, 0.05)
+        border.color: mediaTimeline.activeFocus ? root.accent : root.alpha(root.text, 0.05)
         antialiasing: true
 
         Rectangle {
@@ -4299,7 +4311,10 @@ ShellRoot {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         function positionAt(x) { return Math.max(0, Math.min(mediaTimeline.length, x / width * mediaTimeline.length)) }
-        onPressed: function(mouse) { mediaTimeline.draggedPosition = positionAt(mouse.x) }
+        onPressed: function(mouse) {
+          mediaTimeline.forceActiveFocus()
+          mediaTimeline.draggedPosition = positionAt(mouse.x)
+        }
         onPositionChanged: function(mouse) {
           if (pressed) mediaTimeline.draggedPosition = positionAt(mouse.x)
         }
@@ -4311,6 +4326,7 @@ ShellRoot {
         }
         onCanceled: mediaTimeline.draggedPosition = -1
       }
+      HoverTip { mouse: timelineMouse; inOverlay: true; text: "Seek · Left/Right 5s · Shift 30s · Home/End" }
 
       Text {
         id: liveTimelineLabel
@@ -7192,10 +7208,14 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-media"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { mediaContent.forceActiveFocus() })
 
       PanelSurface {
         Column {
           id: mediaContent
+          Keys.onPressed: event => root.seekMediaKey(mediaWindow.player, event)
+          Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent
           anchors.margins: root.panelMargin
