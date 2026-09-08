@@ -66,22 +66,6 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## Per-player volume
-
-Now Playing has separate volume controls for its selected player. Use −/+ for
-five percentage point steps, including Tab and Space/Enter on either button.
-Unsupported or read-only players keep the controls disabled. Player changes and
-external volume changes update the display; no system output level is changed.
-The buttons request values from 0% through 100% and never add amplification. If
-another application raises a player above 100%, its actual value remains visible
-and the next decrease brings it back to the supported range. Escape closes the
-panel. The shared media card keeps its existing layout.
-
-`player-volume.js` guards the pinned MPRIS `volumeSupported`, `canControl` and
-`volume` properties. `tests/player-volume.js` exercises capabilities, numeric
-validation, bounds, external changes and isolation between players; the normal
-package and `test-shell` commands run it.
-
 ## Screen links
 
 Run `seele-shellctl uris` (Super + Ctrl + S on nerv) to freeze every output and
@@ -177,17 +161,17 @@ build-all   # build every package
 test-shell  # run focused tests and syntax checks
 ```
 
-## Focus timer
+## Playback speed
 
-Right-click the menu-bar clock, or run `seele-shellctl control focus`, to open
-25-minute and 50-minute focus sessions or a five-minute break. The countdown
-appears beside the clock while active; pause/resume and cancel stay in its panel.
-Keys 1/2/3 start presets, Space pauses/resumes (or starts 25 minutes), Delete
-cancels, and Escape closes the panel. Presets explicitly replace a running timer.
+Now Playing has a playback-speed control for the selected player. Click it, or
+Tab to it and press Space/Enter, to cycle through supported values among 0.75×,
+1×, 1.25×, 1.5× and 2×. Its tooltip lists the available presets. Escape closes
+the panel. The control reads the player's current rate and only offers values
+inside its advertised positive `minRate`/`maxRate` range; fixed-rate and
+uncontrollable players are disabled. Players may ignore otherwise valid rate
+requests, so the control makes no success claim and reflects their MPRIS rate.
 
-The deadline includes time spent suspended. A completed session sends one desktop
-notification and retains its Done indicator until dismissed or restarted. It does
-not change Do Not Disturb or start another session automatically. State survives
-QML reloads in memory, but is never written to disk and resets on shell exit.
-`tests/focus.js` checks the production deadline state machine, pause/resume,
-completion, invalid input, clock rollback, and reload restoration.
+`media-speed.js` owns bounds and cycling; its Node tests also execute the actual
+QML action/key handlers. The row belongs only to the dedicated Now Playing
+panel and does not resize the shared Control Center media card or affect system
+volume. No new runtime dependency is needed.

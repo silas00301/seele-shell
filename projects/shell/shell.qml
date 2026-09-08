@@ -12,7 +12,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Wayland
 import Quickshell.Widgets
 import "media.js" as Media
-import "player-volume.js" as PlayerVolume
+import "media-speed.js" as MediaSpeed
 import "time.js" as Time
 import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
@@ -7594,6 +7594,10 @@ ShellRoot {
     PanelWindow {
       id: mediaWindow
 
+      function cyclePlaybackSpeed() {
+        return MediaSpeed.cycle(mediaWindow.player)
+      }
+
       required property var modelData
       readonly property var players: root.availableMediaPlayers()
       readonly property var player: root.nowPlayingPlayer()
@@ -7637,47 +7641,38 @@ ShellRoot {
             height: root.mediaBodyHeight
             player: mediaWindow.player
           }
-
           Rectangle {
-            id: playerVolumeCard
-            readonly property var player: mediaWindow.player
-            readonly property bool writable: PlayerVolume.writable(player)
             width: parent.width
-            height: root.controlHeight + root.cardPadding * 2
+            height: root.controlHeight + root.spaceMedium * 2
             radius: root.radius
-            color: playerVolumeHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-            HoverHandler { id: playerVolumeHover }
+            color: root.cardColor
             CardEdge {}
             Text {
-              anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding }
-              text: "Player volume"
-              color: root.subtext
+              anchors { left: parent.left; right: playbackSpeedButton.left; verticalCenter: parent.verticalCenter; margins: root.spaceMedium }
+              text: "Playback speed"
+              color: root.text
               font.family: root.fontFamily
               font.pixelSize: root.textLabel
+              elide: Text.ElideRight
             }
-            Row {
-              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
-              spacing: root.spaceSmall
-              NotificationButton {
-                label: "−"
-                Accessible.name: "Decrease player volume"
-                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume > 0
-                onClicked: PlayerVolume.adjust(playerVolumeCard.player, -0.05)
+            NotificationButton {
+              id: playbackSpeedButton
+              readonly property bool containsMouse: hovered
+              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.spaceMedium }
+              label: MediaSpeed.label(mediaWindow.player)
+              enabled: MediaSpeed.nextRate(mediaWindow.player) !== null
+              autoRepeat: false
+              onClicked: mediaWindow.cyclePlaybackSpeed()
+              Keys.onPressed: event => {
+                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+                event.accepted = true
+                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                mediaWindow.cyclePlaybackSpeed()
               }
-              Text {
-                width: root.controlHeight * 2
-                anchors.verticalCenter: parent.verticalCenter
-                text: PlayerVolume.supported(playerVolumeCard.player) ? PlayerVolume.percent(playerVolumeCard.player) + "%" : "Unavailable"
-                horizontalAlignment: Text.AlignHCenter
-                color: playerVolumeCard.writable ? root.text : root.subtext
-                font.family: root.fontFamily
-                font.pixelSize: root.textCaption
-              }
-              NotificationButton {
-                label: "+"
-                Accessible.name: "Increase player volume"
-                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume < 1
-                onClicked: PlayerVolume.adjust(playerVolumeCard.player, 0.05)
+              HoverTip {
+                mouse: playbackSpeedButton
+                inOverlay: true
+                text: "Cycle supported speeds · " + MediaSpeed.rates(mediaWindow.player).join("× / ") + "×"
               }
             }
           }
