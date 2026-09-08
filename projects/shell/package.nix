@@ -89,7 +89,7 @@ pkgs.stdenvNoCC.mkDerivation {
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
     install -m644 ${./network.js} "$out/share/seele-shell/network.js"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
-    install -m644 ${./media-speed.js} "$out/share/seele-shell/media-speed.js"
+    install -m644 ${./notification-search.js} "$out/share/seele-shell/notification-search.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
     install -m644 ${./player-volume.js} "$out/share/seele-shell/player-volume.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
@@ -208,7 +208,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
-    node ${../../tests/media-speed.js} "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
+    node ${../../tests/notification-search.js} "$out/share/seele-shell/notification-search.js" "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/shell.qml"
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"

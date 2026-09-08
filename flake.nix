@@ -112,7 +112,7 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   node tests/network-addresses.js projects/shell/network.js
                   node tests/media.js projects/shell/media.js
-                  node tests/media-speed.js projects/shell/media-speed.js projects/shell/shell.qml
+                  node tests/notification-search.js projects/shell/notification-search.js projects/shell/notifications.js projects/shell/shell.qml
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
                   node tests/player-volume.js projects/shell/player-volume.js
                   node tests/time.js projects/shell/time.js
