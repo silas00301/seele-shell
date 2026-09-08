@@ -139,30 +139,37 @@ assert(media.presentPlayer([device], null) === null, "an empty hold must not res
 
 console.log("media normalization checks passed");
 
-// Keyboard seeking clamps to real tracks and excludes live/unsupported players.
-const seekable = {length:100,position:98,canSeek:true,positionSupported:true,lengthSupported:true};
-assert(media.seekTarget(seekable, "forward", false) === 100, "forward clamps to duration");
-assert(media.seekTarget(seekable, "back", true) === 68, "Shift seeks thirty seconds");
-assert(media.seekTarget({...seekable,position:2}, "back", false) === 0, "back clamps to start");
-assert(media.seekTarget(seekable, "start", false) === 0, "Home seeks to start");
-assert(media.seekTarget(seekable, "end", false) === 100, "End seeks to duration");
-assert(media.seekTarget(seekable, "other", false) === null, "unrelated keys are not consumed");
-for (const patch of [{canSeek:false},{positionSupported:false},{lengthSupported:false},{length:0},{length:Infinity},{position:NaN},{length:366*86400}])
-  assert(media.seekTarget({...seekable,...patch}, "forward", false) === null, "unsupported/live players cannot be seeked");
-assert(media.seekTarget(null, "forward", false) === null, "disappearing player is safe");
-const shell = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
-const handler = shell.match(/  function seekMediaKey\([^]*?\n  }/);
-assert(handler, "production key handler exists");
-const seekQt = {Key_Left:1,Key_Right:2,Key_Home:3,Key_End:4,ControlModifier:1,AltModifier:2,MetaModifier:4,ShiftModifier:8};
-const context = vm.createContext({Media:media,Qt:seekQt});
-vm.runInContext(handler[0], context);
-let player = {...seekable,position:20}, event = {key:2,modifiers:8,accepted:false};
-context.seekMediaKey(player,event);
-assert(player.position === 50 && event.accepted, "production handler writes and consumes supported seeking");
-event = {key:2,modifiers:1,accepted:false};
-context.seekMediaKey(player,event);
-assert(player.position === 50 && !event.accepted, "Ctrl chords remain with their original owner");
-event = {key:2,modifiers:0,accepted:false};
-context.seekMediaKey(null,event);
-assert(!event.accepted, "a vanished player does not consume the event");
-console.log("Keyboard media seeking checks passed");
+const loopStates = {None: 10, Track: 20, Playlist: 30};
+const controllable = {canControl:true, shuffleSupported:true, loopSupported:true, shuffle:false, loopState:loopStates.None};
+assert(media.toggleShuffle(controllable), 'supported writable shuffle must be actionable');
+assert(controllable.shuffle, 'shuffle turns on');
+media.toggleShuffle(controllable);
+assert(!controllable.shuffle, 'shuffle turns off');
+for (const expected of [loopStates.Playlist, loopStates.Track, loopStates.None]) {
+  assert(media.cycleRepeat(controllable, loopStates), 'repeat must accept a writable player');
+  assert(controllable.loopState === expected, 'repeat cycles off, playlist, track, off using supplied enum');
+}
+for (const player of [null, {}, {...controllable,canControl:false}, {...controllable,shuffleSupported:false,loopSupported:false}]) {
+  assert(!media.toggleShuffle(player), 'unsupported or read-only player must never receive shuffle writes');
+  assert(!media.cycleRepeat(player,loopStates), 'unsupported or read-only player must never receive loop writes');
+}
+const second = {...controllable,trackTitle:'Second'};
+const chosen = media.selectedPlayer([controllable,second],second);
+media.toggleShuffle(chosen);
+assert(second.shuffle && !controllable.shuffle, 'mode changes address only the selected player');
+assert(media.repeatLabel({...controllable,loopState:loopStates.Track},loopStates) === 'Repeat one track','repeat-one label distinguishes the mode');
+assert(media.repeatLabel(null,loopStates) === 'Repeat unavailable','missing player is safe');
+console.log('media shuffle/repeat capability and selection checks passed');
+
+const qml = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
+const button = qml.split("  component MediaButton:")[1].split("  component MediaTimeline:")[0];
+const keyBody = button.match(/Keys.onPressed: event => \{([\s\S]*?)^    \}/m)[1];
+let presses = 0;
+const keys = vm.createContext({mediaButton:{activated(){presses++}}, Qt:{Key_Return:13,Key_Enter:14,Key_Space:32,ControlModifier:1,AltModifier:2,MetaModifier:4}});
+vm.runInContext("function press(event) {" + keyBody + "}", keys);
+keys.press({key:32,modifiers:0,isAutoRepeat:false});
+keys.press({key:32,modifiers:0,isAutoRepeat:true});
+keys.press({key:13,modifiers:1,isAutoRepeat:false});
+keys.press({key:14,modifiers:0,isAutoRepeat:false});
+assert(presses === 2, "media keys ignore held-key repeats and modified shortcuts");
+console.log("media keyboard intent checks passed");

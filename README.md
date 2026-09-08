@@ -25,6 +25,17 @@ ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients mirror the subset of those tokens they use
 so all four read as one desktop.
 
+## Playback modes
+
+The media panel and Control Center offer shuffle and repeat for the selected
+MPRIS player. Repeat cycles off → playlist → one track → off. Active modes are
+highlighted; unsupported or read-only controls are disabled. Hover for the current
+mode, or use Tab and Space/Enter. State follows each player when switching clients.
+
+The helpers in `media.js` use the pinned Quickshell `shuffleSupported`,
+`loopSupported`, `canControl` and `MprisLoopState` APIs. `tests/media.js` checks
+capability guards, the complete repeat cycle and selected-player isolation.
+
 ## Status updates
 
 `projects/shell/SystemState.qml` owns the shell's status fields. Apply full

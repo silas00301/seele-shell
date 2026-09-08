@@ -181,14 +181,34 @@ function presentPlayer(players, player) {
   return null
 }
 
-// Keyboard seeking only writes positions for players with a finite timeline.
-function seekTarget(player, command, coarse) {
-  if (!timelineAvailable(player) || liveStream(player)) return null
-  var length = Number(player.length), position = Number(player.position)
-  if (!Number.isFinite(length) || length <= 0 || !Number.isFinite(position)) return null
-  var step = coarse ? 30 : 5
-  if (command === "start") return 0
-  if (command === "end") return length
-  if (command !== "back" && command !== "forward") return null
-  return Math.max(0, Math.min(length, position + (command === "back" ? -step : step)))
+function canShuffle(player) {
+  return !!player && !!player.canControl && !!player.shuffleSupported
+}
+
+function canRepeat(player) {
+  return !!player && !!player.canControl && !!player.loopSupported
+}
+
+function toggleShuffle(player) {
+  if (!canShuffle(player)) return false
+  player.shuffle = !player.shuffle
+  return true
+}
+
+// Use the imported enum rather than duplicating Quickshell's numeric values.
+function nextLoopState(current, states) {
+  return current === states.None ? states.Playlist
+    : current === states.Playlist ? states.Track : states.None
+}
+
+function cycleRepeat(player, states) {
+  if (!canRepeat(player)) return false
+  player.loopState = nextLoopState(player.loopState, states)
+  return true
+}
+
+function repeatLabel(player, states) {
+  if (!player || !player.loopSupported) return "Repeat unavailable"
+  return player.loopState === states.Track ? "Repeat one track"
+    : player.loopState === states.Playlist ? "Repeat playlist" : "Repeat off"
 }
