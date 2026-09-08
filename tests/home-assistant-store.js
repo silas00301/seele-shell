@@ -61,8 +61,10 @@ assert.equal(state.entities.length, 0);
 console.log('Home Assistant store guards, stale state and process lifecycle passed');
 
 const qml = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
-const row = qml.split("              id: homeAssistantRow")[1].split("              CardEdge")[0];
-const keyBody = row.match(/Keys.onPressed: event => \{([\s\S]*?)^              \}/m)[1];
+const row = qml.split("id: homeAssistantRow")[1];
+// Match the handler's closing brace by its own indent, so restyling the row
+// cannot silently drop this check by moving the delegate a level deeper.
+const keyBody = row.match(/^(\s*)Keys\.onPressed: event => \{\n([\s\S]*?)^\1\}/m)[2];
 let requests = 0;
 const keys = vm.createContext({changeState(){requests++},Qt:{Key_Return:13,Key_Enter:14,Key_Space:32,ControlModifier:1,AltModifier:2,MetaModifier:4}});
 vm.runInContext("function press(event) {" + keyBody + "}",keys);

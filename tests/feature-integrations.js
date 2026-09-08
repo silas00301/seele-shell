@@ -20,6 +20,7 @@ const shellPatterns = {
   'network address rows': /Network\.addresses\(/,
   'per-player volume': /PlayerVolume\.adjust\(/,
   'playback speed': /MediaSpeed\.cycle\(/,
+  'timed quiet periods': /id: quietPresets/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -58,5 +59,5 @@ for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`), `${test} is not run by the shell package`);
 }
 
-assert.ok(!/notificationSearch|notificationClipboard|quietPresets/.test(shell), 'notification UI must retain the 11:00 behavior');
+assert.ok(!/notificationSearch|notificationClipboard/.test(shell), 'notification UI must retain the 11:00 behavior');
 console.log('production QML, packaged helpers, and focused checks cover the enabled features');

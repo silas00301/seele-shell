@@ -15,8 +15,6 @@ function block(start, end) {
 const focus = block('        Column {\n          id: focusContent', '\n      }\n    }\n  }\n\n  // Calendar');
 const clock = block('                Item {\n                  id: zoneTimeLabels', '\n                Shared.ActionButton');
 const addresses = block('              SectionRule {\n                width: parent.width\n                label: "IP ADDRESSES"', '\n              Text {\n                width: parent.width\n                visible: networkWindow.addresses.length');
-const sectionRule = block('  component SectionRule: Item {', '\n  // A filled track.');
-const iconButton = block('  component IconButton:', '  component NotificationButton:');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-panel-tests-'));
 try {
   const shared = fs.existsSync(path.join(source, 'shared')) ? path.join(source, 'shared') : path.resolve(source, '../shared');
@@ -56,8 +54,11 @@ TestCase {
     property string value
     id: button
   }
-  ${sectionRule}
-  ${iconButton}
+  component SectionRule: Shared.SectionRule { theme: root }
+  component SegmentWell: Shared.SegmentWell { theme: root }
+  component Segment: Shared.Segment { theme: root }
+  component MeterBar: Shared.MeterBar { theme: root }
+  component IconButton: Shared.IconButton { theme: root }
   component HoverWash: Shared.HoverWash { theme: root }
   IconButton { id: notificationClose; x: 400; y: 480; hoverTint: root.dangerColor }
   component HoverTip: QtObject { property var mouse; property bool inOverlay; property string text }

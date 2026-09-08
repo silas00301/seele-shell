@@ -86,6 +86,8 @@ Shared.Theme {
           visible: store.error !== "" || store.warning !== "" || (root.player && root.player.error !== "")
           radius: root.radius
           color: root.dangerTint
+          antialiasing: true
+          Shared.CardEdge { theme: root }
           RowLayout {
             id: errorRow
             anchors.fill: parent
@@ -120,10 +122,49 @@ Shared.Theme {
               leftPadding: root.spaceLarge; rightPadding: root.spaceLarge
               background: Rectangle { color: root.wellColor; radius: root.radius; border.width: 1; border.color: search.activeFocus ? root.accent : root.cardBorder }
             }
-            RowLayout {
+            // Notes and Trash are two views of one library rather than two
+            // errands, so they are a well with the one being read lit inside
+            // it instead of two buttons competing for the same width.
+            Shared.SegmentWell {
+              theme: root
               Layout.fillWidth: true
-              Shared.ActionButton { theme: root; Layout.fillWidth: true; text: "Notes"; selected: !root.trashView; onClicked: root.trashView = false }
-              Shared.ActionButton { theme: root; Layout.fillWidth: true; text: "Trash"; selected: root.trashView; onClicked: root.trashView = true }
+              implicitHeight: root.controlHeight
+
+              Repeater {
+                model: [{ label: "Notes", trash: false }, { label: "Trash", trash: true }]
+
+                Shared.Segment {
+                  id: libraryView
+
+                  required property var modelData
+
+                  theme: root
+                  width: parent.width / 2
+                  selected: root.trashView === libraryView.modelData.trash
+                  hovered: libraryViewMouse.containsMouse
+                  pressed: libraryViewMouse.pressed
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: libraryView.modelData.label
+                    color: libraryView.selected ? root.text : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: libraryView.selected ? root.weightStrong : root.weightMedium
+
+                    Behavior on color { ColorAnimation { duration: root.durationFast } }
+                  }
+
+                  MouseArea {
+                    id: libraryViewMouse
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.trashView = libraryView.modelData.trash
+                  }
+                }
+              }
             }
             Shared.SeeleListView {
               id: noteList
@@ -139,9 +180,11 @@ Shared.Theme {
                 width: ListView.view.width
                 height: rowText.implicitHeight + root.cardPadding * 2
                 radius: root.radius
-                readonly property color resting: store.selected === modelData.id ? root.selectedColor : root.rowColor
-                color: rowMouse.pressed ? root.pressColor : rowHover.hovered ? root.hoveredColor(resting) : resting
+                color: rowMouse.pressed ? root.pressColor : store.selected === modelData.id ? root.selectedColor : root.cardColor
+                antialiasing: true
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
+                Shared.CardEdge { theme: root }
+                Shared.HoverWash { theme: root; hovered: rowHover.hovered }
                 Column {
                   id: rowText
                   anchors.left: parent.left; anchors.right: parent.right
@@ -225,10 +268,14 @@ Shared.Theme {
               ScrollBar.vertical: Shared.SlimScrollBar { theme: root; popupHovered: surface.hovered }
             }
 
-            RowLayout {
+            Shared.SectionRule {
+              theme: root
               Layout.fillWidth: true
-              Shared.SectionLabel { theme: root; text: "VOICE MEMOS"; Layout.fillWidth: true }
-              Text { visible: store.recording; text: Notes.duration(store.recordingDuration); color: root.red; font.family: root.fontFamily; font.pixelSize: root.textBody }
+              label: "VOICE MEMOS"
+              detail: store.recording ? Notes.duration(store.recordingDuration)
+                : root.note && root.note.memos.length ? String(root.note.memos.length) : ""
+              detailColor: store.recording ? root.red : root.overlay
+
               Shared.ActionButton {
                 theme: root
                 text: store.stopping ? "Saving…" : store.recording ? "Stop recording" : "Record memo"
@@ -237,13 +284,23 @@ Shared.Theme {
                 onClicked: { root.stopPlayback(); if (store.recording) store.stopRecording(); else { waveform.clear(); store.startRecording() } }
               }
             }
-            Shared.Waveform {
-              id: waveform
-              theme: root
+            Rectangle {
               Layout.fillWidth: true
               Layout.preferredHeight: root.rowHeight
               visible: store.recording
-              tint: root.red
+              radius: root.radiusSmall
+              color: root.wellColor
+              border.width: 1
+              border.color: root.alpha(root.text, 0.05)
+              antialiasing: true
+
+              Shared.Waveform {
+                id: waveform
+                theme: root
+                anchors.fill: parent
+                anchors.margins: root.spaceSmall
+                tint: root.red
+              }
             }
             Text {
               Layout.fillWidth: true
@@ -251,40 +308,150 @@ Shared.Theme {
               text: "Recording into “" + ((store.find(store.recordingNote) || {}).title || "Untitled note") + "”"
               color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; elide: Text.ElideRight
             }
-            Shared.SeeleListView {
+            // The memos are rows, so they sit in a card rather than on the
+            // window's own material, where a row tint has nothing to be a
+            // step lighter than.
+            Shared.DeviceListCard {
               theme: root
               Layout.fillWidth: true
-              Layout.preferredHeight: Math.min(root.notesMemoListHeight, contentHeight)
-              model: root.note ? root.note.memos : []
-              spacing: root.spaceTight
-              clip: true
-              delegate: RowLayout {
+              visible: memoList.count > 0
+              listHeight: Math.min(root.notesMemoListHeight, memoList.contentHeight)
+
+              Shared.SeeleListView {
+                id: memoList
+
+                theme: root
+                anchors.fill: parent
+                anchors.margins: root.cardPadding
+                model: root.note ? root.note.memos : []
+                spacing: root.spaceTight
+                clip: true
+                delegate: Rectangle {
                 id: memoRow
+
                 required property var modelData
                 required property int index
+                readonly property bool current: root.playingMemo === memoRow.modelData.id
+                readonly property bool playing: memoRow.current && !!root.player && root.player.playing
+
                 width: ListView.view.width
-                height: root.controlHeight
-                Shared.ActionButton {
-                  theme: root
-                  text: root.playingMemo === memoRow.modelData.id && root.player && root.player.playing ? "Pause" : "Play"
-                  enabled: root.player !== null && !store.recording
-                  onClicked: root.playMemo(memoRow.modelData)
+                height: root.rowHeight
+                radius: root.radiusSmall
+                color: memoRow.current ? root.selectedColor : root.rowColor
+                antialiasing: true
+
+                Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+                Shared.HoverWash { theme: root; hovered: memoRowHover.hovered }
+                HoverHandler { id: memoRowHover }
+
+                RowLayout {
+                  anchors.fill: parent
+                  anchors.leftMargin: root.spaceSmall
+                  anchors.rightMargin: root.cardPadding
+                  spacing: root.spaceMedium
+
+                  Shared.IconButton {
+                    theme: root
+                    Layout.preferredWidth: root.chipHeight
+                    Layout.preferredHeight: root.chipHeight
+                    active: memoRow.playing
+                    hovered: memoPlayMouse.containsMouse
+                    pressed: memoPlayMouse.pressed
+                    opacity: memoPlayMouse.enabled ? 1 : 0.45
+
+                    Shared.CenteredGlyph {
+                      anchors.fill: parent
+                      text: memoRow.playing ? "󰏤" : "󰐊"
+                      color: memoRow.playing ? root.accent : root.text
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textStrong
+                    }
+
+                    MouseArea {
+                      id: memoPlayMouse
+
+                      anchors.fill: parent
+                      enabled: root.player !== null && !store.recording
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.playMemo(memoRow.modelData)
+                    }
+                  }
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: "Voice memo " + (memoRow.index + 1)
+                    elide: Text.ElideRight
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    font.weight: memoRow.current ? root.weightStrong : root.weightMedium
+                  }
+
+                  Text {
+                    text: Notes.duration(memoRow.modelData.duration)
+                    color: root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                  }
+                  }
                 }
-                Text { Layout.fillWidth: true; text: "Voice memo " + (memoRow.index + 1); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
-                Text { text: Notes.duration(memoRow.modelData.duration); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+
+                ScrollBar.vertical: Shared.SlimScrollBar { theme: root; popupHovered: surface.hovered }
               }
-              ScrollBar.vertical: Shared.SlimScrollBar { theme: root; popupHovered: surface.hovered }
             }
-            Slider {
+            RowLayout {
+              id: memoScrub
+
+              readonly property real span: root.player ? Math.max(1, root.player.duration) : 1
+
+              function seekTo(x) {
+                if (root.player) root.player.seek(Math.max(0, Math.min(1, x / memoScrubTrack.width)) * memoScrub.span)
+              }
+
               Layout.fillWidth: true
               visible: root.playingMemo !== "" && !!root.player
-              from: 0
-              to: root.player ? Math.max(1, root.player.duration) : 1
-              value: root.player ? root.player.position : 0
-              onMoved: if (root.player) root.player.seek(value)
-              palette.highlight: root.accent
-              palette.button: root.accent
-              palette.dark: root.wellColor
+              spacing: root.spaceMedium
+
+              Text {
+                text: Notes.duration(root.player ? root.player.position : 0)
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
+
+              // The track is thin, so the grab is the row around it rather
+              // than the bar itself; a meter that has to be hit exactly is a
+              // meter that gets missed.
+              Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.chipHeight
+
+                Shared.MeterBar {
+                  id: memoScrubTrack
+
+                  theme: root
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  ratio: root.player ? root.player.position / memoScrub.span : 0
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onPressed: mouse => memoScrub.seekTo(mouse.x)
+                  onPositionChanged: mouse => { if (pressed) memoScrub.seekTo(mouse.x) }
+                }
+              }
+
+              Text {
+                text: Notes.duration(memoScrub.span)
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
             }
             Text {
               visible: playback.status === Loader.Error

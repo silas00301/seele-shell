@@ -129,15 +129,20 @@ by `tests/dictation.py`. Voxtype's own OSD remains disabled.
 
 Quickshell owns the notification service; disable Mako when running the shell.
 Notifications stack by app and expand in place. The panel has Current and
-History views, manual DND, and explicit actions. Ordinary toasts last 30 seconds
-and pause while hovered; critical and pinned toasts remain visible. A toast's
-close button hides it without dismissing the inbox entry.
+History views, explicit actions, and Do Not Disturb both as a switch in the
+header and as a quiet period of 15 minutes, 1 hour, or 4 hours. A timed quiet
+period keeps an absolute deadline, so suspending does not extend it, and its
+expiry never replays the toasts it suppressed. Throwing the switch by hand
+cancels any running period. Ordinary toasts last 30 seconds and pause while
+hovered; critical and pinned toasts remain visible. A toast's close button
+hides it without dismissing the inbox entry.
 
-Verification codes can be copied without dismissal. Notification search,
-title/message copying, and timed DND are intentionally absent. Notification
-text stays in memory, including history across QML reloads.
-`tests/notifications.js` covers lifecycle and grouping;
-`tests/notification-server.sh` checks the native service on a private bus.
+Verification codes can be copied without dismissal. Notification search and
+title/message copying are intentionally absent. Notification text stays in
+memory, including history across QML reloads.
+`tests/notifications.js` covers lifecycle, grouping, and the quiet-period
+deadline; `tests/notification-server.sh` checks the native service on a
+private bus.
 
 ## Screen links
 
