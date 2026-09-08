@@ -15,6 +15,7 @@ import "media.js" as Media
 import "media-speed.js" as MediaSpeed
 import "time.js" as Time
 import "notifications.js" as Notifications
+import "notification-search.js" as NotificationSearch
 import "uri-picker.js" as Uris
 import "github.js" as GitHub
 
@@ -3996,13 +3997,14 @@ ShellRoot {
 
     property bool history: false
     property bool popup: false
+    property string query: ""
     // Everywhere except a toast, a notification is shown in full without being
     // asked: the panel is where you go to read what you missed.
     readonly property bool alwaysUnfolded: !notificationList.popup
 
     property var expandedGroups: ({})
-    readonly property var entries: notificationList.history ? (root.systemData.notifications.history || [])
-      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || [])
+    readonly property var entries: NotificationSearch.filter(notificationList.history ? (root.systemData.notifications.history || [])
+      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || []), query)
     function toggleGroup(key) {
       var expanded = Object.assign({}, expandedGroups)
       if (expanded[key]) delete expanded[key]
@@ -8745,15 +8747,15 @@ ShellRoot {
       id: notificationWindow
 
       required property var modelData
-      readonly property var entries: root.notificationHistoryOpen
+      readonly property var entries: NotificationSearch.filter(root.notificationHistoryOpen
         ? (root.systemData.notifications.history || [])
-        : (root.systemData.notifications.items || [])
+        : (root.systemData.notifications.items || []), notificationSearch.text)
       // Everything above the list: the panel's own padding, the header, the
       // view switch and clear row, and the gap on either side of it. Measured
       // from the parts themselves, because the header grows a detail line when
       // there is a count to report and a counted constant would not follow it.
       readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
-        + root.panelSpacing + notificationViews.height + root.panelSpacing
+        + root.panelSpacing + notificationViews.height + root.panelSpacing + notificationSearch.height + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -8788,7 +8790,10 @@ ShellRoot {
         Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
-      onVisibleChanged: remeasure()
+      onVisibleChanged: {
+        remeasure()
+        if (visible) Qt.callLater(function() { notificationSearch.forceActiveFocus(); notificationSearch.selectAll() })
+      }
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
       // list says it changed.
@@ -8929,24 +8934,49 @@ ShellRoot {
               HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
             }
           }
+          TextField {
+            id: notificationSearch
+            width: parent.width
+            height: root.rowHeight
+            maximumLength: 256
+            placeholderText: "Search app, title, or message…"
+            color: root.text
+            placeholderTextColor: root.overlay
+            selectionColor: root.accent
+            selectedTextColor: root.base
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
+            leftPadding: root.spaceMedium
+            rightPadding: root.spaceMedium
+            background: Rectangle {
+              radius: root.radius
+              color: root.wellColor
+              border.color: notificationSearch.activeFocus ? root.accent : root.cardBorder
+              border.width: 1
+            }
+            onTextChanged: { notificationCurrentList.positionViewAtBeginning(); notificationHistoryList.positionViewAtBeginning(); notificationWindow.remeasure() }
+            Keys.onEscapePressed: { if (text !== "") clear(); else root.closeOverlays() }
+          }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing
+            height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing - notificationSearch.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
+              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
-              visible: !root.notificationHistoryOpen && (root.systemData.notifications.items || []).length > 0
+              visible: !root.notificationHistoryOpen && entries.length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
             NotificationList {
               id: notificationHistoryList
+              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
               history: true
-              visible: root.notificationHistoryOpen && (root.systemData.notifications.history || []).length > 0
+              visible: root.notificationHistoryOpen && entries.length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
@@ -8956,7 +8986,7 @@ ShellRoot {
               Text {
                 anchors.centerIn: parent
                 width: parent.width
-                text: root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
+                text: notificationSearch.text.trim() !== "" ? "No notifications match your search" : root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
                 color: root.overlay
                 font.family: root.fontFamily
                 font.pixelSize: root.textLabel

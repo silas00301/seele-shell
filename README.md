@@ -25,6 +25,17 @@ ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients mirror the subset of those tokens they use
 so all four read as one desktop.
 
+## Notification search
+
+Open the notification center and type to search the current inbox or History by
+application, title, and message. Search is case-insensitive and every space-separated
+term must match. Body formatting and hidden link destinations are excluded.
+The matching count and app stacks update as notifications arrive; Clear all still
+clears the whole selected inbox or history. Stack dismissal is hidden while searching
+so it cannot dismiss unseen nonmatches. Ctrl + F focuses the query, and Escape
+clears it before closing the panel. Queries stay in memory and are selected when
+the panel opens. `tests/notification-search.js` checks the production filter.
+
 ## Status updates
 
 `projects/shell/SystemState.qml` owns the shell's status fields. Apply full
@@ -65,6 +76,13 @@ memory. It emits an initial snapshot and handles `refresh` lines on stdin.
 Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
+
+## Home Assistant
+
+An optional Home Assistant panel shows selected entities and controls lights,
+switches, and input booleans. Its dedicated helper reads a private local connection
+file; credentials never enter QML or the Nix store. See
+[connection setup and validation](projects/home-assistant/README.md).
 
 ## Screen links
 
@@ -161,17 +179,13 @@ build-all   # build every package
 test-shell  # run focused tests and syntax checks
 ```
 
-## Playback speed
+## Keyboard media seeking
 
-Now Playing has a playback-speed control for the selected player. Click it, or
-Tab to it and press Space/Enter, to cycle through supported values among 0.75×,
-1×, 1.25×, 1.5× and 2×. Its tooltip lists the available presets. Escape closes
-the panel. The control reads the player's current rate and only offers values
-inside its advertised positive `minRate`/`maxRate` range; fixed-rate and
-uncontrollable players are disabled. Players may ignore otherwise valid rate
-requests, so the control makes no success claim and reflects their MPRIS rate.
-
-`media-speed.js` owns bounds and cycling; its Node tests also execute the actual
-QML action/key handlers. The row belongs only to the dedicated Now Playing
-panel and does not resize the shared Control Center media card or affect system
-volume. No new runtime dependency is needed.
+Open Now Playing with `seele-shellctl control media`. Left/Right seek five
+seconds, Shift+Left/Right seek thirty seconds, and Home/End seek to the track's
+start/end. Escape closes the panel. Clicking or tabbing to the Now Playing timeline also gives
+it these controls, with a visible focus edge and a tooltip showing the keys.
+Live streams and players without seek/position/length support never receive a
+position write. Seeking stays within the current track; modifier chords such
+as Ctrl+Left remain available to other controls. The player picker keeps its
+normal keyboard behavior while it has focus.
