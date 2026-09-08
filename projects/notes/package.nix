@@ -24,7 +24,10 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/share/seele-notes" "$out/share/shared" "$out/bin" "$out/libexec"
     cp ${../shared}/*.qml "$out/share/shared/"
     ${tools}/bin/seele-tools grain "$out/share/shared/grain.png"
-    install -m644 ${./shell.qml} ${./NotesStore.qml} ${./MemoPlayer.qml} ${./notes.js} "$out/share/seele-notes/"
+    install -m644 ${./shell.qml} "$out/share/seele-notes/shell.qml"
+    install -m644 ${./NotesStore.qml} "$out/share/seele-notes/NotesStore.qml"
+    install -m644 ${./MemoPlayer.qml} "$out/share/seele-notes/MemoPlayer.qml"
+    install -m644 ${./notes.js} "$out/share/seele-notes/notes.js"
     ln -s ${tools}/bin/seele-tools "$out/libexec/seele-notes-store"
     makeWrapper "$out/libexec/seele-notes-store" "$out/bin/seele-notes-store" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.pulseaudio ]}"

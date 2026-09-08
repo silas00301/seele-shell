@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='seele-notes-test-') as temp:
     mock = work / 'bin'
     mock.mkdir()
     recorder = mock / 'parecord'
-    recorder.write_text('''#!/usr/bin/env python3
+    recorder.write_text(f'''#!{sys.executable}
 import os, signal, struct, time
 signal.signal(signal.SIGINT, lambda *_: exit(0))
 open(os.environ['RECORDER_PID'], 'w').write(str(os.getpid()))

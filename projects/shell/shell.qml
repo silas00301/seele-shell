@@ -3526,6 +3526,14 @@ Shared.Theme {
     height: mediaButton.flat ? 32 : 28
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
+    activeFocusOnTab: enabled
+    Keys.onPressed: event => {
+      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        mediaButton.activated()
+        event.accepted = true
+      }
+    }
     color: mediaButtonMouse.pressed ? root.pressColor
       : mediaButtonMouse.containsMouse
         ? mediaButton.flat
@@ -7521,7 +7529,7 @@ Shared.Theme {
       // Everything above the list: the panel's own padding, the header, the
       // history and clear row, and the gap on either side of it.
       readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
-        + root.panelSpacing + 36 + root.panelSpacing
+        + root.panelSpacing + 36 + root.panelSpacing + root.chipHeight + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -7665,11 +7673,50 @@ Shared.Theme {
               MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
             }
           }
+          Row {
+            id: quietPresets
+            width: parent.width
+            height: root.chipHeight
+            spacing: root.spaceSmall
+            Text {
+              width: 104
+              height: parent.height
+              text: root.systemData.notifications.dndUntil > 0
+                ? "Until " + Qt.formatDateTime(new Date(root.systemData.notifications.dndUntil * 1000), "HH:mm") : "Quiet for"
+              color: root.systemData.dnd ? root.yellow : root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+              verticalAlignment: Text.AlignVCenter
+            }
+            Repeater {
+              model: [{minutes:15,label:"15 min"}, {minutes:60,label:"1 hour"}, {minutes:240,label:"4 hours"}]
+              Rectangle {
+                required property var modelData
+                width: (quietPresets.width - 104 - root.spaceSmall * 3) / 3
+                height: root.chipHeight
+                radius: root.radiusSmall
+                activeFocusOnTab: enabled
+                color: quietMouse.pressed ? root.pressColor : quietHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+                function activate() { notificationStore.controller.snooze(modelData.minutes, Date.now() / 1000) }
+                Keys.onPressed: event => {
+                  if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                    activate()
+                    event.accepted = true
+                  }
+                }
+                CardEdge {}
+                HoverHandler { id: quietHover }
+                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                MouseArea { id: quietMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: parent.activate() }
+              }
+            }
+          }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
+            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing - quietPresets.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
