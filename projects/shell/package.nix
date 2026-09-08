@@ -95,6 +95,7 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./opencode.svg} "$out/share/seele-shell/opencode.svg"
     install -m644 ${./pi.svg} "$out/share/seele-shell/pi.svg"
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
+    install -m644 ${./network.js} "$out/share/seele-shell/network.js"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
@@ -213,6 +214,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/opencode-status.ts" \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-agent-hook"
+    node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \

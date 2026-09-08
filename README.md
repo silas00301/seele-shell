@@ -66,23 +66,26 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## World clock timestamp copying
+## Network addresses
 
-Click the time in any world-clock row, including a pinned zone, to copy an ISO
-timestamp such as `2026-08-24T03:00:07+05:30`. Click the local clock in the header
-to copy the local timestamp. From search, Up/Down selects a result, Enter copies
-its timestamp, and Ctrl+Enter copies local time. Pin buttons keep their existing
-action. The panel
-confirms a successful clipboard exit or reports failure; hover tips identify
-both copy targets.
+The Network panel lists IPv4 and IPv6 addresses for the kernel-selected routed
+interface, with an explicit Copy button for each address. IPv6-only hosts use an
+IPv6 route lookup; link-local IPv6 copies include the interface scope. Hover over
+an address to read its complete value and prefix. The panel reports the route
+interface separately from the NetworkManager connection name, including VPN routes.
 
-The timestamp includes seconds, date rollovers, and the numeric UTC offset.
-Zone offsets come from the existing clock worker's snapshot, refreshed every
-30 seconds; a copy exactly across a DST transition can therefore use the previous
-offset until the next refresh. The local header uses the local offset at the
-clicked instant. The existing `wl-copy` receives only timestamp text on stdin.
-`tests/time.js` covers production formatting and clipboard request/completion
-callbacks, including failure and overlapping clicks.
+Address snapshots update with the existing ancillary status refresh and when the
+panel opens. Missing, tentative and duplicate addresses do not become copy actions.
+The clipboard changes only on an explicit click or keyboard activation; pending,
+success and failure feedback uses the existing action UI. The helper validates
+literal addresses, writes to `wl-copy` over stdin and stops an unresponsive copy
+after five seconds. The older `seele-control copy-ip` command remains available
+for existing callers. No Internet request is needed to inspect kernel routes.
+
+`node tests/network-addresses.js projects/shell/network.js` covers address
+families, interface scopes, filtering and row limits. `tests/control-actions.sh`
+checks exact clipboard content, invalid inputs, failures and timeouts with a mock
+clipboard when run against the built controller.
 
 ## Screen links
 

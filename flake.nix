@@ -56,7 +56,6 @@
               esbuild
               jq
               nodejs
-              python3
               qt6.qtdeclarative
               cargo
               dbus
@@ -112,8 +111,7 @@
                 command = ''
                   set -e
                   cargo test --manifest-path projects/tools/Cargo.toml
-                  PYTHONDONTWRITEBYTECODE=1 python3 tests/github.py projects/github/status.py
-                  node tests/github.js projects/shell/github.js projects/shell/GitHubStore.qml
+                  node tests/network-addresses.js projects/shell/network.js
                   node tests/media.js projects/shell/media.js
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
                   PYTHONDONTWRITEBYTECODE=1 python3 tests/home-assistant.py projects/home-assistant/control.py

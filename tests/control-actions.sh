@@ -100,6 +100,7 @@ SH
 cat >"$work/bin/wl-copy" <<'SH'
 #!/usr/bin/env bash
 cat >"$MOCK_ACTIONS"
+if [[ "${MOCK_COPY_DELAY:-0}" == 1 ]]; then exec sleep 10; fi
 exit "${MOCK_COPY_EXIT:-0}"
 SH
 for mock in seele-shellctl wl-copy; do
@@ -118,3 +119,19 @@ if MOCK_NOTIFICATION_EXIT=1 "$control" notification-action 42 mail-reply-sender;
 test "$(cat "$MOCK_ACTIONS")" = '012345'
 if MOCK_COPY_EXIT=1 "$control" copy-code 012345; then exit 1; fi
 if "$control" copy-code '123;bad'; then exit 1; fi
+
+for address in '192.0.2.1' '2001:db8::1' 'fe80::1%eth0'; do
+  "$control" copy-address "$address"
+  test "$(cat "$MOCK_ACTIONS")" = "$address"
+done
+if MOCK_COPY_EXIT=1 "$control" copy-address '192.0.2.1'; then exit 1; fi
+for address in '' '192.0.2.1;echo bad' '999.1.2.3' '192.0.2.1/24' '192.0.2.1%eth0' 'fe80::1%bad interface'; do
+  : >"$MOCK_ACTIONS"
+  if "$control" copy-address "$address"; then exit 1; fi
+  test ! -s "$MOCK_ACTIONS"
+done
+
+if MOCK_COPY_DELAY=1 "$control" copy-address '192.0.2.1'; then
+  echo "stalled clipboard reported success" >&2
+  exit 1
+fi

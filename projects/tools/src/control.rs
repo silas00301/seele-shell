@@ -735,10 +735,23 @@ pub(crate) fn bluetooth_status(bluetooth: &Value) -> Value {
 pub(crate) fn auxiliary_status() -> Value {
     let cameras = camera_devices();
     let route = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]));
+    let address_route = if route.pointer("/0/dev").and_then(Value::as_str).is_some() {
+        route.clone()
+    } else {
+        json_output("ip", ["-6", "-json", "route", "get", "2606:4700:4700::1111"], json!([]))
+    };
+    let interface = address_route.pointer("/0/dev").and_then(Value::as_str).unwrap_or("");
+    let addresses = if interface.is_empty() {
+        json!([])
+    } else {
+        json_output("ip", ["-json", "address", "show", "dev", interface], json!([]))
+    };
     json!({"tailscale":tailscale_state(),"sshServer":ssh_state(),"trayHidden":tray_hidden(),
         "barModules":bar_modules(),"agentStates":agents::aggregate_states(),
         "ipAddress":route.pointer("/0/prefsrc").and_then(Value::as_str).unwrap_or(""),
-        "gateway":route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),
+        "gateway":address_route.pointer("/0/gateway").and_then(Value::as_str).unwrap_or(""),
+        "networkInterface":interface,
+        "networkAddresses":addresses.pointer("/0/addr_info").cloned().unwrap_or_else(|| json!([])),
         "voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),
         "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or("")})
 }
@@ -1422,6 +1435,41 @@ pub fn run(arguments: &[String]) -> Result {
         }
         "network-settings" => detached("nm-connection-editor", &[])?,
         "outages" => detached("xdg-open", &["https://xn--allestrungen-9ib.de/".to_owned()])?,
+        "copy-address" => {
+            let address = arg(1);
+            let (literal, zone) = address.split_once('%').map_or((address, None), |(ip, zone)| (ip, Some(zone)));
+            let parsed: std::net::IpAddr = literal.parse().map_err(|_| "invalid IP address")?;
+            if let Some(zone) = zone {
+                if !parsed.is_ipv6() || zone.is_empty() || zone.len() > 15
+                    || !zone.bytes().all(|c| c.is_ascii_alphanumeric() || b"_.:-".contains(&c)) {
+                    return Err("invalid address scope".into());
+                }
+            }
+            let mut child = Command::new("wl-copy").args(["--type", "text/plain;charset=utf-8"])
+                .stdin(Stdio::piped()).spawn()?;
+            let written = match child.stdin.take() {
+                Some(mut input) => input.write_all(address.as_bytes()),
+                None => Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "clipboard input unavailable")),
+            };
+            if let Err(error) = written {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    if !status.success() { return Err("clipboard copy failed".into()); }
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("clipboard copy timed out".into());
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
         "copy-ip" => {
             let ip = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]))
                 .pointer("/0/prefsrc")
