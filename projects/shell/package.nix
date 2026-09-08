@@ -8,6 +8,7 @@ let
   librepods = pkgs.librepods.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ../../packages/core/patches/librepods-status.patch ];
   });
+  homeAssistantPython = pkgs.python3.withPackages (ps: [ ps.aiohttp ]);
   notes = import ../notes/package.nix { inherit lib pkgs quickshellInput; };
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
   fontConfig = pkgs.makeFontsConf {
@@ -83,6 +84,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    install -m644 ${./HomeAssistantPanel.qml} "$out/share/seele-shell/HomeAssistantPanel.qml"
+    substituteInPlace "$out/share/seele-shell/HomeAssistantPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
@@ -111,6 +114,7 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
     install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
     install -m644 ${./pi-status.ts} "$out/share/seele-shell/pi-status.ts"
+    install -m644 ${../home-assistant/home_assistant_live.py} "$out/libexec/seele-shell/home_assistant_live.py"
     install -m644 ${../home-assistant/control.py} "$out/libexec/seele-shell/home-assistant.py"
     install -m644 ${../github/status.py} "$out/libexec/seele-shell/github-status.py"
     install -m644 ${../tools/LICENSES/Something-X.txt} "$out/share/licenses/seele-shell/Something-X.txt"
@@ -138,8 +142,9 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix QML2_IMPORT_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml" \
       --prefix QT_PLUGIN_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/plugins" \
       --prefix PATH : "$out/bin:${runtimePath}"
-    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-home-assistant" \
-      --add-flags "$out/libexec/seele-shell/home-assistant.py"
+    makeWrapper ${homeAssistantPython}/bin/python3 "$out/bin/seele-home-assistant" \
+      --add-flags "$out/libexec/seele-shell/home-assistant.py" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
     makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-github-status" \
       --add-flags "$out/libexec/seele-shell/github-status.py" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.gh ]}"
@@ -213,7 +218,9 @@ pkgs.stdenvNoCC.mkDerivation {
     ${quickshell}/bin/quickshell --private-check-compat
     bash ${../../tests/shell-load.sh} ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml"
+    bash ${../../tests/home-assistant-panel.sh} ${quickshell}/bin/quickshell \
+      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${../../tests/home-assistant-panel.qml}
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -241,6 +248,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${../../tests/focus-timer.sh} ${quickshell}/bin/quickshell "$out/share/seele-shell"
     node ${../../tests/panel-layouts.js} "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/home-assistant.py} "$out/libexec/seele-shell/home-assistant.py"
+    PYTHONDONTWRITEBYTECODE=1 ${homeAssistantPython}/bin/python3 ${../../tests/home-assistant-live.py} "$out/libexec/seele-shell/home-assistant.py"
     node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
     node ${../../tests/github.js} "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"

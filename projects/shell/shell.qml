@@ -1831,56 +1831,7 @@ Shared.Theme {
 
   component RefreshGlyph: Shared.RefreshGlyph { theme: root }
 
-  component ControlSwitch: Rectangle {
-    id: control
-
-    property bool checked: false
-    property bool busy: false
-    signal toggled()
-
-    implicitWidth: 40
-    implicitHeight: 22
-    opacity: enabled ? 1 : 0.42
-    radius: height / 2
-    antialiasing: true
-    // Off, the track is a well cut into the surface rather than a grey pill,
-    // so an unset switch is quiet and a set one is the only lit thing in the
-    // row.
-    color: switchMouse.pressed ? root.alpha(control.checked ? root.accent : root.text, 0.6) : control.checked ? root.accent : root.wellColor
-    border.width: 1
-    border.color: control.busy ? root.accent
-      : switchMouse.containsMouse ? root.alpha(root.accent, 0.55)
-      : control.checked ? "transparent" : root.edgeLight
-
-    Behavior on color { ColorAnimation { duration: root.durationFast } }
-    Behavior on border.color { ColorAnimation { duration: root.durationFast } }
-
-    Rectangle {
-      visible: !control.busy
-      width: parent.height - 6
-      height: width
-      radius: width / 2
-      y: 3
-      x: control.checked ? control.width - width - 3 : 3
-      color: control.checked ? root.crust : root.alpha(root.text, 0.82)
-      antialiasing: true
-
-      Behavior on x { NumberAnimation { duration: root.durationFast; easing.type: Easing.OutCubic } }
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
-    }
-
-    RefreshGlyph {
-      visible: control.busy
-      anchors.centerIn: parent
-      width: 16
-      height: 16
-      spinning: visible
-      color: control.checked ? root.crust : root.text
-      font.pixelSize: root.textBody
-    }
-
-    MouseArea { id: switchMouse; anchors.fill: parent; enabled: control.enabled && !control.busy; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: control.toggled() }
-  }
+  component ControlSwitch: Shared.ControlSwitch { theme: root }
 
   // Depth wash, drawn under a surface's content and inside its border. The
   // light gathers along the top edge, thins out across the middle, and the
@@ -4488,15 +4439,26 @@ Shared.Theme {
           }
 
           BarItem {
-            visible: homeAssistantStore.configured
-            width: visible ? root.chipHeight : 0
+            width: homeAssistantSummary.implicitWidth + root.chipHeight
             hovered: homeAssistantMouse.containsMouse
             active: root.panelHere("home-assistant", barWindow.modelData)
-            CenteredGlyph {
+            Row {
+              id: homeAssistantSummary
               anchors.centerIn: parent
-              text: "󰋜"
-              color: homeAssistantStore.connected ? root.subtext : root.yellow
-              font.pixelSize: root.textStrong
+              spacing: root.spaceSmall
+              CenteredGlyph {
+                width: root.textStrong
+                height: root.barItemHeight
+                text: "󰋜"
+                color: !homeAssistantStore.configured || homeAssistantStore.connected ? root.subtext : root.yellow
+                font.pixelSize: root.textStrong
+              }
+              BarLabel {
+                visible: homeAssistantStore.summaryText !== ""
+                text: homeAssistantStore.summaryText
+                maximumWidth: root.rowHeight * 3
+                color: homeAssistantStore.connected ? root.subtext : root.yellow
+              }
             }
             MouseArea {
               id: homeAssistantMouse
@@ -4505,7 +4467,7 @@ Shared.Theme {
               cursorShape: Qt.PointingHandCursor
               onClicked: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
             }
-            HoverTip { mouse: homeAssistantMouse; text: homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · unavailable" }
+            HoverTip { mouse: homeAssistantMouse; text: !homeAssistantStore.configured ? "Set up Home Assistant" : homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · last known reading" }
           }
           BarItem {
             width: 30
@@ -8600,165 +8562,17 @@ Shared.Theme {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-home-assistant"
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) Qt.callLater(function() { homeAssistantContent.forceActiveFocus() })
-
+      onVisibleChanged: {
+        if (visible) Qt.callLater(function() { homeAssistantContent.opened() })
+        else homeAssistantContent.closed()
+      }
       PanelSurface {
-        HoverHandler { id: homeAssistantHover }
-        Column {
+        HomeAssistantPanel {
           id: homeAssistantContent
+          theme: root
+          store: homeAssistantStore
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
-          spacing: root.panelSpacing
-          Keys.onEscapePressed: root.closeOverlays()
-          PanelHeader {
-            width: parent.width
-            glyph: "󰋜"
-            title: "Home Assistant"
-            detail: homeAssistantStore.busy ? "Updating…" : homeAssistantStore.connected ? "Selected entities" : "Unavailable"
-            detailColor: homeAssistantStore.connected ? root.subtext : root.yellow
-
-            IconButton {
-              width: root.chipHeight
-              height: root.chipHeight
-              anchors.verticalCenter: parent.verticalCenter
-              hovered: homeAssistantRefreshMouse.containsMouse
-              pressed: homeAssistantRefreshMouse.pressed
-
-              RefreshGlyph {
-                anchors.centerIn: parent
-                width: root.textCard
-                height: width
-                spinning: homeAssistantStore.busy
-                color: homeAssistantStore.busy ? root.subtext : root.text
-              }
-
-              MouseArea {
-                id: homeAssistantRefreshMouse
-
-                anchors.fill: parent
-                enabled: !homeAssistantStore.busy
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: homeAssistantStore.refresh()
-              }
-
-              HoverTip { mouse: homeAssistantRefreshMouse; inOverlay: true; text: "Refresh Home Assistant" }
-            }
-          }
-
-          Text {
-            width: parent.width
-            visible: text !== ""
-            text: homeAssistantStore.error || (!homeAssistantStore.configured ? "Add a private home-assistant.json configuration to connect." : homeAssistantStore.entities.length === 0 && !homeAssistantStore.busy ? "No selected entities." : "")
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            color: homeAssistantStore.error ? root.yellow : root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textCaption
-          }
-
-          SectionRule {
-            width: parent.width
-            visible: homeAssistantStore.entities.length > 0
-            label: "ENTITIES"
-            detail: homeAssistantStore.connected
-              ? homeAssistantStore.entities.length + " selected"
-              : "Showing the last reading"
-            detailColor: homeAssistantStore.connected ? root.overlay : root.yellow
-          }
-
-          DeviceListCard {
-            width: parent.width
-            visible: homeAssistantStore.entities.length > 0
-            listHeight: Math.min(homeAssistantList.contentHeight, root.rowHeight * 6)
-
-            SeeleListView {
-              id: homeAssistantList
-
-              anchors.fill: parent
-              anchors.margins: root.cardPadding
-              clip: true
-              spacing: root.spaceTight
-              model: homeAssistantStore.entities
-
-              delegate: Rectangle {
-                id: homeAssistantRow
-
-                required property var modelData
-                readonly property bool actionable: homeAssistantStore.connected && modelData.available && modelData.controllable && !homeAssistantStore.busy
-
-                width: ListView.view.width
-                height: Math.max(root.rowHeight, homeAssistantRowText.implicitHeight + root.spaceMedium * 2)
-                radius: root.radiusSmall
-                color: activeFocus ? root.selectedColor : root.rowColor
-                antialiasing: true
-                activeFocusOnTab: actionable
-
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-                function changeState() {
-                  if (actionable) homeAssistantStore.setState(modelData, modelData.state === "on" ? "off" : "on")
-                }
-
-                Keys.onPressed: event => {
-                  if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                    changeState()
-                    event.accepted = true
-                  }
-                }
-
-                HoverWash { hovered: homeAssistantRowHover.hovered }
-                HoverHandler { id: homeAssistantRowHover }
-
-                Column {
-                  id: homeAssistantRowText
-
-                  anchors.left: parent.left
-                  anchors.right: homeAssistantToggle.left
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.leftMargin: root.cardPadding
-                  anchors.rightMargin: root.spaceMedium
-                  spacing: root.spaceTight
-
-                  Text {
-                    width: parent.width
-                    text: homeAssistantRow.modelData.name
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    color: root.text
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textBody
-                    font.weight: root.weightStrong
-                  }
-
-                  Text {
-                    width: parent.width
-                    text: homeAssistantRow.modelData.state + (homeAssistantRow.modelData.unit ? " " + homeAssistantRow.modelData.unit : "") + (!homeAssistantStore.connected ? " · stale" : "")
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    color: homeAssistantStore.connected && homeAssistantRow.modelData.available ? root.subtext : root.yellow
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textCaption
-                  }
-                }
-
-                ControlSwitch {
-                  id: homeAssistantToggle
-
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.rightMargin: root.cardPadding
-                  visible: homeAssistantRow.modelData.controllable
-                  enabled: homeAssistantRow.actionable
-                  checked: homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id ? homeAssistantStore.pendingValue === "on" : homeAssistantRow.modelData.state === "on"
-                  busy: homeAssistantStore.busy && homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id
-                  onToggled: homeAssistantRow.changeState()
-                }
-              }
-
-              ScrollBar.vertical: SlimScrollBar { popupHovered: homeAssistantHover.hovered }
-            }
-          }
+          onCloseRequested: root.closeOverlays()
         }
       }
     }

@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 import signal
+import subprocess
+import tempfile
 import stat
 import sys
 import urllib.error
@@ -53,7 +55,7 @@ def load_config():
         if not isinstance(config, dict):
             raise ValueError()
         url = config["url"]
-        token = config["token"]
+        token = config["token"] if "token" in config else secret("lookup", url)
         entities = config["entities"]
         if not isinstance(url, str) or not isinstance(token, str):
             raise ValueError()
@@ -77,13 +79,50 @@ def load_config():
                 raise ValueError()
             if item["entity_id"] in [entry["entity_id"] for entry in selected]:
                 raise ValueError()
-            selected.append({"entity_id": item["entity_id"], "name": item.get("name", "")[:120]})
-        return {"url": url.rstrip("/"), "token": token, "entities": selected}
+            selected.append({"entity_id": item["entity_id"], "name": item.get("name", "")[:120],
+                             "favorite": bool(item.get("favorite", False)),
+                             "room": str(item.get("room", ""))[:120]})
+        return {"url": url.rstrip("/"), "token": token, "entities": selected,
+                "summary": str(config.get("summary", "")), "legacy": "token" in config}
     except (ValueError, KeyError, UnicodeError, TypeError):
         raise Problem("The connection file needs a valid URL, token and entity list.") from None
     finally:
         if fd >= 0:
             os.close(fd)
+
+
+def secret(action, url, token=None):
+    # libsecret speaks org.freedesktop.secrets, independent of the wallet provider.
+    command = ["secret-tool", action]
+    if action == "store":
+        command += ["--label=Seele Home Assistant"]
+    command += ["application", "seele-home-assistant", "server", url.rstrip("/")]
+    try:
+        result = subprocess.run(command, input=token, text=True, capture_output=True, timeout=120)
+        if result.returncode:
+            raise Problem("Unlock your system keyring, then retry setup.")
+        return result.stdout.rstrip("\n")
+    except (OSError, subprocess.TimeoutExpired):
+        raise Problem("The system keyring is unavailable or did not respond.") from None
+
+
+def save_config(config):
+    path = config_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    metadata = {key: config[key] for key in ("url", "entities", "summary")}
+    raw = json.dumps(metadata, ensure_ascii=True)
+    if len(raw.encode()) > MAX_CONFIG:
+        raise Problem("Too many display preferences to save.")
+    fd, temporary = tempfile.mkstemp(prefix=".home-assistant-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def request(config, path, body=None):
@@ -101,6 +140,7 @@ def request(config, path, body=None):
             raise Problem("The server response is too large.")
         return json.loads(raw)
     except urllib.error.HTTPError as error:
+        error.close()
         if error.code in (401, 403):
             raise Problem("Access was denied. Check the Home Assistant token.") from None
         raise Problem("Home Assistant could not complete the request.") from None
@@ -167,6 +207,11 @@ def deadline(signum, frame):
 
 
 def main():
+    if sys.argv[1:] == ["watch"]:
+        import asyncio
+        from home_assistant_live import Live
+        asyncio.run(Live(sys.modules[__name__]).run())
+        return 0
     signal.signal(signal.SIGALRM, deadline)
     signal.alarm(12)
     try:
