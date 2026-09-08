@@ -66,26 +66,21 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## Network addresses
+## Per-player volume
 
-The Network panel lists IPv4 and IPv6 addresses for the kernel-selected routed
-interface, with an explicit Copy button for each address. IPv6-only hosts use an
-IPv6 route lookup; link-local IPv6 copies include the interface scope. Hover over
-an address to read its complete value and prefix. The panel reports the route
-interface separately from the NetworkManager connection name, including VPN routes.
+Now Playing has separate volume controls for its selected player. Use −/+ for
+five percentage point steps, including Tab and Space/Enter on either button.
+Unsupported or read-only players keep the controls disabled. Player changes and
+external volume changes update the display; no system output level is changed.
+The buttons request values from 0% through 100% and never add amplification. If
+another application raises a player above 100%, its actual value remains visible
+and the next decrease brings it back to the supported range. Escape closes the
+panel. The shared media card keeps its existing layout.
 
-Address snapshots update with the existing ancillary status refresh and when the
-panel opens. Missing, tentative and duplicate addresses do not become copy actions.
-The clipboard changes only on an explicit click or keyboard activation; pending,
-success and failure feedback uses the existing action UI. The helper validates
-literal addresses, writes to `wl-copy` over stdin and stops an unresponsive copy
-after five seconds. The older `seele-control copy-ip` command remains available
-for existing callers. No Internet request is needed to inspect kernel routes.
-
-`node tests/network-addresses.js projects/shell/network.js` covers address
-families, interface scopes, filtering and row limits. `tests/control-actions.sh`
-checks exact clipboard content, invalid inputs, failures and timeouts with a mock
-clipboard when run against the built controller.
+`player-volume.js` guards the pinned MPRIS `volumeSupported`, `canControl` and
+`volume` properties. `tests/player-volume.js` exercises capabilities, numeric
+validation, bounds, external changes and isolation between players; the normal
+package and `test-shell` commands run it.
 
 ## Screen links
 
