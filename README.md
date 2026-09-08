@@ -66,6 +66,19 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
+## Copy notification text
+
+Expanded notifications offer Copy title and Copy message in both the inbox and
+history. Message copying uses visible plain text, including line breaks and decoded
+entities; the title is copied verbatim. Copying leaves the notification and its
+app actions intact. The button reports completion or failure after `wl-copy` exits.
+
+`NotificationClipboard.qml` sends the payload on stdin to the existing `wl-copy`
+runtime dependency. It keeps one pending request, clears its payload after writing,
+and recovers startup failures with a five-second watchdog. Text over 262,144
+characters is rejected instead of silently truncated. Nothing is written to disk.
+`tests/notification-copy.js` checks payloads and the production QML lifecycle.
+
 ## Screen links
 
 Run `seele-shellctl uris` (Super + Ctrl + S on nerv) to freeze every output and
@@ -161,18 +174,17 @@ build-all   # build every package
 test-shell  # run focused tests and syntax checks
 ```
 
-## Timed Do Not Disturb
+## Focus timer
 
-The notification panel offers 15-minute, one-hour and four-hour quiet periods.
-The row shows when delivery will resume; the bell ends quiet mode immediately.
-The presets also take keyboard focus with Tab and activate with Space or Enter.
-`seele-shellctl notification snooze <minutes>` accepts whole minutes from 1 to
-1440. Manual DND toggles replace the timer, and choosing another duration resets
-its deadline. A quiet period deliberately ends DND even if indefinite DND was
-previously enabled.
+Right-click the menu-bar clock, or run `seele-shellctl control focus`, to open
+25-minute and 50-minute focus sessions or a five-minute break. The countdown
+appears beside the clock while active; pause/resume and cancel stay in its panel.
+Keys 1/2/3 start presets, Space pauses/resumes (or starts 25 minutes), Delete
+cancels, and Escape closes the panel. Presets explicitly replace a running timer.
 
-The native notification store retains the absolute deadline across QML reloads
-in memory, with no disk persistence. Suspension counts toward the deadline.
-Expiry lets new toasts through without replaying notifications collected while
-quiet. Existing notification tests cover expiry, manual overrides, retained
-state, suspension, invalid requests and backlog behavior.
+The deadline includes time spent suspended. A completed session sends one desktop
+notification and retains its Done indicator until dismissed or restarted. It does
+not change Do Not Disturb or start another session automatically. State survives
+QML reloads in memory, but is never written to disk and resets on shell exit.
+`tests/focus.js` checks the production deadline state machine, pause/resume,
+completion, invalid input, clock rollback, and reload restoration.

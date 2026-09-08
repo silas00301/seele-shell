@@ -3977,6 +3977,29 @@ ShellRoot {
           label: notificationCard.entry.pinned ? "Unpin" : "Keep visible"
           onClicked: notificationStore.controller.pin(notificationCard.entry.id)
         }
+        Repeater {
+          model: notificationCard.unfolded ? ["title", "body"] : []
+          delegate: NotificationButton {
+            id: notificationCopyButton
+            required property string modelData
+            readonly property string copyKey: String(notificationCard.entry.id) + ":" + modelData
+            readonly property bool selected: notificationClipboard.key === copyKey
+            visible: modelData === "title" ? !!notificationCard.entry.summary : !!notificationCard.entry.body
+            label: modelData === "title" ? "Copy title" : "Copy message"
+            feedbackEnabled: true
+            enabled: !notificationClipboard.pending
+            localBusy: selected && notificationClipboard.pending
+            localFailed: selected && notificationClipboard.status === "error"
+            localComplete: selected && notificationClipboard.status === "success"
+            successLabel: "Copied"
+            onClicked: notificationClipboard.copy(notificationCard.entry, modelData)
+            HoverTip {
+              mouse: notificationCopyButton
+              inOverlay: true
+              text: notificationCopyButton.selected ? notificationClipboard.message : ""
+            }
+          }
+        }
         NotificationButton {
           visible: notificationCard.verificationCode !== ""
           label: "Copy " + notificationCard.verificationCode
