@@ -392,10 +392,6 @@ ShellRoot {
     if (controlPanel === "") return
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
-    if (panel === "home-assistant") {
-      homeAssistantStore.refresh()
-      return
-    }
     var group = panel === "notifications" ? "notifications"
       : panel === "audio" ? "audio"
       : ["bluetooth", "airpods"].indexOf(panel) >= 0 ? "bluetooth"
@@ -671,16 +667,6 @@ ShellRoot {
     var minutes = Math.floor(seconds / 60)
     var remainder = seconds % 60
     return minutes + ":" + (remainder < 10 ? "0" : "") + remainder
-  }
-
-  function seekMediaKey(player, event) {
-    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
-    var command = event.key === Qt.Key_Left ? "back" : event.key === Qt.Key_Right ? "forward"
-      : event.key === Qt.Key_Home ? "start" : event.key === Qt.Key_End ? "end" : ""
-    var target = Media.seekTarget(player, command, !!(event.modifiers & Qt.ShiftModifier))
-    if (target === null) return
-    player.position = target
-    event.accepted = true
   }
 
   function mediaTimelineAvailable(player) {
@@ -1967,8 +1953,6 @@ ShellRoot {
     }
     onArrived: root.notificationPopupScreen = root.currentScreen()
   }
-
-  HomeAssistantStore { id: homeAssistantStore }
 
   IpcHandler {
     target: "seele-shell"
@@ -4225,14 +4209,26 @@ ShellRoot {
     property string icon: ""
     property bool primary: false
     property bool flat: false
+    property bool active: false
+    property string hint: ""
     signal activated()
 
     width: mediaButton.flat ? (mediaButton.primary ? 38 : 34) : mediaButton.primary ? 34 : 28
     height: mediaButton.flat ? 32 : 28
     radius: root.radius
     opacity: mediaButton.enabled ? 1 : 0.35
+    activeFocusOnTab: enabled
+    Keys.onPressed: event => {
+      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        mediaButton.activated()
+        event.accepted = true
+      }
+    }
     color: mediaButtonMouse.pressed ? root.pressColor
-      : mediaButtonMouse.containsMouse
+      : mediaButton.active || mediaButton.activeFocus
+        ? mediaButtonHover.hovered ? root.hoveredColor(root.selectedColor) : root.selectedColor
+      : mediaButtonHover.hovered
         ? mediaButton.flat
           ? root.hoverColor
           : root.hoveredColor(mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor)
@@ -4242,14 +4238,16 @@ ShellRoot {
     Text {
       anchors.centerIn: parent
       text: mediaButton.icon
-      color: root.text
+      color: mediaButton.active ? root.accent : root.text
       font.family: root.fontFamily
       font.pixelSize: mediaButton.flat
         ? (mediaButton.primary ? root.textDisplay : root.textTitle)
         : mediaButton.primary ? root.textSubhead : root.textLead
     }
 
+    HoverHandler { id: mediaButtonHover }
     MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
+    HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
 
   component MediaTimeline: Column {
@@ -4270,8 +4268,6 @@ ShellRoot {
       : Math.max(0, Math.min(mediaTimeline.length, mediaTimeline.reportedPosition))
 
     visible: available
-    activeFocusOnTab: available && !live
-    Keys.onPressed: event => root.seekMediaKey(player, event)
     spacing: 3
 
     Rectangle {
@@ -4288,7 +4284,7 @@ ShellRoot {
         radius: height / 2
         color: root.wellColor
         border.width: 1
-        border.color: mediaTimeline.activeFocus ? root.accent : root.alpha(root.text, 0.05)
+        border.color: root.alpha(root.text, 0.05)
         antialiasing: true
 
         Rectangle {
@@ -4323,10 +4319,7 @@ ShellRoot {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         function positionAt(x) { return Math.max(0, Math.min(mediaTimeline.length, x / width * mediaTimeline.length)) }
-        onPressed: function(mouse) {
-          mediaTimeline.forceActiveFocus()
-          mediaTimeline.draggedPosition = positionAt(mouse.x)
-        }
+        onPressed: function(mouse) { mediaTimeline.draggedPosition = positionAt(mouse.x) }
         onPositionChanged: function(mouse) {
           if (pressed) mediaTimeline.draggedPosition = positionAt(mouse.x)
         }
@@ -4338,7 +4331,6 @@ ShellRoot {
         }
         onCanceled: mediaTimeline.draggedPosition = -1
       }
-      HoverTip { mouse: timelineMouse; inOverlay: true; text: "Seek · Left/Right 5s · Shift 30s · Home/End" }
 
       Text {
         id: liveTimelineLabel
@@ -4617,11 +4609,21 @@ ShellRoot {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: 4
-        spacing: root.spaceMedium
+        spacing: root.spaceTight
 
         MediaButton {
           flat: true
+          width: root.controlHeight
+          icon: "󰒟"
+          hint: !mediaBody.player || !mediaBody.player.shuffleSupported ? "Shuffle unavailable" : mediaBody.player.shuffle ? "Shuffle on" : "Shuffle off"
+          active: !!mediaBody.player && mediaBody.player.shuffleSupported && mediaBody.player.shuffle
+          enabled: Media.canShuffle(mediaBody.player)
+          onActivated: Media.toggleShuffle(mediaBody.player)
+        }
+        MediaButton {
+          flat: true
           icon: "󰒮"
+          hint: "Previous track"
           enabled: !!mediaBody.player && mediaBody.player.canGoPrevious
           onActivated: mediaBody.player.previous()
         }
@@ -4629,14 +4631,25 @@ ShellRoot {
           flat: true
           icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
           primary: true
-          enabled: !!mediaBody.player
+          hint: mediaBody.player && mediaBody.player.isPlaying ? "Pause" : "Play"
+          enabled: !!mediaBody.player && mediaBody.player.canTogglePlaying
           onActivated: mediaBody.player.togglePlaying()
         }
         MediaButton {
           flat: true
           icon: "󰒭"
+          hint: "Next track"
           enabled: !!mediaBody.player && mediaBody.player.canGoNext
           onActivated: mediaBody.player.next()
+        }
+        MediaButton {
+          flat: true
+          width: root.controlHeight
+          icon: mediaBody.player && mediaBody.player.loopState === MprisLoopState.Track ? "󰑘" : "󰑖"
+          hint: Media.repeatLabel(mediaBody.player, MprisLoopState)
+          active: !!mediaBody.player && mediaBody.player.loopSupported && mediaBody.player.loopState !== MprisLoopState.None
+          enabled: Media.canRepeat(mediaBody.player)
+          onActivated: Media.cycleRepeat(mediaBody.player, MprisLoopState)
         }
       }
 
@@ -5109,26 +5122,6 @@ ShellRoot {
             HoverTip { mouse: activeWindowMouse; text: root.windowTitle(activeWindowMouse.parent.window) }
           }
 
-          BarItem {
-            visible: homeAssistantStore.configured
-            width: visible ? root.chipHeight : 0
-            hovered: homeAssistantMouse.containsMouse
-            active: root.panelHere("home-assistant", barWindow.modelData)
-            CenteredGlyph {
-              anchors.centerIn: parent
-              text: "󰋜"
-              color: homeAssistantStore.connected ? root.subtext : root.yellow
-              font.pixelSize: root.textStrong
-            }
-            MouseArea {
-              id: homeAssistantMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
-            }
-            HoverTip { mouse: homeAssistantMouse; text: homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · unavailable" }
-          }
           BarItem {
             width: 30
             hovered: voxtypeMouse.containsMouse
@@ -7360,6 +7353,8 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-control-center"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { controlCenterContent.forceActiveFocus() })
       mask: Region {
         y: controlCenterWindow.dragging ? 0 : controlCenterWindow.barReach
         width: controlCenterWindow.width
@@ -7373,6 +7368,7 @@ ShellRoot {
         PanelSurface {
           Column {
             id: controlCenterContent
+            Keys.onEscapePressed: root.closeOverlays()
 
             anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
@@ -7413,7 +7409,6 @@ ShellRoot {
       PanelSurface {
         Column {
           id: mediaContent
-          Keys.onPressed: event => root.seekMediaKey(mediaWindow.player, event)
           Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent
@@ -8859,105 +8854,6 @@ ShellRoot {
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-
-  // Selected Home Assistant entities -----------------------------------------
-  Variants {
-    model: Quickshell.screens
-    PanelWindow {
-      id: homeAssistantWindow
-      required property var modelData
-      screen: modelData
-      visible: root.panelHere("home-assistant", modelData)
-      anchors { top: true; left: true }
-      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 400
-      implicitHeight: homeAssistantContent.implicitHeight + root.panelMargin * 2
-      exclusionMode: ExclusionMode.Ignore
-      color: "transparent"
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.namespace: "seele-shell-home-assistant"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) Qt.callLater(function() { homeAssistantContent.forceActiveFocus() })
-
-      PanelSurface {
-        HoverHandler { id: homeAssistantHover }
-        Column {
-          id: homeAssistantContent
-          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
-          spacing: root.panelSpacing
-          Keys.onEscapePressed: root.closeOverlays()
-          PanelHeader {
-            width: parent.width
-            glyph: "󰋜"
-            title: "Home Assistant"
-            detail: homeAssistantStore.busy ? "Updating…" : homeAssistantStore.connected ? "Selected entities" : "Unavailable"
-            detailColor: homeAssistantStore.connected ? root.subtext : root.yellow
-            NotificationButton {
-              id: homeAssistantRefresh
-              label: "Refresh"
-              enabled: !homeAssistantStore.busy
-              onClicked: homeAssistantStore.refresh()
-            }
-          }
-          Text {
-            width: parent.width
-            visible: text !== ""
-            text: homeAssistantStore.error || (!homeAssistantStore.configured ? "Add a private home-assistant.json configuration to connect." : homeAssistantStore.entities.length === 0 && !homeAssistantStore.busy ? "No selected entities." : "")
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            color: homeAssistantStore.error ? root.yellow : root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textLabel
-          }
-          SeeleListView {
-            width: parent.width
-            height: Math.min(contentHeight, root.rowHeight * 6)
-            visible: homeAssistantStore.entities.length > 0
-            clip: true
-            spacing: root.spaceSmall
-            model: homeAssistantStore.entities
-            delegate: Rectangle {
-              id: homeAssistantRow
-              required property var modelData
-              width: ListView.view.width - root.scrollGutter
-              height: root.rowHeight + root.spaceMedium
-              radius: root.radiusSmall
-              color: activeFocus ? root.selectedColor : root.cardColor
-              readonly property bool actionable: homeAssistantStore.connected && modelData.available && modelData.controllable && !homeAssistantStore.busy
-              activeFocusOnTab: actionable
-              function changeState() {
-                if (actionable) homeAssistantStore.setState(modelData, modelData.state === "on" ? "off" : "on")
-              }
-              Keys.onPressed: event => {
-                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                  changeState()
-                  event.accepted = true
-                }
-              }
-              CardEdge {}
-              Column {
-                anchors { left: parent.left; right: homeAssistantToggle.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding; rightMargin: root.spaceMedium }
-                spacing: root.spaceTight
-                Text { width: parent.width; text: homeAssistantRow.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-                Text { width: parent.width; text: homeAssistantRow.modelData.state + (homeAssistantRow.modelData.unit ? " " + homeAssistantRow.modelData.unit : "") + (!homeAssistantStore.connected ? " · stale" : ""); textFormat: Text.PlainText; elide: Text.ElideRight; color: homeAssistantStore.connected && homeAssistantRow.modelData.available ? root.subtext : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-              }
-              ControlSwitch {
-                id: homeAssistantToggle
-                anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
-                visible: homeAssistantRow.modelData.controllable
-                enabled: homeAssistantRow.actionable
-                checked: homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id ? homeAssistantStore.pendingValue === "on" : homeAssistantRow.modelData.state === "on"
-                busy: homeAssistantStore.busy && homeAssistantStore.pendingEntity === homeAssistantRow.modelData.entity_id
-                onToggled: homeAssistantRow.changeState()
-              }
-            }
-            ScrollBar.vertical: SlimScrollBar { popupHovered: homeAssistantHover.hovered }
           }
         }
       }
