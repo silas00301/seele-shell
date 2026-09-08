@@ -15,10 +15,11 @@ ordering controls. Blank names and rooms use Home Assistant's values. Rooms come
 from the entity, device and area registries when the account can read them;
 manual room overrides also work with restricted accounts. Favorites appear first,
 then the other selected entities grouped by room. Selected temperature and humidity
-readings appear in the room summary. Choose **Menu bar** again to clear its reading.
+readings appear only in the room summary, without duplicate device rows.
+Numeric sensor readings round to one decimal place throughout the panel and menu bar, omitting a trailing `.0`. Choose **Menu bar** again to clear its reading.
 
-Lights, switches and input booleans have explicit on/off controls. Expand supported
-lights for brightness and warm/cool sliders. Slider changes send on release, with
+Lights, fans, switches and input booleans have explicit on/off controls. Expand supported
+lights for brightness and warm/cool sliders, and fans for supported percentage speed control. Slider changes send on release, with
 arrow-key control available. Tab reaches controls, Space/Enter activates them,
 and Escape backs out or closes the panel. Scenes and arbitrary services are not
 exposed. Other domains remain read-only.

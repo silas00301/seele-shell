@@ -3198,7 +3198,7 @@ Shared.Theme {
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onClicked: {
-                if (notificationCard.stacked) notificationStore.controller.group(notificationCard.group, notificationCard.popup)
+                if (notificationCard.stacked || notificationCard.collapsible) notificationStore.controller.group(notificationCard.group, false)
                 else if (notificationCard.popup) root.retireNotificationPopup(notificationCard.entry.id)
                 else root.dismissNotification(notificationCard.entry.id)
               }
@@ -3206,8 +3206,8 @@ Shared.Theme {
             HoverTip {
               mouse: notificationDismissMouse
               inOverlay: true
-              text: notificationCard.stacked
-                ? (notificationCard.popup ? "Hide all " + notificationCard.count : "Dismiss all " + notificationCard.count)
+              text: notificationCard.stacked || notificationCard.collapsible
+                ? "Dismiss all " + notificationCard.count
                 : notificationCard.popup ? "Hide toast" : "Dismiss"
             }
           }

@@ -249,3 +249,25 @@ if (process.argv[3]) {
   assert.equal(h.view.items.length,0,'a stale callback cannot revive a closed QObject');
   console.log('native notification signal wiring passed');
 }
+
+// Execute the actual stack close handler against the production store.
+{
+  const shell = fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]), 'shell.qml'), 'utf8');
+  const source = shell.slice(shell.indexOf('id: notificationDismissMouse'));
+  const handler = source.match(/^(\s*)onClicked: \{\n([^]*?)^\1\}/m);
+  assert(handler);
+  for (const popup of [false,true]) for (const expanded of [false,true]) {
+    const h=harness();
+    h.store.receive(h.make(1),1000); h.store.receive(h.make(2),1000);
+    h.store.receive(h.make(3,{desktopEntry:'org.other'}),1000);
+    const context = vm.createContext({
+      notificationCard:{stacked:!expanded,collapsible:expanded,popup,group:'desktop:org.chat',entry:{id:1}},
+      notificationStore:{controller:h.store},
+      root:{retireNotificationPopup:id=>h.store.retire(id),dismissNotification:id=>h.store.dismiss(id)}
+    });
+    vm.runInContext(handler[2],context);
+    assert.deepEqual(Array.from(h.view.items,item=>item.id),[3],`stack close dismisses the whole group: popup=${popup}, expanded=${expanded}`);
+    assert.equal(h.view.history.length,2);
+  }
+  console.log('Stack close dismisses collapsed and expanded groups in panel and toasts');
+}

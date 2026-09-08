@@ -16,7 +16,7 @@ import urllib.request
 MAX_CONFIG = 32768
 MAX_RESPONSE = 2 * 1024 * 1024
 REQUEST_TIMEOUT = 4
-ALLOWED_DOMAINS = {"light", "switch", "input_boolean"}
+ALLOWED_DOMAINS = {"light", "switch", "input_boolean", "fan"}
 ENTITY = re.compile(r"[a-z_]+\.[a-z0-9_]+\Z")
 
 

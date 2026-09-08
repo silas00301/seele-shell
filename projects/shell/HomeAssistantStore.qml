@@ -82,7 +82,8 @@ Scope {
     if (!entity) return -1
     for (var i = index + offset; i >= 0 && i < preferences.length; i += offset) {
       var candidate = entities.find(function(item) { return item.entity_id === preferences[i].entity_id })
-      if (candidate && (entity.favorite ? candidate.favorite : !candidate.favorite && candidate.room === entity.room)) return i
+      if (!candidate || roomReading(entity) !== roomReading(candidate)) continue
+      if (roomReading(entity) ? candidate.room === entity.room : entity.favorite ? candidate.favorite : !candidate.favorite && candidate.room === entity.room) return i
     }
     return -1
   }
@@ -96,19 +97,24 @@ Scope {
     next[index] = swap
     save(next, summary)
   }
+  function roomReading(item) {
+    return item.entity_id.indexOf("sensor.") === 0 && (item.device_class === "temperature" || item.device_class === "humidity" || item.unit === "°C" || item.unit === "°F")
+  }
   function rows() {
     var result = []
-    var favorites = entities.filter(function(item) { return item.favorite })
+    var favorites = entities.filter(function(item) { return item.favorite && !roomReading(item) })
     if (favorites.length) {
       result.push({heading: "Favorites"})
       favorites.forEach(function(item) { result.push(item) })
     }
     var rooms = []
-    entities.forEach(function(item) { if (!item.favorite && rooms.indexOf(item.room) < 0) rooms.push(item.room) })
+    entities.forEach(function(item) { if ((!item.favorite || roomReading(item)) && rooms.indexOf(item.room) < 0) rooms.push(item.room) })
     rooms.forEach(function(room) {
-      var members = entities.filter(function(item) { return !item.favorite && item.room === room })
-      var readings = entities.filter(function(item) { return item.room === room && (item.unit === "°C" || item.unit === "°F" || item.device_class === "humidity") && item.entity_id.indexOf("sensor.") === 0 && item.available })
-      result.push({heading: room, detail: readings.slice(0, 2).map(function(item) { return item.state + item.unit }).join(" · ")})
+      var members = entities.filter(function(item) { return !item.favorite && item.room === room && !roomReading(item) })
+      var readings = entities.filter(function(item) { return item.room === room && roomReading(item) })
+      result.push({heading: room, detail: readings.map(function(item) {
+        return item.available ? item.state + item.unit : (item.device_class === "humidity" ? "Humidity" : "Temperature") + " unavailable"
+      }).join(" · ")})
       members.forEach(function(item) { result.push(item) })
     })
     return result

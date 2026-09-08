@@ -51,17 +51,30 @@ class Live:
         if not isinstance(modes, list):
             modes = []
         state = item.get("state", "unavailable")
+        display_state = self.clean(state)
+        if entity_id.startswith("sensor."):
+            try:
+                value = float(display_state)
+                if math.isfinite(value):
+                    display_state = self.clean(f"{value:.1f}".removesuffix(".0"))
+            except ValueError:
+                pass
         light = entity_id.startswith("light.")
+        fan = entity_id.startswith("fan.")
+        features = int(self.number(attrs.get("supported_features")))
         minimum = self.number(attrs.get("min_color_temp_kelvin"), 2000)
         maximum = self.number(attrs.get("max_color_temp_kelvin"), 6500)
         return {
             "entity_id": entity_id, "name": self.clean(selected.get("name") or attrs.get("friendly_name") or entity_id),
-            "state": self.clean(state), "unit": self.clean(attrs.get("unit_of_measurement", ""), 24),
+            "state": display_state, "unit": self.clean(attrs.get("unit_of_measurement", ""), 24),
             "room": self.clean(selected.get("room") or self.rooms.get(entity_id, "Unassigned")),
             "favorite": bool(selected.get("favorite")),
             "device_class": attrs.get("device_class") if attrs.get("device_class") in ("temperature", "humidity") else "",
             "available": state not in ("unknown", "unavailable"),
             "controllable": entity_id.split(".")[0] in self.ha.ALLOWED_DOMAINS and state in ("on", "off"),
+            "speed_control": fan and bool(features & 1),
+            "percentage": self.number(attrs.get("percentage")),
+            "percentage_step": max(1, min(100, self.number(attrs.get("percentage_step"), 1))),
             "dimmable": light and any(mode in modes for mode in ("brightness", "color_temp", "hs", "xy", "rgb", "rgbw", "rgbww", "white")),
             "temperature": light and "color_temp" in modes and 0 < minimum < maximum,
             "brightness": round(self.number(attrs.get("brightness")) * 100 / 255),
@@ -133,8 +146,8 @@ class Live:
             return
         entry = self.entry(entity_id)
         desired = pending["desired"]
-        matches = all((abs(entry.get(key, -99999) - value) <= (1 if key == "brightness" else 50))
-                      if key in ("brightness", "kelvin") else entry.get(key) == value
+        matches = all((abs(entry.get(key, -99999) - value) <= (50 if key == "kelvin" else 1))
+                      if key in ("brightness", "kelvin", "percentage") else entry.get(key) == value
                       for key, value in desired.items())
         if matches:
             pending["confirmed"].set()
@@ -254,7 +267,7 @@ class Live:
         if not entry["available"] or not entry["controllable"] or entity_id in self.pending:
             raise self.ha.Problem("This device is unavailable, read-only or still updating.")
         desired = message.get("desired", {})
-        if not isinstance(desired, dict) or not desired or set(desired) - {"state", "brightness", "kelvin"}:
+        if not isinstance(desired, dict) or not desired or set(desired) - {"state", "brightness", "kelvin", "percentage"}:
             raise self.ha.Problem("Unsupported device control.")
         body = {}
         service = "turn_on"
@@ -262,14 +275,19 @@ class Live:
             if desired["state"] not in ("on", "off") or len(desired) != 1:
                 raise self.ha.Problem("Choose an explicit on or off state.")
             service = "turn_" + desired["state"]
+        if "percentage" in desired:
+            if len(desired) != 1:
+                raise self.ha.Problem("Choose one fan control at a time.")
+            service = "set_percentage"
         for key, capability, minimum, maximum, field in (
+            ("percentage", "speed_control", 0, 100, "percentage"),
             ("brightness", "dimmable", 1, 100, "brightness_pct"),
             ("kelvin", "temperature", entry["min_kelvin"], entry["max_kelvin"], "color_temp_kelvin"),
         ):
             if key in desired:
                 value = desired[key]
                 if not entry[capability] or type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= maximum:
-                    raise self.ha.Problem("This light does not support that value.")
+                    raise self.ha.Problem("This device does not support that value.")
                 body[field] = round(value)
         pending = {"desired": dict(desired), "confirmed": asyncio.Event()}
         self.pending[entity_id] = pending

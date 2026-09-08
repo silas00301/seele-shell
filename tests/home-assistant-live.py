@@ -92,6 +92,8 @@ class Worker(unittest.IsolatedAsyncioTestCase):
             if kind == 'call_service' and self.confirm:
                 self.state['state'] = 'off' if data['service'] == 'turn_off' else 'on'
                 fields = data['service_data']
+                if 'percentage' in fields:
+                    self.state['attributes']['percentage'] = fields['percentage']
                 if 'brightness_pct' in fields:
                     self.state['attributes']['brightness'] = round(fields['brightness_pct'] * 255 / 100)
                 if 'color_temp_kelvin' in fields:
@@ -100,7 +102,7 @@ class Worker(unittest.IsolatedAsyncioTestCase):
         return socket
 
     async def event(self, socket=None):
-        await (socket or self.sockets[-1]).send_json({'type':'event','event':{'data':{'entity_id':'light.desk','new_state':self.state}}})
+        await (socket or self.sockets[-1]).send_json({'type':'event','event':{'data':{'entity_id':self.state['entity_id'],'new_state':self.state}}})
 
     async def until(self, predicate):
         async with asyncio.timeout(4):
@@ -185,6 +187,24 @@ class Worker(unittest.IsolatedAsyncioTestCase):
         with patch.object(ha,'secret',return_value=''):
             await self.worker.bootstrap()
         self.assertNotIn(TOKEN,self.path.read_text())
+
+    async def test_fan_power_and_speed(self):
+        self.state = {'entity_id':'fan.desk','state':'off','attributes':{'supported_features':49,'percentage':0,'percentage_step':25}}
+        self.worker.config['entities'] = [{'entity_id':'fan.desk'}]
+        await self.start()
+        self.assertTrue(self.worker.entry('fan.desk')['controllable'])
+        await self.worker.control({'entity_id':'fan.desk','desired':{'state':'on'}})
+        self.assertEqual((self.calls[-1]['domain'],self.calls[-1]['service']),('fan','turn_on'))
+        await self.worker.control({'entity_id':'fan.desk','desired':{'percentage':50}})
+        self.assertEqual((self.calls[-1]['service'],self.calls[-1]['service_data']),('set_percentage',{'percentage':50}))
+        await self.worker.control({'entity_id':'fan.desk','desired':{'state':'off'}})
+        self.assertEqual(self.calls[-1]['service'],'turn_off')
+        for desired in ({'percentage':101},{'percentage':-1},{'brightness':50},{'percentage':50,'state':'on'}):
+            with self.assertRaises(ha.Problem):
+                await self.worker.control({'entity_id':'fan.desk','desired':desired})
+        self.worker.states['fan.desk']['attributes']['supported_features'] = 48
+        with self.assertRaises(ha.Problem):
+            await self.worker.control({'entity_id':'fan.desk','desired':{'percentage':50}})
 
     async def test_worker_protocol_and_eof(self):
         process = await asyncio.create_subprocess_exec(sys.executable, str(SOURCE), "watch",

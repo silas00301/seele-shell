@@ -87,7 +87,7 @@ Column {
     textFormat: Text.PlainText
     wrapMode: Text.WordWrap
   }
-  component LightSlider: Column {
+  component DeviceSlider: Column {
     id: level
     required property string title
     required property real current
@@ -367,8 +367,8 @@ Column {
               }
               Action {
                 text: panel.expanded === homeRow.modelData.entity_id ? "⌃" : "⌄"
-                Accessible.name: "Light controls"
-                visible: !!homeRow.modelData.dimmable || !!homeRow.modelData.temperature
+                Accessible.name: homeRow.modelData.speed_control ? "Fan controls" : "Light controls"
+                visible: !!homeRow.modelData.dimmable || !!homeRow.modelData.temperature || !!homeRow.modelData.speed_control
                 onClicked: panel.expanded = panel.expanded === homeRow.modelData.entity_id ? "" : homeRow.modelData.entity_id
               }
               Shared.ControlSwitch {
@@ -384,7 +384,17 @@ Column {
               width: parent.width
               visible: panel.expanded === homeRow.modelData.entity_id
               spacing: panel.theme.spaceSmall
-              LightSlider {
+              DeviceSlider {
+                width: parent.width
+                title: "Fan speed"
+                minimum: 0
+                current: homeRow.modelData.percentage || 0
+                step: homeRow.modelData.percentage_step || 1
+                visible: !!homeRow.modelData.speed_control
+                enabled: homeRow.actionable
+                onCommitted: value => panel.store.setValue(homeRow.modelData, {percentage: Math.round(value)})
+              }
+              DeviceSlider {
                 width: parent.width
                 title: "Brightness"
                 current: homeRow.modelData.brightness || 1
@@ -392,7 +402,7 @@ Column {
                 enabled: homeRow.actionable
                 onCommitted: value => panel.store.setValue(homeRow.modelData, {brightness: Math.round(value)})
               }
-              LightSlider {
+              DeviceSlider {
                 width: parent.width
                 title: "Warm / cool"
                 suffix: " K"
