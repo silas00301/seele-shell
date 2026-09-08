@@ -40,21 +40,27 @@ rendered pixels for unchanged device data. It runs in `test-shell` and in the
 shell package's install checks. Performance changes preserve the visual tokens,
 rendering components, and animation timing.
 
+`tests/shell-load.sh` compiles the complete QML configuration using the real
+Quickshell runtime and a private headless Sway compositor. Unlike `qmllint`, it
+catches invalid properties assigned through inline component aliases. It does
+not instantiate the desktop or start its workers. Both `test-shell` and the
+package install checks run it; a successful package build must pass this test.
+
 Agent CPU sampling reads process names from the same `/proc/<pid>/stat` snapshot
 as parent IDs and CPU ticks. It retains command-line discovery for harnesses
 whose process name differs from their executable.
 
 `seele-control watch-status` streams newline-delimited field patches. Persistent
-D-Bus listeners trigger the existing read-only NetworkManager, BlueZ, and mako
+D-Bus listeners trigger the existing read-only NetworkManager and BlueZ
 probes only when those services change. One buffered `pw-dump -m` reader maintains
 the PipeWire graph, and volume queries run only for relevant device changes or
-explicit acknowledgements. History aging uses cached notification lists.
+explicit acknowledgements. Notification state belongs to the native QML store.
 Ancillary state, including VPN clients, cameras, and agent activity, retains its
 five-second refresh. Each listener subscribes before its startup query and
 resnapshots after service or bus restarts. The PipeWire reader resets its graph
 on reconnect and terminates with the controller.
 
-The stream accepts `network`, `bluetooth`, `notifications`, `audio`, `aux`, and
+The stream accepts `network`, `bluetooth`, `audio`, `aux`, and
 `all` requests on stdin. Explicit requests return the requested fields even if
 unchanged, so optimistic UI controls receive an acknowledgement. EOF stops the
 controller. The one-shot `seele-control status` interface remains available.
@@ -119,18 +125,19 @@ to the shared waveform; no second microphone capture or persistent audio file
 is created. Socket reconnects, malformed samples, and EOF cleanup are covered
 by `tests/dictation.py`. Voxtype's own OSD remains disabled.
 
-## Copy notification text
+## Notifications
 
-Expanded notifications offer Copy title and Copy message in both the inbox and
-history. Message copying uses visible plain text, including line breaks and decoded
-entities; the title is copied verbatim. Copying leaves the notification and its
-app actions intact. The button reports completion or failure after `wl-copy` exits.
+Quickshell owns the notification service; disable Mako when running the shell.
+Notifications stack by app and expand in place. The panel has Current and
+History views, manual DND, and explicit actions. Ordinary toasts last 30 seconds
+and pause while hovered; critical and pinned toasts remain visible. A toast's
+close button hides it without dismissing the inbox entry.
 
-`NotificationClipboard.qml` sends the payload on stdin to the existing `wl-copy`
-runtime dependency. It keeps one pending request, clears its payload after writing,
-and recovers startup failures with a five-second watchdog. Text over 262,144
-characters is rejected instead of silently truncated. Nothing is written to disk.
-`tests/notification-copy.js` checks payloads and the production QML lifecycle.
+Verification codes can be copied without dismissal. Notification search,
+title/message copying, and timed DND are intentionally absent. Notification
+text stays in memory, including history across QML reloads.
+`tests/notifications.js` covers lifecycle and grouping;
+`tests/notification-server.sh` checks the native service on a private bus.
 
 ## Screen links
 

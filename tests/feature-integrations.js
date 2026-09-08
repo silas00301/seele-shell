@@ -8,7 +8,10 @@ const shellPatterns = {
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
   'Home Assistant store': /HomeAssistantStore\s*\{\s*id: homeAssistantStore\s*\}/,
   'GitHub store': /GitHubStore\s*\{\s*\n\s*id: githubStore/,
-  'notification clipboard': /NotificationClipboard\s*\{\s*id: notificationClipboard\s*\}/,
+  'GitHub leaves bar and click-away input available': /namespace: "seele-shell-github"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
+  'collapsed network addresses': /property bool addressesExpanded: false/,
+  'native notification cards': /component NotificationCard: Rectangle/,
+  'in-place app stacks': /height: notificationGroupColumn\.implicitHeight \+ notificationGroup\.stackReach/,
   'media keyboard seeking': /function seekMediaKey\(/,
   'shuffle control': /Media\.toggleShuffle\(/,
   'repeat control': /Media\.cycleRepeat\(/,
@@ -17,9 +20,6 @@ const shellPatterns = {
   'network address rows': /Network\.addresses\(/,
   'per-player volume': /PlayerVolume\.adjust\(/,
   'playback speed': /MediaSpeed\.cycle\(/,
-  'notification search': /NotificationSearch\.filter\(/,
-  'notification text copy': /notificationClipboard\.copy\(/,
-  'timed DND': /notificationStore\.controller\.snooze\(/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -35,9 +35,6 @@ const packagedSources = [
   'network.js',
   'player-volume.js',
   'media-speed.js',
-  'notification-search.js',
-  'NotificationClipboard.qml',
-  'notification-copy.js',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -46,6 +43,9 @@ for (const source of packagedSources) {
 
 const focusedTests = [
   'focus.js',
+  'focus-timer.sh',
+  'panel-layouts.js',
+  'shell-load.sh',
   'home-assistant-store.js',
   'home-assistant.py',
   'github.js',
@@ -53,11 +53,10 @@ const focusedTests = [
   'network-addresses.js',
   'player-volume.js',
   'media-speed.js',
-  'notification-search.js',
-  'notification-copy.js',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`), `${test} is not run by the shell package`);
 }
 
-console.log('production QML, packaged helpers, and focused checks cover every restored PR feature');
+assert.ok(!/notificationSearch|notificationClipboard|quietPresets/.test(shell), 'notification UI must retain the 11:00 behavior');
+console.log('production QML, packaged helpers, and focused checks cover the enabled features');

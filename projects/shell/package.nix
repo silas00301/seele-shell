@@ -83,7 +83,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
-    install -m644 ${./NotificationClipboard.qml} "$out/share/seele-shell/NotificationClipboard.qml"
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
@@ -106,8 +105,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./player-volume.js} "$out/share/seele-shell/player-volume.js"
     install -m644 ${./network.js} "$out/share/seele-shell/network.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
-    install -m644 ${./notification-search.js} "$out/share/seele-shell/notification-search.js"
-    install -m644 ${./notification-copy.js} "$out/share/seele-shell/notification-copy.js"
     install -m644 ${./focus.js} "$out/share/seele-shell/focus.js"
     install -m644 ${./github.js} "$out/share/seele-shell/github.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
@@ -199,7 +196,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js notification-search.js NotificationClipboard.qml notification-copy.js; do
+    for source in FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -214,7 +211,9 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/NotificationClipboard.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml"
+    bash ${../../tests/shell-load.sh} ${quickshell}/bin/quickshell \
+      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -239,6 +238,8 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/feature-integrations.js} "$out/share/seele-shell/shell.qml" ${./package.nix}
     node ${../../tests/focus.js} "$out/share/seele-shell/focus.js"
+    bash ${../../tests/focus-timer.sh} ${quickshell}/bin/quickshell "$out/share/seele-shell"
+    node ${../../tests/panel-layouts.js} "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/home-assistant.py} "$out/libexec/seele-shell/home-assistant.py"
     node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
@@ -248,8 +249,6 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${../../tests/player-volume.js} "$out/share/seele-shell/player-volume.js"
     node ${../../tests/media-speed.js} "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
-    node ${../../tests/notification-search.js} "$out/share/seele-shell/notification-search.js" "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/shell.qml"
-    node ${../../tests/notification-copy.js} "$out/share/seele-shell/notification-copy.js" "$out/share/seele-shell/NotificationClipboard.qml" "$out/share/seele-shell/shell.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"

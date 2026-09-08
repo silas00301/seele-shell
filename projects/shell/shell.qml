@@ -18,7 +18,6 @@ import "player-volume.js" as PlayerVolume
 import "network.js" as Network
 import "time.js" as Time
 import "notifications.js" as Notifications
-import "notification-search.js" as NotificationSearch
 import "uri-picker.js" as Uris
 import "github.js" as GitHub
 
@@ -1780,7 +1779,6 @@ Shared.Theme {
   }
 
   HomeAssistantStore { id: homeAssistantStore }
-  NotificationClipboard { id: notificationClipboard }
 
   IpcHandler {
     target: "seele-shell"
@@ -3077,6 +3075,27 @@ Shared.Theme {
     }
   }
 
+  component IconButton: Rectangle {
+    id: iconButton
+
+    property bool active: false
+    property bool hovered: false
+    property bool pressed: false
+    property color tint: root.accent
+    property color pressTint: root.pressColor
+    property color hoverTint: root.hoverColor
+
+    implicitWidth: root.controlHeight
+    implicitHeight: root.controlHeight
+    radius: root.radius
+    color: iconButton.pressed ? iconButton.pressTint : iconButton.active ? root.alpha(iconButton.tint, 0.14) : root.alpha(iconButton.tint, 0)
+    antialiasing: true
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    HoverWash { hovered: iconButton.hovered; tint: iconButton.hoverTint }
+  }
+
   component NotificationButton: Button {
     id: notificationButton
     required property string label
@@ -3085,12 +3104,9 @@ Shared.Theme {
     property string extra: ""
     property string successLabel: "Done"
     property string actionIcon: ""
-    property bool localBusy: false
-    property bool localFailed: false
-    property bool localComplete: false
-    readonly property bool busy: localBusy || (controlAction !== "" && root.controlBusy(controlAction, value, extra))
-    readonly property bool failed: localFailed || (controlAction !== "" && root.controlFailed(controlAction, value, extra))
-    readonly property bool complete: localComplete || (controlAction !== "" && root.controlCompleted(controlAction, value, extra))
+    readonly property bool busy: controlAction !== "" && root.controlBusy(controlAction, value, extra)
+    readonly property bool failed: controlAction !== "" && root.controlFailed(controlAction, value, extra)
+    readonly property bool complete: controlAction !== "" && root.controlCompleted(controlAction, value, extra)
     implicitWidth: Math.max(buttonMeasure.width, feedbackMeasure.width) + root.spaceMedium * 2 + (actionIcon ? root.textLabel + root.spaceTight : 0)
     width: Math.min(implicitWidth, parent.width)
     implicitHeight: root.chipHeight
@@ -3139,19 +3155,385 @@ Shared.Theme {
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
 
+  component NotificationCard: Rectangle {
+    id: notificationCard
+
+    property var entry: ({})
+    property string group: ""
+    property bool history: false
+    property bool popup: false
+    property bool alwaysUnfolded: false
+    // A collapsed stack is not a notification: it stands for its group, opens
+    // that group on a click, and its dismiss takes the whole group with it.
+    property bool stacked: false
+    property bool collapsible: false
+    property int count: 1
+    property int depth: 0
+    signal toggled()
+
+    readonly property bool actionable: !notificationCard.stacked && !notificationCard.history && root.notificationActionable(entry)
+    readonly property var offeredActions: notificationCard.history ? [] : Notifications.actions(entry)
+    readonly property string verificationCode: Notifications.verificationCode(entry)
+    readonly property bool unfolded: notificationCard.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
+    // A single elided line reports its full width, which is the only way to
+    // know there is more to show without measuring the text twice.
+    readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
+    // Only a toast folds, and only when there is something folded away.
+    readonly property bool unfoldable: !notificationCard.alwaysUnfolded && (truncated || unfolded || !!entry.image)
+    readonly property string iconSource: {
+      var icon = String(entry.app_icon || "").trim()
+      return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
+    }
+    // The card is as tall as what it holds: its own padding above and below
+    // the text, and a little more once the text has unfolded into several
+    // lines and wants air under the last of them.
+    implicitHeight: Math.max(root.notificationRowHeight, notificationText.implicitHeight + root.cardPadding * 2 - (notificationCard.unfolded ? 0 : root.spaceTight))
+    height: implicitHeight
+    radius: root.radius
+    // Asked of the card rather than of the pointer area covering it. The
+    // unfold and dismiss buttons sit on top of that area with hover enabled
+    // of their own, and a hovered child takes the event away from the parent
+    // below it, so a fill reading `containsMouse` fell back to `cardColor`
+    // the moment the pointer reached a button and lit again when it left. A
+    // handler on the card is hovered for the whole card, buttons included.
+    readonly property bool hovered: notificationHover.hovered
+
+    readonly property bool pressable: notificationCard.actionable || notificationCard.stacked
+
+    color: notificationCard.pressable && notificationOpenMouse.pressed ? root.pressColor
+      : notificationCard.pressable && notificationCard.hovered ? root.hoveredColor(root.cardColor)
+      : root.cardColor
+
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+    HoverHandler {
+      id: notificationHover
+      onHoveredChanged: if (notificationCard.popup) root.setNotificationPopupHovered(hovered)
+    }
+
+    Repeater {
+      model: notificationCard.depth
+      delegate: Rectangle {
+        required property int index
+        z: -1 - index
+        x: root.spaceTight * (index + 1)
+        y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
+        width: parent.width - x * 2
+        height: root.spaceSmall
+        radius: root.radius
+        color: root.cardColor
+        CardEdge {}
+      }
+    }
+    SurfaceWash { radius: root.radius - 1 }
+    CardEdge {}
+    SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
+    Component.onDestruction: if (notificationCard.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
+
+    Item {
+      id: notificationIconFrame
+      width: root.controlHeight
+      height: root.controlHeight
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.leftMargin: root.cardPadding
+      anchors.topMargin: root.cardPadding
+
+      Text {
+        anchors.fill: parent
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        text: "󰂚"
+        color: root.accent
+        font.family: root.fontFamily
+        font.pixelSize: root.textSubhead
+      }
+      IconImage {
+        anchors.fill: parent
+        source: notificationCard.iconSource
+      }
+    }
+
+    MouseArea {
+      id: notificationOpenMouse
+      anchors.fill: parent
+      enabled: notificationCard.pressable
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: {
+        if (notificationCard.stacked) notificationCard.toggled()
+        else root.activateNotification(notificationCard.entry.id)
+      }
+    }
+    HoverTip {
+      mouse: notificationOpenMouse
+      inOverlay: true
+      text: notificationCard.stacked
+        ? notificationCard.count + " from " + (notificationCard.entry.app_name || "this app") + " · click to open"
+        : ""
+    }
+
+    Column {
+      id: notificationText
+      anchors.left: notificationIconFrame.right
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.leftMargin: root.spaceMedium
+      anchors.rightMargin: root.cardPadding
+      anchors.topMargin: root.cardPadding
+      spacing: root.spaceTight
+      // The summary takes whatever the age and the two buttons leave, rather
+      // than a width counted from which of them happen to be showing.
+      Item {
+        width: parent.width
+        height: root.chipHeight - root.spaceMedium
+
+        Text {
+          anchors.left: parent.left
+          anchors.right: notificationRowControls.left
+          anchors.rightMargin: root.spaceSmall
+          anchors.verticalCenter: parent.verticalCenter
+          text: entry.summary || entry.app_name || "Notification"
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.text
+          font.family: root.fontFamily
+          font.pixelSize: root.textBody
+          font.weight: root.weightStrong
+        }
+
+        Row {
+          id: notificationRowControls
+
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          height: parent.height
+          spacing: root.spaceTight
+
+          // What the stack stands for, and the way back out of it once it is
+          // open. Between them they replace the pair of full-width buttons
+          // the group used to wear above its summary.
+          Rectangle {
+            visible: notificationCard.stacked
+            anchors.verticalCenter: parent.verticalCenter
+            width: visible ? Math.max(parent.height, stackCount.implicitWidth + root.spaceSmall) : 0
+            height: parent.height
+            radius: height / 2
+            color: root.alpha(root.text, 0.09)
+            antialiasing: true
+
+            Text {
+              id: stackCount
+              anchors.centerIn: parent
+              text: notificationCard.count
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textCaption
+              font.weight: root.weightStrong
+            }
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.agoText(entry.time)
+            color: root.overlay
+            font.family: root.fontFamily
+            font.pixelSize: root.textCaption
+          }
+
+          IconButton {
+            visible: notificationCard.collapsible
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            hovered: notificationCollapseMouse.containsMouse
+            pressed: notificationCollapseMouse.pressed
+
+            Text {
+              anchors.centerIn: parent
+              text: "󰅃"
+              color: notificationCollapseMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: notificationCollapseMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: notificationCard.toggled()
+            }
+            HoverTip { mouse: notificationCollapseMouse; inOverlay: true; text: "Close the stack" }
+          }
+
+          IconButton {
+            visible: notificationCard.unfoldable
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            hovered: notificationUnfoldMouse.containsMouse
+            pressed: notificationUnfoldMouse.pressed
+
+            Text {
+              anchors.centerIn: parent
+              text: notificationCard.unfolded ? "󰅃" : "󰅀"
+              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
+              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: notificationUnfoldMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleNotificationUnfolded(notificationCard.entry.id)
+            }
+            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationCard.unfolded ? "Show less" : "Show the whole notification" }
+          }
+
+          IconButton {
+            readonly property bool busy: !notificationCard.popup && root.controlBusy("notifications", "dismiss", String(notificationCard.entry.id))
+
+            visible: !notificationCard.history
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            radius: root.radiusSmall
+            // Destructive, so the pointer is answered in red rather than in
+            // neutral light: this is the one control that says what it will
+            // do before it is pressed.
+            tint: root.red
+            hoverTint: root.dangerColor
+            pressTint: root.dangerPress
+            active: busy
+            hovered: notificationDismissMouse.containsMouse
+            pressed: notificationDismissMouse.pressed
+
+            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
+            MouseArea {
+              id: notificationDismissMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (notificationCard.stacked) notificationStore.controller.group(notificationCard.group, notificationCard.popup)
+                else if (notificationCard.popup) root.retireNotificationPopup(notificationCard.entry.id)
+                else root.dismissNotification(notificationCard.entry.id)
+              }
+            }
+            HoverTip {
+              mouse: notificationDismissMouse
+              inOverlay: true
+              text: notificationCard.stacked
+                ? (notificationCard.popup ? "Hide all " + notificationCard.count : "Dismiss all " + notificationCard.count)
+                : notificationCard.popup ? "Hide toast" : "Dismiss"
+            }
+          }
+        }
+      }
+      Text {
+        id: notificationBody
+        width: parent.width
+        text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
+        textFormat: Text.StyledText
+        linkColor: root.accent
+        onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
+        HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        color: root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textCaption
+        wrapMode: notificationCard.unfolded ? Text.WordWrap : Text.NoWrap
+        elide: notificationCard.unfolded ? Text.ElideNone : Text.ElideRight
+        // Bounded, so one pathological notification cannot take the panel.
+        maximumLineCount: notificationCard.unfolded ? 1000 : 1
+      }
+      Item {
+        visible: !!notificationCard.entry.image && notificationCard.unfolded
+        width: parent.width
+        height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
+        Image {
+          id: notificationImage
+          anchors.fill: parent
+          visible: false
+          source: notificationCard.entry.image || ""
+          sourceSize.width: width * 2
+          fillMode: Image.PreserveAspectFit
+          asynchronous: true
+        }
+        RoundedSource { anchors.fill: parent; source: notificationImage }
+      }
+      Text {
+        visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || notificationCard.entry.resident
+        text: notificationCard.entry.urgency === 2 ? "Critical · until dismissed"
+          : Notifications.permanent(notificationCard.entry) ? "Until dismissed" : "Ongoing"
+        color: notificationCard.entry.urgency === 2 ? root.red : root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textMicro
+      }
+      Row {
+        visible: Number(notificationCard.entry.progress) >= 0
+        width: parent.width
+        spacing: root.spaceSmall
+        MeterBar {
+          width: parent.width - progressLabel.width - parent.spacing
+          anchors.verticalCenter: parent.verticalCenter
+          ratio: Number(notificationCard.entry.progress) / 100
+        }
+        Text {
+          id: progressLabel
+          text: Math.round(Number(notificationCard.entry.progress)) + "%"
+          color: root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textCaption
+        }
+      }
+      Flow {
+        width: parent.width
+        spacing: root.spaceTight
+        Repeater {
+          model: notificationCard.offeredActions
+          delegate: NotificationButton {
+            required property var modelData
+            label: modelData.label
+            controlAction: "notification-action"
+            value: String(notificationCard.entry.id)
+            extra: modelData.key
+            actionIcon: notificationCard.entry.action_icons ? modelData.key : ""
+          }
+        }
+        NotificationButton {
+          visible: !notificationCard.history && (notificationCard.entry.pinned || !Notifications.permanent(notificationCard.entry))
+          label: notificationCard.entry.pinned ? "Unpin" : "Keep visible"
+          onClicked: notificationStore.controller.pin(notificationCard.entry.id)
+        }
+        NotificationButton {
+          visible: notificationCard.verificationCode !== ""
+          label: "Copy " + notificationCard.verificationCode
+          controlAction: "copy-code"
+          value: notificationCard.verificationCode
+          extra: String(notificationCard.entry.id)
+          successLabel: "Copied"
+        }
+      }
+    }
+
+
+  }
+
   component NotificationList: SeeleListView {
     id: notificationList
 
     property bool history: false
     property bool popup: false
-    property string query: ""
     // Everywhere except a toast, a notification is shown in full without being
     // asked: the panel is where you go to read what you missed.
     readonly property bool alwaysUnfolded: !notificationList.popup
 
     property var expandedGroups: ({})
-    readonly property var entries: NotificationSearch.filter(notificationList.history ? (root.systemData.notifications.history || [])
-      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || []), query)
+    readonly property var entries: notificationList.history ? (root.systemData.notifications.history || [])
+      : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || [])
     function toggleGroup(key) {
       var expanded = Object.assign({}, expandedGroups)
       if (expanded[key]) delete expanded[key]
@@ -3170,283 +3552,64 @@ Shared.Theme {
     boundsBehavior: Flickable.StopAtBounds
     model: Notifications.stackedRows(entries, expandedGroups)
 
-    delegate: Rectangle {
-      id: notificationEntry
+    // One row per group, so opening a stack grows this item in place rather than
+    // inserting rows the list has to reflow around: nothing below it is
+    // displaced and the group cannot move out from under the pointer that just
+    // opened it. The height animates and the item clips, so the group unfolds.
+    delegate: Item {
+      id: notificationGroup
 
       required property var modelData
-      readonly property var entry: modelData.entry
-      readonly property bool actionable: !notificationList.history && root.notificationActionable(entry)
-      readonly property var offeredActions: notificationList.history ? [] : Notifications.actions(entry)
-      readonly property string verificationCode: Notifications.verificationCode(entry)
-      readonly property bool unfolded: notificationList.alwaysUnfolded || !!root.notificationUnfolded[String(entry.id)]
-      // A single elided line reports its full width, which is the only way to
-      // know there is more to show without measuring the text twice.
-      readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
-      // Only a toast folds, and only when there is something folded away.
-      readonly property bool unfoldable: !notificationList.alwaysUnfolded && (truncated || unfolded || !!entry.image)
-      readonly property string iconSource: {
-        var icon = String(entry.app_icon || "").trim()
-        return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
-      }
-      x: modelData.first ? 0 : root.spaceMedium
-      width: ListView.view.width - x
-      height: Math.max(root.notificationRowHeight, notificationText.implicitHeight + (notificationEntry.unfolded ? 18 : 12))
-      radius: root.radius
-      // Asked of the card rather than of the pointer area covering it. The
-      // unfold and dismiss buttons sit on top of that area with hover enabled
-      // of their own, and a hovered child takes the event away from the parent
-      // below it, so a fill reading `containsMouse` fell back to `cardColor`
-      // the moment the pointer reached a button and lit again when it left. A
-      // handler on the card is hovered for the whole card, buttons included.
-      readonly property bool hovered: notificationHover.hovered
+      readonly property bool open: modelData.expanded
+      // A collapsed stack draws its depth below the card, so the row reserves
+      // that much and the clip does not cut those edges off.
+      readonly property int stackReach: modelData.depth * root.spaceTight
 
-      color: notificationEntry.actionable && notificationOpenMouse.pressed ? root.pressColor
-        : notificationEntry.actionable && notificationEntry.hovered ? root.hoveredColor(root.cardColor)
-        : root.cardColor
+      width: ListView.view.width
+      height: notificationGroupColumn.implicitHeight + notificationGroup.stackReach
+      clip: true
 
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
-
-      HoverHandler {
-        id: notificationHover
-        onHoveredChanged: if (notificationList.popup) root.setNotificationPopupHovered(hovered)
-      }
-
-      Repeater {
-        model: notificationEntry.modelData.depth
-        delegate: Rectangle {
-          required property int index
-          z: -1 - index
-          x: root.spaceTight * (index + 1)
-          y: parent.height - root.spaceSmall + root.spaceTight * (index + 1)
-          width: parent.width - x * 2
-          height: root.spaceSmall
-          radius: root.radius
-          color: root.cardColor
-          CardEdge {}
-        }
-      }
-      SurfaceWash { radius: root.radius - 1 }
-      CardEdge {}
-      SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
-      Component.onDestruction: if (notificationList.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
-
-      Item {
-        id: notificationIconFrame
-        width: 34
-        height: 34
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.leftMargin: 9
-        anchors.topMargin: 9
-
-        Text {
-          anchors.fill: parent
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-          text: "󰂚"
-          color: root.accent
-          font.family: root.fontFamily
-          font.pixelSize: root.textSubhead
-        }
-        IconImage {
-          anchors.fill: parent
-          source: notificationEntry.iconSource
-        }
-      }
-
-      MouseArea {
-        id: notificationOpenMouse
-        anchors.fill: parent
-        enabled: notificationEntry.actionable
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.activateNotification(notificationEntry.entry.id)
-      }
+      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
 
       Column {
-        id: notificationText
-        anchors.left: notificationIconFrame.right
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.leftMargin: root.spaceMedium
-        anchors.rightMargin: 9
-        anchors.topMargin: 9
-        spacing: root.spaceTight
-        Flow {
-          visible: notificationEntry.modelData.first && notificationEntry.modelData.count > 1
+        id: notificationGroupColumn
+
+        width: parent.width
+        spacing: root.spaceSmall
+
+        NotificationCard {
           width: parent.width
-          spacing: root.spaceTight
-          NotificationButton {
-            label: (notificationEntry.entry.app_name || "Notifications") + " · " + notificationEntry.modelData.count
-              + (notificationEntry.modelData.expanded ? " · Show less" : " · Show all")
-            onClicked: notificationList.toggleGroup(notificationEntry.modelData.group)
-          }
-          NotificationButton {
-            visible: !notificationList.history && notificationList.query.trim() === ""
-            label: notificationList.popup ? "Hide stack" : "Dismiss stack"
-            onClicked: notificationStore.controller.group(notificationEntry.modelData.group, notificationList.popup)
-          }
+          entry: notificationGroup.modelData.items[0]
+          group: notificationGroup.modelData.group
+          history: notificationList.history
+          popup: notificationList.popup
+          alwaysUnfolded: notificationList.alwaysUnfolded
+          stacked: !notificationGroup.open && notificationGroup.modelData.count > 1
+          collapsible: notificationGroup.open
+          count: notificationGroup.modelData.count
+          depth: notificationGroup.modelData.depth
+          onToggled: notificationList.toggleGroup(notificationGroup.modelData.group)
         }
-        Row {
-          width: parent.width
-          height: 20
-          Text { width: parent.width - (notificationEntry.unfoldable ? 104 : 90); height: parent.height; text: entry.summary || entry.app_name || "Notification"; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; verticalAlignment: Text.AlignVCenter }
-          Item { width: 6; height: parent.height }
-          Text { width: 58; height: parent.height; text: root.agoText(entry.time); color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
-          Rectangle {
-            visible: notificationEntry.unfoldable
-            width: visible ? 20 : 0
-            height: parent.height
-            radius: root.radiusSmall
-            color: notificationUnfoldMouse.pressed ? root.pressColor : notificationUnfoldMouse.containsMouse ? root.hoverColor : root.clearColor
-            Behavior on color { ColorAnimation { duration: root.durationFast } }
-            Text {
-              anchors.centerIn: parent
-              text: notificationEntry.unfolded ? "󰅃" : "󰅀"
-              color: notificationUnfoldMouse.containsMouse ? root.accent : root.subtext
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            MouseArea {
-              id: notificationUnfoldMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleNotificationUnfolded(notificationEntry.entry.id)
-            }
-            HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationEntry.unfolded ? "Show less" : "Show the whole notification" }
-          }
-          Item { visible: !notificationEntry.unfoldable; width: visible ? 6 : 0; height: parent.height }
-          Rectangle {
-            readonly property bool busy: !notificationList.popup && root.controlBusy("notifications", "dismiss", String(notificationEntry.entry.id))
-            visible: !notificationList.history
-            width: visible ? 20 : 0
-            height: parent.height
-            radius: root.radiusSmall
-            color: notificationDismissMouse.pressed ? root.dangerPress : busy ? root.selectedColor : notificationDismissMouse.containsMouse ? root.dangerColor : root.clearDanger
-            Behavior on color { ColorAnimation { duration: root.durationFast } }
-            Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-            RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-            MouseArea {
-              id: notificationDismissMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: notificationList.popup ? root.retireNotificationPopup(notificationEntry.entry.id) : root.dismissNotification(notificationEntry.entry.id)
-            }
-            HoverTip { mouse: notificationDismissMouse; inOverlay: true; text: notificationList.popup ? "Hide toast" : "Dismiss" }
-          }
-        }
-        Text {
-          id: notificationBody
-          width: parent.width
-          text: Notifications.bodyMarkup(entry.body || entry.app_name || "")
-          textFormat: Text.StyledText
-          linkColor: root.accent
-          onLinkActivated: link => { if (/^(https?:\/\/|mailto:)/i.test(link)) Qt.openUrlExternally(link) }
-          HoverHandler { cursorShape: notificationBody.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-          color: root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textCaption
-          wrapMode: notificationEntry.unfolded ? Text.WordWrap : Text.NoWrap
-          elide: notificationEntry.unfolded ? Text.ElideNone : Text.ElideRight
-          // Bounded, so one pathological notification cannot take the panel.
-          maximumLineCount: notificationEntry.unfolded ? 1000 : 1
-        }
-        Item {
-          visible: !!notificationEntry.entry.image && notificationEntry.unfolded
-          width: parent.width
-          height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
-          Image {
-            id: notificationImage
-            anchors.fill: parent
-            visible: false
-            source: notificationEntry.entry.image || ""
-            sourceSize.width: width * 2
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-          }
-          RoundedSource { anchors.fill: parent; source: notificationImage }
-        }
-        Text {
-          visible: notificationEntry.entry.urgency === 2 || Notifications.permanent(notificationEntry.entry) || notificationEntry.entry.resident
-          text: notificationEntry.entry.urgency === 2 ? "Critical · until dismissed"
-            : Notifications.permanent(notificationEntry.entry) ? "Until dismissed" : "Ongoing"
-          color: notificationEntry.entry.urgency === 2 ? root.red : root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textMicro
-        }
-        Row {
-          visible: Number(notificationEntry.entry.progress) >= 0
-          width: parent.width
-          spacing: root.spaceSmall
-          MeterBar {
-            width: parent.width - progressLabel.width - parent.spacing
-            anchors.verticalCenter: parent.verticalCenter
-            ratio: Number(notificationEntry.entry.progress) / 100
-          }
-          Text {
-            id: progressLabel
-            text: Math.round(Number(notificationEntry.entry.progress)) + "%"
-            color: root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textCaption
-          }
-        }
-        Flow {
-          width: parent.width
-          spacing: root.spaceTight
-          Repeater {
-            model: notificationEntry.offeredActions
-            delegate: NotificationButton {
-              required property var modelData
-              label: modelData.label
-              controlAction: "notification-action"
-              value: String(notificationEntry.entry.id)
-              extra: modelData.key
-              actionIcon: notificationEntry.entry.action_icons ? modelData.key : ""
-            }
-          }
-          NotificationButton {
-            visible: !notificationList.history && (notificationEntry.entry.pinned || !Notifications.permanent(notificationEntry.entry))
-            label: notificationEntry.entry.pinned ? "Unpin" : "Keep visible"
-            onClicked: notificationStore.controller.pin(notificationEntry.entry.id)
-          }
-          Repeater {
-            model: notificationEntry.unfolded ? ["title", "body"] : []
-            delegate: NotificationButton {
-              id: notificationCopyButton
-              required property string modelData
-              readonly property string copyKey: String(notificationEntry.entry.id) + ":" + modelData
-              readonly property bool selected: notificationClipboard.key === copyKey
-              visible: modelData === "title" ? !!notificationEntry.entry.summary : !!notificationEntry.entry.body
-              label: modelData === "title" ? "Copy title" : "Copy message"
-              enabled: !notificationClipboard.pending
-              localBusy: selected && notificationClipboard.pending
-              localFailed: selected && notificationClipboard.status === "error"
-              localComplete: selected && notificationClipboard.status === "success"
-              successLabel: "Copied"
-              onClicked: notificationClipboard.copy(notificationEntry.entry, modelData)
-              HoverTip {
-                mouse: notificationCopyButton
-                inOverlay: true
-                text: notificationCopyButton.selected ? notificationClipboard.message : ""
-              }
-            }
-          }
-          NotificationButton {
-            visible: notificationEntry.verificationCode !== ""
-            label: "Copy " + notificationEntry.verificationCode
-            controlAction: "copy-code"
-            value: notificationEntry.verificationCode
-            extra: String(notificationEntry.entry.id)
-            successLabel: "Copied"
+
+        Repeater {
+          model: notificationGroup.open ? notificationGroup.modelData.items.slice(1) : []
+
+          NotificationCard {
+            required property var modelData
+
+            x: root.spaceMedium
+            width: notificationGroupColumn.width - root.spaceMedium
+            entry: modelData
+            group: notificationGroup.modelData.group
+            history: notificationList.history
+            popup: notificationList.popup
+            alwaysUnfolded: notificationList.alwaysUnfolded
+
+            // The card arrives with the fold rather than at the end of it.
+            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: Easing.OutCubic }
           }
         }
       }
-
-
     }
   }
 
@@ -5945,7 +6108,7 @@ Shared.Theme {
               required property int index
               readonly property bool pinned: root.timezonePinned(modelData.id)
               width: ListView.view.width
-              height: root.notificationRowHeight
+              height: Math.max(root.notificationRowHeight, zoneTimeLabels.implicitHeight + root.spaceMedium * 2)
               radius: root.radius
               color: timezoneList.currentIndex === index ? root.selectedColor : rowHover.hovered ? root.hoveredColor(root.rowColor) : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -5960,12 +6123,17 @@ Shared.Theme {
                   Text { Layout.fillWidth: true; text: timezoneRow.modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; elide: Text.ElideRight }
                   Text { Layout.fillWidth: true; text: timezoneRow.modelData.id + " · " + Time.formatOffset(timezoneRow.modelData.offset); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; elide: Text.ElideMiddle }
                 }
-                Column {
+                Item {
                   id: zoneTimeLabels
-                  spacing: root.spaceTight
-                  Text { width: parent.width; text: timezoneRow.modelData.time; color: timezoneRow.pinned ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight; horizontalAlignment: Text.AlignRight }
-                  Text { text: timezoneRow.modelData.day; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-                  HoverHandler { id: zoneTimeHover }
+                  implicitWidth: Math.max(zoneTimeText.implicitWidth, zoneDateText.implicitWidth)
+                  implicitHeight: zoneTimeColumn.implicitHeight
+                  Column {
+                    id: zoneTimeColumn
+                    width: parent.width
+                    spacing: root.spaceTight
+                    Text { id: zoneTimeText; width: parent.width; text: timezoneRow.modelData.time; color: timezoneRow.pinned ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight; horizontalAlignment: Text.AlignRight }
+                    Text { id: zoneDateText; width: parent.width; text: timezoneRow.modelData.day; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
+                  }
                   MouseArea {
                     id: zoneTimeCopyMouse
                     anchors.fill: parent
@@ -6848,7 +7016,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-github"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
       PanelSurface {
         id: githubSurface
@@ -7311,6 +7479,9 @@ Shared.Theme {
   Variants {
     model: Quickshell.screens
     PanelWindow {
+      id: networkWindow
+      property bool addressesExpanded: false
+      readonly property var addresses: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface)
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "network" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -7323,9 +7494,12 @@ Shared.Theme {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-network"
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) {
-        root.refreshStatus("aux")
-        Qt.callLater(function() { networkContent.forceActiveFocus() })
+      onVisibleChanged: {
+        addressesExpanded = false
+        if (visible) {
+          root.refreshStatus("aux")
+          Qt.callLater(function() { networkContent.forceActiveFocus() })
+        }
       }
 
       PanelSurface {
@@ -7414,12 +7588,29 @@ Shared.Theme {
                 font.family: root.fontFamily
                 font.pixelSize: root.textCaption
               }
-              Repeater {
-                model: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface)
-                Item {
+              SectionRule {
+                width: parent.width
+                label: "IP ADDRESSES"
+                detail: String(networkWindow.addresses.length)
+                collapsible: networkWindow.addresses.length > 0
+                expanded: networkWindow.addressesExpanded
+                activeFocusOnTab: collapsible
+                onToggled: networkWindow.addressesExpanded = !networkWindow.addressesExpanded
+                Keys.onSpacePressed: toggled()
+                Keys.onReturnPressed: toggled()
+              }
+              SeeleListView {
+                id: addressList
+                width: parent.width
+                height: networkWindow.addressesExpanded ? Math.min(count, 4) * root.controlHeight : 0
+                visible: height > 0
+                clip: true
+                model: networkWindow.addresses
+                Behavior on height { NumberAnimation { duration: root.durationNormal } }
+                delegate: Item {
                   id: addressRow
                   required property var modelData
-                  width: parent.width
+                  width: ListView.view.width
                   height: root.controlHeight
                   Text {
                     anchors { left: parent.left; right: addressCopy.left; verticalCenter: parent.verticalCenter; rightMargin: root.spaceSmall }
@@ -7442,10 +7633,12 @@ Shared.Theme {
                     enabled: !controlProcess.running
                   }
                 }
+                ScrollBar.vertical: SlimScrollBar { popupHovered: addressListHover.hovered }
+                HoverHandler { id: addressListHover }
               }
               Text {
                 width: parent.width
-                visible: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface).length === 0
+                visible: networkWindow.addresses.length === 0
                 text: "No usable IP addresses"
                 color: root.subtext
                 font.family: root.fontFamily
@@ -8387,14 +8580,15 @@ Shared.Theme {
       id: notificationWindow
 
       required property var modelData
-      readonly property var entries: NotificationSearch.filter(root.notificationHistoryOpen
+      readonly property var entries: root.notificationHistoryOpen
         ? (root.systemData.notifications.history || [])
-        : (root.systemData.notifications.items || []), notificationSearch.text)
+        : (root.systemData.notifications.items || [])
       // Everything above the list: the panel's own padding, the header, the
-      // history and clear row, and the gap on either side of it.
-      readonly property int chromeHeight: root.panelMargin * 2 + root.panelHeaderHeight
-        + root.panelSpacing + 36 + root.panelSpacing + root.chipHeight + root.panelSpacing
-        + root.rowHeight + root.panelSpacing
+      // view switch and clear row, and the gap on either side of it. Measured
+      // from the parts themselves, because the header grows a detail line when
+      // there is a count to report and a counted constant would not follow it.
+      readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
+        + root.panelSpacing + notificationViews.height + root.panelSpacing
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -8429,14 +8623,7 @@ Shared.Theme {
         Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
-      function toggleHistory() {
-        root.notificationHistoryOpen = !root.notificationHistoryOpen
-      }
-
-      onVisibleChanged: {
-        remeasure()
-        if (visible) Qt.callLater(function() { notificationSearch.forceActiveFocus(); notificationSearch.selectAll() })
-      }
+      onVisibleChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
       // list says it changed.
@@ -8454,42 +8641,36 @@ Shared.Theme {
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           PanelHeader {
+            id: notificationHeader
+
             width: parent.width
             glyph: root.systemData.dnd ? "󰂛" : "󰂚"
-            title: root.notificationHistoryOpen ? "Last 24 hours" : "Notifications"
+            // The view switch below says which side is being read, so the
+            // title stays put and the count goes where every other panel puts
+            // what it is about.
+            title: "Notifications"
+            // The panel is an inbox, so the count says how much is still
+            // waiting rather than repeating the word above it.
+            detail: notificationWindow.entries.length === 0 ? ""
+              : root.notificationHistoryOpen
+                ? notificationWindow.entries.length + " in the past 24 hours"
+                : notificationWindow.entries.length + " waiting"
 
-            // The count is small print beside a large title, and centring
-            // both line boxes in the same row leaves the digits floating
-            // above the title: the shorter face has the shorter box, so its
-            // baseline lands higher. The offset is the distance between the
-            // two baselines, which puts the count on the title's line.
-            FontMetrics { id: notificationTitleMetrics; font.family: root.fontFamily; font.pixelSize: root.textTitle }
-            FontMetrics { id: notificationCountMetrics; font.family: root.fontFamily; font.pixelSize: root.textBody }
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.verticalCenterOffset: Math.round((notificationCountMetrics.height - notificationTitleMetrics.height) / 2
-                + notificationTitleMetrics.ascent - notificationCountMetrics.ascent)
-              text: String(notificationWindow.entries.length)
-              color: root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textBody
-            }
             // Silence is an action, not a setting with a caption: the header
             // mark already reports whether the shell is muted, so the control
             // beside it is the same square button every other panel header
             // uses rather than a labelled switch wedged into the title row.
-            Rectangle {
+            IconButton {
               readonly property bool busy: root.controlBusy("dnd", "")
 
               anchors.verticalCenter: parent.verticalCenter
               width: root.chipHeight
               height: root.chipHeight
-              radius: root.radius
-              color: dndMouse.pressed ? root.pressColor
-                : root.systemData.dnd ? root.alpha(root.yellow, dndMouse.containsMouse ? 0.24 : 0.14)
-                : dndMouse.containsMouse ? root.hoverColor
-                : root.clearColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
+              tint: root.yellow
+              active: root.systemData.dnd
+              hovered: dndMouse.containsMouse
+              pressed: dndMouse.pressed
+
               Text {
                 visible: !parent.busy
                 anchors.centerIn: parent
@@ -8511,119 +8692,96 @@ Shared.Theme {
               HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
             }
           }
+          // Current and history are two views of one list, not two errands, so
+          // they are a well with the one being read lit inside it. Clear is a
+          // one-shot action and stays a button beside it.
           Row {
-            width: parent.width; spacing: 8
-            Rectangle {
-              width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: historyMouse.pressed ? root.pressColor : root.notificationHistoryOpen ? root.selectedColor : root.cardColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-              HoverWash { hovered: historyMouse.containsMouse }
-              Text {
-                anchors.centerIn: parent
-                text: root.notificationHistoryOpen ? "Back" : "History"
-                color: root.text
-                font.family: root.fontFamily
-                font.pixelSize: root.textLabel
-                font.weight: root.weightStrong
+            id: notificationViews
+
+            width: parent.width
+            spacing: root.spaceMedium
+
+            SegmentWell {
+              width: parent.width - notificationClear.width - parent.spacing
+
+              Repeater {
+                model: [
+                  { label: "Current", history: false },
+                  { label: "History", history: true }
+                ]
+
+                Segment {
+                  id: notificationView
+
+                  required property var modelData
+
+                  width: parent.width / 2
+                  selected: root.notificationHistoryOpen === modelData.history
+                  hovered: notificationViewMouse.containsMouse
+                  pressed: notificationViewMouse.pressed
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: notificationView.modelData.label
+                    color: notificationView.selected ? root.accent : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: notificationView.selected ? root.weightStrong : root.weightRegular
+                  }
+                  MouseArea {
+                    id: notificationViewMouse
+                    anchors.fill: parent
+                    enabled: !notificationView.selected
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.notificationHistoryOpen = notificationView.modelData.history
+                  }
+                  HoverTip { mouse: notificationViewMouse; inOverlay: true; text: notificationView.modelData.history ? "Show the past 24 hours" : "Show current notifications" }
+                }
               }
-              MouseArea { id: historyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: notificationWindow.toggleHistory() }
-              HoverTip { mouse: historyMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Show current notifications" : "Show the past 24 hours" }
             }
+
             Rectangle {
+              id: notificationClear
+
               readonly property bool busy: root.controlBusy("notifications", "clear")
               readonly property bool complete: root.controlCompleted("notifications", "clear")
               readonly property bool failed: root.controlFailed("notifications", "clear")
-              width: (parent.width - 8) / 2; height: 36; radius: root.radius
-              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : clearMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+
+              width: 96
+              height: root.chipHeight
+              radius: root.radius
+              color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : root.cardColor
+              antialiasing: true
               Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+              CardEdge {}
+              HoverWash { hovered: clearMouse.containsMouse }
+
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
               MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
+              HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
             }
-          }
-          Row {
-            id: quietPresets
-            width: parent.width
-            height: root.chipHeight
-            spacing: root.spaceSmall
-            Text {
-              width: 104
-              height: parent.height
-              text: root.systemData.notifications.dndUntil > 0
-                ? "Until " + Qt.formatDateTime(new Date(root.systemData.notifications.dndUntil * 1000), "HH:mm") : "Quiet for"
-              color: root.systemData.dnd ? root.yellow : root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-              verticalAlignment: Text.AlignVCenter
-            }
-            Repeater {
-              model: [{minutes:15,label:"15 min"}, {minutes:60,label:"1 hour"}, {minutes:240,label:"4 hours"}]
-              Rectangle {
-                required property var modelData
-                width: (quietPresets.width - 104 - root.spaceSmall * 3) / 3
-                height: root.chipHeight
-                radius: root.radiusSmall
-                activeFocusOnTab: enabled
-                color: quietMouse.pressed ? root.pressColor : quietHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-                function activate() { notificationStore.controller.snooze(modelData.minutes, Date.now() / 1000) }
-                Keys.onPressed: event => {
-                  if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                    activate()
-                    event.accepted = true
-                  }
-                }
-                CardEdge {}
-                HoverHandler { id: quietHover }
-                Text { anchors.centerIn: parent; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                MouseArea { id: quietMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: parent.activate() }
-              }
-            }
-          }
-          TextField {
-            id: notificationSearch
-            width: parent.width
-            height: root.rowHeight
-            maximumLength: 256
-            placeholderText: "Search app, title, or message…"
-            color: root.text
-            placeholderTextColor: root.overlay
-            selectionColor: root.accent
-            selectedTextColor: root.base
-            font.family: root.fontFamily
-            font.pixelSize: root.textLabel
-            leftPadding: root.spaceMedium
-            rightPadding: root.spaceMedium
-            background: Rectangle {
-              radius: root.radius
-              color: root.wellColor
-              border.color: notificationSearch.activeFocus ? root.accent : root.cardBorder
-              border.width: 1
-            }
-            onTextChanged: { notificationCurrentList.positionViewAtBeginning(); notificationHistoryList.positionViewAtBeginning(); notificationWindow.remeasure() }
-            Keys.onEscapePressed: { if (text !== "") clear(); else root.closeOverlays() }
           }
           Item {
             id: notificationViewport
 
             width: parent.width
-            height: parent.height - root.panelHeaderHeight - root.panelSpacing - 36 - root.panelSpacing
-              - quietPresets.height - root.panelSpacing - notificationSearch.height - root.panelSpacing
+            height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
-              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
-              visible: !root.notificationHistoryOpen && entries.length > 0
+              visible: !root.notificationHistoryOpen && (root.systemData.notifications.items || []).length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
             NotificationList {
               id: notificationHistoryList
-              query: notificationSearch.text
               onContentHeightChanged: notificationWindow.remeasure()
               history: true
-              visible: root.notificationHistoryOpen && entries.length > 0
+              visible: root.notificationHistoryOpen && (root.systemData.notifications.history || []).length > 0
               anchors.fill: parent
               ScrollBar.vertical: SlimScrollBar { popupHovered: notificationSurface.hovered }
             }
@@ -8633,7 +8791,7 @@ Shared.Theme {
               Text {
                 anchors.centerIn: parent
                 width: parent.width
-                text: notificationSearch.text.trim() !== "" ? "No notifications match your search" : root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
+                text: root.notificationHistoryOpen ? "Nothing arrived in the past 24 hours" : "No notifications right now"
                 color: root.overlay
                 font.family: root.fontFamily
                 font.pixelSize: root.textLabel

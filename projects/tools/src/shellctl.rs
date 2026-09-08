@@ -22,7 +22,7 @@ Commands:
   notes                     Open the standalone Notes and voice memo app
   voxtype                   Toggle voice dictation
   lock                      Lock the session
-  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
+  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, or dnd
   notification-status       Print notification state as JSON
   ping                      Check shell IPC
 "#;
