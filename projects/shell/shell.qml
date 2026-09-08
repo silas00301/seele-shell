@@ -12,6 +12,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Wayland
 import Quickshell.Widgets
 import "media.js" as Media
+import "network.js" as Network
 import "time.js" as Time
 import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
@@ -7786,10 +7787,16 @@ ShellRoot {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-network"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) {
+        root.refreshStatus("aux")
+        Qt.callLater(function() { networkContent.forceActiveFocus() })
+      }
 
       PanelSurface {
         Column {
           id: networkContent
+          Keys.onEscapePressed: root.closeOverlays()
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
           PanelHeader {
@@ -7863,19 +7870,60 @@ ShellRoot {
                 }
               }
 
+              Text {
+                width: parent.width
+                text: root.systemData.networkInterface ? "Route via " + root.systemData.networkInterface : "No routed interface"
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
               Repeater {
-                model: [
-                  { label: "IP address", value: root.systemData.ipAddress || "Unavailable" },
-                  { label: "Gateway", value: (root.systemData.gateway || "Unavailable") + " · " + (root.systemData.connectionType || "None") }
-                ]
-
-                Row {
+                model: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface)
+                Item {
+                  id: addressRow
                   required property var modelData
                   width: parent.width
-                  height: 18
-                  Text { width: 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption }
-                  Text { width: parent.width - 92; anchors.verticalCenter: parent.verticalCenter; text: modelData.value; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+                  height: root.controlHeight
+                  Text {
+                    anchors { left: parent.left; right: addressCopy.left; verticalCenter: parent.verticalCenter; rightMargin: root.spaceSmall }
+                    text: addressRow.modelData.label + " · " + addressRow.modelData.value
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    MouseArea { id: addressHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                    HoverTip { mouse: addressHover; inOverlay: true; text: addressRow.modelData.detail }
+                  }
+                  NotificationButton {
+                    id: addressCopy
+                    anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                    label: "Copy"
+                    successLabel: "Copied"
+                    controlAction: "copy-address"
+                    value: addressRow.modelData.value
+                    enabled: !controlProcess.running
+                  }
                 }
+              }
+              Text {
+                width: parent.width
+                visible: Network.addresses(root.systemData.networkAddresses, root.systemData.networkInterface).length === 0
+                text: "No usable IP addresses"
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
+              Text {
+                width: parent.width
+                text: "Gateway · " + (root.systemData.gateway || "Unavailable")
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
               }
             }
           }
@@ -7946,7 +7994,6 @@ ShellRoot {
             width: parent.width; spacing: 8
             Repeater {
               model: [
-                {label:"Copy IP", action:"copy-ip", value:""},
                 {label:"Settings", action:"network-settings", value:""},
                 {label:"Allestörungen", action:"outages", value:""}
               ]
@@ -7955,10 +8002,10 @@ ShellRoot {
                 readonly property bool busy: root.controlBusy(modelData.action, modelData.value)
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
-                width: (parent.width - 16) / 3; height: 38; radius: root.radius
+                width: (parent.width - 8) / 2; height: 38; radius: root.radius
                 color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
-                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? (modelData.action === "copy-ip" ? "✓ Copied" : "✓ Opened") : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: root.textLead }
                 MouseArea {
                   id: networkActionMouse

@@ -17,6 +17,8 @@ QtObject {
   property bool wifiAvailable: false
   property string ipAddress: ""
   property string gateway: ""
+  property string networkInterface: ""
+  property var networkAddresses: []
   property var tailscale: ({ available: false, backend: "Unavailable", connected: false, needsLogin: false, name: "", ip: "", tailnet: "", peers: 0, onlinePeers: 0 })
   property var protonVpn: ({ available: false, connected: false, connection: "" })
   property var sshServer: ({ available: false, mode: "off", tailscaleAvailable: false, sshAvailable: false })
