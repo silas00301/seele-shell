@@ -77,6 +77,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./CenteredGlyph.qml} "$out/share/seele-shell/CenteredGlyph.qml"
+    install -m644 ${./NotificationClipboard.qml} "$out/share/seele-shell/NotificationClipboard.qml"
+    install -m644 ${./notification-copy.js} "$out/share/seele-shell/notification-copy.js"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
     install -m644 ${./SystemState.qml} "$out/share/seele-shell/SystemState.qml"
     install -m644 ${./UriPicker.qml} "$out/share/seele-shell/UriPicker.qml"
@@ -89,9 +91,7 @@ pkgs.stdenvNoCC.mkDerivation {
     ${tools}/bin/seele-tools grain "$out/share/seele-shell/grain.png"
     install -m644 ${./network.js} "$out/share/seele-shell/network.js"
     install -m644 ${./media.js} "$out/share/seele-shell/media.js"
-    install -m644 ${./notification-search.js} "$out/share/seele-shell/notification-search.js"
     install -m644 ${./notifications.js} "$out/share/seele-shell/notifications.js"
-    install -m644 ${./player-volume.js} "$out/share/seele-shell/player-volume.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
     install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
@@ -183,7 +183,7 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/NotificationClipboard.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -208,11 +208,10 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"
-    node ${../../tests/notification-search.js} "$out/share/seele-shell/notification-search.js" "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/shell.qml"
+    node ${../../tests/notification-copy.js} "$out/share/seele-shell/notification-copy.js" "$out/share/seele-shell/NotificationClipboard.qml" "$out/share/seele-shell/shell.qml"
     node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
-    node ${../../tests/player-volume.js} "$out/share/seele-shell/player-volume.js"
     node ${../../tests/time.js} "$out/share/seele-shell/time.js"
     node ${../../tests/uri-picker.js} "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \
