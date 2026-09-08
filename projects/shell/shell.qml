@@ -6331,6 +6331,55 @@ ShellRoot {
     model: Quickshell.screens
     PanelWindow {
       id: clockWindow
+      property string copyStatus: ""
+      property bool copyPending: false
+
+      function copyClockTimestamp(offset, label) {
+        var value = Time.clockTimestamp(root.now, offset)
+        if (!value || copyPending || clockClipboard.running) return
+        copyStatus = "Copying timestamp…"
+        copyPending = true
+        clockClipboard.payload = value
+        clockClipboard.label = label
+        clockCopyTimeout.restart()
+        clockClipboard.stdinEnabled = true
+        clockClipboard.running = true
+      }
+
+      function copyClockSelection() {
+        var zone = timezoneList.model[timezoneList.currentIndex]
+        if (zone) copyClockTimestamp(zone.offset, zone.label)
+      }
+
+      function finishClockCopy(exitCode, exitStatus) {
+        if (!copyPending) return
+        clockCopyTimeout.stop()
+        copyPending = false
+        copyStatus = exitCode === 0 && exitStatus === 0
+          ? "Copied " + clockClipboard.label : "Could not copy timestamp"
+      }
+
+      Process {
+        id: clockClipboard
+        property string payload: ""
+        property string label: ""
+        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+        onStarted: {
+          write(payload)
+          stdinEnabled = false
+        }
+        onExited: (exitCode, exitStatus) => clockWindow.finishClockCopy(exitCode, exitStatus)
+      }
+
+      Timer {
+        id: clockCopyTimeout
+        interval: 5000
+        onTriggered: {
+          clockWindow.finishClockCopy(-1, 1)
+          clockClipboard.running = false
+        }
+      }
+
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "clock" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -6344,6 +6393,7 @@ ShellRoot {
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-clock"
       onVisibleChanged: if (visible) Qt.callLater(function() {
+        if (!clockWindow.copyPending) clockWindow.copyStatus = ""
         timezoneSearch.forceActiveFocus()
         timezoneSearch.selectAll()
       })
@@ -6361,7 +6411,7 @@ ShellRoot {
             width: parent.width
             glyph: "󰥔"
             title: "World clock"
-            detail: "Pin zones to the top"
+            detail: clockWindow.copyStatus || "Enter copies zone · Ctrl+Enter local"
 
             Text {
               text: Qt.formatDateTime(root.now, "HH:mm:ss")
@@ -6369,6 +6419,15 @@ ShellRoot {
               font.family: root.fontFamily
               font.pixelSize: root.textTitle
               font.weight: root.weightStrong
+              MouseArea {
+                id: localTimeCopyMouse
+                anchors.fill: parent
+                enabled: !clockWindow.copyPending
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: clockWindow.copyClockTimestamp(undefined, "local time")
+              }
+              HoverTip { mouse: localTimeCopyMouse; inOverlay: true; text: "Copy local ISO timestamp" }
             }
           }
 
@@ -6387,7 +6446,22 @@ ShellRoot {
             rightPadding: 12
             background: Rectangle { radius: root.radius; color: root.wellColor; border.color: timezoneSearch.activeFocus ? root.accent : root.cardBorder; border.width: 1 }
 
-            Keys.onEscapePressed: root.closeOverlays()
+            onTextChanged: timezoneList.currentIndex = 0
+            Keys.onPressed: event => {
+              if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return
+              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (event.modifiers & Qt.ControlModifier) clockWindow.copyClockTimestamp(undefined, "local time")
+                else clockWindow.copyClockSelection()
+              } else if (event.key === Qt.Key_Down) {
+                timezoneList.currentIndex = Math.min(timezoneList.count - 1, timezoneList.currentIndex + 1)
+                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
+              } else if (event.key === Qt.Key_Up) {
+                timezoneList.currentIndex = Math.max(0, timezoneList.currentIndex - 1)
+                timezoneList.positionViewAtIndex(timezoneList.currentIndex, ListView.Contain)
+              } else if (event.key === Qt.Key_Escape) root.closeOverlays()
+              else return
+              event.accepted = true
+            }
           }
 
           SeeleListView {
@@ -6400,12 +6474,14 @@ ShellRoot {
             delegate: Rectangle {
               id: timezoneRow
               required property var modelData
+              required property int index
               readonly property bool pinned: root.timezonePinned(modelData.id)
               width: ListView.view.width
               height: 54
               radius: root.radius
-              color: timezoneRowHover.hovered ? root.cardColor : root.rowColor
+              color: timezoneList.currentIndex === index ? root.selectedColor : timezoneRowHover.hovered ? root.cardColor : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
+              HoverWash { hovered: timezoneList.currentIndex === timezoneRow.index && timezoneRowHover.hovered }
 
               Text { visible: modelData.kind === "city"; anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: 25; text: modelData.flag; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
               Column {
@@ -6416,13 +6492,34 @@ ShellRoot {
                 Text { width: parent.width; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong; elide: Text.ElideRight }
                 Text { width: parent.width; text: modelData.id + " · " + modelData.abbreviation + " " + modelData.offset; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textMicro; elide: Text.ElideRight }
               }
-              Column {
+              Item {
                 anchors.right: pinTimezoneButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: 76
-                Text { width: parent.width; text: Time.offsetTime(root.now, modelData.offset, false) || modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong; horizontalAlignment: Text.AlignRight }
-                Text { width: parent.width; text: modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textMicro; horizontalAlignment: Text.AlignRight }
+                height: zoneTimeLabels.implicitHeight
+                Rectangle {
+                  anchors.fill: parent
+                  radius: root.radiusSmall
+                  color: root.clearColor
+                  HoverWash { hovered: zoneTimeHover.hovered }
+                }
+                Column {
+                  id: zoneTimeLabels
+                  width: parent.width
+                  Text { width: parent.width; text: Time.offsetTime(root.now, timezoneRow.modelData.offset, false) || timezoneRow.modelData.time; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textLead; font.weight: root.weightStrong; horizontalAlignment: Text.AlignRight }
+                  Text { width: parent.width; text: timezoneRow.modelData.day; color: root.mutedText; font.family: root.fontFamily; font.pixelSize: root.textMicro; horizontalAlignment: Text.AlignRight }
+                }
+                HoverHandler { id: zoneTimeHover }
+                MouseArea {
+                  id: zoneTimeCopyMouse
+                  anchors.fill: parent
+                  enabled: !clockWindow.copyPending
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: clockWindow.copyClockTimestamp(timezoneRow.modelData.offset, timezoneRow.modelData.label)
+                }
+                HoverTip { mouse: zoneTimeCopyMouse; inOverlay: true; text: "Copy ISO timestamp · " + timezoneRow.modelData.id }
               }
               // The row lifts for a pointer anywhere on it, Pin button
               // included. A hover area stopped at that button's edge dropped

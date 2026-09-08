@@ -55,81 +55,71 @@ assert(time.offsetTime(instant, "+0530", true) === "03:00:07", "expanded clocks 
 assert(time.offsetTime(instant, "-0700", false) === "14:30", "compact offset times must omit seconds");
 assert(time.offsetTime(instant, "invalid", true) === "", "invalid UTC offsets must not produce a clock");
 
-// Date copying follows the calendar's local day, including leap days and years.
-assert(time.calendarDate(new Date(2026, 0, 1, 0, 1)) === "2026-01-01", "midnight uses local date fields");
-assert(time.calendarDate(new Date(2028, 1, 29, 23, 59)) === "2028-02-29", "leap dates remain valid near midnight");
-assert(time.calendarDate(new Date(NaN)) === "", "invalid dates cannot reach the clipboard");
-assert(days.filter(cell => cell.inMonth).map(time.calendarCopyDate).every((value, i) => value === `2026-08-${String(i + 1).padStart(2, "0")}`), "each real day carries its exact ISO date");
-assert(cells.filter(cell => cell.week || !cell.inMonth).every(cell => time.calendarCopyDate(cell) === ""), "week numbers and blank cells cannot be copied");
-assert(time.calendarCells(new Date(2026, 11, 31, 23, 59), 1).some(cell => cell.date === "2027-01-01"), "scrolling across a year supplies the next year's dates");
+// Full timestamps preserve the represented instant across date boundaries.
+assert(time.clockTimestamp(instant, "+0530") === "2026-08-24T03:00:07+05:30", "fractional offsets cross into the next local day");
+assert(time.clockTimestamp(new Date("2027-01-01T00:01:02Z"), "-1200") === "2026-12-31T12:01:02-12:00", "westward timestamps cross the year boundary");
+assert(time.clockTimestamp(new Date("2028-02-28T23:59:59Z"), "+0545") === "2028-02-29T05:44:59+05:45", "quarter-hour offsets preserve leap day");
+for (const offset of ["+0000", "-0700", "+1400", "-0330", "+1245"]) {
+  assert(Date.parse(time.clockTimestamp(instant, offset)) === instant.getTime(), `offset ${offset} preserves the instant`);
+}
+assert(time.clockTimestamp(new Date("2026-03-29T00:59:59Z"), "+0100") === "2026-03-29T01:59:59+01:00", "pre-DST snapshot remains explicit");
+assert(time.clockTimestamp(new Date("2026-03-29T01:00:00Z"), "+0200") === "2026-03-29T03:00:00+02:00", "post-DST snapshot uses its updated offset");
+for (const offset of ["", null, "UTC", "+2400", "+1260", "$(touch bad)", "+00:00"]) {
+  assert(time.clockTimestamp(instant, offset) === "", "invalid worker offsets cannot reach the clipboard");
+}
+assert(time.clockTimestamp(new Date(NaN), "+0000") === "", "invalid instants cannot produce a timestamp");
+const localTimestamp = time.clockTimestamp(instant);
+assert(Date.parse(localTimestamp) === instant.getTime(), "local timestamp preserves the instant in any host timezone");
+assert(localTimestamp.slice(11, 13) === String(instant.getHours()).padStart(2, "0"), "local timestamp uses the current local timezone");
 
-// Execute the actual QML request/completion methods, with only the process and
-// timer replaced. This guards acknowledgement, overlap, failure and stdin data.
-const shellSource = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
-const calendarContext = {
+const clockShellSource = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
+const clockContext = {
   Time: time,
-  selectedDate: "",
+  root: { now: instant },
   copyStatus: "",
   copyPending: false,
-  calendarClipboard: { payload: "", stdinEnabled: false, running: false },
-  calendarCopyTimeout: { restart() { this.active = true; }, stop() { this.active = false; } },
+  clockClipboard: { payload: "", label: "", stdinEnabled: false, running: false },
+  clockCopyTimeout: { restart() { this.active = true; }, stop() { this.active = false; } },
+  timezoneList: { model: [{ offset: "+0530", label: "Kolkata" }], currentIndex: 0 },
 };
-vm.createContext(calendarContext);
-for (const name of ["copyCalendarDate", "finishCalendarCopy"]) {
-  const match = shellSource.match(new RegExp(`      function ${name}\\([^]*?\\n      }`));
+vm.createContext(clockContext);
+for (const name of ["copyClockTimestamp", "finishClockCopy", "copyClockSelection"]) {
+  const match = clockShellSource.match(new RegExp(`      function ${name}\\([^]*?\\n      }`));
   assert(match, `production ${name} handler exists`);
-  vm.runInContext(match[0], calendarContext);
+  vm.runInContext(match[0], clockContext);
 }
-calendarContext.copyCalendarDate(cells[0]);
-assert(!calendarContext.copyPending, "week click cannot start a process");
-calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-23" });
-assert(calendarContext.selectedDate === "2026-08-23" && calendarContext.copyPending, "click selects the requested day and begins copy");
-assert(calendarContext.calendarClipboard.payload === "2026-08-23" && calendarContext.calendarClipboard.stdinEnabled, "clipboard text is exact stdin payload");
-assert(!calendarContext.copyStatus.startsWith("Copied"), "starting a process must not claim success");
-calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
-assert(calendarContext.calendarClipboard.payload === "2026-08-23", "a second click cannot replace an in-flight payload");
-calendarContext.calendarClipboard.running = false;
-calendarContext.finishCalendarCopy(0, 0);
-assert(calendarContext.copyStatus === "Copied 2026-08-23" && !calendarContext.copyPending && !calendarContext.calendarCopyTimeout.active, "only successful completion acknowledges the exact date");
-calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
-calendarContext.calendarClipboard.running = false;
-calendarContext.finishCalendarCopy(1, 0);
-assert(calendarContext.copyStatus === "Could not copy date", "nonzero clipboard exit reports failure");
-calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
-calendarContext.calendarClipboard.running = false;
-calendarContext.finishCalendarCopy(0, 1);
-assert(calendarContext.copyStatus === "Could not copy date", "a crashed process cannot report success");
-calendarContext.copyCalendarDate({ inMonth: true, date: "2026-08-24" });
-calendarContext.calendarClipboard.running = false;
-calendarContext.finishCalendarCopy(-1, 1);
-calendarContext.calendarClipboard.running = false;
-calendarContext.finishCalendarCopy(0, 0);
-assert(calendarContext.copyStatus === "Could not copy date" && !calendarContext.copyPending, "timeout releases the request and ignores late completion");
-const calendarProcess = shellSource.match(/id: calendarClipboard[^]*?onStarted: \{([^]*?)\n        }/);
-assert(calendarProcess, "production clipboard process exists");
-let calendarWritten = "";
-const stdin = { payload: "2026-08-23", stdinEnabled: true, write(value) { calendarWritten = value; } };
-vm.createContext(stdin);
-vm.runInContext(calendarProcess[1], stdin);
-assert(calendarWritten === "2026-08-23" && !stdin.stdinEnabled, "process writes exact date then closes stdin");
-console.log("Calendar date and clipboard tests passed");
-
-assert(time.moveCalendarDate(new Date(2026, 7, 23), "2026-08-31", 1).date === "2026-09-01", "keyboard movement crosses a month");
-assert(time.moveCalendarDate(new Date(2026, 7, 23), "2026-12-31", 1).monthOffset === 5, "keyboard movement scrolls into the correct next-year month");
-assert(time.moveCalendarDate(new Date(2028, 1, 1), "2028-02-28", 1).date === "2028-02-29", "keyboard movement retains leap day");
-assert(time.moveCalendarDate(new Date(2026, 2, 1), "2026-03-28", 1).date === "2026-03-29", "DST movement counts calendar days");
-assert(time.moveCalendarDate(now, "", 0).date === "2026-08-23", "Home selects local today");
-assert(time.moveCalendarDate(now, "2031-08-31", 1) === null, "navigation stays inside the rendered month range");
-assert(time.moveCalendarDate(now, "2026-02-30", 1) === null, "invalid selected dates cannot roll into another month");
-calendarContext.root = { now };
-calendarContext.ListView = { Contain: 2 };
-calendarContext.calendarMonths = { positionViewAtIndex(index, mode) { this.index = index; this.mode = mode; } };
-vm.runInContext(shellSource.match(/      function moveCalendarSelection\([^]*?\n      }/)[0], calendarContext);
-calendarContext.selectedDate = "2026-08-31";
-calendarContext.moveCalendarSelection(1, false);
-assert(calendarContext.selectedDate === "2026-09-01" && calendarContext.calendarMonths.index === 61, "production arrow handler moves selection and scrolls the month");
-calendarContext.moveCalendarSelection(0, true);
-assert(calendarContext.selectedDate === "2026-08-23" && calendarContext.calendarMonths.index === 60, "production Home handler returns to today");
-calendarContext.copyPending = true;
-calendarContext.moveCalendarSelection(1, false);
-assert(calendarContext.selectedDate === "2026-08-23", "keyboard movement cannot relabel a pending copy");
+clockContext.copyClockTimestamp("invalid", "bad");
+assert(!clockContext.copyPending, "bad offsets do not start the process");
+clockContext.copyClockSelection();
+assert(clockContext.clockClipboard.payload === "2026-08-24T03:00:07+05:30" && clockContext.copyPending, "keyboard selection copies the selected result's timestamp");
+assert(!clockContext.copyStatus.startsWith("Copied"), "starting clipboard process does not acknowledge success");
+clockContext.copyClockTimestamp("-0700", "Los Angeles");
+assert(clockContext.clockClipboard.label === "Kolkata", "in-flight payload and label cannot be overwritten");
+clockContext.clockClipboard.running = false;
+clockContext.finishClockCopy(0, 0);
+assert(clockContext.copyStatus === "Copied Kolkata" && !clockContext.copyPending && !clockContext.clockCopyTimeout.active, "only successful completion acknowledges the selected zone");
+clockContext.copyClockTimestamp(undefined, "local time");
+assert(clockContext.clockClipboard.payload === localTimestamp, "local keyboard shortcut uses the local offset");
+clockContext.clockClipboard.running = false;
+clockContext.finishClockCopy(1, 0);
+assert(clockContext.copyStatus === "Could not copy timestamp", "failed clipboard exit reports failure");
+clockContext.copyClockTimestamp("+0000", "UTC");
+clockContext.clockClipboard.running = false;
+clockContext.finishClockCopy(0, 1);
+assert(clockContext.copyStatus === "Could not copy timestamp", "crash status never acknowledges success");
+clockContext.copyClockTimestamp("+0000", "UTC");
+clockContext.clockClipboard.running = false;
+clockContext.finishClockCopy(-1, 1);
+clockContext.finishClockCopy(0, 0);
+assert(clockContext.copyStatus === "Could not copy timestamp" && !clockContext.copyPending, "timeout clears pending state and ignores a late exit");
+clockContext.timezoneList.model = [];
+clockContext.copyClockSelection();
+assert(!clockContext.copyPending, "Enter with no search results cannot start a copy");
+const clockProcess = clockShellSource.match(/id: clockClipboard[^]*?onStarted: \{([^]*?)\n        }/);
+assert(clockProcess, "production clipboard process exists");
+let timestampWritten = "";
+const clockStdin = { payload: localTimestamp, stdinEnabled: true, write(value) { timestampWritten = value; } };
+vm.createContext(clockStdin);
+vm.runInContext(clockProcess[1], clockStdin);
+assert(timestampWritten === localTimestamp && !clockStdin.stdinEnabled, "process writes exact timestamp and closes stdin");
+console.log("World clock timestamp and clipboard tests passed");

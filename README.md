@@ -66,20 +66,23 @@ Every response recalculates live times, offsets, and pins. A changed TZDIR,
 database tables/version, year, or locale invalidates the metadata cache. The
 shell keeps its 30-second clock refresh and restarts either worker if it exits.
 
-## Calendar date copying
+## World clock timestamp copying
 
-Click a day in the calendar to select it and copy its ISO date (`YYYY-MM-DD`).
-The header confirms completion or reports a clipboard failure; hovering a day
-shows the exact date. ISO week numbers and blank cells are not selectable.
-Arrow keys move the selection by one day or week and scroll its month into view;
-Enter copies it, Home selects today, and Escape closes the panel. Today returns
-to the current month and clears the selection. The selection is
-local to the open panel and does not write calendar data to disk.
+Click the time in any world-clock row, including a pinned zone, to copy an ISO
+timestamp such as `2026-08-24T03:00:07+05:30`. Click the local clock in the header
+to copy the local timestamp. From search, Up/Down selects a result, Enter copies
+its timestamp, and Ctrl+Enter copies local time. Pin buttons keep their existing
+action. The panel
+confirms a successful clipboard exit or reports failure; hover tips identify
+both copy targets.
 
-`time.js` formats dates from local calendar fields, so copying near midnight
-does not shift the day through UTC. The existing `wl-copy` dependency receives
-the date on stdin, and the panel waits for its exit before reporting success.
-`tests/time.js` covers date boundaries and the production clipboard callbacks.
+The timestamp includes seconds, date rollovers, and the numeric UTC offset.
+Zone offsets come from the existing clock worker's snapshot, refreshed every
+30 seconds; a copy exactly across a DST transition can therefore use the previous
+offset until the next refresh. The local header uses the local offset at the
+clicked instant. The existing `wl-copy` receives only timestamp text on stdin.
+`tests/time.js` covers production formatting and clipboard request/completion
+callbacks, including failure and overlapping clicks.
 
 ## Screen links
 
