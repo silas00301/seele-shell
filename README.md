@@ -10,6 +10,7 @@ the main shell plus separate Notes, greeter, lock-screen, and polkit packages.
 - `projects/notes/`: standalone Notes and voice memo application.
 - `projects/shared/`: theme, surface, typography, control, and waveform components shared by the shell and Notes.
 - `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, URI picking, and shell-control commands.
+- `projects/ai-prompt/`: private resident controller for quick Codex questions and response handoff.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
 - `tests/`: package install checks and focused behavior tests.
@@ -143,6 +144,41 @@ memory, including history across QML reloads.
 `tests/notifications.js` covers lifecycle, grouping, and the quiet-period
 deadline; `tests/notification-server.sh` checks the native service on a
 private bus.
+
+## Quick AI prompt
+
+Run `seele-shellctl prompt` (Super + Space on nerv) to open the centered prompt
+on the focused output. The QML surface and its small Python controller are
+resident with the shell, but opening it does not start Codex or read a context
+source. Escape closes it. Losing keyboard focus closes an unfinished prompt;
+an answer remains available for copying or insertion until it is dismissed.
+
+Context is opt-in through controls typed into the prompt. `@window` sends only
+the focused application's name and window title. `@dir` resolves the focused
+terminal's working directory through `/proc`; it is unavailable for other
+applications. `@screen` captures only the output where the panel opened and
+only after its **Capture** action hides the panel. The resulting thumbnail is
+the exact frozen image Send attaches. `@clip` and `@select` each require an
+**Allow once** action before their exact text is read; their Review action
+exposes the complete bounded payload. The panel previews every selected source
+and discloses truncation before it can be sent. Context, prompts, answers, and
+captures stay in memory or a mode-0700 runtime directory; captures
+are removed as soon as their turn ends.
+
+Enter sends while the prompt contains text. After an answer arrives, Enter
+copies it and Ctrl+Enter hides the panel, restores the exact original Hyprland
+window without moving the pointer, and types the answer with `wtype`. A visible
+button exists for both actions. Follow-ups use `codex exec resume` against one
+read-only session rooted in the private runtime workspace. Closing the panel
+terminates an active turn and
+runs `codex delete --force` for that session. The header reuses CodexBar's
+subscription capacity when it has already been collected.
+
+`tests/ai-prompt.py` drives the production controller through fake executables
+to prove the lazy privacy gates, private screenshot cleanup, read-only Codex
+arguments, follow-up reuse, exact copy/insert payloads, focus validation, and
+cancellation and shutdown session deletion. `tests/ai-prompt.js` covers mention
+parsing and the QML interaction contract.
 
 ## Screen links
 

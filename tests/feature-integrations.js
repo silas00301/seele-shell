@@ -6,6 +6,8 @@ const pkg = fs.readFileSync(process.argv[3], 'utf8');
 
 const shellPatterns = {
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
+  'quick AI prompt controller': /AiPrompt\s*\{\s*\n\s*id: aiPrompt/,
+  'quick AI prompt IPC': /function togglePrompt\(\): void \{ root\.togglePrompt\(\) \}/,
   'Home Assistant store': /HomeAssistantStore\s*\{\s*id: homeAssistantStore\s*\}/,
   'GitHub store': /GitHubStore\s*\{\s*\n\s*id: githubStore/,
   'GitHub leaves bar and click-away input available': /namespace: "seele-shell-github"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
@@ -28,6 +30,8 @@ for (const [feature, pattern] of Object.entries(shellPatterns)) {
 }
 
 const packagedSources = [
+  'AiPrompt.qml',
+  'ai-prompt.js',
   'FocusTimer.qml',
   'focus.js',
   'HomeAssistantStore.qml',
@@ -44,6 +48,8 @@ for (const source of packagedSources) {
 }
 
 const focusedTests = [
+  'ai-prompt.js',
+  'ai-prompt.py',
   'focus.js',
   'focus-timer.sh',
   'panel-layouts.js',
