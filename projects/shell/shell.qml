@@ -29,6 +29,15 @@ Shared.Theme {
     onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
   }
 
+  AiPrompt {
+    id: aiPrompt
+    theme: root
+    usage: root.codexCapacityText()
+    onUsageRefreshRequested: {
+      if (!root.agentData.generatedAt && !root.agentRefreshing) Qt.callLater(root.refreshAgents)
+    }
+  }
+
   property bool agentsOpen: false
   // Panels stay on the screen they were opened from. Tracking Hyprland's
   // focused monitor instead would move an open panel to another output the
@@ -182,6 +191,7 @@ Shared.Theme {
   }
 
   function closeOverlays() {
+    aiPrompt.close()
     uriPicker.close()
     cancelModuleDrag()
     agentsOpen = false
@@ -203,6 +213,14 @@ Shared.Theme {
     // surface covers it without changing what will be restored on dismissal.
     if (uriPicker.active) uriPicker.close()
     else uriPicker.open()
+  }
+
+  function togglePrompt() {
+    var shouldOpen = !aiPrompt.alive
+    var screen = currentScreen()
+    var window = promptWindowContext()
+    closeOverlays()
+    if (shouldOpen) aiPrompt.open(screen, window)
   }
 
   function toggleLauncher(mode) {
@@ -478,6 +496,19 @@ Shared.Theme {
 
   function windowLabel(window) {
     return root.windowAppName(window) || root.windowTitle(window)
+  }
+
+  function promptWindowContext() {
+    var window = Hyprland.activeToplevel
+    var ipc = window ? window.lastIpcObject || {} : {}
+    var pid = Number(ipc.pid || (window ? window.pid : 0) || 0)
+    return {
+      address: window ? String(window.address || ipc.address || "") : "",
+      title: root.windowTitle(window),
+      app: root.windowAppName(window),
+      classes: root.windowClasses(window),
+      pid: isNaN(pid) ? 0 : Math.floor(pid)
+    }
   }
 
   function spotifyPlayer() {
@@ -1338,6 +1369,20 @@ Shared.Theme {
     return parts.join(" · ")
   }
 
+  function codexCapacityText() {
+    var subscriptions = root.agentData.subscriptions || []
+    for (var i = 0; i < subscriptions.length; i++) {
+      var subscription = subscriptions[i]
+      var identity = (String(subscription.id || "") + " " + String(subscription.name || "")).toLowerCase()
+      if (identity.indexOf("codex") < 0 && identity.indexOf("openai") < 0) continue
+      var limit = root.subscriptionLimit(subscription.id)
+      return String(subscription.name || "Codex") + (limit ? " · " + root.freePercent(limit) + "% free" : "")
+    }
+    if (root.agentRefreshing) return "Codex · checking usage…"
+    if (root.agentError !== "") return "Codex · usage unavailable"
+    return "Codex · starts when you send"
+  }
+
   // A lit indicator takes you to the session it reports on. `seele-control`
   // owns resolving which window that is, because the harness is a descendant
   // of the terminal holding it and only /proc says which one.
@@ -1802,6 +1847,7 @@ Shared.Theme {
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
     function toggleAgents(): void { root.toggleAgents() }
+    function togglePrompt(): void { root.togglePrompt() }
     function toggleUris(): void { root.toggleUris() }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }

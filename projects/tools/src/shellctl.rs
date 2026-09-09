@@ -8,6 +8,7 @@ const USAGE: &str = r#"Usage: seele-shellctl [-q] <command> [arguments]
 Commands:
   menu [apps|commands]      Toggle the launcher
   agents                    Toggle the AI dashboard
+  prompt                    Toggle the quick AI prompt
   center                    Toggle the Control Center
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
@@ -72,6 +73,7 @@ pub fn run(arguments: &[String]) -> Result {
             &[rest.first().cloned().unwrap_or_else(|| "apps".into())],
         ),
         "agents" => call("toggleAgents", &[]),
+        "prompt" => call("togglePrompt", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),

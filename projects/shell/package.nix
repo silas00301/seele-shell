@@ -86,6 +86,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
     install -m644 ${./HomeAssistantPanel.qml} "$out/share/seele-shell/HomeAssistantPanel.qml"
     substituteInPlace "$out/share/seele-shell/HomeAssistantPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./AiPrompt.qml} "$out/share/seele-shell/AiPrompt.qml"
+    substituteInPlace "$out/share/seele-shell/AiPrompt.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./ai-prompt.js} "$out/share/seele-shell/ai-prompt.js"
+    install -m644 ${../ai-prompt/worker.py} "$out/libexec/seele-shell/ai-prompt.py"
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
@@ -148,6 +152,14 @@ pkgs.stdenvNoCC.mkDerivation {
     makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-github-status" \
       --add-flags "$out/libexec/seele-shell/github-status.py" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.gh ]}"
+    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-ai-prompt-worker" \
+      --add-flags "$out/libexec/seele-shell/ai-prompt.py" \
+      --set-default SEELE_SHELL_CODEX "${lib.getExe pkgs.codex}" \
+      --set-default SEELE_SHELL_GRIM "${lib.getExe pkgs.grim}" \
+      --set-default SEELE_SHELL_HYPRCTL "${pkgs.hyprland}/bin/hyprctl" \
+      --set-default SEELE_SHELL_WL_PASTE "${pkgs.wl-clipboard}/bin/wl-paste" \
+      --set-default SEELE_SHELL_WL_COPY "${pkgs.wl-clipboard}/bin/wl-copy" \
+      --set-default SEELE_SHELL_WTYPE "${lib.getExe pkgs.wtype}"
     install -m755 ${tools}/bin/seele-tools "$out/libexec/seele-shell/seele-tools"
     for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-mic-sync seele-nothing-headphones seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       ln -s seele-tools "$out/libexec/seele-shell/$name"
@@ -201,9 +213,10 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
+    test -f "$out/libexec/seele-shell/ai-prompt.py"
     test -f "$out/share/seele-shell/media.js"
     test -f "$out/share/seele-shell/time.js"
     test -f "$out/share/seele-shell/CameraPreview.qml"
@@ -220,7 +233,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${../../tests/home-assistant-panel.sh} ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${../../tests/home-assistant-panel.qml}
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -233,7 +246,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${../../tests/tst_centeredglyph.qml}
-    for command in seele-uri-worker seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-ai-prompt-worker seele-uri-worker seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -244,6 +257,8 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/feature-integrations.js} "$out/share/seele-shell/shell.qml" ${./package.nix}
+    node ${../../tests/ai-prompt.js} "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
+    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/ai-prompt.py} "$out/libexec/seele-shell/ai-prompt.py"
     node ${../../tests/focus.js} "$out/share/seele-shell/focus.js"
     bash ${../../tests/focus-timer.sh} ${quickshell}/bin/quickshell "$out/share/seele-shell"
     node ${../../tests/panel-layouts.js} "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml

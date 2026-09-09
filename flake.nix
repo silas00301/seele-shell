@@ -114,6 +114,8 @@
                   cargo test --manifest-path projects/tools/Cargo.toml
                   bash tests/shell-load.sh ${inputs.quickshell.packages.${system}.default}/bin/quickshell projects/shell ${pkgs.sway-unwrapped}/bin/sway
                   node tests/feature-integrations.js projects/shell/shell.qml projects/shell/package.nix
+                  node tests/ai-prompt.js projects/shell/ai-prompt.js projects/shell/AiPrompt.qml
+                  PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/ai-prompt.py projects/ai-prompt/worker.py
                   node tests/focus.js projects/shell/focus.js
                   bash tests/focus-timer.sh ${inputs.quickshell.packages.${system}.default}/bin/quickshell projects/shell
                   node tests/panel-layouts.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
