@@ -41,6 +41,16 @@ assert.equal(rows([{id:4,app_name:'__proto__'}, {id:5,app_name:'__proto__'}])[0]
 assert.equal(notifications.localImage('https://example.invalid/tracker.png'),'');
 assert.equal(notifications.localImage('image://qsimage/test'),'image://qsimage/test');
 assert.equal(notifications.bodyMarkup('<b>Hi</b><img src="https://bad.invalid/x"><a href="https://example.invalid/">Link</a>'), '<b>Hi</b><a href="https://example.invalid/">Link</a>');
+const imageRoles = entry => JSON.parse(JSON.stringify(notifications.imageRoles(entry)));
+assert.deepEqual(imageRoles({image:'image://qsimage/profile',app_icon:'chat'}),
+  {profile:'image://qsimage/profile',icon:'',badge:'chat'},
+  'a local profile leads while the application moves to its badge');
+assert.deepEqual(imageRoles({image:'file:///tmp/profile.png',app_icon:' chat '}),
+  {profile:'file:///tmp/profile.png',icon:'',badge:'chat'});
+assert.deepEqual(imageRoles({app_icon:'chat'}), {profile:'',icon:'chat',badge:''},
+  'the application icon keeps leading notifications without a profile');
+assert.deepEqual(imageRoles({image:'https://example.invalid/tracker.png',app_icon:'chat'}),
+  {profile:'',icon:'chat',badge:''}, 'remote images never enter either image role');
 
 function harness() {
   let view, dnd, arrivals = 0;

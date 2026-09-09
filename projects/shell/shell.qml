@@ -2959,11 +2959,18 @@ Shared.Theme {
     // know there is more to show without measuring the text twice.
     readonly property bool truncated: notificationBody.implicitWidth > notificationBody.width
     // Only a toast folds, and only when there is something folded away.
-    readonly property bool unfoldable: !notificationCard.alwaysUnfolded && (truncated || unfolded || !!entry.image)
-    readonly property string iconSource: {
-      var icon = String(entry.app_icon || "").trim()
+    readonly property bool unfoldable: !notificationCard.alwaysUnfolded && (truncated || unfolded)
+    readonly property var imageRoles: Notifications.imageRoles(entry)
+    readonly property string profileImageSource: imageRoles.profile
+    readonly property string applicationIconSource: resolveIcon(imageRoles.icon || imageRoles.badge)
+    readonly property string badgeIconSource: resolveIcon(imageRoles.badge)
+    readonly property bool profileImageReady: notificationProfileImage.status === Image.Ready
+
+    function resolveIcon(value) {
+      var icon = String(value || "").trim()
       return Notifications.localImage(icon) || (icon && icon.indexOf("://") < 0 ? Quickshell.iconPath(icon) : "")
     }
+
     // The card is as tall as what it holds: its own padding above and below
     // the text, and a little more once the text has unfolded into several
     // lines and wants air under the last of them.
@@ -3021,6 +3028,7 @@ Shared.Theme {
 
       Text {
         anchors.fill: parent
+        visible: !notificationCard.profileImageReady
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         text: "󰂚"
@@ -3030,7 +3038,52 @@ Shared.Theme {
       }
       IconImage {
         anchors.fill: parent
-        source: notificationCard.iconSource
+        visible: !notificationCard.profileImageReady
+        source: notificationCard.applicationIconSource
+        asynchronous: true
+        mipmap: true
+      }
+      Image {
+        id: notificationProfileImage
+
+        anchors.fill: parent
+        visible: false
+        source: notificationCard.profileImageSource
+        fillMode: Image.PreserveAspectCrop
+        sourceSize.width: width * 2
+        sourceSize.height: height * 2
+        smooth: true
+        mipmap: true
+        asynchronous: true
+        cache: true
+      }
+      RoundedSource {
+        anchors.fill: parent
+        visible: notificationCard.profileImageReady
+        source: notificationProfileImage
+        radius: root.radius
+      }
+      Rectangle {
+        id: notificationAppBadge
+
+        z: 1
+        visible: notificationCard.profileImageReady && notificationCard.badgeIconSource !== ""
+        width: parent.width / 2
+        height: width
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        radius: root.radiusSmall
+        color: root.cardColor
+        border.width: 1
+        border.color: root.panelBorder
+
+        IconImage {
+          anchors.fill: parent
+          anchors.margins: root.spaceTight / 2
+          source: notificationCard.badgeIconSource
+          asynchronous: true
+          mipmap: true
+        }
       }
     }
 
@@ -3228,21 +3281,6 @@ Shared.Theme {
         elide: notificationCard.unfolded ? Text.ElideNone : Text.ElideRight
         // Bounded, so one pathological notification cannot take the panel.
         maximumLineCount: notificationCard.unfolded ? 1000 : 1
-      }
-      Item {
-        visible: !!notificationCard.entry.image && notificationCard.unfolded
-        width: parent.width
-        height: visible ? Math.min(notificationImage.implicitHeight || root.rowHeight * 3, root.rowHeight * 3) : 0
-        Image {
-          id: notificationImage
-          anchors.fill: parent
-          visible: false
-          source: notificationCard.entry.image || ""
-          sourceSize.width: width * 2
-          fillMode: Image.PreserveAspectFit
-          asynchronous: true
-        }
-        RoundedSource { anchors.fill: parent; source: notificationImage }
       }
       Text {
         visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || notificationCard.entry.resident

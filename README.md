@@ -138,9 +138,12 @@ hovered; critical and pinned toasts remain visible. A toast's close button
 hides it without dismissing the inbox entry.
 
 Verification codes can be copied without dismissal. Notification search and
-title/message copying are intentionally absent. Notification text stays in
-memory, including history across QML reloads.
-`tests/notifications.js` covers lifecycle, grouping, and the quiet-period
+title/message copying are intentionally absent. A local notification image —
+typically a chat profile picture — leads the card as its rounded identity icon,
+with the sending application's icon badged at its lower-right corner; it is not
+repeated as expandable body media. Notification text stays in memory, including
+history across QML reloads.
+`tests/notifications.js` covers image roles, lifecycle, grouping, and the quiet-period
 deadline; `tests/notification-server.sh` checks the native service on a
 private bus.
 

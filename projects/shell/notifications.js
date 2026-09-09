@@ -66,6 +66,15 @@ function localImage(source) {
   return /^(?:image:\/\/|file:\/\/\/|\/)/.test(source) ? source : ""
 }
 
+// Quickshell's notification image is commonly the sender's profile picture.
+// It leads the card when local; the sending application's mark then becomes a
+// badge instead of competing with that identity or expanding as body media.
+function imageRoles(entry) {
+  var profile = localImage(entry && entry.image)
+  var app = String(entry && entry.app_icon || "").trim()
+  return { profile: profile, icon: profile ? "" : app, badge: profile ? app : "" }
+}
+
 // Notification markup supports formatting and links, never remote inline images.
 function bodyMarkup(body) {
   return String(body || "").replace(/<[^>]*>/g, function(tag) {

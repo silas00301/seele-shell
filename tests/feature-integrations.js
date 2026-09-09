@@ -12,6 +12,8 @@ const shellPatterns = {
   'collapsed network addresses': /property bool addressesExpanded: false/,
   'native notification cards': /component NotificationCard: Rectangle/,
   'in-place app stacks': /height: notificationGroupColumn\.implicitHeight \+ notificationGroup\.stackReach/,
+  'notification profile icons': /id: notificationProfileImage/,
+  'notification application badges': /id: notificationAppBadge/,
   'media keyboard seeking': /function seekMediaKey\(/,
   'shuffle control': /Media\.toggleShuffle\(/,
   'repeat control': /Media\.cycleRepeat\(/,
@@ -26,6 +28,10 @@ const shellPatterns = {
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
   assert.ok(pattern.test(shell), `${feature} is not wired into production shell.qml`);
 }
+
+const notificationCard = shell.slice(shell.indexOf('component NotificationCard:'), shell.indexOf('component NotificationList:'));
+assert.ok(!/id: notificationImage\b/.test(notificationCard),
+  'notification profile images must not return to the expandable body');
 
 const packagedSources = [
   'FocusTimer.qml',
