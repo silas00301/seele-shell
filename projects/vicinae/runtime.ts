@@ -9,12 +9,21 @@ export const binaries = {
   control: "@SEELE_CONTROL@",
   hyprctl: "@HYPRCTL@",
   wtype: "@WTYPE@",
+  nvd: "@NVD@",
+  nixosRebuild: "/run/current-system/sw/bin/nixos-rebuild",
+  run0: "/run/current-system/sw/bin/run0",
+  switchGeneration: "@SWITCH_GENERATION@",
 };
 
-export async function run(file: string, args: string[], signal?: AbortSignal) {
+export async function run(
+  file: string,
+  args: string[],
+  signal?: AbortSignal,
+  timeout = 15000,
+) {
   const { stdout } = await execute(file, args, {
     encoding: "utf8",
-    timeout: 15000,
+    timeout,
     maxBuffer: 4 * 1024 * 1024,
     signal,
   });

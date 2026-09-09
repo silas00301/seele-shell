@@ -256,6 +256,27 @@ selection, copy actions, and badge and caption placement at screen edges. For a 
 including `captureMs` and total `elapsedMs`; this excludes compositor and
 rendering latency and is not a desktop latency benchmark.
 
+## NixOS generation picker
+
+**Seele NixOS Generations** in Vicinae lists every generation retained by the
+system profile, newest first. The running configuration is identified from the
+resolved `/run/current-system` closure rather than the profile's potentially
+different `current` marker. Opening a generation shows its build time first,
+then its kernel, NixOS version, configuration revision, specialisations, and an
+`nvd` package diff against the running system.
+
+A rollback action appears only after the diff finishes or is reported
+unavailable. It names the generation again in a destructive confirmation and
+then uses the running system's `run0` to invoke a packaged helper. The helper
+accepts only one positive integer, re-resolves the retained profile link,
+advances the system profile with the running system's `nix-env`, and activates
+that exact store closure with `switch-to-configuration switch`. It does not
+disable NixOS switch inhibitors. The action rechecks that the generation still
+points to the closure the user reviewed before requesting authorization.
+
+The picker has no cleanup action. The existing `nh` policy alone decides which
+generations are retained.
+
 ## Build and test
 
 ```sh

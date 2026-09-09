@@ -14,6 +14,31 @@ let
   fontConfig = pkgs.makeFontsConf {
     fontDirectories = [ pkgs.maple-mono.NF-CN ];
   };
+  generationSwitch = pkgs.writeShellApplication {
+    name = "seele-switch-generation";
+    text = ''
+      if (( EUID != 0 || $# != 1 )) || [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
+        exit 64
+      fi
+
+      target="/nix/var/nix/profiles/system-$1-link"
+      targetStore="$(${pkgs.coreutils}/bin/readlink -e -- "$target")" || exit 66
+      case "$targetStore" in
+        /nix/store/*) ;;
+        *) exit 66 ;;
+      esac
+      test -x "$targetStore/bin/switch-to-configuration" || exit 66
+      test -x /run/current-system/sw/bin/nix-env || exit 69
+
+      runningStore="$(${pkgs.coreutils}/bin/readlink -e -- /run/current-system)" || exit 69
+      test "$targetStore" != "$runningStore" || exit 0
+
+      /run/current-system/sw/bin/nix-env \
+        --profile /nix/var/nix/profiles/system \
+        --switch-generation "$1"
+      exec "$targetStore/bin/switch-to-configuration" switch
+    '';
+  };
   runtimePath = lib.makeBinPath [
     notes
     pkgs.alsa-utils
@@ -131,7 +156,9 @@ pkgs.stdenvNoCC.mkDerivation {
       --replace-fail '@SEELE_SHELLCTL@' "$out/bin/seele-shellctl" \
       --replace-fail '@SEELE_CONTROL@' "$out/bin/seele-control" \
       --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl' \
-      --replace-fail '@WTYPE@' '${pkgs.wtype}/bin/wtype'
+      --replace-fail '@WTYPE@' '${pkgs.wtype}/bin/wtype' \
+      --replace-fail '@NVD@' '${pkgs.nvd}/bin/nvd' \
+      --replace-fail '@SWITCH_GENERATION@' '${generationSwitch}/bin/seele-switch-generation'
     for command in $(jq -r '.commands[].name' vicinae/package.json); do
       esbuild "vicinae/$command.tsx" --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/$command.js"
     done
@@ -140,6 +167,10 @@ pkgs.stdenvNoCC.mkDerivation {
     esbuild vicinae/runtime.ts --bundle --platform=node --format=cjs --external:@raycast/api --external:react --outfile=runtime.cjs
     esbuild vicinae/status.ts --bundle --platform=node --format=cjs --external:./runtime --external:react --outfile=status.cjs
     node ${../../tests/vicinae-runtime.cjs} "$PWD/runtime.cjs" "$PWD/status.cjs"
+    node ${../../tests/vicinae-generations.mjs} \
+      "$PWD/vicinae/generation-data.mjs" \
+      "$PWD/vicinae/generations.tsx" \
+      ${./package.nix}
 
     makeWrapper ${quickshell}/bin/quickshell "$out/bin/seele-shell" \
       --add-flags "-n -p $out/share/seele-shell" \

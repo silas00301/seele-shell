@@ -69,6 +69,7 @@ const focusedTests = [
   'network-addresses.js',
   'player-volume.js',
   'media-speed.js',
+  'vicinae-generations.mjs',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`), `${test} is not run by the shell package`);

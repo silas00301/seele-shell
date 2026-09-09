@@ -40,6 +40,12 @@
       "mode": "view"
     },
     {
+      "name": "generations",
+      "title": "Seele NixOS Generations",
+      "description": "Review and switch retained NixOS generations",
+      "mode": "view"
+    },
+    {
       "name": "screen-links",
       "title": "Seele Screen Links and Codes",
       "description": "Open or copy a numbered link, QR code, or barcode on screen",
