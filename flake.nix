@@ -34,6 +34,7 @@
             quickshellInput = inputs.quickshell;
           };
           tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };
+          markdown = import ./projects/markdown/package.nix packageArgs;
           fontConfig = pkgs.makeFontsConf {
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
@@ -130,6 +131,11 @@
                   node tests/time.js projects/shell/time.js
                   node tests/notes.js projects/notes/notes.js
                   node tests/notes-store.js projects/notes/NotesStore.qml projects/notes/notes.js
+                  bash tests/notes-editor.sh \
+                    projects/notes \
+                    tests/tst_noteseditor.qml \
+                    ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+                    ${markdown}/lib/qt-6/qml
                   node tests/uri-picker.js projects/shell/uri-picker.js projects/shell/UriPicker.qml
                   node tests/status-patches.js projects/shell/shell.qml
                   bash tests/system-state.sh \

@@ -158,10 +158,20 @@ ShellRoot {
   readonly property int mediaBodyHeight: 148
   readonly property int notesWindowWidth: 960
   readonly property int notesWindowHeight: 680
-  readonly property int notesMinimumWidth: 680
-  readonly property int notesMinimumHeight: 480
+  // Small enough to be tiled into a column beside something else, which is
+  // where a capture window spends most of its life. The recent-notes list
+  // folds itself away before the writing area is squeezed to nothing.
+  readonly property int notesMinimumWidth: 420
+  readonly property int notesMinimumHeight: 420
   readonly property int notesSidebarWidth: 232
+  // The recent-notes list can be dragged between these, and folds itself away
+  // entirely below `notesNarrowWidth`, so a window tiled into a column keeps
+  // its measure instead of splitting what is left of it in two.
+  readonly property int notesSidebarMinimum: 180
+  readonly property int notesSidebarMaximum: 420
+  readonly property int notesNarrowWidth: 640
   readonly property int notesMemoListHeight: 112
+  readonly property int notesPickerHeight: 220
   readonly property int waveformWidth: 280
   readonly property int clockWidth: 480
   readonly property int clockRows: 7

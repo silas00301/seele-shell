@@ -19,7 +19,7 @@ Commands:
   volume <up|down|mute>     Change volume and show its OSD
   microphone <up|down|mute> Change the microphone and show its OSD
   microphone-state <muted|live> Show a device mute OSD
-  notes                     Open the standalone Notes and voice memo app
+  notes                     Open Seele Notes for quick capture into the vault
   voxtype                   Toggle voice dictation
   lock                      Lock the session
   notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>

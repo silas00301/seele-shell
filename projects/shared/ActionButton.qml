@@ -10,6 +10,10 @@ Button {
   implicitWidth: Math.max(theme.controlHeight, label.implicitWidth + theme.spaceLarge * 2)
   opacity: enabled ? 1 : 0.45
   hoverEnabled: true
+  // A button an application offers as its way out of a state has to be
+  // reachable without the pointer. The ring the background already draws on
+  // `activeFocus` is what reports where Tab has landed.
+  focusPolicy: Qt.StrongFocus
   contentItem: Text {
     id: label
     text: button.text

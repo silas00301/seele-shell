@@ -65,8 +65,8 @@
     },
     {
       "name": "notes",
-      "title": "Seele Notes and Voice Memos",
-      "description": "Open the standalone Notes app",
+      "title": "Seele Notes",
+      "description": "Capture a Markdown note or voice memo into the Obsidian vault",
       "mode": "no-view"
     }
   ]
