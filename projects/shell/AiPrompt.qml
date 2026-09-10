@@ -478,11 +478,6 @@ Scope {
       WlrLayershell.keyboardFocus: panelActive ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-prompt"
 
-      onActiveChanged: {
-        if (active) sawFocus = true
-        else if (sawFocus && panelActive && !prompt.needsAction) prompt.close()
-      }
-
       Connections {
         target: prompt
         function onActiveChanged() {
@@ -494,10 +489,22 @@ Scope {
         }
       }
 
-      Shared.PanelSurface {
-        id: surface
-        theme: prompt.theme
-        visible: promptWindow.panelActive
+      FocusScope {
+        id: focusScope
+        anchors.fill: parent
+        property bool sawFocus: promptWindow.sawFocus
+        readonly property bool panelActive: promptWindow.panelActive
+        focus: panelActive
+        onActiveFocusChanged: {
+          if (activeFocus) promptWindow.sawFocus = true
+          else if (sawFocus && panelActive && !prompt.needsAction) prompt.close()
+        }
+
+        Shared.PanelSurface {
+          id: surface
+          anchors.fill: parent
+          theme: prompt.theme
+          visible: promptWindow.panelActive
 
         Shared.SeeleFlickable {
           id: panelScroll
@@ -794,6 +801,7 @@ Scope {
             }
           }
         }
+      }
       }
     }
   }
