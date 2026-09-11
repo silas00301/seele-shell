@@ -112,16 +112,24 @@
                 command = ''
                   set -e
                   cargo test --manifest-path projects/tools/Cargo.toml
-                  bash tests/shell-load.sh ${inputs.quickshell.packages.${system}.default}/bin/quickshell projects/shell ${pkgs.sway-unwrapped}/bin/sway
+                  bash tests/shell-load.sh ${
+                    inputs.quickshell.packages.${system}.default
+                  }/bin/quickshell projects/shell ${pkgs.sway-unwrapped}/bin/sway
                   node tests/feature-integrations.js projects/shell/shell.qml projects/shell/package.nix
                   node tests/ai-prompt.js projects/shell/ai-prompt.js projects/shell/AiPrompt.qml
                   PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/ai-prompt.py projects/ai-prompt/worker.py
                   node tests/focus.js projects/shell/focus.js
-                  bash tests/focus-timer.sh ${inputs.quickshell.packages.${system}.default}/bin/quickshell projects/shell
+                  bash tests/focus-timer.sh ${
+                    inputs.quickshell.packages.${system}.default
+                  }/bin/quickshell projects/shell
                   node tests/panel-layouts.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/home-assistant.py projects/home-assistant/control.py
-                  PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3.withPackages (ps: [ ps.aiohttp ])}/bin/python3 tests/home-assistant-live.py projects/home-assistant/control.py
-                  bash tests/home-assistant-panel.sh ${inputs.quickshell.packages.${system}.default}/bin/quickshell projects/shell ${pkgs.sway-unwrapped}/bin/sway tests/home-assistant-panel.qml
+                  PYTHONDONTWRITEBYTECODE=1 ${
+                    pkgs.python3.withPackages (ps: [ ps.aiohttp ])
+                  }/bin/python3 tests/home-assistant-live.py projects/home-assistant/control.py
+                  bash tests/home-assistant-panel.sh ${
+                    inputs.quickshell.packages.${system}.default
+                  }/bin/quickshell projects/shell ${pkgs.sway-unwrapped}/bin/sway tests/home-assistant-panel.qml
                   node tests/home-assistant-store.js projects/shell/HomeAssistantStore.qml
                   PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 tests/github.py projects/github/status.py
                   node tests/github.js projects/shell/github.js projects/shell/GitHubStore.qml

@@ -1782,8 +1782,9 @@ Shared.Theme {
     onTriggered: if (root.osdKind !== "yubikey") root.osdOpen = false
   }
 
-  property int healthMaintenanceCount: 0
-  property string healthMaintenanceUrgency: ""
+  MaintenanceStore { id: maintenance }
+  property int healthMaintenanceCount: maintenance.count
+  property string healthMaintenanceUrgency: maintenance.urgency
   IntegrationHealthStore {
     id: integrationHealth
     onOpenSettings: destination => root.toggleControl(destination, root.currentScreen())
@@ -5179,7 +5180,7 @@ Shared.Theme {
             width: healthBarLabel.implicitWidth + root.spaceLarge
             hovered: healthBarHover.hovered
             active: root.panelHere("system-health", barWindow.modelData)
-            Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + (integrationHealth.attentionCount + root.healthMaintenanceCount); color: root.yellow; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + (integrationHealth.attentionCount + root.healthMaintenanceCount); color: root.healthMaintenanceUrgency === "now" ? root.red : root.healthMaintenanceUrgency === "eventually" && integrationHealth.attentionCount === 0 ? root.accent : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textBody }
             HoverHandler { id: healthBarHover }
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("system-health", barWindow.modelData.name, root.barItemCenter(parent)) }
           }
@@ -7157,7 +7158,10 @@ Shared.Theme {
         Flickable {
           anchors.fill:parent; anchors.margins:root.panelMargin
           contentHeight:healthContent.implicitHeight; clip:true
-          SystemHealthPanel { id:healthContent; width:parent.width; theme:root; store:integrationHealth; maintenanceCount:root.healthMaintenanceCount }
+          SystemHealthPanel {
+            id:healthContent; width:parent.width; theme:root; store:integrationHealth; maintenanceCount:root.healthMaintenanceCount
+            maintenanceContent:Component { MaintenancePanel { theme:root; store:maintenance } }
+          }
           ScrollBar.vertical:SlimScrollBar {}
         }
       }
