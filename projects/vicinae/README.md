@@ -81,3 +81,6 @@ selection; applications explicitly routed elsewhere keep their output.
 `tests/audio-routing.sh` verifies real routing, failures, and cleanup using a
 private PipeWire server and null sinks. `tests/headphones-icon.sh` checks that
 the two rendered silhouettes stay separate.
+
+**Seele Transfers** opens the personal file-transfer panel. Its picker and drop
+target feed the same service selection as `seele-transfers select <file>...`.

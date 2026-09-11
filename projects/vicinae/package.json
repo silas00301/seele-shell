@@ -74,6 +74,12 @@
       "title": "Seele Notes",
       "description": "Capture a Markdown note or voice memo into the Obsidian vault",
       "mode": "no-view"
+    },
+    {
+      "name": "transfers",
+      "title": "Seele Transfers",
+      "description": "Send files to personal devices and view received files",
+      "mode": "no-view"
     }
   ]
 }
