@@ -152,11 +152,15 @@ fn watch_auxiliary(wake: mpsc::Receiver<()>, bluetooth: Bluetooth, sender: SyncS
         let auxiliary = control::auxiliary_status();
         {
             let cached = bluetooth.lock().unwrap();
-            let patch = if let Some(bluetooth) = cached.as_ref() {
+            let mut patch = if let Some(bluetooth) = cached.as_ref() {
                 control::merge_status([auxiliary, control::bluetooth_status(bluetooth)])
             } else {
                 auxiliary
             };
+            // A completed probe heartbeats even when its semantic state is unchanged.
+            // The common delta filter must not make a quiet healthy provider stale.
+            patch["healthHeartbeat"] = json!({"tailscale": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64});
             let event = if force {
                 Event::Refresh(patch)
             } else {

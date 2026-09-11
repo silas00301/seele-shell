@@ -4,6 +4,8 @@ import Quickshell.Io
 
 Scope {
   id: store
+  signal healthPublished(string state, double success)
+  property double healthSuccess: 0
   property bool configured: false
   property bool connected: false
   property bool ready: false
@@ -133,6 +135,8 @@ Scope {
         url = data.url || ""
         summary = data.summary || ""
         summaryText = data.summary_text || ""
+        if(connected) healthSuccess=Date.now()
+        healthPublished(!configured ? "setup-required" : connected ? "healthy" : "disconnected",healthSuccess)
       }
       if (Array.isArray(data.catalog) && JSON.stringify(catalog) !== JSON.stringify(data.catalog)) catalog = data.catalog
       if (data.request !== undefined) {
@@ -156,6 +160,7 @@ Scope {
     pending = ({})
     requests = ({})
     error = "Home Assistant connection stopped. Restarting…"
+    healthPublished("disconnected",healthSuccess)
     restart.start()
   }
   Process {

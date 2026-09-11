@@ -355,6 +355,11 @@ Shared.Theme {
           root.statusInitialized = true
         }
         root.systemData.apply(parsed)
+        if (parsed.tailscale !== undefined || parsed.healthHeartbeat !== undefined) {
+          var ts=parsed.tailscale || root.systemData.tailscale, state=ts.connected ? "healthy" : ts.needsLogin ? "setup-required" : "disconnected"
+          var previous=integrationHealth.values.tailscale
+          integrationHealth.publish("tailscale",{state:state,summary:ts.connected ? "Connected" : ts.needsLogin ? "Sign in through VPN settings" : "Disconnected",lastSuccess:ts.connected ? Date.now() : previous ? previous.lastSuccess : 0,actions:["settings"]})
+        }
         if (parsed.volume !== undefined && root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
         if (parsed.microphoneVolume !== undefined && root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
         if (parsed.bluetoothScanning !== undefined) root.reconcileBluetoothScanIntent(!!parsed.bluetoothScanning)
@@ -1777,9 +1782,41 @@ Shared.Theme {
     onTriggered: if (root.osdKind !== "yubikey") root.osdOpen = false
   }
 
+  property int healthMaintenanceCount: 0
+  property string healthMaintenanceUrgency: ""
+  IntegrationHealthStore {
+    id: integrationHealth
+    onOpenSettings: destination => root.toggleControl(destination, root.currentScreen())
+    onConfigured: {
+      var routes = {}
+      routes.github = function(action, token) {
+        if(action === "retry" && githubStore.refresh(true)) githubStore.healthToken=token
+        else integrationHealth.complete("github",token,false)
+      }
+      routes["home-assistant"] = function(action, token) {
+        homeAssistantStore.healthToken=token
+        homeAssistantStore.refresh()
+      }
+      integrationHealth.handlers=routes
+      githubStore.refresh(false)
+    }
+  }
+  IpcHandler {
+    target: "health"
+    function publish(id: string, payload: string): string {
+      if(payload.length>4096) return "invalid"
+      try { return integrationHealth.publish(id,JSON.parse(payload))?"ok":"invalid" } catch (_) { return "invalid" }
+    }
+    function snapshot(): string { return JSON.stringify(integrationHealth.rows) }
+  }
   GitHubStore {
     id: githubStore
-    active: root.controlPanel === "github"
+    property int healthToken: 0
+    active: root.controlPanel === "github" || !!integrationHealth.registrations.github
+    onHealthPublished: (state, success) => {
+      integrationHealth.publish("github",{state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Sign in through GitHub settings" : "Refresh failed; retry or open settings",lastSuccess:success,actions:["retry","settings"]})
+      if(healthToken) { integrationHealth.complete("github",healthToken,state === "healthy"); healthToken=0 }
+    }
   }
 
   NotificationStore {
@@ -1795,10 +1832,22 @@ Shared.Theme {
     onArrived: root.notificationPopupScreen = root.currentScreen()
   }
 
-  HomeAssistantStore { id: homeAssistantStore }
+  HomeAssistantStore {
+    id: homeAssistantStore
+    property int healthToken: 0
+    onHealthPublished: (state, success) => {
+      integrationHealth.publish("home-assistant",{state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Set up the Home Assistant connection" : "Connection unavailable",lastSuccess:success,actions:["reconnect","settings"]})
+      if(healthToken) { integrationHealth.complete("home-assistant",healthToken,state === "healthy"); healthToken=0 }
+    }
+  }
 
   IpcHandler {
     target: "seele-shell"
+    function healthStatus(): string { return JSON.stringify(integrationHealth.rows) }
+    function healthPublish(id: string, payload: string): string {
+      if(payload.length>4096) return "invalid"
+      try { return integrationHealth.publish(id,JSON.parse(payload))?"ok":"invalid" } catch (_) { return "invalid" }
+    }
     function notificationStatus(): string {
       return JSON.stringify({ notifications: notificationStore.controller.view(), dnd: notificationStore.controller.dnd })
     }
@@ -2705,7 +2754,17 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight
+    height: devicesY + smallTileHeight * 2 + gap
+
+    ControlTile {
+      y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
+      width:controlGrid.width; height:controlGrid.smallTileHeight
+      label:"System Health"
+      detail:integrationHealth.attentionCount + " integrations need attention" + (root.healthMaintenanceCount ? " · " + root.healthMaintenanceCount + " maintenance items" : "")
+      active:integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
+      glyph:Text { text:"󰅚"; color:root.accent; font.family:root.fontFamily; font.pixelSize:root.textIcon }
+      onActivated:root.toggleControl("system-health",controlGrid.screenName)
+    }
 
     Rectangle {
       id: controlCenterMedia
@@ -5097,6 +5156,16 @@ Shared.Theme {
           }
 
           BarItem {
+            visible:integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
+            width:healthBarLabel.implicitWidth + root.spaceLarge
+            hovered:healthBarHover.hovered
+            active:root.panelHere("system-health",barWindow.modelData)
+            Text { id:healthBarLabel; anchors.centerIn:parent; text:"󰅚 " + (integrationHealth.attentionCount+root.healthMaintenanceCount); color:root.yellow; font.family:root.fontFamily; font.pixelSize:root.textBody }
+            HoverHandler { id:healthBarHover }
+            MouseArea { anchors.fill:parent; cursorShape:Qt.PointingHandCursor; onClicked:root.toggleControl("system-health",barWindow.modelData.name,root.barItemCenter(parent)) }
+          }
+
+          BarItem {
             width: githubBarContent.implicitWidth + root.spaceLarge
             hovered: githubBarHover.hovered
             active: root.panelHere("github", barWindow.modelData)
@@ -7029,6 +7098,38 @@ Shared.Theme {
             }
             }
           }
+        }
+      }
+    }
+  }
+
+  // System Health: registered integrations, with a slot for maintenance.
+  Variants {
+    model:Quickshell.screens
+    PanelWindow {
+      id:healthWindow
+      required property var modelData
+      screen:modelData
+      visible:root.controlPanel === "system-health" && root.pinnedScreen(root.overlayScreen,modelData)
+      anchors { top:true; left:true }
+      margins { top:root.barHeight+root.panelGap; left:root.panelLeft(modelData,implicitWidth) }
+      implicitWidth:root.panelMargin*2+root.controlHeight*12
+      implicitHeight:Math.min(modelData.height-root.barHeight-root.panelGap-root.panelMargin,healthContent.implicitHeight+root.panelMargin*2)
+      exclusionMode:ExclusionMode.Ignore
+      color:"transparent"
+      WlrLayershell.layer:WlrLayer.Overlay
+      WlrLayershell.namespace:"seele-shell-system-health"
+      WlrLayershell.keyboardFocus:visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged:if(visible) Qt.callLater(function(){healthSurface.forceActiveFocus()})
+      PanelSurface {
+        id:healthSurface
+        focus:true
+        Keys.onEscapePressed:root.closeOverlays()
+        Flickable {
+          anchors.fill:parent; anchors.margins:root.panelMargin
+          contentHeight:healthContent.implicitHeight; clip:true
+          SystemHealthPanel { id:healthContent; width:parent.width; theme:root; store:integrationHealth; maintenanceCount:root.healthMaintenanceCount }
+          ScrollBar.vertical:SlimScrollBar {}
         }
       }
     }

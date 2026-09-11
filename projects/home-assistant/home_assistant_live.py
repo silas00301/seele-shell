@@ -347,12 +347,18 @@ class Live:
             self.error = str(error) if isinstance(error, self.ha.Problem) else "Could not load the Home Assistant connection."
         self.publish()
 
+    async def heartbeat(self):
+        while True:
+            await asyncio.sleep(20)
+            self.publish()
+
     async def run(self):
         # Pipe EOF owns lifetime; no thread blocked on stdin can hold shutdown open.
         reader = asyncio.StreamReader(limit=self.ha.MAX_CONFIG + 1)
         transport, _ = await asyncio.get_running_loop().connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
         self.publish()
         bootstrap = self.spawn(self.bootstrap())
+        self.spawn(self.heartbeat())
         try:
             while line := await reader.readline():
                 try:
