@@ -39,6 +39,7 @@ Shared.Theme {
   }
 
   property bool agentsOpen: false
+  AiActivityStore { id: aiActivity }
   // Panels stay on the screen they were opened from. Tracking Hyprland's
   // focused monitor instead would move an open panel to another output the
   // moment the pointer crossed a screen edge.
@@ -4890,7 +4891,7 @@ Shared.Theme {
             width: aiBarContent.implicitWidth + 14
             hovered: aiMouse.containsMouse
             active: root.agentsHere(barWindow.modelData)
-            visible: root.agentData.launchers && root.agentData.launchers.length > 0
+            visible: aiActivity.indicator !== "" || (root.agentData.launchers && root.agentData.launchers.length > 0)
             // Each spent provider is its own mark and its own number, so the
             // entry names the subscription without spending the bar's width on
             // spelling it, and grows or shrinks with however many CodexBar
@@ -4903,6 +4904,13 @@ Shared.Theme {
               anchors.centerIn: parent
               height: parent.height
               spacing: root.spaceMedium
+
+              Rectangle {
+                visible: aiActivity.indicator !== ""
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.spaceSmall; height: width; radius: width / 2
+                color: aiActivity.indicator === "failed" ? root.red : root.accent
+              }
 
               // Nothing spent yet, or nothing collected yet: the entry falls
               // back to saying only what it opens.
@@ -6344,6 +6352,7 @@ Shared.Theme {
     model: Quickshell.screens
     PanelWindow {
       id: agentsWindow
+      property string tab: "usage"
       required property var modelData
       readonly property bool active: root.agentsOpen && root.pinnedScreen(root.overlayScreen, modelData)
       screen: modelData
@@ -6414,6 +6423,28 @@ Shared.Theme {
               }
             }
 
+            SegmentWell {
+              width: parent.width
+              Row {
+                anchors.fill: parent
+                Repeater {
+                  model: ["usage", "activity"]
+                  Segment {
+                    required property string modelData
+                    width: parent.width / 2
+                    selected: agentsWindow.tab === modelData
+                    hovered: tabMouse.containsMouse
+                    Text { anchors.centerIn: parent; text: parent.modelData === "usage" ? "Usage" : "AI Activity"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
+                    MouseArea { id: tabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: agentsWindow.tab = parent.modelData }
+                  }
+                }
+              }
+            }
+            AiActivityPanel { width: parent.width; theme: root; store: aiActivity; visible: agentsWindow.tab === "activity" }
+            Column {
+              width: parent.width
+              spacing: root.panelSpacing
+              visible: agentsWindow.tab === "usage"
             SectionRule {
               width: parent.width
               label: "SESSIONS"
@@ -6995,6 +7026,7 @@ Shared.Theme {
                   }
                 }
               }
+            }
             }
           }
         }
