@@ -427,6 +427,22 @@ ShellRoot {
     }
   }
 
+  // A lock the compositor refuses -- because another client already holds
+  // ext-session-lock-v1 -- never changes `locked`, so its unlock handler never
+  // runs and this instance would sit here forever without a surface. That
+  // leftover is what actually breaks locking: `quickshell -n` exits
+  // immediately when an instance for the same config path is already running,
+  // so every later attempt becomes a silent no-op against the idle leftover,
+  // and locking stays dead until a rebuild changes the path. Give up instead.
+  Timer {
+    running: !sessionLock.secure
+    interval: 5000
+    onTriggered: if (!sessionLock.secure) {
+      sessionStateFile.setText("0")
+      Qt.quit()
+    }
+  }
+
   WlSessionLock {
     id: sessionLock
     locked: true
@@ -442,22 +458,6 @@ ShellRoot {
       if (!locked) {
         sessionStateFile.setText("0")
         Qt.callLater(Qt.quit)
-      }
-    }
-
-    // A lock the compositor refuses -- because another client already holds
-    // ext-session-lock-v1 -- never changes `locked`, so the handler above never
-    // runs and this instance would sit here forever without a surface. That
-    // leftover is what actually breaks locking: `quickshell -n` exits
-    // immediately when an instance for the same config path is already running,
-    // so every later attempt becomes a silent no-op against the idle leftover,
-    // and locking stays dead until a rebuild changes the path. Give up instead.
-    Timer {
-      running: !sessionLock.secure
-      interval: 5000
-      onTriggered: if (!sessionLock.secure) {
-        sessionStateFile.setText("0")
-        Qt.quit()
       }
     }
 

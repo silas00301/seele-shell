@@ -29,7 +29,7 @@ if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
 fi
 cp -r "$sources" "$work/production"
 # Source checkouts use ../shared; installed packages carry shared/ inside them.
-if [[ ! -d "$work/production/shared" ]]; then
+if [[ ! -d "$work/production/shared" && -d "$sources/../shared" ]]; then
   cp -r "$sources/../shared" "$work/shared"
 fi
 cat > "$work/shell.qml" <<'QML'
