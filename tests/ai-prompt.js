@@ -29,13 +29,73 @@ for (const [feature, pattern] of Object.entries({
   "active-output pin": /prompt\.screenName === modelData\.name/,
   "centered layer surface": /implicitWidth: Math\.min\(640,[\s\S]*WlrLayershell\.namespace: "seele-shell-prompt"/,
   "focus-loss privacy": /else if \(sawFocus && panelActive && !prompt\.needsAction\) prompt\.close\(\)/,
-  "one-time clipboard permission": /action: clipReady \? \(clipExpanded \? "Collapse" : "Review"\) : "Allow once"/,
+  "one-time clipboard permission": /Ai.has\(permissionContexts, "clip"\).*"Allow once"/,
   "exact screen preview": /this exact image will be sent/,
   "explicit copy shortcut": /text: "Copy · Enter"/,
   "explicit insert shortcut": /text: "Insert · Ctrl\+Enter"/,
-  "private screen disclosure": /capture a private preview before sending/,
+  "private screen disclosure": /captured once when you press Send/,
   "stale context rejection": /!acceptsContext\(String\(message\.kind \|\| ""\), Number\(message\.token \|\| 0\)\)/,
   "answer-only response card": /label: "ANSWER"/,
 })) assert.ok(pattern.test(qml), `${feature} is missing from AiPrompt.qml`)
 
 console.log("AI prompt mentions, permission gates, shortcuts, focus lifetime, and UI disclosure passed")
+
+// Drive the production coordinator with deferred context replies.
+const methods = [...qml.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}/gm)].map(m => m[0]).join('\n')
+const messages = []
+const state = vm.createContext({
+  Ai: helpers, generation: 0, request: 0, contextSerial: 0, alive: false,
+  busy: false, collecting: false, permissionContexts: [],
+  worker: { running: true, write(value) { messages.push(JSON.parse(value)) } },
+  screenCaptureDelay: { stop() {}, restart() {} }, usageRefreshRequested() {}
+})
+state.prompt = state
+vm.runInContext(methods, state)
+let text = ''
+Object.defineProperty(state, 'promptText', { get() { return text }, set(value) { text = value; state.syncContexts() } })
+Object.defineProperty(state, 'mentionedContexts', { get() { return helpers.mentions(text) } })
+Object.defineProperty(state, 'canSend', { get() { return !state.busy && !state.collecting && text.trim() !== '' } })
+state.open('DP-1', {app:'terminal', title:'work'})
+messages.length = 0
+state.promptText = 'Explain @clip @select @dir @screen @window'
+assert.equal(messages.filter(m => m.command === 'preview').length, 0, 'typing never reads context')
+state.submit()
+state.submit()
+assert.equal(messages.filter(m => m.command === 'preview').length, 1)
+assert.equal(messages.filter(m => m.command === 'submit').length, 0)
+const reply = (kind, token) => state.accept({id:state.generation,event:'preview',kind,token,available:true,text:'private',preview:'preview',path:'/private/screen.png'})
+reply('clip', state.clipToken)
+reply('select', state.selectionToken)
+reply('dir', state.directoryToken)
+assert.equal(state.active, false, 'screen capture hides the panel')
+assert.equal(messages.filter(m => m.command === 'submit').length, 0)
+reply('screen', state.screenToken)
+assert.equal(state.active, true)
+assert.equal(messages.filter(m => m.command === 'submit').length, 1)
+assert.deepEqual(messages.find(m => m.command === 'submit').permissions, ['clip','select'])
+state.close()
+state.open('DP-1', {})
+state.promptText = 'Read @clip'
+state.submit()
+const stale = state.clipToken
+state.promptText = 'Changed @clip'
+reply('clip', stale)
+assert.equal(state.collecting, false)
+assert.equal(state.clipReady, false)
+state.submit()
+state.accept({id:state.generation,event:'context-error',kind:'clip',token:state.clipToken,message:'Clipboard unavailable'})
+assert.equal(state.promptText, 'Changed @clip')
+assert.equal(state.canSend, true)
+assert.match(state.error, /@clip: Clipboard unavailable/)
+state.submit()
+const oldGeneration = state.generation, oldToken = state.clipToken
+state.close()
+state.open('DP-1', {})
+state.accept({id:oldGeneration,event:'preview',kind:'clip',token:oldToken,available:true,text:'old'})
+assert.equal(state.clipReady, false)
+state.promptText = 'Find @dir'
+state.submit()
+state.accept({id:state.generation,event:'preview',kind:'dir',token:state.directoryToken,available:false})
+assert.equal(state.canSend, true)
+assert.match(state.error, /@dir/)
+console.log('One-send collection, no pre-send reads, duplicate prevention, errors, edits and stale generations passed')

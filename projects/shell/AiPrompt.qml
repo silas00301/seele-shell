@@ -15,6 +15,9 @@ Scope {
   property bool active: false
   property bool alive: false
   property bool busy: false
+  property bool collecting: false
+  property var collectionQueue: []
+  property var permissionContexts: []
   property bool inserting: false
   property int generation: 0
   property int request: 0
@@ -58,15 +61,7 @@ Scope {
   readonly property bool canInsert: needsAction
     && /^0x[0-9a-f]+$/i.test(String(sourceWindow.address || ""))
     && answer.length <= 65536
-  readonly property bool canSend: Ai.canSubmit(
-    promptText,
-    mentionedContexts,
-    clipReady,
-    selectionReady,
-    directoryReady,
-    screenReady,
-    busy
-  )
+  readonly property bool canSend: !busy && !collecting && promptText.trim() !== ""
 
   signal usageRefreshRequested()
 
@@ -122,6 +117,9 @@ Scope {
     error = ""
     notice = ""
     busy = false
+    collecting = false
+    collectionQueue = []
+    permissionContexts = []
     inserting = false
     resetContexts()
     alive = true
@@ -136,6 +134,9 @@ Scope {
     active = false
     alive = false
     busy = false
+    collecting = false
+    collectionQueue = []
+    permissionContexts = []
     inserting = false
     promptText = ""
     sentPrompt = ""
@@ -146,54 +147,17 @@ Scope {
   }
 
   function syncContexts() {
-    var values = mentionedContexts
-    if (Ai.has(values, "dir")) {
-      if (!directoryRequested) {
-        directoryToken = nextContextToken()
-        directoryRequested = true
-        directoryLoading = true
-        send({ command: "preview", id: generation, kind: "dir", token: directoryToken })
-      }
-    } else {
-      if (directoryRequested && alive) send({ command: "forget", id: generation, kind: "dir" })
-      directoryRequested = false
-      directoryReady = false
-      directoryLoading = false
-      directory = ""
-      directoryToken = 0
+    if (collecting) {
+      collecting = false
+      collectionQueue = []
+      active = alive
+      notice = "Prompt changed · press Send to collect again"
     }
-    if (!Ai.has(values, "clip")) {
-      if ((clipReady || clipLoading) && alive) send({ command: "forget", id: generation, kind: "clip" })
-      clipAllowed = false
-      clipReady = false
-      clipLoading = false
-      clipPreview = ""
-      clipText = ""
-      clipExpanded = false
-      clipCharacters = 0
-      clipTruncated = false
-      clipToken = 0
+    if (!busy && alive) {
+      for (var kind of ["clip", "select", "dir", "screen"])
+        send({ command: "forget", id: generation, kind: kind })
     }
-    if (!Ai.has(values, "select")) {
-      if ((selectionReady || selectionLoading) && alive) send({ command: "forget", id: generation, kind: "select" })
-      selectionAllowed = false
-      selectionReady = false
-      selectionLoading = false
-      selectionPreview = ""
-      selectionText = ""
-      selectionExpanded = false
-      selectionCharacters = 0
-      selectionTruncated = false
-      selectionToken = 0
-    }
-    if (!Ai.has(values, "screen")) {
-      screenCaptureDelay.stop()
-      if ((screenReady || screenLoading) && alive) send({ command: "forget", id: generation, kind: "screen" })
-      screenReady = false
-      screenLoading = false
-      screenPreview = ""
-      screenToken = 0
-    }
+    resetContexts()
   }
 
   onPromptTextChanged: syncContexts()
@@ -244,21 +208,59 @@ Scope {
 
   function submit() {
     if (!canSend) return
+    for (var kind of permissionContexts) {
+      if (Ai.has(mentionedContexts, kind)
+          && !(kind === "clip" ? clipReady : kind === "select" ? selectionReady : screenReady)) {
+        error = "Approve @" + kind + " before sending"
+        return
+      }
+    }
     request++
     sentPrompt = promptText
     answer = ""
     error = ""
+    notice = "Collecting context…"
+    if (permissionContexts.length === 0) syncContexts()
+    collecting = true
+    collectionQueue = mentionedContexts.filter(function(kind) { return kind !== "window" })
+    collectNext()
+  }
+
+  function collectNext() {
+    if (!collecting || !alive || promptText !== sentPrompt) return
+    if (collectionQueue.length === 0) {
+      collecting = false
+      busy = true
+      notice = ""
+      send({ command: "submit", id: generation, request: request,
+        prompt: sentPrompt,
+        permissions: Ai.permissions(mentionedContexts, clipAllowed, selectionAllowed) })
+      promptText = ""
+      resetContexts()
+      return
+    }
+    var kind = collectionQueue[0]
+    collectionQueue = collectionQueue.slice(1)
+    if (Ai.has(permissionContexts, kind)) {
+      collectNext()
+      return
+    }
+    if (kind === "screen") captureScreen()
+    else if (kind === "dir") {
+      directoryRequested = true
+      directoryLoading = true
+      directoryToken = nextContextToken()
+      send({ command: "preview", id: generation, kind: "dir", token: directoryToken })
+    } else grant(kind)
+  }
+
+  function collectionFailed(kind, message) {
+    collecting = false
+    collectionQueue = []
+    syncContexts()
+    active = alive
     notice = ""
-    busy = true
-    send({
-      command: "submit",
-      id: generation,
-      request: request,
-      prompt: sentPrompt,
-      permissions: Ai.permissions(mentionedContexts, clipAllowed, selectionAllowed)
-    })
-    promptText = ""
-    resetContexts()
+    error = "@" + kind + ": " + message + " · retry Send"
   }
 
   function copyAnswer() {
@@ -310,6 +312,10 @@ Scope {
         app: String(openedWindow.app || sourceWindow.app || "")
       }
     } else if (message.event === "preview") {
+      if (collecting && !message.available) {
+        collectionFailed(message.kind, "Context unavailable")
+        return
+      }
       if (message.kind === "clip") {
         clipLoading = false
         clipReady = !!message.available
@@ -334,7 +340,12 @@ Scope {
         directoryReady = !!message.available
         directory = String(message.preview || "")
       }
+      if (collecting) collectNext()
     } else if (message.event === "context-error") {
+      if (collecting) {
+        collectionFailed(message.kind, String(message.message || "Context unavailable"))
+        return
+      }
       if (message.kind === "clip") {
         clipAllowed = false
         clipReady = false
@@ -359,7 +370,7 @@ Scope {
         directoryLoading = false
       }
       error = String(message.message || "Context unavailable")
-    } else if (message.event === "started") {
+    } else if (message.event === "started" && message.request === request) {
       busy = true
     } else if (message.event === "answer" && message.request === request) {
       busy = false
@@ -367,11 +378,12 @@ Scope {
       answer = String(message.text || "")
       error = ""
       notice = message.resumable ? "Session stays private to this panel" : "Answer ready"
-    } else if (message.event === "permission") {
+    } else if (message.event === "permission" && message.request === request) {
+      permissionContexts = [String(message.kind)]
       busy = false
       promptText = sentPrompt
       error = "Allow " + (message.kind === "clip" ? "clipboard" : "selection") + " text before sending"
-    } else if (message.event === "error") {
+    } else if (message.event === "error" && (!message.request || message.request === request)) {
       busy = false
       if (message.request === request && sentPrompt !== "") promptText = sentPrompt
       error = String(message.message || "Codex is unavailable")
@@ -392,16 +404,16 @@ Scope {
     var values = mentionedContexts
     if (Ai.has(values, "clip")) rows.push({
       kind: "clip", glyph: "󰅌", title: "@clip · clipboard text",
-      detail: clipLoading ? "Reading once…" : clipReady ? Ai.preview(clipPreview, clipCharacters, clipTruncated) : "Permission required before Codex can read it",
+      detail: clipLoading ? "Reading once…" : clipReady ? Ai.preview(clipPreview, clipCharacters, clipTruncated) : "Included once when you press Send",
       warning: !clipReady, loading: clipLoading,
-      action: clipReady ? (clipExpanded ? "Collapse" : "Review") : "Allow once",
+      action: Ai.has(permissionContexts, "clip") ? (clipReady ? (clipExpanded ? "Collapse" : "Review") : "Allow once") : "",
       expanded: clipExpanded, body: clipText, image: ""
     })
     if (Ai.has(values, "select")) rows.push({
       kind: "select", glyph: "󰒅", title: "@select · primary selection",
-      detail: selectionLoading ? "Reading once…" : selectionReady ? Ai.preview(selectionPreview, selectionCharacters, selectionTruncated) : "Permission required before Codex can read it",
+      detail: selectionLoading ? "Reading once…" : selectionReady ? Ai.preview(selectionPreview, selectionCharacters, selectionTruncated) : "Included once when you press Send",
       warning: !selectionReady, loading: selectionLoading,
-      action: selectionReady ? (selectionExpanded ? "Collapse" : "Review") : "Allow once",
+      action: Ai.has(permissionContexts, "select") ? (selectionReady ? (selectionExpanded ? "Collapse" : "Review") : "Allow once") : "",
       expanded: selectionExpanded, body: selectionText, image: ""
     })
     if (Ai.has(values, "window")) {
@@ -411,14 +423,14 @@ Scope {
     }
     if (Ai.has(values, "dir")) rows.push({
       kind: "dir", glyph: "󰉋", title: "@dir · terminal directory",
-      detail: directoryLoading ? "Reading the focused terminal…" : directoryReady ? directory : "Unavailable · focus a terminal before opening the panel",
+      detail: directoryLoading ? "Reading the focused terminal…" : directoryReady ? directory : "Resolved when you press Send",
       warning: !directoryReady, loading: directoryLoading, action: "", expanded: false, body: "", image: ""
     })
     if (Ai.has(values, "screen")) rows.push({
       kind: "screen", glyph: "󰹑", title: "@screen · current output",
-      detail: screenLoading ? "Capturing without the panel…" : screenReady ? (screenName || "Current output") + " · this exact image will be sent" : (screenName || "Unknown output") + " · capture a private preview before sending",
+      detail: screenLoading ? "Capturing without the panel…" : screenReady ? (screenName || "Current output") + " · this exact image will be sent" : (screenName || "Unknown output") + " · captured once when you press Send",
       warning: !screenReady, loading: screenLoading,
-      action: screenReady ? "Recapture" : "Capture", expanded: false, body: "", image: screenPreview
+      action: Ai.has(permissionContexts, "screen") ? (screenReady ? "Recapture" : "Capture") : "", expanded: false, body: "", image: collecting ? "" : screenPreview
     })
     return rows
   }
@@ -439,6 +451,9 @@ Scope {
         try { prompt.accept(JSON.parse(data)) }
         catch (_) {
           if (prompt.alive) {
+            prompt.collecting = false
+            prompt.syncContexts()
+            prompt.active = true
             prompt.busy = false
             prompt.error = "The AI prompt helper returned invalid data"
           }
@@ -449,6 +464,8 @@ Scope {
       if (!running && prompt.alive) {
         prompt.inserting = false
         prompt.active = true
+        prompt.collecting = false
+        prompt.syncContexts()
         prompt.busy = false
         prompt.error = "The AI prompt helper stopped"
       }
@@ -529,7 +546,7 @@ Scope {
               width: parent.width
               glyph: "󱚣"
               title: "Quick AI"
-              detail: prompt.busy ? "Codex is thinking…" : prompt.usage
+              detail: prompt.collecting ? "Collecting context…" : prompt.busy ? "Codex is thinking…" : prompt.usage
               detailColor: prompt.error !== "" ? prompt.theme.yellow : prompt.theme.subtext
               Shared.ActionButton {
                 theme: prompt.theme
@@ -582,7 +599,7 @@ Scope {
               }
               Shared.ActionButton {
                 theme: prompt.theme
-                text: prompt.busy ? "Thinking…" : "Send"
+                text: prompt.collecting ? "Collecting…" : prompt.busy ? "Thinking…" : "Send"
                 enabled: prompt.canSend
                 onClicked: prompt.submit()
               }
