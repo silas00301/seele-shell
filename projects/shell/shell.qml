@@ -114,7 +114,6 @@ Shared.Theme {
   property string failedControlAction: ""
   property string failedControlValue: ""
   property string failedControlExtra: ""
-  property int windowsCountdown: -1
   property var agentData: ({
     subscriptions: [],
     local: { today: {}, daily: [], periods: {}, models: [], totalTokens: 0, totalCost: 0 },
@@ -201,8 +200,6 @@ Shared.Theme {
     overlayScreen = ""
     overlayAnchorX = -1
     closeTrayMenu()
-    windowsCountdown = -1
-    windowsTimer.stop()
     bluetoothForget = ""
     notificationHistoryOpen = false
     bluetoothForgetTimer.stop()
@@ -1469,16 +1466,6 @@ Shared.Theme {
     wheel.accepted = true
   }
 
-  function toggleWindowsReboot() {
-    if (windowsCountdown >= 0) {
-      windowsCountdown = -1
-      windowsTimer.stop()
-    } else {
-      windowsCountdown = 10
-      windowsTimer.restart()
-    }
-  }
-
   function subscriptionLimit(id) {
     var subscriptions = root.agentData.subscriptions || []
     var wanted = String(id).toLowerCase()
@@ -1787,22 +1774,6 @@ Shared.Theme {
     id: osdTimer
     interval: root.osdKind === "airpods" ? 3200 : 1400
     onTriggered: if (root.osdKind !== "yubikey") root.osdOpen = false
-  }
-
-  Timer {
-    id: windowsTimer
-    interval: 1000
-    repeat: true
-    onTriggered: {
-      if (root.windowsCountdown <= 1) {
-        stop()
-        root.windowsCountdown = -1
-        root.controlPanel = ""
-        root.runControl("reboot-windows")
-      } else {
-        root.windowsCountdown--
-      }
-    }
   }
 
   GitHubStore {
@@ -5218,7 +5189,7 @@ Shared.Theme {
             width: 30
             hovered: sessionMouse.containsMouse
             active: root.panelHere("system", barWindow.modelData)
-            Text { anchors.centerIn: parent; text: "󰐥"; color: root.windowsCountdown >= 0 ? root.yellow : root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+            Text { anchors.centerIn: parent; text: "󰐥"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
             MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("system", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: sessionMouse; text: "Power and session" }
           }
@@ -9140,7 +9111,7 @@ Shared.Theme {
             rowSpacing: 8
             Repeater {
               model: [
-                {label:(root.windowsCountdown >= 0 ? "Windows · " + root.windowsCountdown + "s" : "Windows"), icon:"󰍲", action:"reboot-windows", variant:"default"},
+                {label:"Windows", icon:"󰍲", action:"reboot-windows", variant:"default"},
                 {label:"Lock", icon:"󰌾", action:"lock", variant:"default"},
                 {label:"Log out", icon:"󰍃", action:"logout", variant:"default"},
                 {label:"Suspend", icon:"󰒲", action:"lock-suspend", variant:"default"},
@@ -9156,7 +9127,7 @@ Shared.Theme {
                 Column {
                   anchors.centerIn: parent
                   spacing: root.spaceTight
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : modelData.action === "reboot-windows" && root.windowsCountdown >= 0 ? root.yellow : root.accent; font.family: root.fontFamily; font.pixelSize: root.textTitle }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: root.textTitle }
                   Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 }
                 MouseArea {
@@ -9165,11 +9136,7 @@ Shared.Theme {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: {
-                    if (parent.modelData.action === "reboot-windows") root.toggleWindowsReboot()
-                    else {
-                      root.closeOverlays()
-                      root.runControl(parent.modelData.action)
-                    }
+                    if (root.runControl(parent.modelData.action)) root.closeOverlays()
                   }
                 }
               }
