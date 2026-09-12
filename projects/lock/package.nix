@@ -50,6 +50,8 @@ pkgs.stdenvNoCC.mkDerivation {
     "$out/bin/seele-lock" --help >/dev/null
     ${quickshell}/bin/quickshell --private-check-compat
     qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-lock/shell.qml"
+    bash ${../../tests/shell-load.sh} ${quickshell}/bin/quickshell \
+      "$out/share/seele-lock" ${pkgs.sway-unwrapped}/bin/sway
 
     runHook postInstallCheck
   '';
