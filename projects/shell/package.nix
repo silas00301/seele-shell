@@ -49,6 +49,7 @@ let
     pkgs.gawk
     pkgs.ghostty
     pkgs.gh
+    pkgs.glib
     pkgs.git
     pkgs.grim
     pkgs.hyprland
@@ -109,6 +110,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    install -m644 ${./TransfersStore.qml} "$out/share/seele-shell/TransfersStore.qml"
+    install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
+    substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${../transfers/transfers.py} "$out/libexec/seele-shell/transfers.py"
     install -m644 ${./HomeAssistantPanel.qml} "$out/share/seele-shell/HomeAssistantPanel.qml"
     substituteInPlace "$out/share/seele-shell/HomeAssistantPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./AiActivityStore.qml} "$out/share/seele-shell/AiActivityStore.qml"
@@ -185,6 +190,9 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix QML2_IMPORT_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml" \
       --prefix QT_PLUGIN_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/plugins" \
       --prefix PATH : "$out/bin:${runtimePath}"
+    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-transfers" \
+      --add-flags "$out/libexec/seele-shell/transfers.py" \
+      --prefix PATH : "$out/bin:${runtimePath}"
     makeWrapper ${homeAssistantPython}/bin/python3 "$out/bin/seele-home-assistant" \
       --add-flags "$out/libexec/seele-shell/home-assistant.py" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
@@ -252,7 +260,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/libexec/seele-shell/ai-prompt.py"
@@ -272,7 +280,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${../../tests/home-assistant-panel.sh} ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${../../tests/home-assistant-panel.qml}
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -285,7 +293,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${../../tests/tst_centeredglyph.qml}
-    for command in seele-ai-prompt-worker seele-uri-worker seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-transfers seele-ai-prompt-worker seele-uri-worker seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -297,6 +305,8 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${../../tests/feature-integrations.js} "$out/share/seele-shell/shell.qml" ${./package.nix}
     node ${../../tests/ai-activity.js} "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
+    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/transfers.py} "$out/libexec/seele-shell/transfers.py"
+    node ${../../tests/transfers.js} "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${../../tests/ai-prompt.js} "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/ai-prompt.py} "$out/libexec/seele-shell/ai-prompt.py"
     node ${../../tests/focus.js} "$out/share/seele-shell/focus.js"

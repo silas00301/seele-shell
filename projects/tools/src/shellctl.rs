@@ -11,6 +11,7 @@ Commands:
   agents                    Toggle the AI dashboard
   prompt                    Toggle the quick AI prompt
   center                    Toggle the Control Center
+  transfers                 Open personal Transfers
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
   control <panel>           Toggle a control panel
@@ -78,6 +79,7 @@ pub fn run(arguments: &[String]) -> Result {
         "agents" => call("toggleAgents", &[]),
         "prompt" => call("togglePrompt", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
+        "transfers" => call("openTransfers", &[]),
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),
         "control" => call(

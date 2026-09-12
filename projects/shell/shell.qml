@@ -1840,6 +1840,11 @@ Shared.Theme {
       if(healthToken) { integrationHealth.complete("home-assistant",healthToken,state === "healthy"); healthToken=0 }
     }
   }
+  TransfersStore {
+    id: transfersStore
+    panelOpen: root.controlPanel === "transfers"
+    onRevealRequested: if (root.controlPanel !== "transfers") root.toggleControl("transfers")
+  }
 
   IpcHandler {
     target: "seele-shell"
@@ -1872,6 +1877,7 @@ Shared.Theme {
     function toggleUris(): void { root.toggleUris() }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
+    function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
     function launchAgent(id: string, prompt: string): void { root.runAgent(id, prompt) }
     function refreshAgents(): void { root.refreshAgents() }
     function updateStatus(json: string): void { root.parseSystemData(json) }
@@ -2754,16 +2760,29 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 2 + gap
+    height: devicesY + smallTileHeight * 2 + gap * 2 + root.rowHeight
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
-      width:controlGrid.width; height:controlGrid.smallTileHeight
-      label:"System Health"
-      detail:integrationHealth.attentionCount + " integrations need attention" + (root.healthMaintenanceCount ? " · " + root.healthMaintenanceCount + " maintenance items" : "")
-      active:integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
-      glyph:Text { text:"󰅚"; color:root.accent; font.family:root.fontFamily; font.pixelSize:root.textIcon }
-      onActivated:root.toggleControl("system-health",controlGrid.screenName)
+      width: controlGrid.width
+      height: controlGrid.smallTileHeight
+      label: "System Health"
+      detail: integrationHealth.attentionCount + " integrations need attention" + (root.healthMaintenanceCount ? " · " + root.healthMaintenanceCount + " maintenance items" : "")
+      active: integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
+      glyph: Text { text: "󰅚"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("system-health", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 2 + controlGrid.gap * 2
+      width: parent.width
+      height: root.rowHeight
+      label: "Transfers"
+      detail: transfersStore.attention ? "Active, new or failed transfers" : "Send original files to your personal devices"
+      active: transfersStore.attention
+      glyph: Component { Text { text: "󰇚"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCard } }
+      onActivated: root.toggleControl("transfers", controlGrid.screenName)
     }
 
     Rectangle {
@@ -5156,13 +5175,23 @@ Shared.Theme {
           }
 
           BarItem {
-            visible:integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
-            width:healthBarLabel.implicitWidth + root.spaceLarge
-            hovered:healthBarHover.hovered
-            active:root.panelHere("system-health",barWindow.modelData)
-            Text { id:healthBarLabel; anchors.centerIn:parent; text:"󰅚 " + (integrationHealth.attentionCount+root.healthMaintenanceCount); color:root.yellow; font.family:root.fontFamily; font.pixelSize:root.textBody }
-            HoverHandler { id:healthBarHover }
-            MouseArea { anchors.fill:parent; cursorShape:Qt.PointingHandCursor; onClicked:root.toggleControl("system-health",barWindow.modelData.name,root.barItemCenter(parent)) }
+            visible: integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
+            width: healthBarLabel.implicitWidth + root.spaceLarge
+            hovered: healthBarHover.hovered
+            active: root.panelHere("system-health", barWindow.modelData)
+            Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + (integrationHealth.attentionCount + root.healthMaintenanceCount); color: root.yellow; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            HoverHandler { id: healthBarHover }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("system-health", barWindow.modelData.name, root.barItemCenter(parent)) }
+          }
+
+          BarItem {
+            visible: transfersStore.attention
+            width: transfersLabel.implicitWidth + root.spaceLarge
+            active: root.panelHere("transfers", barWindow.modelData)
+            hovered: transfersMouse.containsMouse
+            Text { id: transfersLabel; anchors.centerIn: parent; text: transfersStore.barText; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            MouseArea { id: transfersMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("transfers", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: transfersMouse; text: "Transfers · active, new or failed" }
           }
 
           BarItem {
@@ -7463,6 +7492,37 @@ Shared.Theme {
               screenName: controlCenterWindow.modelData.name
             }
           }
+        }
+      }
+    }
+  }
+
+  // Personal transfers --------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: transfersWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "transfers" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: transfersContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-transfers"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { transfersContent.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: transfersContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰇚"; title: "Transfers"; detail: "Personal devices · original files" }
+          TransfersPanel { theme: root; store: transfersStore; width: parent.width }
         }
       }
     }
