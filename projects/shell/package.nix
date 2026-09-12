@@ -127,6 +127,9 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
     install -m644 ${./health.js} "$out/share/seele-shell/health.js"
     install -m644 ${./IntegrationHealthStore.qml} "$out/share/seele-shell/IntegrationHealthStore.qml"
+    install -m644 ${./MaintenanceStore.qml} "$out/share/seele-shell/MaintenanceStore.qml"
+    install -m644 ${./MaintenancePanel.qml} "$out/share/seele-shell/MaintenancePanel.qml"
+    substituteInPlace "$out/share/seele-shell/MaintenancePanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./SystemHealthPanel.qml} "$out/share/seele-shell/SystemHealthPanel.qml"
     substituteInPlace "$out/share/seele-shell/SystemHealthPanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
@@ -260,7 +263,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/libexec/seele-shell/ai-prompt.py"
@@ -316,6 +319,7 @@ pkgs.stdenvNoCC.mkDerivation {
     PYTHONDONTWRITEBYTECODE=1 ${homeAssistantPython}/bin/python3 ${../../tests/home-assistant-live.py} "$out/libexec/seele-shell/home-assistant.py"
     node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
+    node ${../../tests/maintenance.js} "$out/share/seele-shell/MaintenanceStore.qml"
     node ${../../tests/health.js} "$out/share/seele-shell/health.js"
     node ${../../tests/github.js} "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
