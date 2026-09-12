@@ -5,10 +5,12 @@ const shell = fs.readFileSync(process.argv[2], 'utf8');
 const pkg = fs.readFileSync(process.argv[3], 'utf8');
 
 const shellPatterns = {
+  'registered health store': /IntegrationHealthStore\s*\{\s*id: integrationHealth/,
+  'system health panel': /SystemHealthPanel\s*\{\s*id:healthContent/,
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
   'quick AI prompt controller': /AiPrompt\s*\{\s*\n\s*id: aiPrompt/,
   'quick AI prompt IPC': /function togglePrompt\(\): void \{ root\.togglePrompt\(\) \}/,
-  'Home Assistant store': /HomeAssistantStore\s*\{\s*id: homeAssistantStore\s*\}/,
+  'Home Assistant store': /HomeAssistantStore\s*\{\s*id: homeAssistantStore/,
   'GitHub store': /GitHubStore\s*\{\s*\n\s*id: githubStore/,
   'GitHub leaves bar and click-away input available': /namespace: "seele-shell-github"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'collapsed network addresses': /property bool addressesExpanded: false/,
@@ -36,6 +38,7 @@ assert.ok(!/id: notificationImage\b/.test(notificationCard),
   'notification profile images must not return to the expandable body');
 
 const packagedSources = [
+  'health.js', 'IntegrationHealthStore.qml', 'SystemHealthPanel.qml',
   'AiPrompt.qml',
   'ai-prompt.js',
   'FocusTimer.qml',
@@ -54,6 +57,7 @@ for (const source of packagedSources) {
 }
 
 const focusedTests = [
+  'health.js',
   'ai-prompt.js',
   'ai-prompt.py',
   'focus.js',

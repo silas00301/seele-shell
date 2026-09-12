@@ -41,6 +41,7 @@ function qmlMethod(name) {
 }
 let now = 100000;
 const lifecycle = vm.createContext({
+  healthSuccess: 0, healthPublished(){},
   GitHub: context, Date: {now: () => now}, active: true,
   snapshot: context.initial(), lastAttempt: 0, received: false,
   requestPending: false, requestId: 0, worker: null,

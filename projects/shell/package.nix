@@ -120,6 +120,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./ai-prompt.js} "$out/share/seele-shell/ai-prompt.js"
     install -m644 ${../ai-prompt/worker.py} "$out/libexec/seele-shell/ai-prompt.py"
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
+    install -m644 ${./health.js} "$out/share/seele-shell/health.js"
+    install -m644 ${./IntegrationHealthStore.qml} "$out/share/seele-shell/IntegrationHealthStore.qml"
+    install -m644 ${./SystemHealthPanel.qml} "$out/share/seele-shell/SystemHealthPanel.qml"
+    substituteInPlace "$out/share/seele-shell/SystemHealthPanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
     mkdir -p "$out/share/seele-shell/shared"
@@ -248,7 +252,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in AiActivityStore.qml AiActivityPanel.qml ai-activity.js AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/libexec/seele-shell/ai-prompt.py"
@@ -268,7 +272,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${../../tests/home-assistant-panel.sh} ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${../../tests/home-assistant-panel.qml}
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
+    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
     bash ${../../tests/headphones-icon.sh} \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${../../tests/tst_headphones.qml} \
@@ -302,6 +306,7 @@ pkgs.stdenvNoCC.mkDerivation {
     PYTHONDONTWRITEBYTECODE=1 ${homeAssistantPython}/bin/python3 ${../../tests/home-assistant-live.py} "$out/libexec/seele-shell/home-assistant.py"
     node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
     PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
+    node ${../../tests/health.js} "$out/share/seele-shell/health.js"
     node ${../../tests/github.js} "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
     node ${../../tests/media.js} "$out/share/seele-shell/media.js"

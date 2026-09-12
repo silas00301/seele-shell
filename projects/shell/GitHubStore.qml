@@ -6,6 +6,8 @@ import "github.js" as GitHub
 Item {
   id: store
 
+  signal healthPublished(string state, double success)
+  property double healthSuccess: 0
   property bool active: false
   property var snapshot: GitHub.initial(String(Quickshell.env("SEELE_GITHUB_HOST") || "github.com"))
   property double lastAttempt: 0
@@ -50,6 +52,9 @@ Item {
     watchdog.stop()
     if (message || !received)
       snapshot = GitHub.receive(snapshot, { state: "error", message: message || "GitHub refresh could not start." })
+    var healthState = snapshot.state === "ready" ? "healthy" : snapshot.state === "auth-required" ? "setup-required" : "degraded"
+    if(healthState === "healthy") healthSuccess=Date.now()
+    healthPublished(healthState,healthSuccess)
     const previous = worker
     worker = null
     requestPending = false

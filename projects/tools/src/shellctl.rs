@@ -1,6 +1,7 @@
 use crate::command::{detached, exec, output};
 use crate::Result;
 use std::env;
+use std::io::Read;
 use std::process::Command;
 
 const USAGE: &str = r#"Usage: seele-shellctl [-q] <command> [arguments]
@@ -24,6 +25,8 @@ Commands:
   voxtype                   Toggle voice dictation
   lock                      Lock the session
   notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
+  health-publish <id>       Publish bounded health JSON from stdin
+  health-status             Print registered current health metadata
   notification-status       Print notification state as JSON
   ping                      Check shell IPC
 "#;
@@ -135,6 +138,16 @@ pub fn run(arguments: &[String]) -> Result {
             call("updateStatus", &[result])
         }
         "lock" => exec("seele-control", &["lock".into()]),
+        "health-status" => call("healthStatus", &[]),
+        "health-publish" => {
+            if rest.len() != 1 { return Err("health provider id required".into()); }
+            let mut payload = String::new();
+            std::io::stdin().take(4097).read_to_string(&mut payload)?;
+            if payload.len() > 4096 { return Err("health payload too large".into()); }
+            let response = ipc_output(&["healthPublish".into(), rest[0].clone(), payload])?;
+            if response.trim() != "ok" { return Err("health publication rejected".into()); }
+            Ok(())
+        }
         "notification-status" => call("notificationStatus", &[]),
         "notification" => {
             let action = rest.first().ok_or("notification action required")?;

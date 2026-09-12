@@ -7,6 +7,7 @@ const methods = [...source.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}
 const writes = [];
 let completed = 0;
 const state = vm.createContext({
+  healthSuccess: 0, healthPublished(){},
   connected: false, configured: false, ready: true, entities: [], preferences: [], catalog: [], error: '',
   pending: {}, requests: {}, serial: 0, settingsPending: false, url: '', summary: '', summaryText: '',
   worker: {running: true, write(text) { writes.push(JSON.parse(text)); }},
