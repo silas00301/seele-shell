@@ -15,7 +15,7 @@ Commands:
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
   control <panel>           Toggle a control panel
-  bluetooth-pairing <json>  Show a Bluetooth pairing request
+  bluetooth-pairing <token> Show the matching private Bluetooth request
   bluetooth-pairing-dismiss Withdraw the Bluetooth pairing request
   agent <name> [prompt...]  Launch an agent
   refresh-agents            Refresh AI usage data
@@ -50,7 +50,9 @@ fn ipc_output(arguments: &[String]) -> Result<String> {
 fn ipc(quiet: bool, arguments: &[String]) -> Result {
     match ipc_output(arguments) {
         Ok(value) => {
-            if !quiet && !value.trim().is_empty() { println!("{}", value.trim_end()); }
+            if !quiet && !value.trim().is_empty() {
+                println!("{}", value.trim_end());
+            }
             Ok(())
         }
         Err(_) if quiet => Ok(()),
@@ -88,7 +90,7 @@ pub fn run(arguments: &[String]) -> Result {
         ),
         "bluetooth-pairing" => call(
             "bluetoothPairingRequest",
-            &[rest.first().ok_or("request payload required")?.clone()],
+            &[rest.first().ok_or("pairing token required")?.clone()],
         ),
         "bluetooth-pairing-dismiss" => call("bluetoothPairingDismiss", &[]),
         "agent" => {
@@ -142,12 +144,18 @@ pub fn run(arguments: &[String]) -> Result {
         "lock" => exec("seele-control", &["lock".into()]),
         "health-status" => call("healthStatus", &[]),
         "health-publish" => {
-            if rest.len() != 1 { return Err("health provider id required".into()); }
+            if rest.len() != 1 {
+                return Err("health provider id required".into());
+            }
             let mut payload = String::new();
             std::io::stdin().take(4097).read_to_string(&mut payload)?;
-            if payload.len() > 4096 { return Err("health payload too large".into()); }
+            if payload.len() > 4096 {
+                return Err("health payload too large".into());
+            }
             let response = ipc_output(&["healthPublish".into(), rest[0].clone(), payload])?;
-            if response.trim() != "ok" { return Err("health publication rejected".into()); }
+            if response.trim() != "ok" {
+                return Err("health publication rejected".into());
+            }
             Ok(())
         }
         "notification-status" => call("notificationStatus", &[]),
@@ -156,7 +164,9 @@ pub fn run(arguments: &[String]) -> Result {
             let id = rest.get(1).cloned().unwrap_or_default();
             let key = rest.get(2).cloned().unwrap_or_else(|| "default".into());
             let response = ipc_output(&["notificationCommand".into(), action.clone(), id, key])?;
-            if response.trim() != "ok" { return Err("notification action unavailable".into()); }
+            if response.trim() != "ok" {
+                return Err("notification action unavailable".into());
+            }
             Ok(())
         }
         "ping" => call("ping", &[]),

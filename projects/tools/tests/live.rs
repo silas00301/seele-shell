@@ -344,14 +344,9 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
     writeln!(controller.0.stdin.as_mut().unwrap(), "all").unwrap();
     let mut acknowledged = json!({});
     wait_for(&receiver, &mut acknowledged, |s| {
-        [
-            "volume",
-            "bluetoothPowered",
-            "connection",
-            "tailscale",
-        ]
-        .iter()
-        .all(|key| s.get(key).is_some())
+        ["volume", "bluetoothPowered", "connection", "tailscale"]
+            .iter()
+            .all(|key| s.get(key).is_some())
     });
     let pipewire_pid: u32 = fs::read_to_string(work.0.join("pipewire-pid"))
         .unwrap()

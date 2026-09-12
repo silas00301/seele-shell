@@ -1,0 +1,14 @@
+[package]
+rust-version.workspace = true
+name = "seele-failure-analysis"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Private service failure reports with explicit broker analysis"
+
+[dependencies]
+seele-runtime = { workspace = true }
+libc = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+tempfile = { workspace = true }

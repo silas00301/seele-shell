@@ -25,6 +25,8 @@ export LC_ALL=C.UTF-8
 export SEELE_SHELL_PATH="$work/config"
 export PATH="$(dirname "$quickshell"):$PATH"
 cp "$sources/NotificationStore.qml" "$sources/notifications.js" "$work/config/"
+source "$(dirname "${BASH_SOURCE[0]}")/qml-fixture.sh"
+copy_qml_shared "$sources" "$work/config"
 # Exercise the production IPC handlers as well as the production state module.
 node - "$sources/shell.qml" "$work/config/shell.qml" <<'JS'
 const fs = require('node:fs');

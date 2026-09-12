@@ -11,13 +11,13 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::FromRawFd;
 use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc, Arc, Mutex,
 };
 use std::thread::{self, JoinHandle};
@@ -26,6 +26,46 @@ use std::time::{Duration, Instant};
 type Result<T = ()> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 const STRIP: usize = 512;
 const OVERLAP: usize = 64;
+const MAX_CAPTURE: usize = 128 * 1024 * 1024;
+const MAX_CAPTURE_TOTAL: usize = 512 * 1024 * 1024;
+
+/// Charge allocation capacity, not just received bytes, across every session.
+/// Cancellation releases the charge when the last queued OCR job drops pixels.
+struct Memory {
+    total: Arc<AtomicUsize>,
+    reserved: usize,
+}
+impl Memory {
+    fn reserve(&mut self, bytes: &mut Vec<u8>, needed: usize) -> io::Result<()> {
+        if needed > MAX_CAPTURE {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if needed <= bytes.capacity() {
+            return Ok(());
+        }
+        let next = needed
+            .max(bytes.capacity().saturating_mul(2))
+            .min(MAX_CAPTURE);
+        let extra = next - self.reserved;
+        self.total
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
+                value
+                    .checked_add(extra)
+                    .filter(|value| *value <= MAX_CAPTURE_TOTAL)
+            })
+            .map_err(|_| io::ErrorKind::OutOfMemory)?;
+        self.reserved = next;
+        bytes
+            .try_reserve_exact(next - bytes.len())
+            .map_err(|_| io::ErrorKind::OutOfMemory)?;
+        Ok(())
+    }
+}
+impl Drop for Memory {
+    fn drop(&mut self) {
+        self.total.fetch_sub(self.reserved, Ordering::AcqRel);
+    }
+}
 
 #[derive(Deserialize)]
 struct Request {
@@ -40,6 +80,7 @@ struct Capture {
     output: String,
     path: PathBuf,
     image: Image,
+    _memory: Memory,
 }
 
 /// A private, per-invocation directory. Captures never enter the screenshot
@@ -69,48 +110,95 @@ impl Drop for Workspace {
     }
 }
 
-fn emit(value: Value) {
+fn emit(value: Value) -> Result {
+    let bytes = seele_runtime::wire::json_frame(&value, 4 * 1024 * 1024)?;
     let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let _ = serde_json::to_writer(&mut out, &value);
-    let _ = out.write_all(b"\n");
-    let _ = out.flush();
+    let _lock = stdout.lock();
+    let mut out = seele_runtime::wire::nonblocking_stdout()?;
+    seele_runtime::wire::write_bytes(
+        &mut out,
+        &bytes,
+        Duration::from_secs(5),
+        &AtomicBool::new(false),
+    )?;
+    Ok(())
 }
 
-fn capture(output: String, path: PathBuf, cancel: &AtomicBool) -> Result<Capture> {
-    if output.is_empty() || output.starts_with('-') || output.contains(['\0', '\n']) {
+fn capture(
+    output: String,
+    path: PathBuf,
+    cancel: &AtomicBool,
+    total: Arc<AtomicUsize>,
+) -> Result<Capture> {
+    if output.is_empty()
+        || output.len() > 256
+        || output.starts_with('-')
+        || output.chars().any(char::is_control)
+    {
         return Err("invalid output name".into());
     }
-    let file = OpenOptions::new()
+    let mut bytes = Vec::new();
+    let mut memory = Memory { total, reserved: 0 };
+    let result = seele_runtime::process::stream_stdout(
+        Command::new("grim").args(["-t", "ppm", "-o", &output, "-"]),
+        b"",
+        seele_runtime::process::Limits {
+            timeout: Duration::from_secs(3),
+            output: 64 * 1024,
+        },
+        cancel,
+        |chunk| {
+            let needed = bytes_len_plus(chunk.len(), bytes.len())?;
+            memory.reserve(&mut bytes, needed)?;
+            bytes.extend_from_slice(chunk);
+            Ok(())
+        },
+    )?;
+    if !result.status.success() {
+        return Err("screen capture failed".into());
+    }
+    let image = Image::parse(bytes)?;
+    let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(&path)?;
-    let mut child = Command::new("grim")
-        .args(["-t", "ppm", "-o", &output, "-"])
-        .stdout(file)
-        .stderr(Stdio::null())
-        .stdin(Stdio::null())
-        .spawn()?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        if let Some(status) = child.try_wait()? {
-            if !status.success() {
-                return Err("screen capture failed".into());
-            }
-            break;
-        }
-        if cancel.load(Ordering::Relaxed) || Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("screen capture cancelled or timed out".into());
-        }
-        thread::sleep(Duration::from_millis(2));
-    }
+    file.write_all(&image.bytes)?;
     Ok(Capture {
         output,
-        image: Image::parse(fs::read(&path)?)?,
+        image,
         path,
+        _memory: memory,
+    })
+}
+fn bytes_len_plus(extra: usize, current: usize) -> io::Result<usize> {
+    current
+        .checked_add(extra)
+        .ok_or_else(|| io::ErrorKind::OutOfMemory.into())
+}
+
+fn fixture(path: PathBuf) -> Result<Capture> {
+    let mut file = File::open(&path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_CAPTURE as u64 {
+        return Err("fixture exceeds capture limits".into());
+    }
+    let mut memory = Memory {
+        total: Arc::new(AtomicUsize::new(0)),
+        reserved: 0,
+    };
+    let mut bytes = Vec::new();
+    memory.reserve(&mut bytes, metadata.len() as usize)?;
+    bytes.resize(metadata.len() as usize, 0);
+    file.read_exact(&mut bytes)?;
+    if file.read(&mut [0u8; 1])? != 0 {
+        return Err("fixture changed while reading".into());
+    }
+    Ok(Capture {
+        output: "fixture".into(),
+        image: Image::parse(bytes)?,
+        path,
+        _memory: memory,
     })
 }
 
@@ -121,14 +209,32 @@ struct Job {
     reply: mpsc::Sender<std::result::Result<Vec<Link>, String>>,
 }
 
+fn queue(jobs: &mpsc::SyncSender<Job>, mut job: Job) -> Result {
+    loop {
+        if job.cancel.load(Ordering::Relaxed) {
+            return Err("recognition cancelled".into());
+        }
+        match jobs.try_send(job) {
+            Ok(()) => return Ok(()),
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                return Err("recognition workers unavailable".into())
+            }
+            Err(mpsc::TrySendError::Full(pending)) => {
+                job = pending;
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+}
+
 struct Pool {
-    jobs: Option<mpsc::Sender<Job>>,
+    jobs: Option<mpsc::SyncSender<Job>>,
     threads: Vec<JoinHandle<()>>,
 }
 
 impl Pool {
     fn new() -> Self {
-        let (send, receive) = mpsc::channel::<Job>();
+        let (send, receive) = mpsc::sync_channel::<Job>(128);
         let receive = Arc::new(Mutex::new(receive));
         // Each Tesseract instance is single-threaded. Bound total parallelism
         // instead of nesting OpenMP teams inside one worker per output.
@@ -199,23 +305,26 @@ fn scan(
     request: &Request,
     captures: Vec<Arc<Capture>>,
     cancel: &Arc<AtomicBool>,
-    jobs: &mpsc::Sender<Job>,
+    jobs: &mpsc::SyncSender<Job>,
     started: Instant,
 ) -> Result {
     emit(
         json!({ "id": request.id, "event": "frames", "captureMs": started.elapsed().as_millis(),
         "frames": captures.iter().map(|c| json!({ "output": c.output, "path": c.path,
             "width": c.image.width, "height": c.image.height })).collect::<Vec<_>>() }),
-    );
+    )?;
     let (reply, results) = mpsc::channel();
     let mut remaining = 0;
     for capture in &captures {
-        jobs.send(Job {
-            capture: capture.clone(),
-            strip: None,
-            cancel: cancel.clone(),
-            reply: reply.clone(),
-        })?;
+        queue(
+            jobs,
+            Job {
+                capture: capture.clone(),
+                strip: None,
+                cancel: cancel.clone(),
+                reply: reply.clone(),
+            },
+        )?;
         remaining += 1;
     }
     // Interleave outputs so every monitor gets its first hints promptly.
@@ -225,12 +334,15 @@ fn scan(
             if start >= capture.image.height {
                 continue;
             }
-            jobs.send(Job {
-                capture: capture.clone(),
-                strip: Some((start, (start + STRIP).min(capture.image.height))),
-                cancel: cancel.clone(),
-                reply: reply.clone(),
-            })?;
+            queue(
+                jobs,
+                Job {
+                    capture: capture.clone(),
+                    strip: Some((start, (start + STRIP).min(capture.image.height))),
+                    cancel: cancel.clone(),
+                    reply: reply.clone(),
+                },
+            )?;
             remaining += 1;
         }
     }
@@ -250,7 +362,7 @@ fn scan(
                             next_number += 1;
                         }
                         if !links.is_empty() {
-                            emit(json!({ "id": request.id, "event": "links", "links": links }));
+                            emit(json!({ "id": request.id, "event": "links", "links": links }))?;
                         }
                     }
                     Err(_) => failures += 1,
@@ -266,7 +378,7 @@ fn scan(
         emit(
             json!({ "id": request.id, "event": "done", "count": next_number - 1,
             "failedAreas": failures, "elapsedMs": started.elapsed().as_millis() }),
-        );
+        )?;
     }
     Ok(())
 }
@@ -276,7 +388,7 @@ struct Session {
     done: JoinHandle<()>,
 }
 
-fn start(request: Request, jobs: mpsc::Sender<Job>) -> Session {
+fn start(request: Request, jobs: mpsc::SyncSender<Job>, total: Arc<AtomicUsize>) -> Session {
     let cancel = Arc::new(AtomicBool::new(false));
     let flag = cancel.clone();
     let done = thread::spawn(move || {
@@ -292,7 +404,8 @@ fn start(request: Request, jobs: mpsc::Sender<Job>) -> Session {
                         let output = output.clone();
                         let path = workspace.0.join(format!("{index}.ppm"));
                         let flag = &flag;
-                        scope.spawn(move || capture(output, path, flag).map(Arc::new))
+                        let total = total.clone();
+                        scope.spawn(move || capture(output, path, flag, total).map(Arc::new))
                     })
                     .collect();
                 threads
@@ -317,7 +430,9 @@ fn start(request: Request, jobs: mpsc::Sender<Job>) -> Session {
         if let Err(error) = result {
             if !flag.load(Ordering::Relaxed) {
                 // Errors contain no recognized text or image contents.
-                emit(json!({ "id": request.id, "event": "error", "message": error.to_string() }));
+                let _ = emit(
+                    json!({ "id": request.id, "event": "error", "message": error.to_string() }),
+                );
             }
         }
     });
@@ -333,7 +448,7 @@ fn stop(session: &Session) {
 /// Block signals before starting the OCR threads and consume them on signalfd;
 /// no allocation or file operations run inside an asynchronous signal handler.
 fn requests() -> Result<mpsc::Receiver<Option<Request>>> {
-    let (send, receive) = mpsc::channel();
+    let (send, receive) = mpsc::sync_channel(8);
     let fd = unsafe {
         let mut mask = std::mem::zeroed();
         libc::sigemptyset(&mut mask);
@@ -356,14 +471,10 @@ fn requests() -> Result<mpsc::Receiver<Option<Request>>> {
         let _ = shutdown.send(None);
     });
     thread::spawn(move || {
-        for line in io::stdin().lock().lines() {
-            let Ok(line) = line else {
-                break;
-            };
-            if line.len() > 65536 {
-                continue;
-            }
-            if let Ok(request) = serde_json::from_str::<Request>(&line) {
+        let mut input = io::stdin().lock();
+        let mut frame = Vec::new();
+        while let Ok(true) = seele_runtime::wire::read_frame(&mut input, &mut frame, 65536) {
+            if let Ok(request) = serde_json::from_slice::<Request>(&frame) {
                 if send.send(Some(request)).is_err() {
                     return;
                 }
@@ -391,11 +502,7 @@ pub fn run() -> Result {
     let pool = Pool::new();
     if args.first().is_some_and(|a| a == "--image") {
         let path = Path::new(args.get(1).ok_or("--image needs a PPM file")?).canonicalize()?;
-        let capture = Arc::new(Capture {
-            output: "fixture".into(),
-            image: Image::parse(fs::read(&path)?)?,
-            path,
-        });
+        let capture = Arc::new(fixture(path)?);
         return scan(
             &Request {
                 command: "capture".into(),
@@ -411,6 +518,7 @@ pub fn run() -> Result {
     if !args.is_empty() {
         return Err("unknown arguments".into());
     }
+    let total = Arc::new(AtomicUsize::new(0));
     let mut active: Option<Session> = None;
     let mut retiring: Vec<Session> = Vec::new();
     for request in incoming.unwrap() {
@@ -433,16 +541,24 @@ pub fn run() -> Result {
             }
         }
         retiring = pending;
+        // Supersession cannot create an unbounded stack of capture sessions.
+        while retiring.len() > 1 {
+            let _ = retiring.remove(0).done.join();
+        }
         if request.command == "capture" {
             request.outputs.sort();
             request.outputs.dedup();
             if request.outputs.is_empty() || request.outputs.len() > 16 {
                 emit(
                     json!({ "id": request.id, "event": "error", "message": "No capturable outputs" }),
-                );
+                )?;
                 continue;
             }
-            active = Some(start(request, pool.jobs.as_ref().unwrap().clone()));
+            active = Some(start(
+                request,
+                pool.jobs.as_ref().unwrap().clone(),
+                total.clone(),
+            ));
         }
     }
     if let Some(session) = active {
@@ -453,4 +569,40 @@ pub fn run() -> Result {
         let _ = session.done.join();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+    #[test]
+    fn allocation_budget_is_shared_released_and_checked_before_growth() {
+        let total = Arc::new(AtomicUsize::new(0));
+        let mut bytes = Vec::new();
+        {
+            let mut memory = Memory {
+                total: total.clone(),
+                reserved: 0,
+            };
+            memory.reserve(&mut bytes, 65536).unwrap();
+            assert_eq!(total.load(Ordering::Relaxed), 65536);
+            assert!(memory.reserve(&mut bytes, MAX_CAPTURE + 1).is_err());
+            assert_eq!(bytes.capacity(), 65536);
+            total.store(MAX_CAPTURE_TOTAL, Ordering::Relaxed);
+            assert!(memory.reserve(&mut bytes, 65537).is_err());
+            total.store(memory.reserved, Ordering::Relaxed);
+        }
+        assert_eq!(total.load(Ordering::Relaxed), 0);
+    }
+    #[test]
+    fn unsafe_output_names_are_rejected_without_capture() {
+        for name in ["", "--help", "DP-1\n", "DP-1\0", "DP-1\u{7f}"] {
+            assert!(capture(
+                name.into(),
+                PathBuf::from("/unused"),
+                &AtomicBool::new(false),
+                Arc::new(AtomicUsize::new(0))
+            )
+            .is_err());
+        }
+    }
 }

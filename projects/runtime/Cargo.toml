@@ -1,0 +1,24 @@
+[package]
+rust-version.workspace = true
+name = "seele-runtime"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Shared bounded runtime infrastructure and independent Seele workers"
+
+[dependencies]
+libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+signal-hook = { workspace = true }
+regex = { workspace = true }
+socket2 = "0.6"
+
+[features]
+reactor = ["dep:tokio"]
+
+[dependencies.tokio]
+version = "1"
+optional = true
+features = ["rt", "net", "time", "io-util"]

@@ -161,7 +161,7 @@ SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth scan off
 state=$("$control" bluetooth-status)
 jq -e '(.scanning | not) and (.discoverable | not)' <<<"$state" >/dev/null
 
-# The pairing window registers a DisplayYesNo agent, so Secure Simple Pairing
+# The pairing window registers a KeyboardDisplay agent, so Secure Simple Pairing
 # picks numeric comparison instead of accepting the phone silently, and BlueZ
 # retires discoverability on its own when the window expires.
 SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth pairing open
@@ -175,13 +175,23 @@ grep -qx 'bluetoothctl discoverable on' "$MOCK_ACTIONS"
 grep -qx 'seele-bt-agent window=120 restore=180' "$MOCK_ACTIONS"
 test -s "$XDG_RUNTIME_DIR/seele-shell/bluetooth-agent.pid"
 
-# The shell answers the prompt by token, and the agent only acts on its own.
-SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef accept
+# The shell answers the current private request over stdin; codes never enter argv.
+pairing_request="$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.json"
+printf '%s\n' '{"token":"deadbeef","kind":"confirm"}' > "$pairing_request"
+chmod 600 "$pairing_request"
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer-stdin <<'JSON'
+{"token":"deadbeef","verdict":"accept","value":""}
+JSON
 grep -qx 'deadbeef accept ' "$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.answer"
-# A typed code rides back with the verdict for the passkey and PIN models.
-SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef accept 481625
+printf '%s\n' '{"token":"deadbeef","kind":"passkey"}' > "$pairing_request"
+SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer-stdin <<'JSON'
+{"token":"deadbeef","verdict":"accept","value":"481625"}
+JSON
 grep -qx 'deadbeef accept 481625' "$XDG_RUNTIME_DIR/seele-shell/bluetooth-pairing.answer"
-if SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer deadbeef maybe 2>/dev/null; then exit 1; fi
+if SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth-pairing-answer-stdin 2>/dev/null <<'JSON'
+{"token":"deadbeef","verdict":"maybe","value":""}
+JSON
+then exit 1; fi
 
 SEELE_CONTROL_NO_STATUS=1 "$control" bluetooth pairing close
 test ! -e "$XDG_RUNTIME_DIR/seele-shell/bluetooth-agent.pid"

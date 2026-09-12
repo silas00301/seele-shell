@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {nativeBridge} = require('./native-functions.cjs');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(process.argv[2], 'utf8');
 const panel = fs.readFileSync(process.argv[3], 'utf8');
@@ -8,7 +9,7 @@ const methods = [...source.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}
 const values = [];
 let reveals = 0;
 const rows = {get count(){return values.length}, get(i){return values[i]}, insert(i,v){values.splice(i,0,v)}, move(i,j){values.splice(j,0,values.splice(i,1)[0])}, setProperty(i,k,v){values[i][k]=v},remove(i){values.splice(i,1)}};
-const state = vm.createContext({rows, groups:[],targets:[],selection:[],capabilities:{},error:'',actionError:'',lastFocus:'',lastFocusRevision:0,expanded:'',panelOpen:false,queue:[],payload:'',action:{running:false},revealRequested(){reveals++}, busy:false});
+const state = vm.createContext({Models:require("./list-models.cjs")(),Bridge:nativeBridge(),rows, groups:[],targets:[],selection:[],capabilities:{},error:'',actionError:'',lastFocus:'',lastFocusRevision:0,expanded:'',panelOpen:false,queue:[],payload:'',action:{running:false},revealRequested(){reveals++}, busy:false});
 vm.runInContext(methods,state);
 state.selectUrls(['https://example.test/file']);
 assert.equal(state.queue.length,0);
@@ -54,3 +55,12 @@ ipc.open(); // QML notification focus can open first.
 ipc.open(); // CLI notification action can arrive second.
 assert.equal(desktop.controlPanel,'transfers');
 assert.equal(toggles,1,'notification/picker external open cannot close an already-open panel');
+
+state.action.running=true;state.queue=[];state.groups=[{id:"one",seen:false},{id:"two",seen:false},{id:"seen",seen:true}];
+state.markSeen();assert.deepEqual(JSON.parse(JSON.stringify(state.queue)),[{op:"seen",ids:["one","two"]}],"opening a panel marks all unseen groups in one durable request");
+for (const url of ["file:///tmp/%", "file:///tmp/%GG", "file:///tmp/%FF"]) {state.queue=[];state.selectUrls([url]);assert.equal(state.queue.length,0);assert.equal(state.actionError,"Invalid file.");}
+state.queue=Array.from({length:128},(_,id)=>({op:"seen",id:String(id)}));state.enqueue({op:"new"});assert.equal(state.queue.length,128);assert.match(state.actionError,/Too many/);
+const projection=source.match(/readonly property var projection: ([^\n]+)/)[1];
+state.groups=[{state:"sending",size:200,bytes:51,seen:true},{state:"receiving",size:100,bytes:51,seen:false}];
+assert.equal(vm.runInContext(projection,state).barText,"󰇚 34%");
+console.log("Transfers bounded native URL/action policy and batched seen checks passed");

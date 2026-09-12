@@ -1,11 +1,12 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const [storePath, helperPath] = process.argv.slice(2);
 const source = fs.readFileSync(storePath, 'utf8');
-const helpers = {};
+const helpers = {Bridge:nativeBridge()};
 vm.createContext(helpers);
-vm.runInContext(fs.readFileSync(helperPath, 'utf8'), helpers);
+vm.runInContext(nativeSource(fs.readFileSync(helperPath, 'utf8')), helpers);
 
 // The production callbacks are lifted out of the QML component and run against
 // the same message shapes the worker emits, so what is checked here is the code

@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "projects/broker",
+    "projects/config-tools",
+    "projects/desktop-tools",
+    "projects/failure-analysis",
+    "projects/integrations",
+    "projects/maintenance",
+    "projects/markdown-core",
+    "projects/prompt",
+    "projects/qml-core",
+    "projects/runtime",
+    "projects/repo-tools",
+    "projects/shell-ai",
+    "projects/tools",
+]
+
+[workspace.package]
+rust-version = "1.97"
+
+[workspace.dependencies]
+seele-runtime = { path = "projects/runtime" }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+regex = "1"
+url = "2"
+percent-encoding = "2"
+base64 = "0.22"
+signal-hook = "0.3"
+unicode-general-category = "1"
+zeroize = "1"
+sha2 = "0.10"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

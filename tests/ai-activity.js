@@ -1,6 +1,7 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict')
-const Activity=vm.createContext({})
-vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),Activity)
+const Activity=vm.createContext({Bridge: nativeBridge()})
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2],'utf8')),Activity)
 const values=[{id:'a',consumer:'fixture',label:'Safe label',state:'running',created:10,updated:11,model:'model',attempts:1,queueDuration:0,prompt:'secret',context:'secret',result:'secret'},
   {id:'b',state:'queued',created:10,updated:11},{id:'c',state:'failed',created:10,updated:11},{id:'d',state:'succeeded',created:10,updated:11}]
 const rows=Activity.rows(values,12)
@@ -15,7 +16,7 @@ assert.deepEqual(Array.from(Activity.actions('failed'),a=>a.op),['retry','releas
 const qml=fs.readFileSync(process.argv[3],'utf8')
 const methods=[...qml.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}/gm)].map(m=>m[0]).join('\n')
 const model={items:[],get count(){return this.items.length},get(i){return this.items[i]},insert(i,v){this.items.splice(i,0,v)},remove(i,n){this.items.splice(i,n)},move(i,j){this.items.splice(j,0,this.items.splice(i,1)[0])},setProperty(i,k,v){this.items[i][k]=v}}
-const state=vm.createContext({Activity,jobModel:model,now:12,epoch:'',jobs:[],pendingId:'',actionErrorId:'',actionError:'',poll:{running:false},action:{running:false}})
+const state=vm.createContext({Models:require("./list-models.cjs")(),Activity,jobModel:model,now:12,epoch:'',jobs:[],pendingId:'',actionErrorId:'',actionError:'',poll:{running:false},action:{running:false}})
 vm.runInContext(methods,state)
 state.accept({ok:true,epoch:'first',jobs:values})
 assert.equal(model.count,4)

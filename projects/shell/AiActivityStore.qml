@@ -1,3 +1,4 @@
+import "../shared/ListModels.js" as Models
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -19,18 +20,7 @@ Scope {
 
   function reconcile(values) {
     jobs = values
-    for (var i = 0; i < values.length; i++) {
-      var found = -1
-      for (var j = i; j < jobModel.count; j++)
-        if (jobModel.get(j).modelData.id === values[i].id) { found = j; break }
-      if (found < 0) jobModel.insert(i, {modelData: values[i]})
-      else {
-        if (found !== i) jobModel.move(found, i, 1)
-        if (JSON.stringify(jobModel.get(i).modelData) !== JSON.stringify(values[i]))
-          jobModel.setProperty(i, "modelData", values[i])
-      }
-    }
-    if (jobModel.count > values.length) jobModel.remove(values.length, jobModel.count - values.length)
+    Models.reconcile(jobModel, values, "modelData", function(item) { return item.id })
   }
   function refresh() {
     if (!poll.running) poll.running = true

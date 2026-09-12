@@ -1,13 +1,15 @@
 {
   lib,
   pkgs,
-  quickshellInput,
+  quickshell,
 }:
 let
-  quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
+  nativeQml = import ../qml/package.nix { inherit pkgs; };
+  tests = ../../tests;
   markdown = import ../markdown/package.nix { inherit pkgs lib; };
   qmlPath = lib.concatStringsSep ":" [
+    "${nativeQml}/lib/qt-6/qml"
     "${markdown}/lib/qt-6/qml"
     "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml"
   ];
@@ -18,7 +20,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontUnpack = true;
   dontWrapQtApps = true;
   nativeBuildInputs = [
-    pkgs.makeWrapper
+    pkgs.makeBinaryWrapper
     pkgs.qt6.qtdeclarative
     pkgs.nodejs
     pkgs.python3
@@ -27,8 +29,8 @@ pkgs.stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/share/seele-notes/shared" "$out/bin" "$out/libexec"
-    cp ${../shared}/*.qml "$out/share/seele-notes/shared/"
-    ${tools}/bin/seele-tools grain "$out/share/seele-notes/shared/grain.png"
+    cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-notes/shared/"
+    ${tools}/bin/seele-grain "$out/share/seele-notes/shared/grain.png"
     install -m644 ${./shell.qml} "$out/share/seele-notes/shell.qml"
     substituteInPlace "$out/share/seele-notes/shell.qml" \
       --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
@@ -38,18 +40,14 @@ pkgs.stdenvNoCC.mkDerivation {
         --replace-quiet 'import "../shared" as Shared' 'import "shared" as Shared'
     done
     install -m644 ${./notes.js} "$out/share/seele-notes/notes.js"
-    ln -s ${tools}/bin/seele-tools "$out/libexec/seele-notes-store"
+    substituteInPlace "$out/share/seele-notes/notes.js" \
+      --replace-quiet '../shared/Native.js' 'shared/Native.js'
+    ln -s ${tools}/bin/seele-notes-store "$out/libexec/seele-notes-store"
     makeWrapper "$out/libexec/seele-notes-store" "$out/bin/seele-notes-store" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.pulseaudio ]}"
-    cat > "$out/libexec/launch-notes" <<SCRIPT
-    #!${pkgs.runtimeShell}
-    if ${quickshell}/bin/quickshell ipc -n -p "$out/share/seele-notes" call -- seele-notes open >/dev/null 2>&1; then
-      exit 0
-    fi
-    exec ${quickshell}/bin/quickshell -n -p "$out/share/seele-notes"
-    SCRIPT
-    chmod +x "$out/libexec/launch-notes"
-    makeWrapper "$out/libexec/launch-notes" "$out/bin/seele-notes" \
+    makeWrapper ${tools}/bin/seele-notes-run "$out/bin/seele-notes" \
+      --set SEELE_QUICKSHELL "${quickshell}/bin/quickshell" \
+      --set SEELE_CONFIG "$out/share/seele-notes" \
       --prefix PATH : "$out/bin" \
       --prefix QML_IMPORT_PATH : "${qmlPath}" \
       --prefix QML2_IMPORT_PATH : "${qmlPath}" \
@@ -69,6 +67,13 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
+  env = {
+    SEELE_QML_FUNCTIONS = "${nativeQml.core}/bin/seele-qml-functions";
+    SEELE_QML_BRIDGE = "${../shared/Native.js}";
+    QML_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
+    QML2_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
+  };
+
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
@@ -78,23 +83,24 @@ pkgs.stdenvNoCC.mkDerivation {
     # that formats it has to be present and importable rather than optional.
     grep -Fq 'import Seele.Markdown' "$out/share/seele-notes/MarkdownEditor.qml"
     test -f "${markdown}/lib/qt-6/qml/Seele/Markdown/qmldir"
-    qmllint -I ${quickshell}/lib/qt-6/qml \
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml \
       -I ${pkgs.qt6.qtmultimedia}/lib/qt-6/qml \
       -I ${markdown}/lib/qt-6/qml \
       "$out/share/seele-notes/"*.qml "$out/share/seele-notes/shared/"*.qml
-    node ${../../tests/notes.js} "$out/share/seele-notes/notes.js"
-    node ${../../tests/notes-store.js} "$out/share/seele-notes/NotesStore.qml" "$out/share/seele-notes/notes.js"
-    python3 ${../../tests/notes.py} "$out/libexec/seele-notes-store"
-    bash ${../../tests/notes-editor.sh} \
+    node ${tests}/notes.js "$out/share/seele-notes/notes.js"
+    node ${tests}/notes-store.js "$out/share/seele-notes/NotesStore.qml" "$out/share/seele-notes/notes.js"
+    python3 ${tests}/notes.py "$out/libexec/seele-notes-store"
+    bash ${tests}/notes-editor.sh \
       "$out/share/seele-notes" \
-      ${../../tests/tst_noteseditor.qml} \
+      ${tests}/tst_noteseditor.qml \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
-      ${markdown}/lib/qt-6/qml
+      ${markdown}/lib/qt-6/qml \
+      ${nativeQml}/lib/qt-6/qml
     # The editor fixture instantiates one component. This compiles the whole
     # window with the real runtime imports, which is what catches a property
     # that only exists in the version of a shared component this file expects.
     QML_IMPORT_PATH=${qmlPath} QML2_IMPORT_PATH=${qmlPath} \
-      bash ${../../tests/shell-load.sh} \
+      bash ${tests}/shell-load.sh \
         ${quickshell}/bin/quickshell \
         "$out/share/seele-notes" \
         ${pkgs.sway-unwrapped}/bin/sway

@@ -2,18 +2,21 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const {nativeBridge} = require('./native-functions.cjs');
 const source = fs.readFileSync(process.argv[2], 'utf8');
 const methods = [...source.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}/gm)].map(m => m[0]).join('\n');
 const writes = [];
 let completed = 0;
 const state = vm.createContext({
-  healthSuccess: 0, healthPublished(){},
+  Bridge: nativeBridge(), healthSuccess: 0, healthPublished(){},
   connected: false, configured: false, ready: true, entities: [], preferences: [], catalog: [], error: '',
   pending: {}, requests: {}, serial: 0, settingsPending: false, url: '', summary: '', summaryText: '',
   worker: {running: true, write(text) { writes.push(JSON.parse(text)); }},
   restart: {start(){}}, setupComplete(){ completed++; }, Date,
 });
 vm.runInContext(methods, state);
+const projection = source.match(/readonly property var projection: ([^\n]+)/)[1];
+Object.defineProperty(state,"projection",{get(){return vm.runInContext(projection,state)}});
 const entity = {entity_id:'light.desk',state:'off',controllable:true,available:true,room:'Office'};
 const other = {...entity,entity_id:'light.ceiling'};
 const snapshot = {ready:true,configured:true,connected:true,entities:[entity,other],preferences:[{entity_id:entity.entity_id,name:'',room:'',favorite:false}],pending:{},error:''};
@@ -78,3 +81,14 @@ keys.press({key:13,modifiers:1,isAutoRepeat:false});
 keys.press({key:14,modifiers:0,isAutoRepeat:false});
 assert.equal(requests,2);
 console.log('Home Assistant concurrent controls, stale state, credential lifetime, preferences and keyboard intent passed');
+
+assert.equal(state.moveTarget("light.desk",0),-1,"zero offset cannot enter a nonterminating search");
+
+const Models=require('./list-models.cjs')();
+const rows={values:[],get count(){return this.values.length},get(i){return this.values[i]},insert(i,v){this.values.splice(i,0,v)},move(i,j){this.values.splice(j,0,this.values.splice(i,1)[0])},remove(i,n){this.values.splice(i,n)},setProperty(i,k,v){this.values[i][k]=v}};
+const panelMethods=vm.createContext({Models});
+const reconcile=qml.match(/^  function reconcile\([^\n]*\) \{\n[\s\S]*?^  \}/m)[0];vm.runInContext(reconcile,panelMethods);
+const entries=[{heading:'Office',detail:'21°C'},entity,other];panelMethods.reconcile(rows,entries);const kept=rows.get(1);
+panelMethods.reconcile(rows,[other,entries[0],entity]);assert.equal(rows.get(2),kept,'shared keyed-role adapter preserves Home Assistant delegate identity');
+panelMethods.reconcile(rows,[{...entity,state:'on'}]);assert.equal(rows.count,1);assert.equal(rows.get(0).payload.state,'on');
+console.log('Home Assistant shared header/entity model reconciliation passed');

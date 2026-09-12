@@ -1,0 +1,16 @@
+[package]
+rust-version.workspace = true
+name = "seele-markdown-core"
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+pcre2-sys = "0.2.10"
+
+[[bench]]
+name = "highlight"
+harness = false

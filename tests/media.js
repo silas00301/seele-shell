@@ -1,10 +1,11 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(process.argv[2], "utf8");
-const media = {};
+const media = {Bridge: nativeBridge()};
 vm.createContext(media);
-vm.runInContext(source, media, { filename: process.argv[2] });
+vm.runInContext(nativeSource(source), media, { filename: process.argv[2] });
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -173,3 +174,14 @@ keys.press({key:13,modifiers:1,isAutoRepeat:false});
 keys.press({key:14,modifiers:0,isAutoRepeat:false});
 assert(presses === 2, "media keys ignore held-key repeats and modified shortcuts");
 console.log("media keyboard intent checks passed");
+
+const seekable={canControl:true,canSeek:true,positionSupported:true,lengthSupported:true,length:180,position:20};
+assert(media.seekTarget(seekable,"back",false)===15,"left seeks five seconds");
+assert(media.seekTarget(seekable,"forward",true)===50,"shift seeks thirty seconds");
+assert(media.seekTarget(seekable,"start",false)===0 && media.seekTarget(seekable,"end",false)===180,"home/end reach bounded endpoints");
+assert(media.seekTarget({...seekable,position:178},"forward",true)===180,"seek clamps to duration");
+for(const player of [null,{}, {...seekable,canSeek:false},{...seekable,canControl:false},{...seekable,position:Infinity},{...seekable,length:9223372036854}]) assert(media.seekTarget(player,"forward",false)===null,"unsupported, invalid and live players cannot seek");
+assert(media.seekTarget(seekable,"invalid",false)===null,"unrelated key never moves playback");
+const timingOnly={...seekable};Object.defineProperty(timingOnly,"trackArtist",{get(){throw new Error("timing copied track metadata")}});
+assert(media.timelineAvailable(timingOnly),"timeline query does not touch unrelated track fields");
+console.log("media bounded native keyboard seeking and narrow snapshot checks passed");

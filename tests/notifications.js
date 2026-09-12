@@ -1,9 +1,10 @@
+const {nativeBridge,source:nativeSource}=require("./native-functions.cjs");
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const notifications = {};
+const notifications = {Bridge:nativeBridge()};
 vm.createContext(notifications);
-vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), notifications);
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), notifications);
 const code = (body, summary = '') => notifications.verificationCode({body, summary});
 assert.equal(code('Your verification code is 012345'), '012345');
 assert.equal(code('Use <b>123456</b> to sign in'), '123456');
@@ -281,3 +282,25 @@ if (process.argv[3]) {
   }
   console.log('Stack close dismisses collapsed and expanded groups in panel and toasts');
 }
+
+const inheritedActions=Object.create({phantom:'Not advertised'});
+inheritedActions.actual='Actual';
+assert.deepEqual(Array.from(notifications.actions({actions:inheritedActions}),action=>action.key),['actual']);
+assert.equal(notifications.localImage('//example.invalid/tracker.png'),'');
+assert.equal(notifications.bodyMarkup('<img src="https://example.invalid/tracker.png"'), '&lt;img src="https://example.invalid/tracker.png"');
+assert.equal(notifications.bodyMarkup('Value < threshold'), 'Value &lt; threshold');
+assert.equal(notifications.bodyMarkup('<b>Bold</b> <i>Italic</i><br/><a href="mailto:user@example.org">Mail</a>'), '<b>Bold</b> <i>Italic</i><br/><a href="mailto:user@example.org">Mail</a>');
+console.log('Notification malformed markup, inherited actions and protocol-relative image boundaries passed');
+
+// Sender action order survives native state serialization and locale-independent
+// object-map ordering, including an action whose name overlaps Object.prototype.
+{
+  const h=harness();h.store.receive(h.make(90,{offered:JSON.parse('{"zebra":"Zebra","alpha":"Alpha","constructor":"Constructor","__proto__":"Prototype action"}')}),1000);
+  assert.deepEqual(Array.from(notifications.actions(h.view.items[0]),a=>a.key),['zebra','alpha','constructor','__proto__']);
+  h.store.pin(90);
+  assert.deepEqual(Array.from(notifications.actions(h.view.items[0]),a=>a.key),['zebra','alpha','constructor','__proto__']);
+  h.store.dismiss(90);assert.equal(notifications.actions(h.view.history[0]).length,0);
+}
+console.log('Native notification state preserves sender action order and inert history');
+for (const gap of ['\r','\n','\u2028','\u2029','🦀'.repeat(40)])
+  assert.equal(code('Use 123456 '+gap+' to sign in'),'','verification context keeps JavaScript line and UTF-16 span boundaries');

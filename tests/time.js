@@ -1,10 +1,11 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(process.argv[2], "utf8");
-const time = {};
+const time = {Bridge: nativeBridge()};
 vm.createContext(time);
-vm.runInContext(source, time, { filename: process.argv[2] });
+vm.runInContext(nativeSource(source), time, { filename: process.argv[2] });
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

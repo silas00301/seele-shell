@@ -24,44 +24,16 @@ export type AudioDevice = {
   selected?: boolean;
 };
 
-export function visibleClients(clients: Client[]) {
-  return clients
-    .filter(
-      (client) =>
-        client.mapped &&
-        !client.hidden &&
-        client.class.toLowerCase() !== "vicinae",
-    )
-    .sort(
-      (a, b) =>
-        a.focusHistoryID - b.focusHistoryID ||
-        a.address.localeCompare(b.address),
-    );
-}
+import { binaries, run } from "./runtime";
 
-export function focusWindow(address: string) {
-  if (!/^0x[0-9a-f]+$/i.test(address))
-    throw new Error("Invalid window address");
-  return `hl.dsp.focus({ window = "address:${address}" })`;
+// Event-to-native adapters; target validation and Lua construction live in Rust.
+export async function focusWindow(address: string) {
+  await run(binaries.control, ["vicinae-focus", "window", address]);
 }
-
-export function focusWorkspace(id: number) {
-  if (!Number.isSafeInteger(id) || id <= 0)
-    throw new Error("Invalid workspace");
-  return `hl.dsp.focus({ workspace = ${id} })`;
-}
-
-export function audioArguments(device: AudioDevice) {
-  if (
-    !Number.isSafeInteger(device.id) ||
-    device.id < 0 ||
-    (device.profile !== null &&
-      (!Number.isSafeInteger(device.profile) || device.profile < 0))
-  )
-    throw new Error("Invalid audio device");
-  return [
-    "audio-device",
-    String(device.id),
-    ...(device.profile === null ? [] : [String(device.profile)]),
-  ];
+export async function focusWorkspace(id: number) {
+  await run(binaries.control, [
+    "vicinae-focus",
+    "workspace",
+    String(JSON.stringify(id)),
+  ]);
 }

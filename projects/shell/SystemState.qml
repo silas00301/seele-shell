@@ -1,4 +1,5 @@
 import QtQml
+import "../shared/Native.js" as Bridge
 
 QtObject {
   id: state
@@ -67,6 +68,7 @@ QtObject {
   }
 
   function apply(patch) {
+    patch = Bridge.call("system.patch", [patch])
     for (var key in patch) {
       var previous = state[key]
       if (previous === undefined || typeof previous === "function") continue
