@@ -6,7 +6,7 @@ const pkg = fs.readFileSync(process.argv[3], 'utf8');
 
 const shellPatterns = {
   'registered health store': /IntegrationHealthStore\s*\{\s*id: integrationHealth/,
-  'system health panel': /SystemHealthPanel\s*\{\s*id:healthContent/,
+  'system health panel': /SystemHealthPanel\s*\{\s*id:\s*healthContent/,
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
   'quick AI prompt controller': /AiPrompt\s*\{\s*\n\s*id: aiPrompt/,
   'quick AI prompt IPC': /function togglePrompt\(\): void \{ root\.togglePrompt\(\) \}/,
@@ -32,6 +32,17 @@ const shellPatterns = {
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
   assert.ok(pattern.test(shell), `${feature} is not wired into production shell.qml`);
 }
+
+// SlimScrollBar declares popupHovered required, and Qt fails the whole
+// enclosing object when a required property is left unset -- the System Health
+// panel's scrollable, and so the panel itself, silently stopped being created.
+// qmllint does not catch it and the load test compiles without instantiating,
+// so the shape is guarded here.
+// The `Shared.` form is the inline alias declaration, which defers the
+// property to its callers; every other occurrence is a real instantiation.
+const looseScrollBars = shell.match(/(?<!Shared\.)SlimScrollBar\s*\{(?![^}]*popupHovered)[^}]*\}/g) || [];
+assert.deepEqual(looseScrollBars, [],
+  'every SlimScrollBar must initialize its required popupHovered property');
 
 const notificationCard = shell.slice(shell.indexOf('component NotificationCard:'), shell.indexOf('component NotificationList:'));
 assert.ok(!/id: notificationImage\b/.test(notificationCard),

@@ -20,7 +20,7 @@ Rectangle {
   border.width: 1
   border.color: control.busy ? control.theme.accent
     : switchMouse.containsMouse ? control.theme.alpha(control.theme.accent, 0.55)
-    : control.checked ? "transparent" : control.theme.edgeLight
+    : control.checked ? control.theme.clearColor : control.theme.edgeLight
 
   Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
   Behavior on border.color { ColorAnimation { duration: control.theme.durationFast } }

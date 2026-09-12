@@ -2198,9 +2198,15 @@ Shared.Theme {
       anchors.leftMargin: root.barSpacing / 2
       anchors.rightMargin: root.barSpacing / 2
       radius: root.radius
-      color: parent.active ? root.selectedColor : parent.hovered ? root.hoverColor : root.clearColor
+      // The open entry keeps the accent and the pointer is reported over it.
+      // Branching on `active` first left the one entry the pointer is most
+      // often on -- the one whose panel was just opened by clicking it -- as
+      // the only entry in the strip that could not report a pointer at all.
+      color: barItem.active ? root.selectedColor : root.clearColor
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverWash { hovered: barItem.hovered }
     }
   }
 
@@ -2757,11 +2763,11 @@ Shared.Theme {
     readonly property real audioPadding: root.spaceLarge
     readonly property real audioSliderHeight: 46
     readonly property real controlsHeight: audioSliderHeight * 2 + audioPadding * 3
-    readonly property real smallTileHeight: 55
+    readonly property real smallTileHeight: root.controlTileHeight
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 2 + gap * 2 + root.rowHeight
+    height: devicesY + smallTileHeight * 3 + gap * 2
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -2778,11 +2784,11 @@ Shared.Theme {
       x: 0
       y: controlGrid.devicesY + controlGrid.smallTileHeight * 2 + controlGrid.gap * 2
       width: parent.width
-      height: root.rowHeight
+      height: controlGrid.smallTileHeight
       label: "Transfers"
       detail: transfersStore.attention ? "Active, new or failed transfers" : "Send original files to your personal devices"
       active: transfersStore.attention
-      glyph: Component { Text { text: "󰇚"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCard } }
+      glyph: Text { text: "󰇚"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("transfers", controlGrid.screenName)
     }
 
@@ -6524,17 +6530,36 @@ Shared.Theme {
 
             SegmentWell {
               width: parent.width
-              Row {
-                anchors.fill: parent
-                Repeater {
-                  model: ["usage", "activity"]
-                  Segment {
-                    required property string modelData
-                    width: parent.width / 2
-                    selected: agentsWindow.tab === modelData
-                    hovered: tabMouse.containsMouse
-                    Text { anchors.centerIn: parent; text: parent.modelData === "usage" ? "Usage" : "AI Activity"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
-                    MouseArea { id: tabMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: agentsWindow.tab = parent.modelData }
+
+              Repeater {
+                model: ["usage", "activity"]
+
+                Segment {
+                  id: agentsTab
+
+                  required property string modelData
+
+                  width: parent.width / 2
+                  selected: agentsWindow.tab === agentsTab.modelData
+                  hovered: tabMouse.containsMouse
+                  pressed: tabMouse.pressed
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: agentsTab.modelData === "usage" ? "Usage" : "AI Activity"
+                    color: agentsTab.selected ? root.accent : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: agentsTab.selected ? root.weightStrong : root.weightRegular
+                  }
+
+                  MouseArea {
+                    id: tabMouse
+                    anchors.fill: parent
+                    enabled: !agentsTab.selected
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: agentsWindow.tab = agentsTab.modelData
                   }
                 }
               }
@@ -7135,34 +7160,50 @@ Shared.Theme {
 
   // System Health: registered integrations, with a slot for maintenance.
   Variants {
-    model:Quickshell.screens
+    model: Quickshell.screens
+
     PanelWindow {
-      id:healthWindow
+      id: healthWindow
+
       required property var modelData
-      screen:modelData
-      visible:root.controlPanel === "system-health" && root.pinnedScreen(root.overlayScreen,modelData)
-      anchors { top:true; left:true }
-      margins { top:root.barHeight+root.panelGap; left:root.panelLeft(modelData,implicitWidth) }
-      implicitWidth:root.panelMargin*2+root.controlHeight*12
-      implicitHeight:Math.min(modelData.height-root.barHeight-root.panelGap-root.panelMargin,healthContent.implicitHeight+root.panelMargin*2)
-      exclusionMode:ExclusionMode.Ignore
-      color:"transparent"
-      WlrLayershell.layer:WlrLayer.Overlay
-      WlrLayershell.namespace:"seele-shell-system-health"
-      WlrLayershell.keyboardFocus:visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged:if(visible) Qt.callLater(function(){healthSurface.forceActiveFocus()})
+
+      screen: modelData
+      visible: root.controlPanel === "system-health" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.panelMargin * 2 + root.controlHeight * 12
+      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap - root.panelMargin,
+        healthContent.implicitHeight + root.panelMargin * 2)
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-system-health"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { healthSurface.forceActiveFocus() })
+
       PanelSurface {
-        id:healthSurface
-        focus:true
-        Keys.onEscapePressed:root.closeOverlays()
-        Flickable {
-          anchors.fill:parent; anchors.margins:root.panelMargin
-          contentHeight:healthContent.implicitHeight; clip:true
+        id: healthSurface
+
+        focus: true
+        Keys.onEscapePressed: root.closeOverlays()
+
+        SeeleFlickable {
+          anchors.fill: parent
+          anchors.margins: root.panelMargin
+          contentHeight: healthContent.implicitHeight
+          clip: true
+
           SystemHealthPanel {
-            id:healthContent; width:parent.width; theme:root; store:integrationHealth; maintenanceCount:root.healthMaintenanceCount
-            maintenanceContent:Component { MaintenancePanel { theme:root; store:maintenance } }
+            id: healthContent
+
+            width: parent.width
+            theme: root
+            store: integrationHealth
+            maintenanceCount: root.healthMaintenanceCount
+            maintenanceContent: Component { MaintenancePanel { theme: root; store: maintenance } }
           }
-          ScrollBar.vertical:SlimScrollBar {}
+
+          ScrollBar.vertical: SlimScrollBar { popupHovered: healthSurface.hovered }
         }
       }
     }
@@ -8557,7 +8598,7 @@ Shared.Theme {
             background: Rectangle {
               radius: root.radius
               color: root.wellColor
-              border.color: pairingCodeField.activeFocus ? root.accent : "transparent"
+              border.color: pairingCodeField.activeFocus ? root.accent : root.clearColor
               border.width: 1
             }
             onAccepted: root.answerBluetoothPairing("accept", pairingCodeField.text)

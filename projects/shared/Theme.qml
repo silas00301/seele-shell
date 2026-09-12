@@ -92,6 +92,10 @@ ShellRoot {
   readonly property int chipHeight: 28
   readonly property int controlHeight: 34
   readonly property int rowHeight: 40
+  // A Control Center tile carries a label over its own detail line beside a
+  // glyph, so it stands above the row ramp. Every tile in the grid takes it,
+  // because a grid whose tiles disagree on height reads as a mistake.
+  readonly property int controlTileHeight: 55
   // A notification card is as tall as what it holds, but never shorter than
   // this: one line of summary over one line of body, beside the app icon. An
   // empty list is measured against it too, so "nothing here" costs one card.

@@ -104,8 +104,8 @@ assert.equal(ctx.snoozedRows.count + ctx.activeRows.count + ctx.historyRows.coun
 assert.equal(ctx.request(a, 'analyze'), false);
 assert.equal(ctx.accept(null), false);
 assert.match(panel, /component FindingCard: Rectangle/);
-assert.equal((panel.match(/FindingCard \{ required property var modelData; finding:modelData \}/g) || []).length, 3);
-assert.doesNotMatch(panel, /onLoaded|sourceComponent:cardComponent/);
-assert.match(panel, /validator:IntValidator \{bottom:1;top:43200\}/);
+assert.equal((panel.match(/FindingCard \{\s*required property var modelData;\s*finding:\s*modelData\s*\}/g) || []).length, 3);
+assert.doesNotMatch(panel, /onLoaded|sourceComponent:\s*cardComponent/);
+assert.match(panel, /validator:\s*IntValidator \{\s*bottom:\s*1;\s*top:\s*43200\s*\}/);
 assert.match(source, /code!==0 \|\| !received/, 'empty replies fail visibly');
 console.log('Maintenance production QML methods: stable rows, revision-bound confirmation, typed actions, snooze, stale replies and unavailable source passed');
