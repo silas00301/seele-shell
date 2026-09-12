@@ -6,6 +6,8 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -m 700 "$work/runtime"
 cp "$sources/FocusTimer.qml" "$sources/focus.js" "$work/"
+source "$(dirname "${BASH_SOURCE[0]}")/qml-fixture.sh"
+copy_qml_shared "$sources" "$work"
 cat > "$work/shell.qml" <<'QML'
 import QtQuick
 import Quickshell
@@ -43,8 +45,11 @@ ShellRoot {
   }
 }
 QML
-XDG_RUNTIME_DIR="$work/runtime" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-  timeout 10 "$quickshell" --no-color -p "$work" > "$work/log" 2>&1
+if ! XDG_RUNTIME_DIR="$work/runtime" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+  timeout 10 "$quickshell" --no-color -p "$work" > "$work/log" 2>&1; then
+  tail -40 "$work/log" >&2
+  exit 1
+fi
 if ! grep -q 'FOCUS_PASS' "$work/log" || grep -Eq 'FOCUS_FAIL|ReferenceError|TypeError' "$work/log"; then
   tail -40 "$work/log" >&2
   exit 1

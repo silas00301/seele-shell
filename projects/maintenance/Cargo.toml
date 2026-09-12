@@ -1,0 +1,18 @@
+[package]
+rust-version.workspace = true
+name = "seele-maintenance"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Private typed maintenance findings, publishers and explicit actions"
+
+[dependencies]
+seele-runtime = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+regex = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

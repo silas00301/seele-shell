@@ -4,11 +4,15 @@ use serde_json::{json, Value};
 // Keep registry order for the device list's stable, case-insensitive sort.
 pub(crate) struct Graph {
     objects: Value,
+    positions: std::collections::HashMap<u64, usize>,
 }
 
 impl Default for Graph {
     fn default() -> Self {
-        Self { objects: json!([]) }
+        Self {
+            objects: json!([]),
+            positions: Default::default(),
+        }
     }
 }
 
@@ -28,21 +32,27 @@ fn merge(current: &mut Value, patch: Value) {
 }
 
 impl Graph {
-    pub(crate) fn update(&mut self, update: Value) {
+    pub(crate) fn update(&mut self, update: Value) -> bool {
         let Value::Array(updates) = update else {
-            return;
+            return false;
         };
         let objects = self.objects.as_array_mut().unwrap();
         for mut patch in updates {
             let Some(id) = patch.get("id").and_then(Value::as_u64) else {
                 continue;
             };
-            let position = objects.iter().position(|object| object["id"] == id);
+            let position = self.positions.get(&id).copied();
             if patch.get("info") == Some(&Value::Null)
                 || (patch.as_object().is_some_and(|object| object.len() == 1))
             {
                 if let Some(position) = position {
                     objects.remove(position);
+                    self.positions.remove(&id);
+                    for index in self.positions.values_mut() {
+                        if *index > position {
+                            *index -= 1;
+                        }
+                    }
                 }
                 continue;
             }
@@ -69,9 +79,17 @@ impl Graph {
                 }
                 merge(&mut objects[position], patch);
             } else {
+                if objects.len() >= 4096 {
+                    return false;
+                }
+                self.positions.insert(id, objects.len());
                 objects.push(patch);
             }
         }
+        // Partial updates must not grow retained unknown properties forever.
+        // Serialization itself is bounded before allocation by the common wire
+        // writer; callers reset the registry when this budget is exceeded.
+        seele_runtime::wire::json_frame(&self.objects, 16 * 1024 * 1024).is_ok()
     }
 
     pub(crate) fn snapshot(&self) -> &Value {
@@ -106,6 +124,34 @@ impl Graph {
             })
             .collect::<Vec<_>>())
     }
+}
+
+pub(crate) fn parse_values(pending: &mut Vec<u8>, mut consume: impl FnMut(Value)) {
+    let mut consumed = 0;
+    loop {
+        let remaining = &pending[consumed..];
+        let trimmed = remaining.trim_ascii_start();
+        consumed += remaining.len() - trimmed.len();
+        if trimmed.is_empty() {
+            break;
+        }
+        let mut stream = serde_json::Deserializer::from_slice(trimmed).into_iter::<Value>();
+        match stream.next() {
+            Some(Ok(value)) => {
+                consumed += stream.byte_offset();
+                consume(value);
+            }
+            Some(Err(error)) if error.is_eof() => break,
+            Some(Err(_)) => {
+                consumed += 1;
+            }
+            None => {
+                consumed = pending.len();
+                break;
+            }
+        }
+    }
+    pending.drain(..consumed);
 }
 
 #[cfg(test)]

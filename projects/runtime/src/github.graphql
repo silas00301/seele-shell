@@ -1,0 +1,12 @@
+query SeelePullRequests($reviews: String!) {
+  viewer { login pullRequests(first: 20, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    totalCount pageInfo { hasNextPage } nodes { ...Pull }
+  } }
+  search(query: $reviews, type: ISSUE, first: 20) {
+    issueCount pageInfo { hasNextPage } nodes { ... on PullRequest { ...Pull } }
+  }
+}
+fragment Pull on PullRequest {
+  number title url updatedAt isDraft reviewDecision repository { nameWithOwner }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+}

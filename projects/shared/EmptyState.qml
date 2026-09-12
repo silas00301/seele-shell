@@ -36,6 +36,7 @@ Item {
       width: parent.width
       visible: emptyState.title !== ""
       text: emptyState.title
+      textFormat: Text.PlainText
       color: emptyState.theme.subtext
       font.family: emptyState.theme.fontFamily
       font.pixelSize: emptyState.theme.textBody
@@ -48,6 +49,7 @@ Item {
       width: parent.width
       visible: emptyState.detail !== ""
       text: emptyState.detail
+      textFormat: Text.PlainText
       color: emptyState.theme.overlay
       font.family: emptyState.theme.fontFamily
       font.pixelSize: emptyState.theme.textCaption

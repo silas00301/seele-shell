@@ -1,9 +1,10 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const vm = require("node:vm")
 
-const helpers = vm.createContext({})
-vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), helpers)
+const helpers = vm.createContext({Bridge: nativeBridge()})
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], "utf8")), helpers)
 
 assert.deepEqual(Array.from(helpers.mentions("Ask @clip, @window, @clip and @screen.")), ["clip", "window", "screen"])
 assert.deepEqual(Array.from(helpers.mentions("mail me@example.org and quote @@clip")), [])

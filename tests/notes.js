@@ -1,9 +1,10 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const notes = {};
+const notes = {Bridge: nativeBridge()};
 vm.createContext(notes);
-vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), notes);
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), notes);
 
 // Search is over what a row actually shows.
 const all = [

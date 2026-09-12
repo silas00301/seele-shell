@@ -1,8 +1,9 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const network = vm.createContext({});
-vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), network);
+const network = vm.createContext({Bridge: nativeBridge()});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), network);
 const rows = entries => JSON.parse(JSON.stringify(network.addresses(entries, 'eth0')));
 const v4 = {family:'inet',local:'192.0.2.1',prefixlen:24,scope:'global'};
 const v6 = {family:'inet6',local:'2001:db8::1',prefixlen:64,scope:'global'};

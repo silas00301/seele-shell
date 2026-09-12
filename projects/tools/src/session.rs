@@ -1,4 +1,4 @@
-use crate::command::{exec, home, output, status};
+use crate::command::{exec, home, interactive_status, output, output_with_input, status};
 use crate::Result;
 use std::env;
 use std::fs::File;
@@ -55,13 +55,19 @@ fn commit_message(repo: &Path, pi: &str) -> String {
         .or_else(|| output("git", ["-C", &repo.to_string_lossy(), "diff", "--stat"]))
         .unwrap_or_default();
     let prompt = format!("Write the commit message for this change to the Seele Nix flake.\n\nMatch the style of the repository's recent subjects:\n{recent}\nRules: one line, imperative mood, no trailing period, no conventional-commit prefix, no quotes around it, at most 72 characters. Reply with the subject line and nothing else.\n\nChanged files:\n{diff}");
-    output(pi, ["-p", "--no-session", "--no-tools", &prompt])
-        .unwrap_or_default()
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or("")
-        .trim()
-        .to_owned()
+    output_with_input(
+        pi,
+        ["-p", "--no-session", "--no-tools"],
+        prompt.as_bytes(),
+        std::time::Duration::from_secs(180),
+        64 * 1024,
+    )
+    .unwrap_or_default()
+    .lines()
+    .find(|line| !line.trim().is_empty())
+    .unwrap_or("")
+    .trim()
+    .to_owned()
 }
 fn session(repo: &Path) -> Result {
     env::set_current_dir(repo)?;
@@ -85,7 +91,7 @@ fn session(repo: &Path) -> Result {
         return Ok(());
     }
     println!("\nRebuilding the system with nh os switch.");
-    if !status(&variable("SEELE_SHELL_NH", "nh"), ["os", "switch"]) {
+    if !interactive_status(&variable("SEELE_SHELL_NH", "nh"), ["os", "switch"]) {
         println!("\nThe rebuild failed. The working copy is untouched, so you can reopen this session and keep going.");
         let _ = tty_line("Press enter to close. ");
         return Err("system rebuild failed".into());
@@ -99,7 +105,7 @@ fn session(repo: &Path) -> Result {
         } else {
             println!("\n  {message}\n");
             if confirm("Commit with this message?") {
-                if status("jj", ["commit", "-m", &message]) {
+                if interactive_status("jj", ["commit", "-m", &message]) {
                     println!("Committed.");
                 } else {
                     println!("Commit failed. Review the error above and retry with jj.");
@@ -123,8 +129,8 @@ pub fn run(arguments: &[String]) -> Result {
                 [
                     "dispatch",
                     &format!(
-                        "hl.dsp.focus({{ workspace = \"{}\" }})",
-                        variable("SEELE_SHELL_OS_WORKSPACE", "9")
+                        "hl.dsp.focus({{ workspace = {} }})",
+                        serde_json::to_string(&variable("SEELE_SHELL_OS_WORKSPACE", "9"))?
                     ),
                 ],
             );

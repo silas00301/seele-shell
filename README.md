@@ -2,6 +2,9 @@
 
 Seele is a Quickshell desktop shell packaged as a Nix flake. The flake exposes
 the main shell plus separate Notes, greeter, lock-screen, and polkit packages.
+First-party services and shared policies use the Rust 1.97 Cargo workspace;
+[the native workspace guide](docs/native-workspace.md) explains ownership,
+necessary Qt/host bindings, and validation boundaries.
 
 ## Layout
 
@@ -10,7 +13,10 @@ the main shell plus separate Notes, greeter, lock-screen, and polkit packages.
 - `projects/notes/`: standalone Notes and voice memo application.
 - `projects/shared/`: theme, surface, typography, control, and waveform components shared by the shell and Notes.
 - `projects/tools/`: Rust runtime for agent, audio, Bluetooth, clock, session, URI picking, and shell-control commands.
-- `projects/ai-prompt/`: private resident controller for quick Codex questions and response handoff.
+- `projects/prompt/`: native resident controller for quick Codex questions and response handoff.
+- `projects/runtime/`: shared process, private-file, IPC, inference, and URL boundaries.
+- `projects/qml-core/`, `projects/qml/`, and `projects/node/`: Rust UI policies with minimal Qt and Node bindings.
+- `projects/markdown-core/` and `projects/markdown/`: Rust Markdown parsing and Qt document binding.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
 - `tests/`: package install checks and focused behavior tests.
@@ -25,8 +31,8 @@ from — the type ramp, weights, tracking, spacing, control heights, elevation
 fills, surface edges, and the two motion durations — with shared
 components beside it. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
 ink centered inside fixed wells even when the font's advance width is uneven.
-The greeter, lock, and polkit clients mirror the subset of those tokens they use
-so all four read as one desktop.
+The greeter, lock, and polkit clients use the same `Palette.js` fallback and
+property assignment; their existing scene dimensions and motion remain local.
 
 ## Status updates
 
@@ -34,7 +40,8 @@ so all four read as one desktop.
 snapshots and optimistic patches through `apply()` rather than replacing the
 state object. Each field has its own notify signal, and unchanged JSON branches
 keep their identity so unrelated updates do not rebuild device or notification
-models. Add new status fields there with their startup defaults.
+models. Add new status fields there with their startup defaults and in
+`projects/qml-core/src/system.rs`, which admits only known fields and types.
 
 `tests/system-state.sh` checks update propagation, delegate reuse, and identical
 rendered pixels for unchanged device data. It runs in `test-shell` and in the
@@ -55,7 +62,8 @@ whose process name differs from their executable.
 D-Bus listeners trigger the existing read-only NetworkManager and BlueZ
 probes only when those services change. One buffered `pw-dump -m` reader maintains
 the PipeWire graph, and volume queries run only for relevant device changes or
-explicit acknowledgements. Notification state belongs to the native QML store.
+explicit acknowledgements. Notification policy and retained text belong to a
+resident Rust object; the QML store owns live notification QObjects and callbacks.
 Ancillary state, including VPN clients, cameras, and agent activity, retains its
 five-second refresh. Each listener subscribes before its startup query and
 resnapshots after service or bus restarts. The PipeWire reader resets its graph
@@ -93,13 +101,21 @@ Ctrl+Enter starts/stops a voice memo, and Ctrl+W closes the window. Closing the
 window saves text and finishes recording. The idle process stays available for
 reopening; it does not keep the microphone open.
 
-`seele-notes-store watch` exchanges JSON lines on stdin/stdout. Notes live in
-`$XDG_DATA_HOME/seele-shell/notes` (default `~/.local/share/seele-shell/notes`),
-with 0700 directories and 0600 atomic JSON/WAV files. A note's directory contains
-`note.json` and its voice memos. Trash is reversible and never deletes audio.
+`seele-notes-store watch` exchanges bounded JSON lines on stdin/stdout. Notes
+are ordinary Markdown files in the configured folder of an Obsidian vault;
+recordings live in its attachment folder and appear as Obsidian embeds. The
+app's directory picker overrides the optional managed vault configuration.
+Trash moves notes into the vault's `.trash` and never deletes shared audio.
+Private settings, recovery drafts and restore metadata stay outside the vault,
+in owner-only directories and files. Ordinary vault content retains normal
+readable file permissions.
+
 Text stays out of process arguments. Save acknowledgements carry request IDs so
-an older response cannot replace newer edits. Failed saves retain the draft
-and block a pending move to Trash.
+an older response cannot replace newer edits. Content hashes detect external
+changes; filesystem events and conservative timestamp handling invalidate
+cached summaries. Failed saves retain the draft and block a pending move to
+Trash. See [the storage contract](projects/tools/README.md) for containment,
+publication and external-editor race boundaries.
 
 Recording uses the default PipeWire/PulseAudio microphone through `parecord`.
 The worker owns and reaps the child, streams real levels, and finalizes a mono
@@ -143,7 +159,8 @@ title/message copying are intentionally absent. A local notification image —
 typically a chat profile picture — leads the card as its rounded identity icon,
 with the sending application's icon badged at its lower-right corner; it is not
 repeated as expandable body media. Notification text stays in memory, including
-history across QML reloads.
+history across QML reloads. A Qt-owned Rust state object handles admission,
+timeouts, replacement, pins and DND; timer calls send only the current timestamp.
 `tests/notifications.js` covers image roles, lifecycle, grouping, and the quiet-period
 deadline; `tests/notification-server.sh` checks the native service on a
 private bus.
@@ -151,7 +168,7 @@ private bus.
 ## Quick AI prompt
 
 Run `seele-shellctl prompt` (Super + Space on nerv) to open the centered prompt
-on the focused output. The QML surface and its small Python controller are
+on the focused output. The QML surface and its Rust controller are
 resident with the shell, but opening it does not start Codex or read a context
 source. Escape closes it. Losing keyboard focus closes an unfinished prompt;
 an answer remains available for copying or insertion until it is dismissed.
@@ -166,22 +183,27 @@ the exact frozen image Send attaches. `@clip` and `@select` each require an
 exposes the complete bounded payload. The panel previews every selected source
 and discloses truncation before it can be sent. Context, prompts, answers, and
 captures stay in memory or a mode-0700 runtime directory; captures
-are removed as soon as their turn ends.
+are tied to their preview generation and removed on replacement, closing or
+controller shutdown.
 
 Enter sends while the prompt contains text. After an answer arrives, Enter
 copies it and Ctrl+Enter hides the panel, restores the exact original Hyprland
 window without moving the pointer, and types the answer with `wtype`. A visible
 button exists for both actions. Follow-ups use `codex exec resume` against one
-read-only session rooted in the private runtime workspace. Closing the panel
-terminates an active turn and
-runs `codex delete --force` for that session. The header reuses CodexBar's
+tool-free session rooted in a private runtime workspace and isolated Codex
+configuration. The broker supplies the model on explicit Send. Closing the panel
+terminates an active turn and requests bounded `codex delete --force` cleanup;
+a failing external CLI can prevent deletion. The header reuses CodexBar's
 subscription capacity when it has already been collected.
 
-`tests/ai-prompt.py` drives the production controller through fake executables
-to prove the lazy privacy gates, private screenshot cleanup, read-only Codex
-arguments, follow-up reuse, exact copy/insert payloads, focus validation, and
-cancellation and shutdown session deletion. `tests/ai-prompt.js` covers mention
-parsing and the QML interaction contract.
+`projects/prompt/tests/controller.rs` drives the production controller through
+synthetic executables to check consent gates, stale generations, bounded text,
+private capture cleanup, exact copy/insert snapshots, and cancellation. Its
+optional installed-Codex loopback gate exercises initial requests, follow-ups,
+and images using an empty private configuration and synthetic authentication.
+`tests/ai-prompt.js` checks the native mention policy and QML interaction
+contract. Broker and prompt share `runtime::codex` isolation; see
+[the native workspace guide](docs/native-workspace.md).
 
 ## Screen links
 
@@ -227,8 +249,8 @@ does not depend on OCR strip boundaries. Decoded payloads retain punctuation
 and line breaks; they do not go through OCR's prose cleanup.
 
 All added runtime dependencies come from official nixpkgs: Grim, ZBar and
-Tesseract 5 with its English data. There are no added flake inputs, Rust crates, downloads
-at runtime, or OCR services. Captures live in a private runtime directory and
+Tesseract 5 with its English data. Recognition requires no runtime downloads
+or remote OCR service. Captures live in a private runtime directory and
 are removed on dismissal, errors, EOF, or graceful worker termination.
 
 Recognition supports explicit hierarchical URIs (including custom handlers),

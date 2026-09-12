@@ -2,16 +2,16 @@
 //! one configured directory; that directory is the only source of truth. Text
 //! never travels in argv, and nothing Seele needs for itself is written into
 //! the vault.
-use crate::command::{epoch, home};
+use crate::command::{config_home, epoch, home, state_home};
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +19,59 @@ const SAMPLE_RATE: u32 = 16_000;
 const MAX_AUDIO: u32 = SAMPLE_RATE * 2 * 60 * 60;
 const MAX_TEXT: usize = 2 * 1024 * 1024;
 const MAX_NAME: usize = 60;
+const MAX_REQUEST: usize = MAX_TEXT * 6 + 65536;
+const MAX_RESPONSE: usize = 32 * 1024 * 1024;
+const MAX_ENTRIES: usize = 4096;
+fn read_text(path: impl AsRef<Path>) -> io::Result<String> {
+    String::from_utf8(seele_runtime::fs::read_bounded(
+        path.as_ref(),
+        MAX_TEXT,
+        false,
+    )?)
+    .map_err(|_| io::ErrorKind::InvalidData.into())
+}
+fn read_state(path: impl AsRef<Path>) -> io::Result<String> {
+    String::from_utf8(seele_runtime::fs::read_private(path.as_ref(), MAX_REQUEST)?)
+        .map_err(|_| io::ErrorKind::InvalidData.into())
+}
+fn relative_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4096
+        && !value.contains('\0')
+        && !Path::new(value).is_absolute()
+        && Path::new(value)
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+}
+/// Existing components must stay inside the selected, canonical vault. Reject
+/// symlink traversal and directories writable by another account.
+fn checked_path(root: &Path, relative: &Path) -> Result<PathBuf> {
+    let mut path = root.to_path_buf();
+    for part in std::iter::once(None).chain(relative.components().map(Some)) {
+        if let Some(part) = part {
+            match part {
+                Component::Normal(name) => path.push(name),
+                Component::CurDir => continue,
+                _ => return Err("A path cannot leave the vault".into()),
+            }
+        }
+        match fs::symlink_metadata(&path) {
+            Ok(metadata)
+                if metadata.file_type().is_symlink()
+                    || (metadata.is_dir()
+                        && (metadata.uid() != unsafe { libc::geteuid() }
+                            || metadata.mode() & 0o022 != 0)) =>
+            {
+                return Err("Unsafe vault path".into());
+            }
+            Ok(_) => (),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(path)
+}
+
 // A vault holds far more than the capture directory, so an embed that has to
 // be hunted for stops at a bounded sweep rather than walking the whole tree.
 const MAX_SEARCH_DIRS: usize = 512;
@@ -55,18 +108,6 @@ struct Declared {
     attachments: Option<String>,
 }
 
-fn config_home() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".config"))
-}
-
-fn state_home() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".local/state"))
-}
-
 fn data_home() -> PathBuf {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
@@ -74,23 +115,29 @@ fn data_home() -> PathBuf {
 }
 
 fn private_dir(path: &Path) -> Result {
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(path)?;
+    seele_runtime::fs::private_directory(path)?;
     Ok(())
 }
 
 fn private_file(path: &Path, create_new: bool) -> io::Result<File> {
-    OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(!create_new)
         .create_new(create_new)
         .truncate(false)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file()
+        || metadata.uid() != unsafe { libc::geteuid() }
+        || metadata.nlink() != 1
+        || metadata.mode() & 0o077 != 0
+    {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    Ok(file)
 }
 
 fn lock(path: &Path) -> Result<File> {
@@ -126,22 +173,10 @@ impl Vault {
     /// Resolve a vault-relative path, refusing anything that climbs out of the
     /// vault or arrives as an absolute path.
     fn resolve(&self, relative: &str) -> Result<PathBuf> {
-        let candidate = Path::new(relative);
-        if relative.is_empty() || candidate.is_absolute() {
-            return Err("A note path must be relative to the vault".into());
+        if !relative_path(relative) || !is_markdown(Path::new(relative)) {
+            return Err("A note must be a vault-relative Markdown file".into());
         }
-        for component in candidate.components() {
-            match component {
-                Component::Normal(part) => {
-                    if part.as_encoded_bytes().contains(&b'\0') {
-                        return Err("Invalid note path".into());
-                    }
-                }
-                Component::CurDir => {}
-                _ => return Err("A note path cannot leave the vault".into()),
-            }
-        }
-        Ok(self.root.join(candidate))
+        checked_path(&self.root, Path::new(relative))
     }
 
     /// The vault-relative form of an absolute path inside it.
@@ -161,12 +196,8 @@ impl Vault {
 /// filesystems and sync tools rewrite it, but the bytes either changed or they
 /// did not.
 fn digest(bytes: &[u8]) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    format!("{hash:016x}{:x}", bytes.len())
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -188,7 +219,9 @@ fn body_after_frontmatter(text: &str) -> &str {
     let Some(rest) = text.strip_prefix("---") else {
         return text;
     };
-    let rest = rest.strip_prefix('\n').or_else(|| rest.strip_prefix("\r\n"));
+    let rest = rest
+        .strip_prefix('\n')
+        .or_else(|| rest.strip_prefix("\r\n"));
     let Some(rest) = rest else { return text };
     let mut offset = 0;
     for line in rest.split_inclusive('\n') {
@@ -323,7 +356,7 @@ fn summarize(name: &str, text: &str) -> Summary {
         }
         if title.is_empty() {
             if let Some(heading) = heading_text(trimmed) {
-                title = heading;
+                title = heading.chars().take(120).collect();
                 continue;
             }
         }
@@ -356,7 +389,7 @@ fn embeds(text: &str) -> Vec<String> {
     let characters: Vec<char> = text.chars().collect();
     let mut found = Vec::new();
     let mut index = 0;
-    while index + 2 < characters.len() {
+    while index + 2 < characters.len() && found.len() < 256 {
         if characters[index] != '!' {
             index += 1;
             continue;
@@ -371,7 +404,7 @@ fn embeds(text: &str) -> Vec<String> {
                 cursor += 1;
             }
             let target = inner.split(['|', '#']).next().unwrap_or_default().trim();
-            if is_audio(target) {
+            if target.len() <= 4096 && is_audio(target) {
                 found.push(target.to_owned());
             }
             index = cursor + 2;
@@ -391,7 +424,7 @@ fn embeds(text: &str) -> Vec<String> {
                 }
                 let target = inner.split_whitespace().next().unwrap_or_default();
                 let target = percent_decode(target.trim_matches(['<', '>']));
-                if is_audio(&target) {
+                if target.len() <= 4096 && is_audio(&target) {
                     found.push(target);
                 }
             }
@@ -498,42 +531,48 @@ fn name_for(text: &str) -> String {
     }
 }
 
-fn unique(directory: &Path, name: &str, extension: &str) -> PathBuf {
-    let mut attempt = directory.join(format!("{name}.{extension}"));
-    let mut counter = 2;
-    while attempt.exists() {
-        attempt = directory.join(format!("{name} {counter}.{extension}"));
-        counter += 1;
-        if counter > 9999 {
-            attempt = directory.join(format!("{name} {}.{extension}", stamp()));
-            break;
+fn unique(
+    directory: &Path,
+    name: &str,
+    extension: &str,
+    mut publish: impl FnMut(&Path) -> io::Result<()>,
+) -> Result<PathBuf> {
+    for counter in 1..=10000 {
+        let filename = if counter == 1 {
+            format!("{name}.{extension}")
+        } else {
+            format!("{name} {counter}.{extension}")
+        };
+        let target = directory.join(filename);
+        match publish(&target) {
+            Ok(()) => return Ok(target),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
         }
     }
-    attempt
+    Err("No available filename".into())
+}
+fn write_new(directory: &Path, name: &str, text: &str) -> Result<PathBuf> {
+    if text.len() > MAX_TEXT {
+        return Err("This note exceeds the 2 MiB text limit".into());
+    }
+    unique(directory, name, "md", |target| {
+        seele_runtime::fs::atomic_write_with_mode(target, text.as_bytes(), 0o644, true)
+    })
+}
+fn move_new(source: &Path, directory: &Path, name: &str, extension: &str) -> Result<PathBuf> {
+    unique(directory, name, extension, |target| {
+        seele_runtime::fs::rename_noreplace(source, target)
+    })
 }
 
 /// Replace a file's bytes without ever leaving a partial note on disk.
 fn write_atomic(path: &Path, text: &str) -> Result {
-    let directory = path.parent().ok_or("A note needs a directory")?;
-    fs::create_dir_all(directory)?;
-    let temporary = directory.join(format!(".seele-{}.tmp", stamp_nanos()));
-    let result = (|| -> Result {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .mode(0o644)
-            .open(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        File::open(directory)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+    if text.len() > MAX_TEXT {
+        return Err("This note exceeds the 2 MiB text limit".into());
     }
-    result
+    seele_runtime::fs::atomic_write_with_mode(path, text.as_bytes(), 0o644, false)?;
+    Ok(())
 }
 
 fn stamp_nanos() -> String {
@@ -559,11 +598,98 @@ fn modified(path: &Path) -> i64 {
 // The vault-backed library
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Fingerprint {
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified: (i64, i64),
+    changed: (i64, i64),
+}
+impl Fingerprint {
+    fn stable_before(&self, now: SystemTime) -> bool {
+        // ctime may have millisecond or whole-second resolution. A same-size
+        // rewrite can restore mtime inside that tick, so never cache recently
+        // modified files even when both metadata reads agree.
+        let Ok(elapsed) = now.duration_since(UNIX_EPOCH) else {
+            return false;
+        };
+        let cutoff = i64::try_from(elapsed.as_secs())
+            .unwrap_or(i64::MAX)
+            .saturating_sub(1);
+        self.changed.0 < cutoff && self.modified.0 < cutoff
+    }
+    fn read(path: &Path) -> io::Result<Self> {
+        let value = fs::symlink_metadata(path)?;
+        if !value.is_file() || value.len() > MAX_TEXT as u64 {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        Ok(Self {
+            device: value.dev(),
+            inode: value.ino(),
+            size: value.len(),
+            modified: (value.mtime(), value.mtime_nsec()),
+            changed: (value.ctime(), value.ctime_nsec()),
+        })
+    }
+}
+struct CachedSummary {
+    fingerprint: Fingerprint,
+    observed: SystemTime,
+    value: Value,
+}
+impl CachedSummary {
+    fn reusable(&self, fingerprint: Fingerprint, now: SystemTime) -> bool {
+        self.fingerprint == fingerprint
+            && fingerprint.stable_before(now)
+            && now.duration_since(self.observed).is_ok()
+    }
+}
 struct Library {
     vault: Vault,
+    summaries: std::sync::Mutex<std::collections::HashMap<PathBuf, CachedSummary>>,
 }
 
 impl Library {
+    fn cached_entry(&self, path: &Path) -> Result<Value> {
+        let before = Fingerprint::read(path)?;
+        let observed = SystemTime::now();
+        let stable = before.stable_before(observed);
+        if let Some(cached) = self.summaries.lock().unwrap().get(path) {
+            if cached.reusable(before, observed) {
+                return Ok(cached.value.clone());
+            }
+        }
+        let value = self.entry(path)?;
+        if stable && Fingerprint::read(path).ok() == Some(before) {
+            let mut cache = self.summaries.lock().unwrap();
+            if cache.len() < MAX_ENTRIES || cache.contains_key(path) {
+                cache.insert(
+                    path.to_path_buf(),
+                    CachedSummary {
+                        fingerprint: before,
+                        observed,
+                        value: value.clone(),
+                    },
+                );
+            }
+        }
+        Ok(value)
+    }
+
+    fn invalidate(&self, changes: &Changes) {
+        let mut cache = self.summaries.lock().unwrap();
+        if changes.all {
+            cache.clear();
+        } else {
+            cache.retain(|path, _| {
+                !path
+                    .file_name()
+                    .is_some_and(|name| changes.names.contains(name))
+            });
+        }
+    }
+
     fn drafts_dir(&self) -> PathBuf {
         self.vault.state.join("drafts")
     }
@@ -579,15 +705,24 @@ impl Library {
         let _ = private_dir(&self.drafts_dir());
         let record = json!({"path":relative,"text":text,"reason":reason,"saved":epoch()});
         let path = self.draft_path(relative);
-        if let Ok(mut file) = private_file(&path, false) {
-            let _ = file.set_len(0);
-            let _ = file.write_all(record.to_string().as_bytes());
-            let _ = file.sync_all();
-        }
+        let _ = seele_runtime::fs::atomic_write(&path, record.to_string().as_bytes());
     }
 
     fn drop_draft(&self, relative: &str) {
         let _ = fs::remove_file(self.draft_path(relative));
+        // Older releases keyed recovery records with FNV. Match their recorded
+        // path instead of retaining a second hash implementation for migration.
+        if let Ok(entries) = fs::read_dir(self.drafts_dir()) {
+            for entry in entries.flatten().take(128) {
+                if read_state(entry.path())
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                    .is_some_and(|value| value["path"].as_str() == Some(relative))
+                {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
     }
 
     fn drafts(&self) -> Vec<Value> {
@@ -595,10 +730,15 @@ impl Library {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for entry in entries.flatten() {
-            let Ok(text) = fs::read_to_string(entry.path()) else {
+        let mut total = 0usize;
+        for entry in entries.flatten().take(128) {
+            let Ok(text) = read_state(entry.path()) else {
                 continue;
             };
+            total += text.len();
+            if total > MAX_RESPONSE / 2 {
+                break;
+            }
             if let Ok(value) = serde_json::from_str::<Value>(&text) {
                 out.push(value);
             }
@@ -608,7 +748,7 @@ impl Library {
     }
 
     fn index(&self, name: &str) -> Map<String, Value> {
-        fs::read_to_string(self.vault.state.join(name))
+        read_state(self.vault.state.join(name))
             .ok()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok())
             .and_then(|value| value.as_object().cloned())
@@ -616,16 +756,7 @@ impl Library {
     }
 
     fn write_index(&self, name: &str, value: &Map<String, Value>) -> Result {
-        private_dir(&self.vault.state)?;
-        let path = self.vault.state.join(name);
-        let temporary = self
-            .vault
-            .state
-            .join(format!(".{name}.{}.tmp", stamp_nanos()));
-        let mut file = private_file(&temporary, true)?;
-        file.write_all(Value::Object(value.clone()).to_string().as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        seele_runtime::fs::atomic_write(&self.vault.state.join(name), &serde_json::to_vec(value)?)?;
         Ok(())
     }
 
@@ -633,6 +764,7 @@ impl Library {
         if !self.vault.root.is_dir() {
             return Err("That vault directory does not exist".into());
         }
+        checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
         fs::create_dir_all(self.vault.notes_dir())?;
         Ok(())
     }
@@ -651,13 +783,16 @@ impl Library {
 
     /// One note as a list row. The text on disk is the only input.
     fn entry(&self, path: &Path) -> Result<Value> {
-        let text = fs::read_to_string(path)?;
+        self.entry_text(path, &read_text(path)?)
+    }
+
+    fn entry_text(&self, path: &Path, text: &str) -> Result<Value> {
         let relative = self
             .vault
             .relative(path)
             .ok_or("That note is outside the vault")?;
         let name = stem(path);
-        let summary = summarize(&name, &text);
+        let summary = summarize(&name, text);
         Ok(json!({
             "path": relative,
             "name": name,
@@ -672,21 +807,27 @@ impl Library {
     /// The capture directory only. A vault-wide index is deliberately not
     /// built: this app is the quick way into one folder, not a second Obsidian.
     fn list(&self) -> Result<Value> {
-        let directory = self.vault.notes_dir();
+        let directory = checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
         let mut notes = Vec::new();
         let mut unreadable = 0;
+        let mut present = std::collections::HashSet::new();
         if let Ok(entries) = fs::read_dir(&directory) {
-            for entry in entries.flatten() {
+            for entry in entries.flatten().take(MAX_ENTRIES) {
                 let path = entry.path();
                 if !is_markdown(&path) || !entry.file_type().is_ok_and(|value| value.is_file()) {
                     continue;
                 }
-                match self.entry(&path) {
+                present.insert(path.clone());
+                match self.cached_entry(&path) {
                     Ok(note) => notes.push(note),
                     Err(_) => unreadable += 1,
                 }
             }
         }
+        self.summaries
+            .lock()
+            .unwrap()
+            .retain(|path, _| present.contains(path));
         notes.sort_by(|left, right| {
             right["updated"]
                 .as_i64()
@@ -703,9 +844,9 @@ impl Library {
 
     fn read(&self, relative: &str) -> Result<Value> {
         let path = self.vault.resolve(relative)?;
-        let text = fs::read_to_string(&path)?;
+        let text = read_text(&path)?;
         Ok(json!({
-            "note": self.entry(&path)?,
+            "note": self.entry_text(&path,&text)?,
             "text": text,
             "hash": digest(text.as_bytes()),
             "audio": self.audio(relative, &text),
@@ -737,6 +878,9 @@ impl Library {
     /// order it does, then stop: the attachment directory, beside the note,
     /// the vault-relative reading, and a bounded sweep.
     fn locate(&self, relative: &str, target: &str) -> Option<PathBuf> {
+        if !relative_path(target) {
+            return None;
+        }
         let name = Path::new(target).file_name()?;
         let beside = Path::new(relative).parent().unwrap_or(Path::new(""));
         let candidates = [
@@ -746,7 +890,13 @@ impl Library {
             self.vault.root.join(target),
         ];
         for candidate in candidates {
-            if candidate.is_file() {
+            if checked_path(
+                &self.vault.root,
+                candidate.strip_prefix(&self.vault.root).ok()?,
+            )
+            .is_ok()
+                && candidate.is_file()
+            {
                 return Some(candidate);
             }
         }
@@ -758,14 +908,20 @@ impl Library {
                 return None;
             }
             let entries = fs::read_dir(&directory).ok()?;
-            for entry in entries.flatten() {
+            for entry in entries.flatten().take(MAX_ENTRIES) {
                 let path = entry.path();
-                let Ok(kind) = entry.file_type() else { continue };
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
                 if kind.is_dir() {
-                    if !entry.file_name().to_string_lossy().starts_with('.') {
+                    if !entry.file_name().to_string_lossy().starts_with('.')
+                        && queue.len() < MAX_SEARCH_DIRS
+                        && checked_path(&self.vault.root, path.strip_prefix(&self.vault.root).ok()?)
+                            .is_ok()
+                    {
                         queue.push(path);
                     }
-                } else if entry.file_name() == name {
+                } else if kind.is_file() && entry.file_name() == name {
                     return Some(path);
                 }
             }
@@ -779,12 +935,12 @@ impl Library {
         if text.len() > MAX_TEXT {
             return Err("This note exceeds the 2 MiB text limit".into());
         }
+        checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
         if !self.vault.notes_dir().is_dir() {
             return Err("The configured notes directory is missing".into());
         }
         let Some(relative) = relative else {
-            let path = unique(&self.vault.notes_dir(), &name_for(text), "md");
-            write_atomic(&path, text)?;
+            let path = write_new(&self.vault.notes_dir(), &name_for(text), text)?;
             let note = self.entry(&path)?;
             return Ok(json!({"note":note,"hash":digest(text.as_bytes()),"created":true}));
         };
@@ -795,7 +951,7 @@ impl Library {
             self.keep_draft(relative, text, "gone");
             return Ok(json!({"gone":true,"path":relative}));
         }
-        let current = fs::read_to_string(&path)?;
+        let current = read_text(&path)?;
         let disk = digest(current.as_bytes());
         if disk != baseline {
             self.keep_draft(relative, text, "conflict");
@@ -821,27 +977,34 @@ impl Library {
     /// The three ways out of a conflict. Each of them keeps both versions.
     fn resolve_conflict(&self, relative: &str, mode: &str, text: &str) -> Result<Value> {
         let path = self.vault.resolve(relative)?;
-        let directory = path.parent().ok_or("A note needs a directory")?.to_path_buf();
+        let directory = path
+            .parent()
+            .ok_or("A note needs a directory")?
+            .to_path_buf();
         let name = stem(&path);
         match mode {
             "copy" => {
-                let copy = unique(&directory, &format!("{name} (Seele {})", stamp()), "md");
-                write_atomic(&copy, text)?;
+                let copy = write_new(&directory, &format!("{name} (Seele {})", stamp()), text)?;
                 self.drop_draft(relative);
-                Ok(json!({"note":self.entry(&copy)?,"hash":digest(text.as_bytes()),"switched":true}))
+                Ok(
+                    json!({"note":self.entry(&copy)?,"hash":digest(text.as_bytes()),"switched":true}),
+                )
             }
             "mine" => {
-                let current = fs::read_to_string(&path).unwrap_or_default();
+                let current = read_text(&path).unwrap_or_default();
                 if !current.is_empty() {
-                    let kept = unique(&directory, &format!("{name} (external {})", stamp()), "md");
-                    write_atomic(&kept, &current)?;
+                    write_new(
+                        &directory,
+                        &format!("{name} (external {})", stamp()),
+                        &current,
+                    )?;
                 }
                 write_atomic(&path, text)?;
                 self.drop_draft(relative);
                 Ok(json!({"note":self.entry(&path)?,"hash":digest(text.as_bytes())}))
             }
             "theirs" => {
-                let current = fs::read_to_string(&path)?;
+                let current = read_text(&path)?;
                 // The draft stays in recovery until the note is saved again,
                 // so "use theirs" is still reversible after a misclick.
                 self.keep_draft(relative, text, "replaced");
@@ -860,11 +1023,14 @@ impl Library {
     /// A trashed note can be read but not written. Restoring it is the only
     /// way back to editing, so the preview is text and nothing else.
     fn preview(&self, id: &str) -> Result<Value> {
-        if id.contains('/') || id.contains("..") {
+        if !relative_path(id)
+            || Path::new(id).components().count() != 1
+            || !is_markdown(Path::new(id))
+        {
             return Err("Invalid trash identifier".into());
         }
-        let path = self.vault.trash_dir().join(id);
-        let text = fs::read_to_string(&path)?;
+        let path = checked_path(&self.vault.root, &Path::new(".trash").join(id))?;
+        let text = read_text(&path)?;
         let name = stem(&path);
         let summary = summarize(&name, &text);
         Ok(json!({
@@ -879,12 +1045,18 @@ impl Library {
     fn trashed(&self) -> Result<Vec<Value>> {
         let index = self.index("trash.json");
         let mut out = Vec::new();
-        for (id, record) in index {
-            let path = self.vault.trash_dir().join(&id);
+        for (id, record) in index.into_iter().take(MAX_ENTRIES) {
+            if !relative_path(&id)
+                || Path::new(&id).components().count() != 1
+                || !is_markdown(Path::new(&id))
+            {
+                continue;
+            }
+            let path = checked_path(&self.vault.root, &Path::new(".trash").join(&id))?;
             if !path.is_file() {
                 continue;
             }
-            let text = fs::read_to_string(&path).unwrap_or_default();
+            let text = read_text(&path).unwrap_or_default();
             let name = stem(&path);
             let summary = summarize(&name, &text);
             out.push(json!({
@@ -908,10 +1080,9 @@ impl Library {
         if !path.is_file() {
             return Err("That note is no longer there".into());
         }
-        let directory = self.vault.trash_dir();
+        let directory = checked_path(&self.vault.root, Path::new(".trash"))?;
         fs::create_dir_all(&directory)?;
-        let destination = unique(&directory, &stem(&path), "md");
-        fs::rename(&path, &destination)?;
+        let destination = move_new(&path, &directory, &stem(&path), "md")?;
         let id = destination
             .file_name()
             .and_then(|value| value.to_str())
@@ -925,10 +1096,13 @@ impl Library {
     }
 
     fn restore(&self, id: &str) -> Result<Value> {
-        if id.contains('/') || id.contains("..") {
+        if !relative_path(id)
+            || Path::new(id).components().count() != 1
+            || !is_markdown(Path::new(id))
+        {
             return Err("Invalid trash identifier".into());
         }
-        let source = self.vault.trash_dir().join(id);
+        let source = checked_path(&self.vault.root, &Path::new(".trash").join(id))?;
         if !source.is_file() {
             return Err("That note is no longer in the trash".into());
         }
@@ -943,13 +1117,7 @@ impl Library {
         };
         let directory = target.parent().ok_or("A note needs a directory")?;
         fs::create_dir_all(directory)?;
-        // Restoring never overwrites whatever took the original name.
-        let destination = if target.exists() {
-            unique(directory, &stem(&target), "md")
-        } else {
-            target
-        };
-        fs::rename(&source, &destination)?;
+        let destination = move_new(&source, directory, &stem(&target), "md")?;
         index.remove(id);
         self.write_index("trash.json", &index)?;
         Ok(json!({"restored": self.vault.relative(&destination)}))
@@ -985,7 +1153,7 @@ fn legacy_dir() -> PathBuf {
 /// What is left to bring in. A note already migrated is not still waiting,
 /// even though its original is deliberately left where it is.
 fn legacy_pending(state: &Path) -> usize {
-    let done = fs::read_to_string(state.join("migrated.json"))
+    let done = read_state(state.join("migrated.json"))
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .and_then(|value| value.as_object().cloned())
@@ -997,7 +1165,7 @@ fn legacy_pending(state: &Path) -> usize {
             // reported in the preview rather than keeping the offer on screen
             // for the rest of the machine's life.
             !done.contains_key(id)
-                && fs::read_to_string(directory.join("note.json"))
+                && read_text(directory.join("note.json"))
                     .ok()
                     .and_then(|text| serde_json::from_str::<LegacyNote>(&text).ok())
                     .is_some()
@@ -1032,7 +1200,7 @@ impl Library {
         let (mut pending, mut memos, mut malformed, mut migrated) = (0, 0, 0, 0);
         let mut failures = Vec::new();
         for (id, directory) in legacy_entries() {
-            let parsed = fs::read_to_string(directory.join("note.json"))
+            let parsed = read_text(directory.join("note.json"))
                 .ok()
                 .and_then(|text| serde_json::from_str::<LegacyNote>(&text).ok());
             let Some(note) = parsed else {
@@ -1122,18 +1290,42 @@ impl Library {
         note: &LegacyNote,
         audio: &[PathBuf],
     ) -> Result<String> {
+        checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
         fs::create_dir_all(self.vault.notes_dir())?;
         let mut embeds = Vec::new();
         if !audio.is_empty() {
             fs::create_dir_all(self.vault.attachments_dir())?;
         }
         for source in audio {
-            let target = unique(
+            let mut input = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+                .open(source)?;
+            let metadata = input.metadata()?;
+            if !metadata.is_file() || metadata.len() > u64::from(MAX_AUDIO) + 44 {
+                return Err("Invalid legacy recording".into());
+            }
+            let mut staging = tempfile::Builder::new()
+                .prefix(".seele-migrate-")
+                .tempfile_in(self.vault.attachments_dir())?;
+            let count = io::copy(
+                &mut (&mut input).take(u64::from(MAX_AUDIO) + 45),
+                &mut staging,
+            )?;
+            if count > u64::from(MAX_AUDIO) + 44 {
+                return Err("Legacy recording grew while reading".into());
+            }
+            staging
+                .as_file()
+                .set_permissions(fs::Permissions::from_mode(0o644))?;
+            staging.as_file().sync_all()?;
+            let source_stem = stem(source).chars().take(8).collect::<String>();
+            let target = move_new(
+                staging.path(),
                 &self.vault.attachments_dir(),
-                &format!("Voice memo {name} {}", &stem(source)[..8.min(stem(source).len())]),
+                &format!("Voice memo {name} {source_stem}"),
                 "wav",
-            );
-            fs::copy(source, &target)?;
+            )?;
             embeds.push(format!(
                 "![[{}]]",
                 target
@@ -1158,10 +1350,9 @@ impl Library {
             text.push('\n');
         }
         let destination = if note.trashed {
-            let directory = self.vault.trash_dir();
+            let directory = checked_path(&self.vault.root, Path::new(".trash"))?;
             fs::create_dir_all(&directory)?;
-            let path = unique(&directory, name, "md");
-            write_atomic(&path, &text)?;
+            let path = write_new(&directory, name, &text)?;
             let trash_id = path
                 .file_name()
                 .and_then(|value| value.to_str())
@@ -1178,8 +1369,7 @@ impl Library {
             self.write_index("trash.json", &index)?;
             format!(".trash/{trash_id}")
         } else {
-            let path = unique(&self.vault.notes_dir(), name, "md");
-            write_atomic(&path, &text)?;
+            let path = write_new(&self.vault.notes_dir(), name, &text)?;
             self.vault.relative(&path).unwrap_or_default()
         };
         let mut done = self.index("migrated.json");
@@ -1202,29 +1392,19 @@ fn declared_path() -> PathBuf {
 }
 
 fn read_settings() -> Settings {
-    fs::read_to_string(settings_path())
+    read_state(settings_path())
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
 }
 
 fn write_settings(settings: &Settings) -> Result {
-    let directory = settings_path()
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or("No configuration directory")?;
-    private_dir(&directory)?;
-    let temporary = directory.join(format!(".settings.{}.tmp", stamp_nanos()));
-    let mut file = private_file(&temporary, true)?;
-    file.write_all(serde_json::to_string_pretty(settings)?.as_bytes())?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    fs::rename(&temporary, settings_path())?;
+    seele_runtime::fs::atomic_write(&settings_path(), &serde_json::to_vec_pretty(settings)?)?;
     Ok(())
 }
 
 fn declared() -> Declared {
-    fs::read_to_string(declared_path())
+    read_text(declared_path())
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
@@ -1249,8 +1429,29 @@ fn vault_from(settings: &Settings) -> Option<Vault> {
         .clone()
         .or(declared.attachments)
         .unwrap_or_else(|| "Attachments".to_owned());
+    if !relative_path(&directory) || !relative_path(&attachments) {
+        return None;
+    }
+    let root = PathBuf::from(expand(&root));
+    if !root.is_absolute() {
+        return None;
+    }
+    let root = root.canonicalize().unwrap_or(root);
+    // A protected vault below an unprotected renameable ancestor can still be
+    // exchanged by another account. Sticky shared roots (such as /tmp) protect
+    // their owned children; other writable ancestors are not accepted.
+    for ancestor in root.ancestors().skip(1) {
+        if let Ok(metadata) = fs::metadata(ancestor) {
+            if !metadata.is_dir() || (metadata.mode() & 0o022 != 0 && metadata.mode() & 0o1000 == 0)
+            {
+                return None;
+            }
+        }
+    }
+    checked_path(&root, Path::new(&directory)).ok()?;
+    checked_path(&root, &Path::new(&directory).join(&attachments)).ok()?;
     Some(Vault {
-        root: PathBuf::from(expand(&root)),
+        root,
         directory: directory.trim_matches('/').to_owned(),
         attachments: attachments.trim_matches('/').to_owned(),
         state: state_home().join("seele-notes"),
@@ -1347,6 +1548,12 @@ fn discover_vaults() -> Vec<Value> {
 
 /// Obsidian and the vault's sync tool write the same files this app does, so
 /// the directory is watched rather than polled and a refresh is coalesced.
+#[derive(Default)]
+struct Changes {
+    all: bool,
+    names: std::collections::HashSet<std::ffi::OsString>,
+}
+
 struct Watcher {
     fd: i32,
 }
@@ -1367,24 +1574,73 @@ impl Watcher {
             | libc::IN_MOVE_SELF
             | libc::IN_MOVED_FROM
             | libc::IN_MOVED_TO
-            | libc::IN_CLOSE_WRITE;
+            | libc::IN_CLOSE_WRITE
+            | libc::IN_ATTRIB;
         unsafe { libc::inotify_add_watch(self.fd, raw.as_ptr(), mask) };
     }
 
-    fn drain(&self) {
+    fn watch_library(&self, library: &Library) {
+        self.watch(&library.vault.notes_dir());
+        self.watch(&library.vault.attachments_dir());
+        self.watch(&library.vault.trash_dir());
+    }
+
+    fn drain(&self) -> Changes {
+        use std::os::unix::ffi::OsStringExt;
+        let mut changes = Changes::default();
         let mut buffer = [0_u8; 4096];
-        loop {
-            let count = unsafe {
-                libc::read(
-                    self.fd,
-                    buffer.as_mut_ptr() as *mut libc::c_void,
-                    buffer.len(),
-                )
-            };
+        for _ in 0..64 {
+            // SAFETY: buffer is a live writable allocation of the stated size.
+            let count = unsafe { libc::read(self.fd, buffer.as_mut_ptr().cast(), buffer.len()) };
             if count <= 0 {
-                return;
+                return changes;
+            }
+            let count = count as usize;
+            let mut offset = 0;
+            while offset < count {
+                let header = std::mem::size_of::<libc::inotify_event>();
+                if count - offset < header {
+                    changes.all = true;
+                    return changes;
+                }
+                // SAFETY: the checked byte range contains a complete event
+                // header. read_unaligned does not assume byte-buffer alignment.
+                let event = unsafe {
+                    std::ptr::read_unaligned(
+                        buffer.as_ptr().add(offset).cast::<libc::inotify_event>(),
+                    )
+                };
+                let length = event.len as usize;
+                offset += header;
+                if length > count - offset {
+                    changes.all = true;
+                    return changes;
+                }
+                if event.mask
+                    & (libc::IN_Q_OVERFLOW
+                        | libc::IN_DELETE_SELF
+                        | libc::IN_MOVE_SELF
+                        | libc::IN_IGNORED)
+                    != 0
+                {
+                    changes.all = true;
+                }
+                let name = &buffer[offset..offset + length];
+                let end = name
+                    .iter()
+                    .position(|byte| *byte == 0)
+                    .unwrap_or(name.len());
+                if end > 0 {
+                    changes
+                        .names
+                        .insert(std::ffi::OsString::from_vec(name[..end].to_vec()));
+                }
+                offset += length;
             }
         }
+        // Yield under a continuous event flood, with conservative invalidation.
+        changes.all = true;
+        changes
     }
 }
 
@@ -1399,9 +1655,14 @@ impl Drop for Watcher {
 // ---------------------------------------------------------------------------
 
 fn emit(value: &Value) -> Result {
-    let mut out = io::stdout().lock();
-    writeln!(out, "{value}")?;
-    out.flush()?;
+    let bytes = seele_runtime::wire::json_frame(value, MAX_RESPONSE)?;
+    let mut out = seele_runtime::wire::nonblocking_stdout()?;
+    seele_runtime::wire::write_bytes(
+        &mut out,
+        &bytes,
+        Duration::from_secs(5),
+        &AtomicBool::new(false),
+    )?;
     Ok(())
 }
 
@@ -1413,7 +1674,10 @@ struct Session {
 impl Session {
     fn load() -> Self {
         let settings = read_settings();
-        let library = vault_from(&settings).map(|vault| Library { vault });
+        let library = vault_from(&settings).map(|vault| Library {
+            vault,
+            summaries: Default::default(),
+        });
         Self { library, settings }
     }
 
@@ -1470,13 +1734,21 @@ impl Session {
     }
 
     fn request(&mut self, message: &Value) -> Result<Value> {
+        if message["text"]
+            .as_str()
+            .is_some_and(|text| text.len() > MAX_TEXT)
+        {
+            return Err("This note exceeds the 2 MiB text limit".into());
+        }
         let action = message["action"].as_str().unwrap_or("");
         match action {
             "config" => Ok(self.state()),
             "vaults" => Ok(json!({ "vaults": discover_vaults() })),
             "browse" => browse(message["path"].as_str().unwrap_or_default()),
             "configure" => {
-                let vault = message["vault"].as_str().ok_or("A vault directory is required")?;
+                let vault = message["vault"]
+                    .as_str()
+                    .ok_or("A vault directory is required")?;
                 let directory = message["directory"].as_str().unwrap_or("Inbox").trim();
                 if directory.is_empty() {
                     return Err("A notes directory is required".into());
@@ -1491,7 +1763,10 @@ impl Session {
                     settings.attachments = Some(attachments.trim_matches('/').to_owned());
                 }
                 let candidate = vault_from(&settings).ok_or("A vault directory is required")?;
-                let library = Library { vault: candidate };
+                let library = Library {
+                    vault: candidate,
+                    summaries: Default::default(),
+                };
                 library.ensure()?;
                 if !library.writable() {
                     return Err("That directory cannot be written to".into());
@@ -1518,7 +1793,9 @@ impl Session {
                 let library = self.require()?;
                 match message["id"].as_str() {
                     Some(id) => library.preview(id),
-                    None => library.read(message["path"].as_str().ok_or("A note path is required")?),
+                    None => {
+                        library.read(message["path"].as_str().ok_or("A note path is required")?)
+                    }
                 }
             }
             // Where a note's recordings are, without handing back the text.
@@ -1527,7 +1804,7 @@ impl Session {
             "audio" => {
                 let library = self.require()?;
                 let path = message["path"].as_str().ok_or("A note path is required")?;
-                let text = fs::read_to_string(library.vault.resolve(path)?)?;
+                let text = read_text(library.vault.resolve(path)?)?;
                 Ok(json!({ "audio": library.audio(path, &text) }))
             }
             "save" => {
@@ -1553,7 +1830,11 @@ impl Session {
             "draft" => {
                 let library = self.require()?;
                 let path = message["path"].as_str().ok_or("A note path is required")?;
-                library.keep_draft(path, message["text"].as_str().unwrap_or_default(), "pending");
+                library.keep_draft(
+                    path,
+                    message["text"].as_str().unwrap_or_default(),
+                    "pending",
+                );
                 Ok(json!({ "drafts": library.drafts() }))
             }
             "discard" => {
@@ -1609,6 +1890,9 @@ fn read_available(fd: i32, buffer: &mut Vec<u8>) -> io::Result<bool> {
     if count == 0 {
         return Ok(false);
     }
+    if count as usize > MAX_REQUEST.saturating_sub(buffer.len()) {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
     buffer.extend_from_slice(&chunk[..count as usize]);
     Ok(true)
 }
@@ -1619,23 +1903,31 @@ fn watch() -> Result {
     let _writer = lock(&state.join("writer.lock"))?;
     let mut session = Session::load();
     let watcher = Watcher::new();
+    if let (Some(watcher), Some(library)) = (&watcher, &session.library) {
+        watcher.watch_library(library);
+    }
     let mut ready = session.state();
     if let Some(library) = session.library.as_ref() {
-        merge(&mut ready, library.list().unwrap_or_else(|error| {
-            json!({"notes":[],"trash":[],"error":error.to_string()})
-        }));
+        merge(
+            &mut ready,
+            library
+                .list()
+                .unwrap_or_else(|error| json!({"notes":[],"trash":[],"error":error.to_string()})),
+        );
     }
     ready["ready"] = json!(true);
     emit(&ready)?;
 
+    let shutdown = crate::command::shutdown_signal();
     let mut buffer: Vec<u8> = Vec::new();
     let mut refresh: Option<Instant> = None;
     loop {
+        if shutdown.load(Ordering::Relaxed) != 0 {
+            return Ok(());
+        }
         if let Some(watcher) = watcher.as_ref() {
             if let Some(library) = session.library.as_ref() {
-                watcher.watch(&library.vault.notes_dir());
-                watcher.watch(&library.vault.attachments_dir());
-                watcher.watch(&library.vault.trash_dir());
+                watcher.watch_library(library);
             }
         }
         let mut fds = [
@@ -1659,7 +1951,10 @@ fn watch() -> Result {
         }
         if fds[1].revents & libc::POLLIN != 0 {
             if let Some(watcher) = watcher.as_ref() {
-                watcher.drain();
+                let changes = watcher.drain();
+                if let Some(library) = &session.library {
+                    library.invalidate(&changes);
+                }
             }
             refresh = Some(Instant::now());
         }
@@ -1669,11 +1964,17 @@ fn watch() -> Result {
             }
             while let Some(position) = buffer.iter().position(|byte| *byte == b'\n') {
                 let line = buffer.drain(..=position).collect::<Vec<_>>();
-                let line = String::from_utf8_lossy(&line[..line.len() - 1]).into_owned();
+                let line = match std::str::from_utf8(&line[..line.len() - 1]) {
+                    Ok(line) => line,
+                    Err(_) => {
+                        emit(&json!({"ok":false,"error":"Invalid request"}))?;
+                        continue;
+                    }
+                };
                 if line.trim().is_empty() {
                     continue;
                 }
-                let message: Value = match serde_json::from_str(&line) {
+                let message: Value = match serde_json::from_str(line) {
                     Ok(value) => value,
                     Err(_) => {
                         emit(&json!({"ok":false,"error":"Invalid request"}))?;
@@ -1743,35 +2044,18 @@ fn record() -> Result {
     let vault = vault_from(&settings).ok_or("Choose a vault directory first")?;
     let state = vault.state.clone();
     private_dir(&state)?;
-    let _recording = lock(&state.join("recording.lock"))
-        .map_err(|_| "A recording is already running")?;
-    let directory = vault.attachments_dir();
+    let _recording =
+        lock(&state.join("recording.lock")).map_err(|_| "A recording is already running")?;
+    let directory = checked_path(
+        &vault.root,
+        &Path::new(&vault.directory).join(&vault.attachments),
+    )?;
     fs::create_dir_all(&directory)?;
     let partial = directory.join(format!(".seele-recording-{}.part", stamp_nanos()));
     let mut file = private_file(&partial, true)?;
     file.write_all(&wav_header(0))?;
-    // PulseAudio's native client follows PipeWire's default microphone. Only
-    // this process owns the recorder, and every exit path reaps it.
-    let mut child = match Command::new("parecord")
-        .args([
-            "--raw",
-            "--format=s16le",
-            "--rate=16000",
-            "--channels=1",
-            "--client-name=Seele Notes",
-            "--stream-name=Voice memo",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => {
-            let _ = fs::remove_file(&partial);
-            return Err(format!("The microphone could not be opened: {error}").into());
-        }
-    };
+    // A single shared supervisor owns the entire recorder group, including
+    // failures and blocked pipes. Raw PCM needs no child-side finalization.
     STOP.store(false, Ordering::Relaxed);
     unsafe {
         libc::signal(
@@ -1784,88 +2068,94 @@ fn record() -> Result {
         );
     }
     std::thread::spawn(|| {
-        let mut line = String::new();
-        let _ = io::stdin().read_line(&mut line);
+        let _ = io::stdin().read(&mut [0u8; 1]);
         STOP.store(true, Ordering::Relaxed);
     });
-    let result = (|| -> Result<u32> {
-        let mut audio = child.stdout.take().ok_or("Recorder stdout unavailable")?;
-        let fd = audio.as_raw_fd();
-        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-            return Err(io::Error::last_os_error().into());
+    struct RecorderStop {
+        last_audio: std::sync::Mutex<Instant>,
+        full: AtomicBool,
+    }
+    impl seele_runtime::cancel::Cancellation for RecorderStop {
+        fn is_cancelled(&self) -> bool {
+            STOP.load(Ordering::Relaxed)
+                || self.full.load(Ordering::Relaxed)
+                || self.last_audio.lock().unwrap().elapsed() > Duration::from_secs(10)
         }
-        let (mut bytes, mut peak) = (0_u32, 0_f32);
-        let mut last_emit = Instant::now();
-        let mut last_audio = Instant::now();
-        let mut stopping = None;
-        let mut buffer = [0; 4096];
-        emit(&json!({"recording":true}))?;
-        loop {
-            if (STOP.load(Ordering::Relaxed) || bytes >= MAX_AUDIO) && stopping.is_none() {
-                unsafe {
-                    libc::kill(child.id() as i32, libc::SIGINT);
+    }
+    let stop = RecorderStop {
+        last_audio: std::sync::Mutex::new(Instant::now()),
+        full: AtomicBool::new(false),
+    };
+    let (mut bytes, mut peak) = (0_u32, 0_f32);
+    let mut last_emit = Instant::now();
+    let mut odd_sample = None;
+    emit(&json!({"recording":true}))?;
+    let recording = seele_runtime::process::stream_stdout(
+        Command::new("parecord").args([
+            "--raw",
+            "--format=s16le",
+            "--rate=16000",
+            "--channels=1",
+            "--client-name=Seele Notes",
+            "--stream-name=Voice memo",
+        ]),
+        b"",
+        seele_runtime::process::Limits {
+            timeout: Duration::from_secs(60 * 60 + 10),
+            output: 65536,
+        },
+        &stop,
+        |buffer| {
+            let count = buffer.len().min((MAX_AUDIO - bytes) as usize);
+            file.write_all(&buffer[..count])?;
+            bytes += count as u32;
+            *stop.last_audio.lock().unwrap() = Instant::now();
+            for byte in &buffer[..count] {
+                if let Some(low) = odd_sample.take() {
+                    peak = peak.max(
+                        (i16::from_le_bytes([low, *byte]) as f32 / 32768.0)
+                            .abs()
+                            .sqrt(),
+                    );
+                } else {
+                    odd_sample = Some(*byte);
                 }
-                stopping = Some(Instant::now());
-            }
-            match audio.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(count) => {
-                    let count = count.min((MAX_AUDIO - bytes) as usize);
-                    file.write_all(&buffer[..count])?;
-                    bytes += count as u32;
-                    last_audio = Instant::now();
-                    for sample in buffer[..count].chunks_exact(2) {
-                        peak = peak.max(
-                            (i16::from_le_bytes([sample[0], sample[1]]) as f32 / 32768.0)
-                                .abs()
-                                .sqrt(),
-                        );
-                    }
-                }
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                    ) =>
-                {
-                    std::thread::sleep(Duration::from_millis(10))
-                }
-                Err(error) => return Err(error.into()),
             }
             if last_emit.elapsed() >= Duration::from_millis(50) {
-                emit(
-                    &json!({"level":peak,"duration":bytes as u64 * 1000 / (SAMPLE_RATE as u64 * 2)}),
-                )?;
+                emit(&json!({"level":peak,"duration":u64::from(bytes)*1000/(u64::from(SAMPLE_RATE)*2)}))
+                    .map_err(|_|io::ErrorKind::BrokenPipe)?;
                 last_emit = Instant::now();
                 peak = 0.0;
             }
-            if stopping.is_some_and(|time| time.elapsed() > Duration::from_secs(2)) {
-                let _ = child.kill();
-                break;
-            }
-            if last_audio.elapsed() > Duration::from_secs(10) {
-                return Err("The microphone stopped delivering audio".into());
-            }
-        }
-        if stopping.is_none() {
-            return Err("The microphone disconnected while recording".into());
-        }
+            stop.full.store(bytes >= MAX_AUDIO, Ordering::Relaxed);
+            Ok(())
+        },
+    );
+    let result: Result<u32> = if STOP.load(Ordering::Relaxed) || stop.full.load(Ordering::Relaxed) {
         Ok(bytes - bytes % 2)
-    })();
-    let _ = child.kill();
-    let _ = child.wait();
+    } else if stop.last_audio.lock().unwrap().elapsed() > Duration::from_secs(10) {
+        Err("The microphone stopped delivering audio".into())
+    } else {
+        match recording {
+            Err(error) => Err(format!("The microphone could not be recorded: {error}").into()),
+            Ok(_) => Err("The microphone disconnected while recording".into()),
+        }
+    };
     match result {
         Ok(bytes) if bytes > 0 => {
             file.set_len(44 + u64::from(bytes))?;
             file.seek(SeekFrom::Start(0))?;
             file.write_all(&wav_header(bytes))?;
+            // Audio joins the vault as ordinary content, readable by Obsidian.
+            file.set_permissions(fs::Permissions::from_mode(0o644))?;
             file.sync_all()?;
             drop(file);
-            let target = unique(&directory, &format!("Voice memo {}", stamp()), "wav");
-            // Audio joins the vault as ordinary content, readable by Obsidian.
-            fs::set_permissions(&partial, fs::Permissions::from_mode(0o644))?;
-            fs::rename(&partial, &target)?;
+            let target = move_new(
+                &partial,
+                &directory,
+                &format!("Voice memo {}", stamp()),
+                "wav",
+            )?;
             File::open(&directory)?.sync_all()?;
             let name = target
                 .file_name()
@@ -1897,11 +2187,15 @@ fn record() -> Result {
                 && file.write_all(&wav_header(captured)).is_ok()
                 && file.sync_all().is_ok()
             {
+                file.set_permissions(fs::Permissions::from_mode(0o644))?;
+                file.sync_all()?;
                 drop(file);
-                let salvage =
-                    unique(&directory, &format!("Voice memo {} (partial)", stamp()), "wav");
-                let _ = fs::set_permissions(&partial, fs::Permissions::from_mode(0o644));
-                let _ = fs::rename(&partial, &salvage);
+                let salvage = move_new(
+                    &partial,
+                    &directory,
+                    &format!("Voice memo {} (partial)", stamp()),
+                    "wav",
+                )?;
                 let _ = emit(&json!({
                     "salvaged": salvage.file_name().and_then(|value| value.to_str()),
                     "duration": u64::from(captured) * 1000 / (u64::from(SAMPLE_RATE) * 2),
@@ -1919,5 +2213,204 @@ pub fn run(arguments: &[String]) -> Result {
         "watch" => watch(),
         "record" => record(),
         _ => Err("Usage: seele-notes-store [watch|record]".into()),
+    }
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+    fn library() -> (tempfile::TempDir, Library) {
+        let root = tempfile::tempdir().unwrap();
+        let vault = root.path().join("vault");
+        fs::create_dir(&vault).unwrap();
+        fs::set_permissions(&vault, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(vault.join("Inbox")).unwrap();
+        fs::set_permissions(vault.join("Inbox"), fs::Permissions::from_mode(0o700)).unwrap();
+        let library = Library {
+            vault: Vault {
+                root: vault,
+                directory: "Inbox".into(),
+                attachments: "Attachments".into(),
+                state: root.path().join("state"),
+            },
+            summaries: Default::default(),
+        };
+        (root, library)
+    }
+    #[test]
+    fn summary_cache_detects_same_size_changes_with_restored_mtime() {
+        let (_root, library) = library();
+        let note = library.vault.notes_dir().join("note.md");
+        fs::write(&note, "# First\n").unwrap();
+        let modified = note.metadata().unwrap().modified().unwrap();
+        assert_eq!(library.list().unwrap()["notes"][0]["title"], "First");
+        fs::write(&note, "# Other\n").unwrap();
+        File::options()
+            .write(true)
+            .open(&note)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert_eq!(library.list().unwrap()["notes"][0]["title"], "Other");
+        for index in 0..64 {
+            let title = if index % 2 == 0 { "First" } else { "Other" };
+            fs::write(&note, format!("# {title}\n")).unwrap();
+            File::options()
+                .write(true)
+                .open(&note)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+            assert_eq!(library.list().unwrap()["notes"][0]["title"], title);
+        }
+        fs::remove_file(&note).unwrap();
+        assert_eq!(library.list().unwrap()["notes"], json!([]));
+    }
+    #[test]
+    fn inotify_changes_invalidate_matching_cache_even_when_metadata_matches() {
+        let (_root, library) = library();
+        let Some(watcher) = Watcher::new() else {
+            panic!("inotify unavailable");
+        };
+        watcher.watch_library(&library);
+        let note = library.vault.notes_dir().join("note.md");
+        fs::write(&note, "# First\n").unwrap();
+        watcher.drain();
+        let fingerprint = Fingerprint::read(&note).unwrap();
+        library.summaries.lock().unwrap().insert(
+            note.clone(),
+            CachedSummary {
+                fingerprint,
+                observed: SystemTime::now(),
+                value: json!({"title":"cached"}),
+            },
+        );
+        fs::write(&note, "# Other\n").unwrap();
+        let changes = watcher.drain();
+        assert!(changes.names.contains(std::ffi::OsStr::new("note.md")));
+        library.invalidate(&changes);
+        assert!(library.summaries.lock().unwrap().is_empty());
+        assert_eq!(library.list().unwrap()["notes"][0]["title"], "Other");
+    }
+
+    #[test]
+    fn summary_cache_rejects_recent_future_and_reversed_clocks() {
+        let mut fingerprint = Fingerprint {
+            device: 1,
+            inode: 1,
+            size: 8,
+            modified: (10, 0),
+            changed: (10, 0),
+        };
+        let now = UNIX_EPOCH + Duration::from_secs(20);
+        let cached = CachedSummary {
+            fingerprint,
+            observed: now,
+            value: Value::Null,
+        };
+        assert!(cached.reusable(fingerprint, now + Duration::from_secs(1)));
+        assert!(!cached.reusable(fingerprint, now - Duration::from_secs(1)));
+        fingerprint.changed = (19, 0);
+        assert!(!fingerprint.stable_before(now));
+        fingerprint.changed = (21, 0);
+        assert!(!fingerprint.stable_before(now));
+        fingerprint.changed = (10, 0);
+        fingerprint.modified = (21, 0);
+        assert!(!fingerprint.stable_before(now));
+    }
+
+    #[test]
+    fn oversized_input_is_rejected_before_buffer_growth() {
+        let mut source = tempfile::tempfile().unwrap();
+        source.write_all(b"request bytes").unwrap();
+        source.rewind().unwrap();
+        let mut buffer = vec![b'x'; MAX_REQUEST - 1];
+        let length = buffer.len();
+        assert!(read_available(source.as_raw_fd(), &mut buffer).is_err());
+        assert_eq!(buffer.len(), length);
+    }
+    #[test]
+    fn successful_save_clears_legacy_recovery_keys_by_recorded_path() {
+        let (_root, library) = library();
+        private_dir(&library.drafts_dir()).unwrap();
+        let old = library.drafts_dir().join("old-fnv-name.json");
+        seele_runtime::fs::atomic_write(&old, br#"{"path":"Inbox/note.md","text":"saved"}"#)
+            .unwrap();
+        library.drop_draft("Inbox/note.md");
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn paths_and_audio_never_escape_the_vault_or_follow_symlinks() {
+        let (root, library) = library();
+        let outside = root.path().join("outside.md");
+        fs::write(&outside, "private").unwrap();
+        symlink(&outside, library.vault.notes_dir().join("escape.md")).unwrap();
+        for path in [
+            "/etc/passwd",
+            "../outside.md",
+            "Inbox/escape.md",
+            "Inbox/secret.json",
+        ] {
+            assert!(library.read(path).is_err());
+        }
+        let audio = root.path().join("outside.wav");
+        fs::write(&audio, b"audio").unwrap();
+        symlink(&audio, library.vault.notes_dir().join("escape.wav")).unwrap();
+        for target in ["../../outside.wav", "/outside.wav", "escape.wav"] {
+            assert!(library.locate("Inbox/note.md", target).is_none());
+        }
+        symlink(root.path(), library.vault.root.join("Attachments")).unwrap();
+        assert!(checked_path(&library.vault.root, Path::new("Attachments/note.md")).is_err());
+        assert_eq!(fs::read_to_string(outside).unwrap(), "private");
+    }
+    #[test]
+    fn concurrent_creates_and_trash_collisions_keep_every_file() {
+        let (_root, library) = library();
+        let directory = library.vault.notes_dir();
+        std::thread::scope(|scope| {
+            for index in 0..8 {
+                let directory = &directory;
+                scope.spawn(move || {
+                    write_new(directory, "Shared name", &format!("note {index}")).unwrap();
+                });
+            }
+        });
+        let mut contents = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| read_text(entry.unwrap().path()).unwrap())
+            .collect::<Vec<_>>();
+        contents.sort();
+        assert_eq!(
+            contents,
+            (0..8)
+                .map(|index| format!("note {index}"))
+                .collect::<Vec<_>>()
+        );
+        let victim = directory.join("Shared name.md");
+        assert_eq!(victim.metadata().unwrap().mode() & 0o777, 0o644);
+        let trash = library.vault.trash_dir();
+        fs::create_dir(&trash).unwrap();
+        fs::set_permissions(&trash, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(trash.join("Shared name.md"), "older").unwrap();
+        library.trash("Inbox/Shared name.md").unwrap();
+        assert_eq!(read_text(trash.join("Shared name.md")).unwrap(), "older");
+    }
+    #[test]
+    fn oversized_files_and_private_state_symlinks_are_rejected() {
+        let (root, library) = library();
+        let large = library.vault.notes_dir().join("large.md");
+        File::create(&large)
+            .unwrap()
+            .set_len((MAX_TEXT + 1) as u64)
+            .unwrap();
+        assert!(library.read("Inbox/large.md").is_err());
+        private_dir(&library.vault.state).unwrap();
+        let outside = root.path().join("private");
+        fs::write(&outside, "untouched").unwrap();
+        symlink(&outside, library.vault.state.join("writer.lock")).unwrap();
+        assert!(lock(&library.vault.state.join("writer.lock")).is_err());
+        assert_eq!(read_text(outside).unwrap(), "untouched");
     }
 }

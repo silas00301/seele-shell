@@ -39,13 +39,15 @@ account identity, followed by one query for both PR lists. Each process has a
 process groups are terminated. Shell shutdown or reload also kills and reaps the
 active CLI process group, so it cannot outlive the shell worker.
 
-`GitHubStore.qml` owns refresh lifecycle and data, while `github.js` owns the
-small state transitions and URL gate. `status.py` performs the API projection.
-The package bundles `gh` and Python; no new flake input or Python dependency is
-needed. Focused tests use fixtures and a temporary fake `gh`, never an account:
+`GitHubStore.qml` owns Qt refresh callbacks and live data. The shared Rust
+`qml-core` owns display policy, and `runtime::github` owns the canonical URL gate
+and bounded `seele-github-status` API projection. The package bundles native
+binaries and `gh`; Python is used only by development fixtures. Focused tests
+use a temporary fake `gh`, never an account:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 tests/github.py projects/github/status.py
+cargo build -p seele-runtime -p seele-qml-core --locked
+PYTHONDONTWRITEBYTECODE=1 python3 projects/runtime/tests/github.py target/debug/seele-github-status
 node tests/github.js projects/shell/github.js projects/shell/GitHubStore.qml
 ```
 

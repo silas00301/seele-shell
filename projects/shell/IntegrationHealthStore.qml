@@ -36,12 +36,12 @@ Scope {
     var next = {}, retained = {}
     try {
       if (!Array.isArray(entries) || entries.length>64) return false
-      entries.forEach(function(value){var reg=Health.registration(value); next[reg.id]=reg; if(values[reg.id]) retained[reg.id]=values[reg.id]})
+      entries.forEach(function(value){var reg=Health.registration(value); next[reg.id]=reg; if(Health.own(values,reg.id)) retained[reg.id]=values[reg.id]})
     } catch (_) { return false }
     registrations=next; values=retained; pending=({}); errors=({}); configured(); return true
   }
   function publish(id, value) {
-    if (!registrations[id]) return false
+    if (!Health.own(registrations,id)) return false
     try {
       var next=Object.assign({},values)
       next[id]=Health.publication(registrations[id],value,Date.now())
@@ -49,23 +49,23 @@ Scope {
     } catch (_) { return false }
   }
   function complete(id, token, ok) {
-    if (!pending[id] || pending[id].token!==token) return
+    if (!Health.own(pending,id) || pending[id].token!==token) return
     var p=Object.assign({},pending), e=Object.assign({},errors)
     delete p[id]; if(ok) delete e[id]; else e[id]="Action failed. Try again."
     pending=p; errors=e
   }
   function act(id, action, confirmed) {
     var row=rows.find(function(r){return r.id===id}), reg=registrations[id]
-    if (!row || !reg || row.actions.indexOf(action)<0 || pending[id]) return false
+    if (!row || !Health.own(registrations,id) || row.actions.indexOf(action)<0 || Health.own(pending,id)) return false
     if (reg.disruptive.indexOf(action)>=0 && !confirmed) return false
     if (action==="settings") { if(!reg.setup)return false; openSettings(reg.setup); return true }
     if (action==="diagnostics") return true
     var token=++serial, p=Object.assign({},pending), e=Object.assign({},errors)
     delete e[id]; errors=e; p[id]={token:token,started:Date.now()}; pending=p
     if (action==="restart" && reg.service) {
-      var task=restartFactory.createObject(store,{providerId:id,token:token,command:["systemctl","--user","restart",reg.service]})
+      var task=restartFactory.createObject(store,{providerId:id,token:token,command:["seele-control","restart-user-service",reg.service]})
       if(task) task.running=true; else complete(id,token,false)
-    } else if (handlers[id]) handlers[id](action,token)
+    } else if (Health.own(handlers,id)) handlers[id](action,token)
     else complete(id,token,false)
     return true
   }

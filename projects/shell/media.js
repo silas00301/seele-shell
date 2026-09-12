@@ -1,214 +1,106 @@
-function clean(value) {
-  if (value === undefined || value === null) return ""
-  return String(value).trim()
-}
+.import "../shared/Native.js" as Bridge
 
-function listText(value) {
-  if (value === undefined || value === null) return ""
-  if (typeof value === "string") return clean(value)
-  if (typeof value.length === "number") {
-    var values = []
-    for (var i = 0; i < value.length; i++) {
-      var item = clean(value[i])
-      if (item !== "") values.push(item)
-    }
-    return values.join(", ")
+// QObject properties and identity belong to Qt. Rust receives plain snapshots
+// and returns selected indexes; these adapters return the original live object.
+function metadata(player, key) { return player && player.metadata ? player.metadata[key] : null }
+function snapshot(player, kind) {
+  if (!player) return null
+  var result = {}
+  if (!kind || kind === "identity") {
+    result.identity = player.identity
+    result.desktopEntry = player.desktopEntry
+    result.dbusName = player.dbusName
+    result.isPlaying = player.isPlaying
   }
-  return clean(value)
+  var data = player.metadata || {}
+  var metadata = {}
+  if (!kind || kind === "track") {
+    result.trackTitle = player.trackTitle
+    result.trackArtist = player.trackArtist
+    result.trackAlbumArtist = player.trackAlbumArtist
+    result.trackAlbum = player.trackAlbum
+    metadata["xesam:title"] = data["xesam:title"]
+    metadata["xesam:artist"] = data["xesam:artist"]
+    metadata["xesam:albumArtist"] = data["xesam:albumArtist"]
+    metadata["xesam:album"] = data["xesam:album"]
+  }
+  if (!kind || kind === "timing") {
+    result.length = Bridge.number(player.length)
+    result.canSeek = player.canSeek
+    result.positionSupported = player.positionSupported
+    result.lengthSupported = player.lengthSupported
+    metadata["mpris:length"] = Bridge.number(data["mpris:length"])
+  }
+  result.metadata = metadata
+  return result
 }
 
-function metadata(player, key) {
-  return player && player.metadata ? player.metadata[key] : null
+function snapshots(players) {
+  var result = []
+  for (var i = 0; i < (players || []).length; i++) result.push(snapshot(players[i]))
+  return result
 }
-
-function isSpotify(player) {
-  if (!player) return false
-  var identity = [player.identity, player.desktopEntry, player.dbusName].map(clean).join(" ").toLowerCase()
-  return identity.indexOf("spotify") >= 0
+function identityIndex(players, player) {
+  if (!player) return -1
+  for (var i = 0; i < (players || []).length; i++) if (players[i] === player) return i
+  return -1
 }
-
-function title(player) {
-  if (!player) return ""
-  return clean(player.trackTitle) || clean(metadata(player, "xesam:title"))
-}
-
-function artist(player) {
-  if (!player) return ""
-  return clean(player.trackArtist)
-    || listText(metadata(player, "xesam:artist"))
-    || clean(player.trackAlbumArtist)
-    || listText(metadata(player, "xesam:albumArtist"))
-}
-
-function album(player) {
-  if (!player) return ""
-  return clean(player.trackAlbum) || clean(metadata(player, "xesam:album"))
-}
-
-// Podcast episodes carry an empty xesam:artist and name their show in xesam:album.
-function subtitle(player) {
-  return artist(player) || album(player)
-}
-
-function label(player) {
-  var trackTitle = title(player)
-  var trackSubtitle = subtitle(player)
-  if (trackTitle !== "" && trackSubtitle !== "") return trackTitle + " · " + trackSubtitle
-  return trackTitle || trackSubtitle
-}
-
-function playerName(player) {
-  if (!player) return ""
-  var name = clean(player.identity) || clean(player.desktopEntry)
-  if (name !== "") return name
-
-  var dbusName = clean(player.dbusName).replace(/^org\.mpris\.MediaPlayer2\./, "")
-  var segment = dbusName.split(".")[0].replace(/[-_]+/g, " ").trim()
-  return segment === "" ? "Media player" : segment.charAt(0).toUpperCase() + segment.slice(1)
-}
-
-function lengthSeconds(player) {
-  if (!player) return 0
-  var direct = Number(player.length)
-  if (isFinite(direct) && direct > 0) return direct
-  var raw = Number(metadata(player, "mpris:length"))
-  return isFinite(raw) && raw > 0 ? raw / 1000000 : 0
-}
-
-// Firefox exposes a live Twitch stream with the signed 64-bit duration sentinel.
-// A one-year floor is well beyond ordinary media while remaining below that value.
-function liveStream(player) {
-  return lengthSeconds(player) >= 365 * 24 * 60 * 60
-}
-
-function timelineAvailable(player) {
-  if (!player || lengthSeconds(player) <= 0) return false
-  if (liveStream(player)) return true
-  return !!player.canSeek && !!player.positionSupported && !!player.lengthSupported
-}
-
-// Chromium-embedded players append " • <album>" to the title, so compare the leading segment only.
-function titleKey(player) {
-  return title(player).split(/\s+[•·—–|]\s+/)[0].trim().toLowerCase().replace(/\s+/g, " ")
-}
-
-function sameTrack(left, right) {
-  if (!left || !right) return false
-
-  var leftArtist = artist(left).toLowerCase()
-  var rightArtist = artist(right).toLowerCase()
-  if (leftArtist !== "" && rightArtist !== "" && leftArtist !== rightArtist) return false
-
-  var leftLength = lengthSeconds(left)
-  var rightLength = lengthSeconds(right)
-  if (leftLength > 0 && rightLength > 0) return Math.abs(leftLength - rightLength) <= 1
-
-  var leftTitle = titleKey(left)
-  return leftTitle !== "" && leftTitle === titleKey(right)
-}
-
-function spotifyPlayer(players) {
+function selected(name, players, extra) {
   players = players || []
-  for (var i = 0; i < players.length; i++) {
-    if (players[i].isPlaying && isSpotify(players[i])) return players[i]
-  }
-  return null
+  var index = Bridge.call("media." + name, [snapshots(players), extra])
+  return index === null ? null : players[index]
 }
-
-function devicePlayer(players) {
-  players = players || []
-  var spotify = spotifyPlayer(players)
-  for (var i = 0; i < players.length; i++) {
-    if (!players[i].isPlaying || isSpotify(players[i])) continue
-    if (spotify && sameTrack(players[i], spotify)) continue
-    return players[i]
-  }
-  return null
+function modes(player) {
+  return player ? {canControl: player.canControl, shuffleSupported: player.shuffleSupported,
+    loopSupported: player.loopSupported, shuffle: player.shuffle, loopState: player.loopState} : null
 }
-
-// MPRIS may expose one track through both its native player and an embedded
-// Chromium service. Keep that mirror out of the picker just as the menu bar
-// keeps it out of the device slot, while retaining every distinct resumable
-// player rather than only the first one currently playing.
+function clean(value) { return Bridge.call("media.clean", [value]) }
+function listText(value) { return Bridge.call("media.listText", [value]) }
+function isSpotify(player) { return Bridge.call("media.isSpotify", [snapshot(player, "identity")]) }
+function title(player) { return Bridge.call("media.title", [snapshot(player, "track")]) }
+function artist(player) { return Bridge.call("media.artist", [snapshot(player, "track")]) }
+function album(player) { return Bridge.call("media.album", [snapshot(player, "track")]) }
+function subtitle(player) { return Bridge.call("media.subtitle", [snapshot(player, "track")]) }
+function label(player) { return Bridge.call("media.label", [snapshot(player, "track")]) }
+function playerName(player) { return Bridge.call("media.playerName", [snapshot(player, "identity")]) }
+function lengthSeconds(player) { return Bridge.call("media.lengthSeconds", [snapshot(player, "timing")]) }
+function liveStream(player) { return Bridge.call("media.liveStream", [snapshot(player, "timing")]) }
+function timelineAvailable(player) { return Bridge.call("media.timelineAvailable", [snapshot(player, "timing")]) }
+function titleKey(player) { return Bridge.call("media.titleKey", [snapshot(player, "track")]) }
+function sameTrack(left, right) { return Bridge.call("media.sameTrack", [snapshot(left), snapshot(right)]) }
+function spotifyPlayer(players) { return selected("spotifyPlayer", players, null) }
+function devicePlayer(players) { return selected("devicePlayer", players, null) }
+function activePlayer(players) { return selected("activePlayer", players, null) }
 function availablePlayers(players) {
   players = players || []
-  var spotify = null
-  for (var i = 0; i < players.length; i++) {
-    if (isSpotify(players[i]) && (title(players[i]) !== "" || subtitle(players[i]) !== "")) {
-      spotify = players[i]
-      if (players[i].isPlaying) break
-    }
-  }
-
-  var available = []
-  for (var j = 0; j < players.length; j++) {
-    var player = players[j]
-    if (title(player) === "" && subtitle(player) === "") continue
-    if (spotify && player !== spotify && !isSpotify(player) && sameTrack(player, spotify)) continue
-    available.push(player)
-  }
-  return available
+  return Bridge.call("media.availablePlayers", [snapshots(players)]).map(function(index) { return players[index] })
 }
-
-// The Control Center carries a single now-playing module where the bar keeps
-// Spotify and the device player apart, so it falls back to whichever player
-// still has a track to resume once nothing is playing.
-function activePlayer(players) {
-  players = players || []
-  var playing = spotifyPlayer(players) || devicePlayer(players)
-  if (playing) return playing
-  for (var i = 0; i < players.length; i++) {
-    if (title(players[i]) !== "" || subtitle(players[i]) !== "") return players[i]
-  }
-  return null
-}
-
-function selectedPlayer(players, selected) {
-  players = availablePlayers(players)
-  var present = presentPlayer(players, selected)
-  return present || activePlayer(players)
-}
-
-// The bar holds an entry through a pause, and a client that quits takes its
-// player object with it, so a held reference is only worth showing while the
-// player it names is still on the bus.
-function presentPlayer(players, player) {
-  players = players || []
-  if (!player) return null
-  for (var i = 0; i < players.length; i++) {
-    if (players[i] === player) return player
-  }
-  return null
-}
-
-function canShuffle(player) {
-  return !!player && !!player.canControl && !!player.shuffleSupported
-}
-
-function canRepeat(player) {
-  return !!player && !!player.canControl && !!player.loopSupported
-}
-
+function selectedPlayer(players, player) { return selected("selectedPlayer", players, identityIndex(players, player)) }
+function presentPlayer(players, player) { var index = identityIndex(players, player); return index < 0 ? null : players[index] }
+function canShuffle(player) { return Bridge.call("media.canShuffle", [modes(player)]) }
+function canRepeat(player) { return Bridge.call("media.canRepeat", [modes(player)]) }
 function toggleShuffle(player) {
-  if (!canShuffle(player)) return false
-  player.shuffle = !player.shuffle
+  var next = Bridge.call("media.nextShuffle", [modes(player)])
+  if (next === null) return false
+  player.shuffle = next
   return true
 }
-
-// Use the imported enum rather than duplicating Quickshell's numeric values.
-function nextLoopState(current, states) {
-  return current === states.None ? states.Playlist
-    : current === states.Playlist ? states.Track : states.None
+// MprisLoopState is a Qt singleton, not a JSON object. Only its enum values
+// cross the native boundary; the host retains the actual player instance.
+function loopStates(states) {
+  return states ? {None: Number(states.None), Track: Number(states.Track), Playlist: Number(states.Playlist)} : null
 }
-
+function nextLoopState(current, states) { return Bridge.call("media.nextLoopState", [current, loopStates(states)]) }
 function cycleRepeat(player, states) {
-  if (!canRepeat(player)) return false
-  player.loopState = nextLoopState(player.loopState, states)
+  var next = Bridge.call("media.nextRepeat", [modes(player), loopStates(states)])
+  if (next === null) return false
+  player.loopState = next
   return true
 }
+function repeatLabel(player, states) { return Bridge.call("media.repeatLabel", [modes(player), loopStates(states)]) }
 
-function repeatLabel(player, states) {
-  if (!player || !player.loopSupported) return "Repeat unavailable"
-  return player.loopState === states.Track ? "Repeat one track"
-    : player.loopState === states.Playlist ? "Repeat playlist" : "Repeat off"
+function seekTarget(player, command, largeStep) {
+  var value = snapshot(player, "timing")
+  if (value) { value.position = Bridge.number(player.position); value.canControl = player.canControl }
+  return Bridge.call("media.seekTarget", [value, command, !!largeStep])
 }

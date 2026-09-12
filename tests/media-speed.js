@@ -1,8 +1,9 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const speed = vm.createContext({});
-vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), speed);
+const speed = vm.createContext({Bridge: nativeBridge()});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), speed);
 const make = overrides => ({canControl:true, rate:1, minRate:0.5, maxRate:3, ...overrides});
 const player = make();
 assert.deepEqual(Array.from(speed.rates(player)), [0.75,1,1.25,1.5,2]);

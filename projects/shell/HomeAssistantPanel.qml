@@ -1,7 +1,9 @@
+import "../shared/ListModels.js" as Models
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../shared" as Shared
+import "../shared/Native.js" as Bridge
 
 Column {
   id: panel
@@ -36,24 +38,12 @@ Column {
   ListModel { id: homeModel; dynamicRoles: true }
   ListModel { id: deviceModel; dynamicRoles: true }
   function reconcile(model, items) {
-    var keys = items.map(function(item) { return item.entity_id || "heading:" + item.heading })
-    for (var i = 0; i < items.length; i++) {
-      var found = -1
-      for (var j = i; j < model.count; j++) if (model.get(j).key === keys[i]) { found = j; break }
-      if (found < 0) model.insert(i, {key: keys[i], payload: items[i]})
-      else {
-        if (found !== i) model.move(found, i, 1)
-        if (JSON.stringify(model.get(i).payload) !== JSON.stringify(items[i])) model.setProperty(i, "payload", items[i])
-      }
-    }
-    if (model.count > items.length) model.remove(items.length, model.count - items.length)
+    Models.reconcile(model, items, "payload", function(item) { return item.entity_id || "heading:" + item.heading }, "key")
   }
   function syncDevices() {
-    var query = search.text.toLowerCase()
-    var known = store.entities.slice()
-    store.catalog.forEach(function(item) { if (!known.some(function(entry) { return entry.entity_id === item.entity_id })) known.push(item) })
-    reconcile(deviceModel, known.filter(function(item) { return (item.name + " " + item.entity_id + " " + item.room).toLowerCase().indexOf(query) >= 0 }))
+    reconcile(deviceModel, Bridge.call("home_assistant.devices", [store.entities, store.catalog, search.text]))
   }
+
   Connections {
     target: panel.store
     function onEntitiesChanged() { panel.reconcile(homeModel, panel.store.rows()); panel.syncDevices() }
