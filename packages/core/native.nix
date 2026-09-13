@@ -58,6 +58,7 @@ let
     integrations = ''
       python3 projects/integrations/tests/home_assistant.py "$out/bin/seele-home-assistant"
       python3 projects/integrations/tests/transfers.py "$out/bin/seele-transfers"
+      python3 projects/integrations/tests/github.py "$out/bin/seele-github-inbox"
     '';
     config-tools = ''
       python3 projects/config-tools/tests/materialize.py "$out/bin/seele-portable-config"
