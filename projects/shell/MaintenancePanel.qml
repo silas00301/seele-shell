@@ -153,6 +153,27 @@ Column {
 
         width: parent.width
         implicitHeight: Math.max(headMark.height, headText.implicitHeight)
+        // The head replaced a button, so it has to answer the keyboard the
+        // way that button did: a finding whose details cannot be reached
+        // without a pointer is a finding half the panel cannot read.
+        activeFocusOnTab: true
+
+        Keys.onPressed: event => {
+          if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+          event.accepted = true
+          if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+          card.toggle()
+        }
+
+        Rectangle {
+          visible: head.activeFocus
+          anchors.fill: parent
+          radius: panel.theme.radiusSmall
+          color: "transparent"
+          border.width: 1
+          border.color: panel.theme.accent
+          antialiasing: true
+        }
 
         Rectangle {
           id: headMark
@@ -214,7 +235,7 @@ Column {
           anchors.right: parent.right
           anchors.verticalCenter: headMark.verticalCenter
           text: card.expanded ? "󰅃" : "󰅀"
-          color: headMouse.containsMouse ? panel.theme.text : panel.theme.overlay
+          color: headMouse.containsMouse || head.activeFocus ? panel.theme.text : panel.theme.overlay
           font.family: panel.theme.fontFamily
           font.pixelSize: panel.theme.textBody
 

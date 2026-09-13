@@ -3598,10 +3598,14 @@ Shared.Theme {
       : playerLevel.silent ? "󰝟"
       : playerLevel.percent < 34 ? "󰕿"
       : playerLevel.percent < 67 ? "󰖀" : "󰕾"
-    // Where a silenced player comes back to. One silenced from here returns to
-    // the level it was taken from; one that was already silent returns to
-    // full, because there is no earlier level of its own to return to.
-    property real restore: 0
+    // Where a silenced player comes back to, and which player it belongs to.
+    // The panel keeps one row for whichever player is selected, so a bare
+    // level would hand the level taken from one player back to another. One
+    // slot is enough: the row gives a level back only to the player it took
+    // it from, and anything else — a player already silent, or one silenced
+    // before another took the slot — comes back to full.
+    property var restore: null
+    readonly property string playerKey: playerLevel.player ? String(playerLevel.player.dbusName || "") : ""
 
     implicitHeight: root.rowHeight
     activeFocusOnTab: playerLevel.writable
@@ -3613,9 +3617,14 @@ Shared.Theme {
     function silence() {
       if (!playerLevel.writable) return
       if (playerLevel.silent) {
-        playerLevel.write(playerLevel.restore > 0 ? playerLevel.restore : 1)
+        var kept = playerLevel.restore
+        var level = kept && kept.key !== "" && kept.key === playerLevel.playerKey && kept.level > 0
+          ? kept.level
+          : 1
+        playerLevel.restore = null
+        playerLevel.write(level)
       } else {
-        playerLevel.restore = playerLevel.fillRatio
+        playerLevel.restore = { key: playerLevel.playerKey, level: playerLevel.fillRatio }
         playerLevel.write(0)
       }
     }

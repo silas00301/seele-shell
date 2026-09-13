@@ -110,6 +110,9 @@ assert.match(panel, /validator:\s*IntValidator \{\s*bottom:\s*1;\s*top:\s*43200\
 // The finding's own head is its disclosure, so the fold is not also a button
 // beside it saying what the chevron already says.
 assert.match(panel, /onClicked: card\.toggle\(\)/);
+// A disclosure that replaced a button keeps that button's keyboard path.
+assert.match(panel, /activeFocusOnTab: true/);
+assert.match(panel, /Keys\.onPressed: event => \{[^]*?card\.toggle\(\)/);
 assert.doesNotMatch(panel, /"Less" : "Details"/);
 for (const seconds of [3600, 86400, 604800])
   assert.ok(panel.includes('seconds: ' + seconds), 'snooze presets keep their durations');

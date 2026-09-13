@@ -335,7 +335,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/network-addresses.js "$out/share/seele-shell/network.js"
     node ${tests}/media.js "$out/share/seele-shell/media.js"
     bash ${tests}/media-host.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
-    node ${tests}/player-volume.js "$out/share/seele-shell/player-volume.js"
+    node ${tests}/player-volume.js "$out/share/seele-shell/player-volume.js" "$out/share/seele-shell/shell.qml"
     node ${tests}/media-speed.js "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
     node ${tests}/notifications.js "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${tests}/notification-server.sh ${quickshell}/bin/quickshell \
