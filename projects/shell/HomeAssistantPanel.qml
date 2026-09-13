@@ -78,15 +78,7 @@ Column {
   }
   Component.onCompleted: { syncHome(); syncDevices() }
 
-  component Action: Shared.ActionButton {
-    id: action
-    theme: panel.theme
-    Keys.onPressed: event => {
-      if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
-      if (!event.isAutoRepeat && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) action.clicked()
-      event.accepted = true
-    }
-  }
+  component Action: Shared.ActionButton { theme: panel.theme }
   component GlyphAction: Shared.GlyphButton { theme: panel.theme }
   component Label: Text {
     color: panel.theme.subtext
@@ -99,18 +91,24 @@ Column {
     id: field
     implicitHeight: panel.theme.controlHeight
     color: panel.theme.text
-    placeholderTextColor: panel.theme.subtext
+    placeholderTextColor: panel.theme.overlay
     selectionColor: panel.theme.selectedColor
     selectedTextColor: panel.theme.text
     font.family: panel.theme.fontFamily
     font.pixelSize: panel.theme.textBody
     leftPadding: panel.theme.cardPadding
     rightPadding: panel.theme.cardPadding
+    verticalAlignment: TextInput.AlignVCenter
     selectByMouse: true
+    // The same well SearchField is cut into, so every input in the shell
+    // reports focus with one ring.
     background: Rectangle {
       color: panel.theme.wellColor
-      radius: panel.theme.radiusSmall
-      border.color: field.activeFocus ? panel.theme.edgeCrown : panel.theme.cardBorder
+      radius: panel.theme.radius
+      border.width: 1
+      border.color: field.activeFocus ? panel.theme.accent : panel.theme.cardBorder
+      antialiasing: true
+      Behavior on border.color { ColorAnimation { duration: panel.theme.durationFast } }
     }
   }
   component Mark: Shared.CenteredGlyph {
@@ -118,7 +116,7 @@ Column {
     height: width
     color: panel.theme.subtext
     font.family: panel.theme.fontFamily
-    font.pixelSize: panel.theme.textCard
+    font.pixelSize: panel.theme.textIcon
   }
   component Choice: Button {
     id: choice
@@ -135,20 +133,25 @@ Column {
     contentItem: Label {
       text: choice.text
       font.pixelSize: panel.theme.textLabel
-      font.weight: choice.selected ? panel.theme.weightStrong : panel.theme.weightRegular
-      color: choice.selected ? panel.theme.accent : panel.theme.subtext
+      font.weight: choice.selected ? panel.theme.weightStrong : panel.theme.weightMedium
+      color: choice.selected ? panel.theme.text : panel.theme.subtext
       horizontalAlignment: Text.AlignHCenter
       verticalAlignment: Text.AlignVCenter
     }
+    // Keyboard focus is reported in the same neutral light as the pointer, so
+    // the well never shows two segments lit.
     background: Shared.Segment {
       theme: panel.theme
-      selected: choice.selected || choice.activeFocus
-      hovered: choice.hovered
+      selected: choice.selected
+      hovered: choice.hovered || choice.visualFocus
       pressed: choice.down
     }
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
-  component DeviceSlider: Column {
+  // A device level is drawn as the Audio panel and the player draw theirs: a
+  // well carrying its own fill, named inside the track it sets. It stays a
+  // Slider so the keyboard and accessibility contract is Qt's.
+  component DeviceSlider: Slider {
     id: level
     required property string title
     required property real current
@@ -158,56 +161,66 @@ Column {
     property string suffix: "%"
     property real draft: current
     signal committed(real value)
-    spacing: panel.theme.spaceTight
-    RowLayout {
-      width: parent.width
-      Label { text: level.title; Layout.fillWidth: true }
-      Label { text: Math.round(slider.value) + level.suffix; color: panel.theme.text }
+    objectName: level.title
+    Accessible.name: level.title
+    implicitHeight: panel.theme.rowHeight
+    padding: 0
+    from: level.minimum
+    to: level.maximum
+    stepSize: level.step
+    live: true
+    opacity: level.enabled ? 1 : panel.theme.disabledOpacity
+    Binding on value {
+      value: level.current
+      when: !level.pressed
+      restoreMode: Binding.RestoreNone
     }
-    Slider {
-      id: slider
-      objectName: level.title
-      Accessible.name: level.title
-      width: parent.width
-      height: panel.theme.controlHeight
-      from: level.minimum
-      to: level.maximum
-      stepSize: level.step
-      Binding on value {
-        value: level.current
-        when: !slider.pressed
-        restoreMode: Binding.RestoreNone
-      }
-      onMoved: level.draft = value
-      onActiveFocusChanged: if (activeFocus) panel.reveal(slider, homeViewport)
-      live: true
-      // Only user input commits. A state update never sends another request.
-      onPressedChanged: {
-        if (pressed) level.draft = value
-        else level.committed(level.draft)
-      }
-      Keys.onReleased: event => {
-        if (!event.isAutoRepeat && (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Home || event.key === Qt.Key_End)) level.committed(value)
-      }
-      background: Shared.MeterBar {
-        theme: panel.theme
-        x: slider.leftPadding
-        y: (slider.height - height) / 2
-        width: slider.availableWidth
-        height: panel.theme.spaceMedium
-        ratio: slider.visualPosition
-        fill: slider.enabled ? panel.theme.accent : panel.theme.overlay
-      }
-      handle: Rectangle {
-        x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
-        y: (slider.height - height) / 2
-        width: panel.theme.spaceLarge
-        height: width
-        radius: width / 2
-        color: slider.activeFocus ? panel.theme.accent : slider.enabled ? panel.theme.text : panel.theme.overlay
-      }
-      HoverHandler { cursorShape: slider.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+    onMoved: level.draft = level.value
+    onActiveFocusChanged: if (level.activeFocus) panel.reveal(level, homeViewport)
+    // Only user input commits. A state update never sends another request.
+    onPressedChanged: {
+      if (level.pressed) level.draft = level.value
+      else level.committed(level.draft)
     }
+    Keys.onReleased: event => {
+      if (!event.isAutoRepeat && (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Home || event.key === Qt.Key_End)) level.committed(level.value)
+    }
+    background: Rectangle {
+      radius: panel.theme.radius
+      color: panel.theme.wellColor
+      border.width: 1
+      border.color: level.activeFocus ? panel.theme.accent : panel.theme.alpha(panel.theme.text, 0.05)
+      clip: true
+      antialiasing: true
+      Rectangle {
+        width: parent.width * level.visualPosition
+        height: parent.height
+        radius: parent.radius
+        color: panel.theme.fillColor
+        antialiasing: true
+      }
+      Text {
+        id: levelReadout
+        anchors { right: parent.right; rightMargin: panel.theme.spaceLarge; verticalCenter: parent.verticalCenter }
+        text: Math.round(level.value) + level.suffix
+        textFormat: Text.PlainText
+        color: panel.theme.subtext
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textBody
+      }
+      Text {
+        anchors { left: parent.left; leftMargin: panel.theme.spaceLarge; right: levelReadout.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
+        text: level.title
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: panel.theme.text
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textBody
+        font.weight: panel.theme.weightStrong
+      }
+    }
+    handle: Item {}
+    HoverHandler { cursorShape: level.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
   }
 
   Shared.PanelHeader {
@@ -394,7 +407,7 @@ Column {
           RowLayout {
             id: deviceHeader
             width: parent.width
-            height: panel.theme.rowHeight + panel.theme.spaceLarge
+            height: panel.theme.detailRowHeight
             spacing: panel.theme.spaceSmall
             Mark { text: device.payload.glyph; color: device.preference ? panel.theme.accent : panel.theme.subtext }
             Column {
@@ -572,7 +585,7 @@ Column {
                         text: reading.payload.state_label + (reading.payload.available ? reading.payload.unit || "" : "")
                         height: readingValueMetrics.height
                         font.pixelSize: reading.payload.available ? panel.theme.textDisplay : panel.theme.textBody
-                        font.weight: panel.theme.weightMedium
+                        font.weight: reading.payload.available ? panel.theme.weightLight : panel.theme.weightMedium
                         color: !panel.store.connected || !reading.payload.available ? panel.theme.yellow : panel.theme.text
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
@@ -603,7 +616,7 @@ Column {
                   Item {
                     id: controlHeader
                     width: parent.width
-                    height: panel.theme.rowHeight + panel.theme.spaceLarge
+                    height: panel.theme.detailRowHeight
                     Button {
                       id: rowButton
                       onActiveFocusChanged: if (activeFocus) panel.reveal(rowButton, homeViewport)

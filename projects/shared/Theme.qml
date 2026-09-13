@@ -93,6 +93,9 @@ ShellRoot {
   readonly property int chipHeight: 28
   readonly property int controlHeight: 34
   readonly property int rowHeight: 40
+  // A row that leads with a mark and sets a caption line under its title, with
+  // its own controls at the far end.
+  readonly property int detailRowHeight: 52
   // A Control Center tile carries a label over its own detail line beside a
   // glyph, so it stands above the row ramp. Every tile in the grid takes it,
   // because a grid whose tiles disagree on height reads as a mistake.

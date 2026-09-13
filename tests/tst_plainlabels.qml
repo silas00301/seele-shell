@@ -11,7 +11,7 @@ TestCase {
   height: 200
   property var palette: ({
     alpha: function(value, opacity) { var color = Qt.darker(value, 1); return Qt.rgba(color.r, color.g, color.b, opacity) },
-    controlHeight: 34, spaceLarge: 16, spaceSmall: 6, spaceMedium: 10,
+    controlHeight: 34, spaceLarge: 16, spaceSmall: 6, spaceMedium: 10, disabledOpacity: 0.45,
     spaceTight: 2, cardPadding: 16, radius: 12, durationFast: 100,
     textLabel: 14, textBody: 14, textCaption: 12, textHero: 24,
     fontFamily: "sans-serif", weightMedium: Font.Medium,

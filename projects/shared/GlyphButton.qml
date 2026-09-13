@@ -27,15 +27,25 @@ Button {
   }
   background: IconButton {
     theme: button.theme
-    active: button.selected || button.activeFocus
+    active: button.selected
     hovered: button.hovered && button.enabled
     pressed: button.down
+    // Keyboard focus is a ring, never the selected fill, so a focused action
+    // cannot be mistaken for one that is on.
+    Rectangle {
+      anchors.fill: parent
+      radius: parent.radius
+      color: button.theme.clearColor
+      border.width: 1
+      border.color: button.visualFocus ? button.theme.accent : button.theme.alpha(button.theme.accent, 0)
+      antialiasing: true
+    }
   }
   HoverHandler { cursorShape: button.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
   ToolTip {
     id: tip
     visible: button.hovered && button.text !== ""
-    delay: button.theme.durationNormal
+    delay: 0
     text: button.text
     font.family: button.theme.fontFamily
     font.pixelSize: button.theme.textCaption

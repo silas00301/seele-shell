@@ -1,7 +1,10 @@
 # Native integration services
 
-This crate builds two independent Rust executables over one shared library:
+This crate builds three independent Rust executables over one shared library:
 
+- `seele-github-inbox` owns the background GitHub notification inbox, bounded
+  context collection, shared-broker triage, explicit Done and desktop actions.
+  See `../github/README.md` for API limitations, state and focused fixtures.
 - `seele-home-assistant status|set ENTITY on|off|watch` owns connection metadata,
   Secret Service credentials, HTTP/WebSocket I/O, the entity projection and
   per-device confirmed controls.
@@ -9,10 +12,10 @@ This crate builds two independent Rust executables over one shared library:
   transfer service and its provider-neutral protocol. The Taildrop adapter is
   the only module that knows Tailscale LocalAPI routes or progress fields.
 
-The QML components, palettes, layout, animation curves and material/transparency
-remain unchanged. The binary protocols retain the existing JSON field names,
-command arguments and notification actions. Python is used only by local
-black-box test fixtures; neither executable starts a Python interpreter.
+QML owns rendering, focus and Qt objects; the native services own integration
+policy and I/O. Home Assistant and Transfers retain their existing JSON field
+names, command arguments and notification actions. Python is used only by local
+black-box test fixtures; none of these executables starts a Python interpreter.
 
 ## Boundaries and execution
 
@@ -65,6 +68,7 @@ cargo clippy --locked --manifest-path projects/integrations/Cargo.toml --all-tar
 cargo build --locked --manifest-path projects/integrations/Cargo.toml
 python3 projects/integrations/tests/home_assistant.py target/debug/seele-home-assistant
 python3 projects/integrations/tests/transfers.py target/debug/seele-transfers
+python3 projects/integrations/tests/github.py target/debug/seele-github-inbox
 ```
 
 The Home Assistant fixture needs development-only `aiohttp`; the transfer

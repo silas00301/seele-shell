@@ -8,12 +8,18 @@ Button {
   property bool danger: false
   implicitHeight: theme.controlHeight
   implicitWidth: Math.max(theme.controlHeight, label.implicitWidth + theme.spaceLarge * 2)
-  opacity: enabled ? 1 : 0.45
+  opacity: enabled ? 1 : theme.disabledOpacity
   hoverEnabled: true
   // A button an application offers as its way out of a state has to be
   // reachable without the pointer. The ring the background already draws on
-  // `activeFocus` is what reports where Tab has landed.
+  // `activeFocus` is what reports where Tab has landed, and Enter answers it
+  // the way Space does.
   focusPolicy: Qt.StrongFocus
+  Keys.onPressed: event => {
+    if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
+    if (!event.isAutoRepeat && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) button.clicked()
+    event.accepted = true
+  }
   contentItem: Text {
     id: label
     text: button.text

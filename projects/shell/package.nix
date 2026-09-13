@@ -119,6 +119,11 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./SystemHealthPanel.qml} "$out/share/seele-shell/SystemHealthPanel.qml"
     substituteInPlace "$out/share/seele-shell/SystemHealthPanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
+    install -m644 ${./GitHubInboxStore.qml} "$out/share/seele-shell/GitHubInboxStore.qml"
+    install -m644 ${./GitHubInboxPanel.qml} "$out/share/seele-shell/GitHubInboxPanel.qml"
+    substituteInPlace "$out/share/seele-shell/GitHubInboxStore.qml" --replace-fail '../shared/ListModels.js' 'shared/ListModels.js'
+    substituteInPlace "$out/share/seele-shell/GitHubInboxPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
     mkdir -p "$out/share/seele-shell/shared"
     cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-shell/shared/"
@@ -194,6 +199,14 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix PATH : "$out/bin:${runtimePath}"
     makeWrapper ${integrations}/bin/seele-home-assistant "$out/bin/seele-home-assistant" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
+    makeWrapper ${integrations}/bin/seele-github-inbox "$out/bin/seele-github-inbox" \
+      --prefix PATH : "${
+        lib.makeBinPath [
+          pkgs.gh
+          pkgs.libnotify
+          pkgs.xdg-utils
+        ]
+      }"
     makeWrapper ${runtime}/bin/seele-github-status "$out/bin/seele-github-status" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.gh ]}"
     makeWrapper ${prompt}/bin/seele-ai-prompt-worker "$out/bin/seele-ai-prompt-worker" \
@@ -269,7 +282,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -296,7 +309,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/home-assistant-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_homeassistant.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -334,6 +347,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/home-assistant-store.js "$out/share/seele-shell/HomeAssistantStore.qml"
     node ${tests}/maintenance.js "$out/share/seele-shell/MaintenanceStore.qml"
     node ${tests}/health.js "$out/share/seele-shell/health.js"
+    bash ${tests}/github-inbox.sh "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/shared" ${tests}/tst_githubinbox.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/github.js "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     node ${tests}/network-addresses.js "$out/share/seele-shell/network.js"
     node ${tests}/media.js "$out/share/seele-shell/media.js"

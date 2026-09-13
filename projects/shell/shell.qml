@@ -51,6 +51,7 @@ Shared.Theme {
   property real overlayAnchorX: -1
   property string osdScreen: ""
   property string notificationPopupScreen: ""
+  property string githubTab: "notifications"
   property string controlPanel: ""
   property var applicationWindow: null
   property bool applicationForceConfirm: false
@@ -1688,6 +1689,14 @@ Shared.Theme {
     }
     function snapshot(): string { return JSON.stringify(integrationHealth.rows) }
   }
+  GitHubInboxStore {
+    id: githubInbox
+    onFocusRequested: {
+      root.githubTab = "notifications"
+      if (root.controlPanel !== "github") root.toggleControl("github")
+    }
+  }
+
   GitHubStore {
     id: githubStore
     property int healthToken: 0
@@ -5257,7 +5266,7 @@ Shared.Theme {
             }
             HoverHandler { id: githubBarHover }
             MouseArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: githubBarMouse; text: "GitHub · pull requests and requested reviews" }
+            HoverTip { mouse: githubBarMouse; text: "GitHub · notifications, pull requests and requested reviews" }
           }
 
           BarItem {
@@ -7258,8 +7267,8 @@ Shared.Theme {
     PanelWindow {
       id: githubWindow
       required property var modelData
-      property string tab: "reviews"
-      readonly property var entries: tab === "reviews" ? githubStore.snapshot.reviews : githubStore.snapshot.authored
+      readonly property string tab: root.githubTab
+      readonly property var entries: tab === "notifications" ? [] : tab === "reviews" ? githubStore.snapshot.reviews : githubStore.snapshot.authored
       readonly property int total: tab === "reviews" ? githubStore.snapshot.reviewTotal : githubStore.snapshot.authoredTotal
       screen: modelData
       visible: root.controlPanel === "github" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -7278,13 +7287,24 @@ Shared.Theme {
         id: githubSurface
         focus: true
         Keys.onPressed: event => {
+          if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+            root.githubTab = githubWindow.tab === "notifications" ? "reviews" : githubWindow.tab === "reviews" ? "authored" : "notifications"
+            event.accepted = true
+            return
+          }
+          if (githubWindow.tab === "notifications") {
+            event.accepted = false
+            githubInboxPanel.handleKey(event)
+            if (!event.accepted && event.key === Qt.Key_Escape) { root.closeOverlays(); event.accepted = true }
+            return
+          }
           if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
           if (event.isAutoRepeat && event.key !== Qt.Key_J && event.key !== Qt.Key_K
               && event.key !== Qt.Key_Up && event.key !== Qt.Key_Down) return
           if (event.key === Qt.Key_Escape) { root.closeOverlays(); event.accepted = true }
           else if (event.key === Qt.Key_J || event.key === Qt.Key_Down) { githubList.incrementCurrentIndex(); event.accepted = true }
           else if (event.key === Qt.Key_K || event.key === Qt.Key_Up) { githubList.decrementCurrentIndex(); event.accepted = true }
-          else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) { githubWindow.tab = githubWindow.tab === "reviews" ? "authored" : "reviews"; githubList.currentIndex = 0; event.accepted = true }
+          else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) { root.githubTab = githubWindow.tab === "reviews" ? "authored" : "notifications"; githubList.currentIndex = 0; event.accepted = true }
           else if (event.key === Qt.Key_R) { githubStore.refresh(true); event.accepted = true }
           else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && githubList.currentIndex >= 0 && githubList.currentIndex < githubWindow.entries.length) { githubStore.openPull(githubWindow.entries[githubList.currentIndex].url); event.accepted = true }
         }
@@ -7298,7 +7318,7 @@ Shared.Theme {
             width: parent.width
             glyph: "󰊤"
             title: "GitHub"
-            detail: githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
+            detail: githubWindow.tab === "notifications" ? (githubInbox.snapshot.viewer || "Notifications") + " · " + githubInbox.snapshot.host : githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
 
             IconButton {
               width: root.chipHeight
@@ -7311,8 +7331,8 @@ Shared.Theme {
                 anchors.centerIn: parent
                 width: root.textCard
                 height: width
-                spinning: githubStore.refreshing
-                color: githubStore.canRefresh ? root.text : root.subtext
+                spinning: githubWindow.tab === "notifications" ? githubInbox.snapshot.refreshing : githubStore.refreshing
+                color: (githubWindow.tab === "notifications" ? !githubInbox.snapshot.refreshing : githubStore.canRefresh) ? root.text : root.subtext
               }
 
               MouseArea {
@@ -7320,9 +7340,9 @@ Shared.Theme {
 
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: githubStore.canRefresh
+                enabled: githubWindow.tab === "notifications" ? !githubInbox.snapshot.refreshing : githubStore.canRefresh
                 cursorShape: Qt.PointingHandCursor
-                onClicked: githubStore.refresh(true)
+                onClicked: githubWindow.tab === "notifications" ? githubInbox.send("refresh") : githubStore.refresh(true)
               }
 
               HoverTip { mouse: githubRefreshMouse; text: "Refresh GitHub"; inOverlay: true }
@@ -7337,7 +7357,8 @@ Shared.Theme {
 
             Repeater {
               model: [
-                { id: "reviews", label: "Requested reviews" },
+                { id: "notifications", label: "Notifications" },
+                { id: "reviews", label: "Reviews" },
                 { id: "authored", label: "My pull requests" }
               ]
 
@@ -7346,7 +7367,7 @@ Shared.Theme {
 
                 required property var modelData
 
-                width: parent.width / 2
+                width: parent.width / 3
                 selected: githubWindow.tab === githubTab.modelData.id
                 hovered: githubTabMouse.containsMouse
                 pressed: githubTabMouse.pressed
@@ -7370,7 +7391,7 @@ Shared.Theme {
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: {
-                    githubWindow.tab = githubTab.modelData.id
+                    root.githubTab = githubTab.modelData.id
                     githubList.currentIndex = 0
                     githubSurface.forceActiveFocus()
                   }
@@ -7379,8 +7400,18 @@ Shared.Theme {
             }
           }
 
+          GitHubInboxPanel {
+            id: githubInboxPanel
+            width: parent.width
+            visible: githubWindow.tab === "notifications"
+            theme: root
+            store: githubInbox
+            popupHovered: githubSurface.hovered
+            keyboardActive: githubSurface.activeFocus
+          }
+
           Text {
-            visible: githubStore.snapshot.state !== "ready"
+            visible: githubWindow.tab !== "notifications" && githubStore.snapshot.state !== "ready"
             width: parent.width
             text: githubStore.refreshing && githubStore.snapshot.state === "idle" ? "Loading pull requests…" : githubStore.snapshot.message + (githubStore.snapshot.stale ? " Showing the last successful refresh." : "")
             textFormat: Text.PlainText
@@ -7390,7 +7421,7 @@ Shared.Theme {
           }
 
           Text {
-            visible: githubStore.snapshot.state === "auth-required"
+            visible: githubWindow.tab !== "notifications" && githubStore.snapshot.state === "auth-required"
             width: parent.width
             text: "Run gh auth login --hostname " + githubStore.snapshot.host + " in a terminal to connect your account."
             textFormat: Text.PlainText
@@ -7504,7 +7535,7 @@ Shared.Theme {
           }
 
           Text {
-            visible: githubWindow.entries.length === 0 && githubStore.snapshot.state === "ready"
+            visible: githubWindow.tab !== "notifications" && githubWindow.entries.length === 0 && githubStore.snapshot.state === "ready"
             width: parent.width
             text: githubWindow.tab === "reviews" ? "No reviews are waiting for you." : "You have no open pull requests."
             textFormat: Text.PlainText
@@ -7513,7 +7544,7 @@ Shared.Theme {
 
           Text {
             width: parent.width
-            text: "Tab switches · J / K moves · Enter opens · R refreshes"
+            text: githubWindow.tab === "notifications" ? githubInboxPanel.hint : "Tab switches · J / K moves · Enter opens · R refreshes"
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: root.overlay; font.family: root.fontFamily; font.pixelSize: root.textCaption
