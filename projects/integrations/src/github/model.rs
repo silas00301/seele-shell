@@ -204,27 +204,11 @@ impl Entry {
     pub fn view(&self) -> Value {
         json!({"thread":self.thread,"detail":self.detail,"triage":self.triage,"previous":self.previous,"state":self.state,"error":message(self.error),"pendingDone":self.pending_done,"blocks":self.blocks()})
     }
+    // The original thread only. The shell draws the thread's identity, state
+    // and triage from `thread`, `state`, `triage` and `previous` in the view,
+    // so none of them is repeated here as prose.
     fn blocks(&self) -> Vec<Value> {
-        let mut blocks = vec![
-            json!({"label":self.thread.title,"body":format!("{} · {} · {}\nUpdated {}",self.thread.repository,self.thread.kind,self.thread.reason,self.thread.updated_at)}),
-        ];
-        if self.state != "ready" {
-            blocks.push(json!({"label":if self.state=="failed"{"Triage failed"}else{"Triage pending"},"body":if self.error.is_empty(){"The original thread remains available below."}else{message(self.error)}}));
-        }
-        if let Some(t) = &self.triage {
-            for (label, body) in [
-                (t.priority.as_str(), &t.summary),
-                ("Why you were notified", &t.reason),
-                ("Needs your attention", &t.attention),
-                ("Suggested next action", &t.next_action),
-                ("What changed", &t.changes),
-            ] {
-                blocks.push(json!({"label":label,"body":body}));
-            }
-        }
-        if let Some(t) = &self.previous {
-            blocks.push(json!({"label":"Previous triage","meta":t.priority,"body":t.summary}));
-        }
+        let mut blocks = Vec::new();
         if let Some(d) = &self.detail {
             blocks.push(json!({"label":"Thread","meta":format!("{} · {}\nCreated {} · Updated {}\n{}",d.author,d.state,d.created_at,d.updated_at,d.labels.join(" · ")),"body":d.body}));
             if !d.unavailable.is_empty() {

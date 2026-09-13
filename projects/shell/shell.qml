@@ -1945,6 +1945,8 @@ Shared.Theme {
 
   component DeviceListCard: Shared.DeviceListCard { theme: root }
 
+  component StatusChip: Shared.StatusChip { theme: root }
+
   component SpeedGauge: Rectangle {
     id: speedGauge
 
@@ -3156,6 +3158,18 @@ Shared.Theme {
             }
           }
 
+          // How long the notification stays is its state, so it is a chip on
+          // the summary line, sized to that line as the stack count is,
+          // instead of a sentence of micro text under the body.
+          StatusChip {
+            visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || !!notificationCard.entry.resident
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            text: notificationCard.entry.urgency === 2 ? "Critical"
+              : Notifications.permanent(notificationCard.entry) ? "Pinned" : "Ongoing"
+            tint: notificationCard.entry.urgency === 2 ? root.red : root.overlay
+          }
+
           Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.agoText(entry.time)
@@ -3271,14 +3285,6 @@ Shared.Theme {
         elide: notificationCard.unfolded ? Text.ElideNone : Text.ElideRight
         // Bounded, so one pathological notification cannot take the panel.
         maximumLineCount: notificationCard.unfolded ? 1000 : 1
-      }
-      Text {
-        visible: notificationCard.entry.urgency === 2 || Notifications.permanent(notificationCard.entry) || notificationCard.entry.resident
-        text: notificationCard.entry.urgency === 2 ? "Critical · until dismissed"
-          : Notifications.permanent(notificationCard.entry) ? "Until dismissed" : "Ongoing"
-        color: notificationCard.entry.urgency === 2 ? root.red : root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textMicro
       }
       Row {
         visible: Number(notificationCard.entry.progress) >= 0
@@ -7320,6 +7326,20 @@ Shared.Theme {
             title: "GitHub"
             detail: githubWindow.tab === "notifications" ? (githubInbox.snapshot.viewer || "Notifications") + " · " + githubInbox.snapshot.host : githubStore.snapshot.viewer !== "" ? githubStore.snapshot.viewer + " · " + githubStore.snapshot.host : "Pull requests and requested reviews"
 
+            // The hand-off to GitHub's own inbox is a panel action, so it sits
+            // with refresh on the header's centre line rather than on the rule,
+            // whose text rests on its bottom edge.
+            Shared.GlyphButton {
+              theme: root
+              visible: githubWindow.tab === "notifications"
+              width: root.chipHeight
+              height: root.chipHeight
+              anchors.verticalCenter: parent.verticalCenter
+              glyph: "󰏌"
+              text: "Open GitHub's inbox"
+              onClicked: githubInbox.send("inbox")
+            }
+
             IconButton {
               width: root.chipHeight
               height: root.chipHeight
@@ -7506,16 +7526,26 @@ Shared.Theme {
                   font.pixelSize: root.textCaption
                 }
 
-                // A pull's checks are the one line on the card worth colour,
-                // so they carry it and the rest of the row stays quiet.
-                Text {
+                // A pull's checks and its review are the states on the card,
+                // so they are chips, as the Notifications tab names priority,
+                // and the rest of the row stays quiet.
+                Flow {
                   width: parent.width
-                  text: GitHub.checksLabel(githubPullRow.modelData.checks) + " · " + GitHub.reviewLabel(githubPullRow.modelData)
-                  textFormat: Text.PlainText
-                  elide: Text.ElideRight
-                  color: ["FAILURE", "ERROR"].indexOf(githubPullRow.modelData.checks) >= 0 ? root.red : githubPullRow.modelData.checks === "SUCCESS" ? root.green : root.subtext
-                  font.family: root.fontFamily
-                  font.pixelSize: root.textCaption
+                  topPadding: root.spaceTight
+                  spacing: root.spaceSmall
+
+                  StatusChip {
+                    text: GitHub.checksLabel(githubPullRow.modelData.checks)
+                    tint: ["FAILURE", "ERROR"].indexOf(githubPullRow.modelData.checks) >= 0 ? root.red : githubPullRow.modelData.checks === "SUCCESS" ? root.green : root.overlay
+                  }
+
+                  StatusChip {
+                    text: GitHub.reviewLabel(githubPullRow.modelData)
+                    tint: githubPullRow.modelData.draft ? root.overlay
+                      : githubPullRow.modelData.review === "APPROVED" ? root.green
+                      : githubPullRow.modelData.review === "CHANGES_REQUESTED" ? root.yellow
+                      : root.overlay
+                  }
                 }
               }
 

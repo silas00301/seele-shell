@@ -35,6 +35,18 @@ Column {
     return finding.resolved ? "󰄬" : finding.urgency === "informational" ? "󰋼" : "󰀪"
   }
 
+  // The short form of an urgency for its chip, on the same scale and in the
+  // same words as the GitHub inbox's priorities.
+  function urgencyChip(finding) {
+    if (finding.resolved) return "Resolved"
+    return ({
+      now: "Act now",
+      soon: "Act soon",
+      eventually: "Eventually",
+      informational: "FYI"
+    })[finding.urgency] || finding.urgency
+  }
+
   function urgencyTint(finding) {
     if (finding.resolved) return panel.theme.green
     return finding.urgency === "now"
@@ -202,8 +214,8 @@ Column {
 
           anchors.left: headMark.right
           anchors.leftMargin: panel.theme.spaceMedium
-          anchors.right: headChevron.left
-          anchors.rightMargin: panel.theme.spaceSmall
+          anchors.right: headChip.left
+          anchors.rightMargin: panel.theme.spaceMedium
           anchors.top: parent.top
           spacing: 1
 
@@ -220,13 +232,28 @@ Column {
 
           Text {
             width: parent.width
-            text: panel.urgencyLabel(card.finding.urgency) + " · " + card.finding.source
+            text: card.finding.source
             textFormat: Text.PlainText
             elide: Text.ElideRight
             color: panel.theme.subtext
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.textCaption
           }
+        }
+
+        // The urgency is named on the head in the words the GitHub inbox uses
+        // for the same scale, so the source line under the title stays quiet.
+        Shared.StatusChip {
+          id: headChip
+
+          theme: panel.theme
+          anchors.right: headChevron.left
+          anchors.rightMargin: panel.theme.spaceSmall
+          anchors.verticalCenter: headMark.verticalCenter
+          text: panel.urgencyChip(card.finding)
+          tint: panel.urgencyTint(card.finding)
+          Accessible.role: Accessible.StaticText
+          Accessible.name: card.finding.resolved ? "Resolved" : panel.urgencyLabel(card.finding.urgency)
         }
 
         Text {

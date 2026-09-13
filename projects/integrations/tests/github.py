@@ -17,7 +17,7 @@ assert '/files' not in path and '/compare/' not in path and '.diff' not in path
 assert method!='PATCH'
 if path=='user':value={'id':100,'login':'fixture'}
 elif path.startswith('notifications?'):
- assert 'all=true' in path and 'participating=false' in path
+ assert 'all=false' in path and 'participating=false' in path
  page=int(path.split('page=')[-1]);start=(page-1)*50+1;end=min(start+50,53)
  value=[{'id':str(i),'repository':{'full_name':'team/project','description':'Fixture repo'},'reason':['mention','subscribed','ci_activity','security_alert'][i%4],'unread':True,'updated_at':'2026-09-13T10:00:0'+str(state['version'] if i==1 else 1)+'Z','subject':{'type':'FutureKind' if i==52 else 'PullRequest' if i==3 else 'Issue','title':'Thread '+str(i),'url':'https://api.github.com/repos/team/project/'+('pulls/' if i==3 else 'issues/')+str(i)}} for i in range(start,end)]
 elif path.startswith('notifications/threads/'):

@@ -23,6 +23,18 @@ Column {
   }
   width: parent.width
   spacing: theme.panelSpacing
+  // A transfer's state is a chip beside its progress, graded like every other
+  // state in the shell: live work in the accent, done in green, failure in red.
+  function stateChip(state) {
+    return ({
+      sending: { text: "Sending", tint: theme.accent },
+      receiving: { text: "Receiving", tint: theme.accent },
+      retrying: { text: "Retrying", tint: theme.yellow },
+      completed: { text: "Completed", tint: theme.green },
+      failed: { text: "Failed", tint: theme.red },
+      cancelled: { text: "Cancelled", tint: theme.overlay }
+    })[state] || { text: String(state), tint: theme.overlay }
+  }
 
   FileDialog {
     id: picker
@@ -122,13 +134,26 @@ Column {
               selected: panel.store.expanded === card.entry.id
               onClicked: panel.store.expanded = panel.store.expanded === card.entry.id ? "" : card.entry.id
             }
-            Text {
+            Item {
               width: parent.width
-              text: card.entry.state + " · " + Math.round(card.entry.bytes / 1024) + " / " + Math.round(card.entry.size / 1024) + " KiB"
-              textFormat: Text.PlainText
-              color: card.entry.state === "failed" ? panel.theme.red : panel.theme.subtext
-              font.family: panel.theme.fontFamily
-              font.pixelSize: panel.theme.textCaption
+              height: Math.max(transferState.height, transferProgress.implicitHeight)
+              Text {
+                id: transferProgress
+                anchors { left: parent.left; right: transferState.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
+                text: Math.round(card.entry.bytes / 1024) + " / " + Math.round(card.entry.size / 1024) + " KiB"
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: panel.theme.subtext
+                font.family: panel.theme.fontFamily
+                font.pixelSize: panel.theme.textCaption
+              }
+              Shared.StatusChip {
+                id: transferState
+                theme: panel.theme
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                text: panel.stateChip(card.entry.state).text
+                tint: panel.stateChip(card.entry.state).tint
+              }
             }
             Shared.MeterBar { theme: panel.theme; width: parent.width; ratio: card.entry.size > 0 ? card.entry.bytes / card.entry.size : 0 }
             Text {

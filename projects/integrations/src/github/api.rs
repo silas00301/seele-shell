@@ -140,7 +140,7 @@ impl Api {
     pub async fn page(&self, page: usize) -> Result<Vec<Thread>> {
         let value = self
             .get(&format!(
-                "notifications?all=true&participating=false&per_page=50&page={page}"
+                "notifications?all=false&participating=false&per_page=50&page={page}"
             ))
             .await?;
         value

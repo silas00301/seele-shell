@@ -8,6 +8,19 @@ Column {
   required property var theme
   required property var store
   spacing: theme.panelSpacing
+  // A job's state is the one thing on its card worth colour, so it is a chip
+  // and the caption beside it keeps the consumer and the elapsed time.
+  function stateChip(state) {
+    return ({
+      queued: { text: "Queued", tint: theme.overlay },
+      running: { text: "Running", tint: theme.accent },
+      retrying: { text: "Retrying", tint: theme.yellow },
+      succeeded: { text: "Succeeded", tint: theme.green },
+      failed: { text: "Failed", tint: theme.red },
+      cancelled: { text: "Cancelled", tint: theme.overlay },
+      superseded: { text: "Superseded", tint: theme.overlay }
+    })[state] || { text: String(state), tint: theme.overlay }
+  }
   Text {
     width: parent.width
     visible: panel.store.error !== "" || panel.store.jobs.length === 0
@@ -43,14 +56,26 @@ Column {
           text: card.modelData.label + (card.expanded ? "  ▴" : "  ▾")
           onClicked: { var ids = Object.assign({}, panel.store.expandedIds); ids[card.modelData.id] = !card.expanded; panel.store.expandedIds = ids }
         }
-        Text {
+        Item {
           width: parent.width
-          text: card.modelData.consumer + " · " + card.modelData.state + " · "
-            + Math.max(0, Math.floor((['succeeded','failed','cancelled','superseded'].indexOf(card.modelData.state) >= 0 ? card.modelData.updated : panel.store.now) - card.modelData.created)) + "s"
-          textFormat: Text.PlainText
-          color: card.modelData.state === "failed" ? panel.theme.red : panel.theme.subtext
-          font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption
-          wrapMode: Text.Wrap
+          height: Math.max(jobState.height, jobCaption.implicitHeight)
+          Text {
+            id: jobCaption
+            anchors { left: parent.left; right: jobState.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
+            text: card.modelData.consumer + " · "
+              + Math.max(0, Math.floor((['succeeded','failed','cancelled','superseded'].indexOf(card.modelData.state) >= 0 ? card.modelData.updated : panel.store.now) - card.modelData.created)) + "s"
+            textFormat: Text.PlainText
+            color: panel.theme.subtext
+            font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption
+            elide: Text.ElideRight
+          }
+          Shared.StatusChip {
+            id: jobState
+            theme: panel.theme
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            text: panel.stateChip(card.modelData.state).text
+            tint: panel.stateChip(card.modelData.state).tint
+          }
         }
         Text {
           width: parent.width; visible: card.expanded

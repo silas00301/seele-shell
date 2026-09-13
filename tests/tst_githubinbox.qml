@@ -46,5 +46,13 @@ Item {
       var narrow=grabImage(panel);compare(narrow.width,320);
       verify(!normal.equals(narrow));
     }
+    function test_enter_folds_the_open_thread() {
+      store.snapshot={count:2,complete:true,refreshing:false,selected:"1",detail:{thread:{url:"https://github.com/team/project/issues/1"},state:"ready",pendingDone:false,triage:{priority:"Immediate Action required",summary:"A useful summary",reason:"Mentioned",attention:"Reply",nextAction:"Answer the question",changes:"New comment"},previous:null,detail:{url:""}},error:"",notice:""};
+      blocks.append({block:{key:"Thread:0",label:"Thread",body:"Body",meta:"author · open"}});
+      panel.forceActiveFocus();wait(theme.durationNormal+80);
+      verify(panel.implicitHeight>200,"the open thread grows its row in place");
+      keyClick(Qt.Key_Return);
+      compare(store.calls.length,1);compare(store.calls[0].op,"back");
+    }
   }
 }

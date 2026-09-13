@@ -186,6 +186,9 @@ ShellRoot {
   // The home panel stays compact, with a viewport bounded by its output.
   readonly property int homeAssistantWidth: 420
   readonly property int homeAssistantMaximumHeight: 640
+  // The GitHub inbox scrolls inside this bound, tall enough that an opened
+  // thread shows its analysis and the start of its conversation together.
+  readonly property int githubInboxMaximumHeight: 520
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
 

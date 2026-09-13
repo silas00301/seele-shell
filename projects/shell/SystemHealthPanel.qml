@@ -14,6 +14,16 @@ Column {
   property string diagnostics: ""
 
   readonly property int healthyCount: panel.store.rows.length - panel.store.attentionCount
+  // An integration's state as a chip, graded from healthy to cut off.
+  function stateChip(state) {
+    return ({
+      "healthy": { text: "Healthy", tint: panel.theme.green },
+      "degraded": { text: "Degraded", tint: panel.theme.yellow },
+      "stale": { text: "Stale", tint: panel.theme.yellow },
+      "setup-required": { text: "Setup required", tint: panel.theme.yellow },
+      "disconnected": { text: "Disconnected", tint: panel.theme.red }
+    })[state] || { text: String(state), tint: panel.theme.overlay }
+  }
 
   spacing: theme.spaceMedium
   onMaintenanceContentChanged: if (!panel.maintenanceContent) panel.tab = "integrations"
@@ -144,15 +154,33 @@ Column {
             anchors { left: parent.left; right: parent.right; top: parent.top; margins: card.inset }
             spacing: panel.theme.spaceSmall
 
-            Text {
+            // The integration's name leads and its state rides beside it as a
+            // chip, so the name never has to be read in a warning colour.
+            Item {
               width: parent.width
-              text: entry.modelData.name + " · " + entry.modelData.state
-              textFormat: Text.PlainText
-              wrapMode: Text.Wrap
-              color: entry.healthy ? panel.theme.text : panel.theme.yellow
-              font.family: panel.theme.fontFamily
-              font.pixelSize: panel.theme.textBody
-              font.weight: panel.theme.weightStrong
+              height: Math.max(healthState.height, healthName.implicitHeight)
+
+              Text {
+                id: healthName
+
+                anchors { left: parent.left; right: healthState.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
+                text: entry.modelData.name
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: panel.theme.text
+                font.family: panel.theme.fontFamily
+                font.pixelSize: panel.theme.textBody
+                font.weight: panel.theme.weightStrong
+              }
+
+              Shared.StatusChip {
+                id: healthState
+
+                theme: panel.theme
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                text: panel.stateChip(entry.modelData.state).text
+                tint: panel.stateChip(entry.modelData.state).tint
+              }
             }
 
             Text {
