@@ -479,7 +479,6 @@ Scope {
       id: promptWindow
       required property var modelData
       readonly property bool panelActive: prompt.active && prompt.screenName === modelData.name
-      property bool sawFocus: false
 
       screen: modelData
       visible: true
@@ -492,16 +491,17 @@ Scope {
         height: promptWindow.panelActive ? promptWindow.height : 0
       }
       WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: panelActive ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      // The surface stays mapped so the panel appears without a round trip, so
+      // the compositor never sees a fresh map to hand focus to. Exclusive
+      // interactivity is what actually puts the caret in the field the moment
+      // Super + Space opens it, and it keeps the keyboard here until the panel
+      // is closed by hand rather than handing it back to whatever is clicked.
+      WlrLayershell.keyboardFocus: panelActive ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-prompt"
 
       Connections {
         target: prompt
         function onActiveChanged() {
-          if (!prompt.active) {
-            promptWindow.sawFocus = false
-            return
-          }
           if (promptWindow.panelActive) Qt.callLater(function() { promptField.forceActiveFocus() })
         }
       }
@@ -509,13 +509,12 @@ Scope {
       FocusScope {
         id: focusScope
         anchors.fill: parent
-        property bool sawFocus: promptWindow.sawFocus
         readonly property bool panelActive: promptWindow.panelActive
         focus: panelActive
-        onActiveFocusChanged: {
-          if (activeFocus) promptWindow.sawFocus = true
-          else if (sawFocus && panelActive && !prompt.needsAction) prompt.close()
-        }
+        // The compositor can grant keyboard focus after the deferred call above
+        // has already run, so claim the field again whenever the scope receives
+        // it: every keystroke after opening belongs to the prompt.
+        onActiveFocusChanged: if (activeFocus && panelActive && !promptField.activeFocus) promptField.forceActiveFocus()
 
         Shared.PanelSurface {
           id: surface
