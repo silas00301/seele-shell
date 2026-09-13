@@ -1,0 +1,17 @@
+[package]
+rust-version.workspace = true
+name = "seele-qml-core"
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+seele-runtime = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+
+percent-encoding = { workspace = true }

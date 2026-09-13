@@ -1,8 +1,9 @@
+const {nativeBridge,source:nativeSource}=require("./native-functions.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const context = vm.createContext({});
-vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context);
+const context = vm.createContext({Bridge:nativeBridge()});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], "utf8")), context);
 let state = context.initial();
 const ready = { state: "ready", host: "github.com", viewer: "fixture", updatedAt: "2026-09-08T00:00:00Z", reviews: [{url:"https://github.com/org/repo/pull/1"}], authored: [], reviewTotal: 1, authoredTotal: 0 };
 state = context.receive(state, ready);
@@ -100,3 +101,14 @@ keyContext.press({key:4,modifiers:0,isAutoRepeat:true});
 assert.equal(opened, 1, "held Enter and modifier chords cannot repeatedly open browser tabs");
 assert.equal(moved, 1, "holding navigation keys continues moving through results");
 console.log("GitHub browser keyboard intent checks passed");
+
+for (const key of ['constructor','toString','__proto__']) {
+  assert.equal(context.checksLabel(key),'No check status');
+  assert.equal(context.reviewLabel({review:key}),'Open');
+}
+console.log('GitHub unexpected status keys cannot resolve prototype functions');
+
+for (const url of ['https://github.com/../repo/pull/1','https://github.com/org/./pull/1'])
+  assert.equal(context.safeUrl(url,'github.com'),false,'UI and producer share canonical URL validation');
+for (const host of ['', 'evil.test/path', 'user@github.com', 'github.com:443'])
+  assert.equal(context.safeUrl('https://'+host+'/org/repo/pull/1',host),false,'host is independently canonical at the shared URL boundary');

@@ -1,31 +1,22 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import React from "react";
-import {
-  Client,
-  Workspace,
-  focusWindow,
-  focusWorkspace,
-  visibleClients,
-} from "./desktop";
+import { Client, Workspace, focusWindow, focusWorkspace } from "./desktop";
 import { binaries, perform, run, useQuery } from "./runtime";
 
 async function load(signal: AbortSignal) {
-  const [clients, workspaces] = await Promise.all([
-    run(binaries.hyprctl, ["clients", "-j"], signal),
-    run(binaries.hyprctl, ["workspaces", "-j"], signal),
-  ]);
-  return {
-    clients: visibleClients(JSON.parse(clients) as Client[]),
-    workspaces: (JSON.parse(workspaces) as Workspace[])
-      .filter((w) => w.id > 0)
-      .sort((a, b) => a.id - b.id),
+  const snapshot = JSON.parse(
+    await run(binaries.control, ["vicinae-desktop"], signal),
+  ) as {
+    clientGroups: Client[][];
+    workspaces: Workspace[];
   };
-}
-
-async function dispatch(expression: string) {
-  const result = await run(binaries.hyprctl, ["dispatch", expression]);
-  // Hyprland can report a Lua error while returning exit status zero.
-  if (result.trim() !== "ok") throw new Error("Hyprland rejected the action");
+  return {
+    // Preserve the host's exact locale collation for equal-focus addresses.
+    clients: snapshot.clientGroups.flatMap((group) =>
+      group.sort((a, b) => a.address.localeCompare(b.address)),
+    ),
+    workspaces: snapshot.workspaces,
+  };
 }
 
 export default function Command() {
@@ -75,7 +66,7 @@ export default function Command() {
                   onAction={() =>
                     perform(
                       "Focus window",
-                      () => dispatch(focusWindow(client.address)),
+                      () => focusWindow(client.address),
                       true,
                     )
                   }
@@ -106,7 +97,7 @@ export default function Command() {
                   onAction={() =>
                     perform(
                       "Focus workspace",
-                      () => dispatch(focusWorkspace(workspace.id)),
+                      () => focusWorkspace(workspace.id),
                       true,
                     )
                   }

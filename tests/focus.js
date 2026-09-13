@@ -1,8 +1,9 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
-const focus = vm.createContext({});
-vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), focus);
+const focus = vm.createContext({Bridge: nativeBridge()});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], "utf8")), focus);
 let state = focus.initial();
 assert.equal(state.status, "idle");
 state = focus.update(state, "start", 1000, 25);

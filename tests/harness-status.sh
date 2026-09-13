@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 pi_extension=${1:?Pi extension required}
 opencode_extension=${2:?OpenCode extension required}
@@ -9,7 +10,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 esbuild "$pi_extension" --bundle --platform=node --format=cjs \
-  --external:@earendil-works/pi-coding-agent --outfile="$work/pi-extension.cjs" >/dev/null
+  --external:@earendil-works/pi-coding-agent --define:SEELE_AGENT_HOOK=\""$hook"\" --outfile="$work/pi-extension.cjs" >/dev/null
 cat >"$work/pi-test.cjs" <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -38,7 +39,7 @@ JS
 XDG_STATE_HOME="$work/state" node "$work/pi-test.cjs" "$work/pi-extension.cjs"
 
 esbuild "$opencode_extension" --bundle --platform=node --format=cjs \
-  --external:@opencode-ai/plugin --outfile="$work/opencode-extension.cjs" >/dev/null
+  --external:@opencode-ai/plugin --define:SEELE_AGENT_HOOK=\""$hook"\" --outfile="$work/opencode-extension.cjs" >/dev/null
 cat >"$work/opencode-test.cjs" <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -59,6 +60,22 @@ const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
   if (read().status !== "working") throw new Error("OpenCode permission reply must restore working");
   await hooks.event({ event: { type: "session.status", properties: { sessionID: "one", status: { type: "idle" } } } });
   if (read().status !== "input") throw new Error("OpenCode idle session must report input");
+  await hooks.event({ event: { type: "session.status", properties: { sessionID: "two", status: { type: "retry" } } } });
+  await hooks.event({ event: { type: "question.v2.asked", properties: { session: { id: "one" } } } });
+  if (read().status !== "input") throw new Error("Any waiting session must outrank concurrent busy sessions");
+  await hooks.event({ event: { type: "question.v2.rejected", properties: { session: { id: "one" } } } });
+  if (read().status !== "working") throw new Error("Settled question must restore another session's busy state");
+  const sessionsFile=path.join(path.dirname(stateFile), `.opencode-sessions-${process.pid}`);
+  const nativeState=JSON.parse(fs.readFileSync(sessionsFile,"utf8"));
+  if (nativeState.busy.some(key=>!/^([a-f0-9]{64})$/.test(key))) throw new Error("Raw host session identity reached metadata");
+  const before=fs.readFileSync(stateFile,"utf8");
+  await hooks.event({ event: { type: "question.asked", properties: { sessionID: "x".repeat(1025) } } });
+  if (fs.readFileSync(stateFile,"utf8")!==before) throw new Error("Oversized host identities must be ignored");
+  await hooks.event({ event: { type: "unrelated.event", properties: { sessionID: "two" } } });
+  if (fs.readFileSync(stateFile,"utf8")!==before) throw new Error("Unrelated callbacks must not publish status");
+  await hooks.event({ event: { type: "session.deleted", properties: { sessionID: "two" } } });
+  if (read().status !== "input") throw new Error("Deleting the last busy session must settle status");
+
 })().catch((error) => {
   console.error(error);
   process.exit(1);
@@ -115,6 +132,25 @@ printf '{"session_id":"abc-123"}' | XDG_STATE_HOME="$work/state" "$hook" claude 
   printf 'Claude session end did not remove its record\n' >&2
   exit 1
 }
+
+# Invalid lifecycle events and oversized payloads cannot create state.
+if printf '{}' | XDG_STATE_HOME="$work/state" "$hook" pi arbitrary; then
+  printf 'native hook accepted an unknown lifecycle event\n' >&2
+  exit 1
+fi
+node -e 'process.stdout.write("x".repeat(1024 * 1024 + 1))' >"$work/oversized"
+if XDG_STATE_HOME="$work/state" "$hook" pi input <"$work/oversized"; then
+  printf 'native hook accepted an oversized payload\n' >&2
+  exit 1
+fi
+# Replacing a state-file symlink never alters its target or reads its metadata.
+printf 'private sentinel' >"$work/sentinel"
+ln -s "$work/sentinel" "$work/state/seele-shell/agents/pi-native-symlink.json"
+printf '{"session_id":"symlink"}' | XDG_STATE_HOME="$work/state" "$hook" pi working
+[[ $(cat "$work/sentinel") == 'private sentinel' ]]
+[[ ! -L "$work/state/seele-shell/agents/pi-native-symlink.json" ]]
+[[ $(stat -c %a "$work/state/seele-shell/agents/pi-native-symlink.json") == 600 ]]
+printf '{"session_id":"symlink"}' | XDG_STATE_HOME="$work/state" "$hook" pi end
 
 # Codex reports the same lifecycle through its managed hooks.
 printf '{"session_id":"t-9","hook_event_name":"UserPromptSubmit"}' |

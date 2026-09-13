@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
+const { nativeBridge } = require("./native-functions.cjs");
 
 // Exercise the actual QML callback without starting a second desktop shell.
 const source = fs.readFileSync(process.argv[2], "utf8");
@@ -46,6 +47,15 @@ update({ headphones: { connected: false } });
 assert.equal(osds, 1);
 assert.equal(root.systemData.notifications.items[0].id, 2, "device updates preserve native notifications");
 console.log("partial status patch checks passed");
+
+// Keep the actual production derived binding: its policy now lives in Rust.
+context.Bridge = nativeBridge();
+context.systemData = root.systemData;
+const batteryProjection = source.match(/readonly property var batteryProjection: ([^\n]+)/);
+assert(batteryProjection, "the native battery projection must be wired");
+Object.defineProperty(context, "batteryProjection", {
+  get: () => vm.runInContext(batteryProjection[1], context),
+});
 
 const headphonesStart = source.indexOf("  function headphonesIconKind() {");
 const headphonesEnd = source.indexOf("  function headphonesDetail()", headphonesStart);

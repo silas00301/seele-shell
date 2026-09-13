@@ -1,6 +1,6 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import React, { useRef, useState } from "react";
-import { AudioDevice, audioArguments } from "./desktop";
+import { AudioDevice } from "./desktop";
 import { binaries, perform, run, shell } from "./runtime";
 import { useStatus } from "./status";
 
@@ -13,38 +13,13 @@ export default function Command() {
     pending.current = true;
     setBusy(true);
     await perform("Switch audio device", async () => {
-      // Numeric PipeWire IDs are recycled. Resolve the stable node/profile
-      // against a fresh snapshot before changing the system default.
-      const current = JSON.parse(await run(binaries.control, ["status"])) as {
-        audioDevices: AudioDevice[];
-      };
-      const match = current.audioDevices.find(
-        (candidate) =>
-          candidate.kind === device.kind &&
-          (device.node
-            ? candidate.node === device.node
-            : candidate.id === device.id &&
-              candidate.profile === device.profile &&
-              candidate.name === device.name),
-      );
-      if (!match) throw new Error("Device disconnected");
-      if (toggle && match.kind === "output" && match.node) {
-        const selected = current.audioDevices
-          .filter(
-            (candidate) =>
-              candidate.kind === "output" &&
-              candidate.node &&
-              (candidate.selected || candidate.default),
-          )
-          .map((candidate) => candidate.node);
-        const nodes = selected.includes(match.node)
-          ? selected.filter((node) => node !== match.node)
-          : [...selected, match.node];
-        if (!nodes.length) return;
-        await run(binaries.control, ["audio-outputs", JSON.stringify(nodes)]);
-      } else {
-        await run(binaries.control, audioArguments(match));
-      }
+      // Native selection resolves the reviewed node/profile against current
+      // PipeWire state before choosing a device or changing combined playback.
+      await run(binaries.control, [
+        "vicinae-audio",
+        JSON.stringify(device),
+        toggle ? "toggle" : "select",
+      ]);
       refresh();
     });
     pending.current = false;

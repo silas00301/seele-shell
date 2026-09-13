@@ -1,6 +1,7 @@
 //@ pragma UseQApplication
 
 import QtQuick
+import "../shared/Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pam
@@ -9,21 +10,21 @@ import Quickshell.Wayland
 ShellRoot {
   id: root
 
-  property color base: "#1e1e2e"
-  property color mantle: "#181825"
+  property color base: Palette.fallback.base
+  property color mantle: Palette.fallback.mantle
   // The palette's darkest ink. Chrome is cut out of the wallpaper with it and
   // wells are cut back to it, the same way Seele Shell builds its depth.
-  property color crust: "#11111b"
-  property color surface: "#313244"
-  property color overlay: "#6c7086"
-  property color text: "#cdd6f4"
-  property color subtext: "#a6adc8"
-  property color accent: "#b4befe"
-  property color red: "#f38ba8"
-  property color green: "#a6e3a1"
-  property color yellow: "#f9e2af"
-  property string fontFamily: "Maple Mono NF CN"
-  property string wallpaper: "/etc/wallpaper/wallpaper.jpg"
+  property color crust: Palette.fallback.crust
+  property color surface: Palette.fallback.surface
+  property color overlay: Palette.fallback.overlay
+  property color text: Palette.fallback.text
+  property color subtext: Palette.fallback.subtext
+  property color accent: Palette.fallback.accent
+  property color red: Palette.fallback.red
+  property color green: Palette.fallback.green
+  property color yellow: Palette.fallback.yellow
+  property string fontFamily: Palette.fallback.fontFamily
+  property string wallpaper: Palette.fallback.wallpaper
 
   // Keep authentication chrome on the same tokens as Seele Shell. The lock
   // stays a separate client, but it should not grow a second design system.
@@ -326,19 +327,7 @@ ShellRoot {
     onLoaded: {
       try {
         var theme = JSON.parse(text())
-        root.base = theme.base || root.base
-        root.mantle = theme.mantle || root.mantle
-        root.crust = theme.crust || root.crust
-        root.surface = theme.surface || root.surface
-        root.overlay = theme.overlay || root.overlay
-        root.text = theme.text || root.text
-        root.subtext = theme.subtext || root.subtext
-        root.accent = theme.accent || root.accent
-        root.red = theme.red || root.red
-        root.green = theme.green || root.green
-        root.yellow = theme.yellow || root.yellow
-        root.fontFamily = theme.fontFamily || root.fontFamily
-        root.wallpaper = theme.wallpaper || root.wallpaper
+        Palette.assign(root, theme, true)
       } catch (error) {
         console.warn("seele-lock/theme", error)
       }

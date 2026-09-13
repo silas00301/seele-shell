@@ -24,7 +24,13 @@ arrow-key control available. Tab reaches controls, Space/Enter activates them,
 and Escape backs out or closes the panel. Scenes and arbitrary services are not
 exposed. Other domains remain read-only.
 
-The resident worker uses Home Assistant's
+Room/favorite projection, same-group ordering, preference edits and catalog
+merge/search run in the shared Rust UI policy library. The store updates the
+projection when source data changes; Qt retains actual ListModel objects,
+selection, focus and process signals. At most 128 unanswered UI requests are
+retained, without tokens in that bookkeeping.
+
+The resident Rust `seele-home-assistant` worker uses Home Assistant's
 [WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) for live
 state events and explicit single-entity service calls. Each device has its own
 pending state. A successful service response alone does not clear that state;
@@ -62,17 +68,18 @@ The HTTP and WebSocket clients reject redirects and ignore ambient proxies.
 Remote response bodies and exception details do not cross stdout. State,
 capabilities and registry names are projected into bounded display fields;
 arbitrary entity attributes stay in the worker. Catalog data is sent only while
-the picker is open. Metadata and server responses have size limits, and network,
+the picker is open. Only rendered and control-relevant attributes are retained, and connection generations reject stale events after setup. Metadata and server responses have size limits, and network,
 keyring and device confirmation waits are bounded.
 
 ## Validation
 
 The package and `test-shell` run:
 
-- `tests/home-assistant.py`: REST permissions, privacy and request bounds.
-- `tests/home-assistant-live.py`: private HTTP/WebSocket fixtures, keyring failure
-  and migration, preferences, light capabilities, device acknowledgements,
-  reconnects and stdin EOF. Keyring calls use mocks, never the user's wallet.
+- `projects/integrations/tests/home_assistant.py`: the real native executable
+  against private HTTP/WebSocket fixtures and a temporary Secret Service helper;
+  REST permissions, redirects and message bounds, setup and legacy migration,
+  lights/fans, confirmed device state, reconnects, EOF, signal shutdown and
+  cancellation while the keyring is blocked. Python and aiohttp are test tools.
 - `tests/home-assistant-store.js`: concurrent UI requests, stale controls,
   credential lifetime, preference failures and deliberate keyboard input.
 - `tests/home-assistant-panel.sh`: setup, expanded lights, picker and offline
@@ -81,3 +88,6 @@ The package and `test-shell` run:
 
 The main package also compiles production QML and runs `qmllint`. Build Notes
 when changing the shared switch, which is also installed with that app.
+
+The runtime implementation and concurrency/resource limits are documented in
+[`projects/integrations/README.md`](../integrations/README.md).

@@ -1,21 +1,15 @@
-function supported(player) {
-  return !!player && !!player.volumeSupported
-    && typeof player.volume === "number" && isFinite(player.volume)
-}
+.import "../shared/Native.js" as Bridge
 
-function writable(player) {
-  return supported(player) && !!player.canControl
+function snapshot(player) {
+  return player ? {canControl: player.canControl, volumeSupported: player.volumeSupported,
+    volume: typeof player.volume === "number" ? Bridge.number(player.volume) : player.volume} : null
 }
-
-function percent(player) {
-  return supported(player) ? Math.round(Math.max(0, player.volume) * 100) : null
-}
-
+function supported(player) { return Bridge.call("media.volumeSupported", [snapshot(player)]) }
+function writable(player) { return Bridge.call("media.volumeWritable", [snapshot(player)]) }
+function percent(player) { return Bridge.call("media.volumePercent", [snapshot(player)]) }
 function adjust(player, delta) {
-  if (!writable(player) || typeof delta !== "number" || !isFinite(delta)) return false
-  // MPRIS permits players with amplification. Shell controls never request it.
-  var value = Math.max(0, Math.min(1, player.volume + delta))
-  if (value === player.volume) return false
-  player.volume = value
+  var next = Bridge.call("media.nextVolume", [snapshot(player), typeof delta === "number" ? Bridge.number(delta) : delta])
+  if (next === null) return false
+  player.volume = next
   return true
 }

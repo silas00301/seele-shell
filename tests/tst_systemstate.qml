@@ -165,4 +165,13 @@ TestCase {
     wait(0)
     verify(before.equals(grabImage(panel)), "unchanged device UI must keep the same pixels")
   }
+  function test_only_known_typed_status_fields_can_change() {
+    var name = state.objectName
+    var volume = state.volume
+    state.apply({objectName:"changed",parent:null,volume:"90",dnd:true,audioDevices:{},unknown:true})
+    compare(state.objectName, name)
+    compare(state.volume, volume)
+    compare(state.dnd, true)
+    compare(state.audioDevices.length, 2)
+  }
 }

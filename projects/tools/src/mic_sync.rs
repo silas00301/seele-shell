@@ -1,12 +1,13 @@
 use crate::command::{detached, output};
+use crate::pipewire::parse_values;
 use crate::Result;
 use serde_json::Value;
 use std::env;
 use std::fs;
-use std::io::Read;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
@@ -198,35 +199,59 @@ impl Session {
 
 enum Event {
     Alsa,
-    Graph(String),
-    Closed,
+    Graph(Vec<u8>),
+    Closed(bool),
 }
 
-fn stream(mut child: Child, graph: bool, sender: mpsc::Sender<Event>) -> Child {
-    let mut stdout = child.stdout.take().unwrap();
+const MAX_GRAPH_FRAME: usize = 16 * 1024 * 1024;
+struct MonitorStop {
+    local: AtomicBool,
+    global: Arc<AtomicUsize>,
+    alsa_pending: AtomicBool,
+}
+impl seele_runtime::cancel::Cancellation for MonitorStop {
+    fn is_cancelled(&self) -> bool {
+        self.local.load(Ordering::Relaxed) || self.global.load(Ordering::Relaxed) != 0
+    }
+}
+fn stream(
+    program: &str,
+    arguments: Vec<String>,
+    graph: bool,
+    sender: mpsc::SyncSender<Event>,
+    stop: Arc<MonitorStop>,
+) -> thread::JoinHandle<()> {
+    let program = program.to_owned();
     thread::spawn(move || {
-        let mut bytes = [0_u8; 65536];
-        loop {
-            match stdout.read(&mut bytes) {
-                Ok(0) | Err(_) => {
-                    let _ = sender.send(Event::Closed);
-                    break;
+        let result = seele_runtime::process::stream_stdout(
+            Command::new(program).args(arguments),
+            b"",
+            seele_runtime::process::Limits {
+                timeout: Duration::from_secs(365 * 86400),
+                output: 64 * 1024,
+            },
+            stop.as_ref(),
+            |bytes| {
+                let event = if graph {
+                    Some(Event::Graph(bytes.to_vec()))
+                } else if !stop.alsa_pending.swap(true, Ordering::Relaxed) {
+                    Some(Event::Alsa)
+                } else {
+                    None
+                };
+                if let Some(event) = event {
+                    sender.send(event).map_err(|_| io::ErrorKind::BrokenPipe)?;
                 }
-                Ok(count) if graph => {
-                    let _ = sender.send(Event::Graph(
-                        String::from_utf8_lossy(&bytes[..count]).into_owned(),
-                    ));
-                }
-                Ok(_) => {
-                    let _ = sender.send(Event::Alsa);
-                }
-            }
-        }
-    });
-    child
+                Ok(())
+            },
+        );
+        let _ = sender.send(Event::Closed(
+            result.is_ok_and(|result| result.status.success()),
+        ));
+    })
 }
 
-fn parse_pending(pending: &mut String, session: &mut Session) {
+fn parse_pending(pending: &mut Vec<u8>, session: &mut Session) {
     parse_values(pending, |value| {
         if let Value::Array(objects) = value {
             for object in objects {
@@ -241,37 +266,101 @@ fn parse_pending(pending: &mut String, session: &mut Session) {
     }
 }
 
-fn parse_values(pending: &mut String, mut consume: impl FnMut(Value)) {
-    let mut consumed = 0;
-    loop {
-        let remaining = &pending[consumed..];
-        let trimmed = remaining.trim_start();
-        consumed += remaining.len() - trimmed.len();
-        if trimmed.is_empty() {
-            break;
+fn watch(card: u32, numid: u32, running: &Arc<AtomicUsize>) -> Result {
+    let (sender, receiver) = mpsc::sync_channel(16);
+    let stop = Arc::new(MonitorStop {
+        local: AtomicBool::new(false),
+        global: running.clone(),
+        alsa_pending: AtomicBool::new(false),
+    });
+    let alsa = stream(
+        "alsactl",
+        vec!["monitor".into(), format!("hw:{card}")],
+        false,
+        sender.clone(),
+        stop.clone(),
+    );
+    let graph = stream("pw-dump", vec!["-m".into()], true, sender, stop.clone());
+    let mut session = Session {
+        card,
+        numid,
+        node: None,
+        applied: None,
+        node_dirty: false,
+    };
+    let mut pending = Vec::new();
+    let result = (|| -> Result {
+        while running.load(Ordering::Relaxed) == 0 {
+            match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(Event::Alsa) => {
+                    stop.alsa_pending.store(false, Ordering::Relaxed);
+                    session.switch_event();
+                }
+                Ok(Event::Graph(chunk)) => {
+                    if chunk.len() > MAX_GRAPH_FRAME.saturating_sub(pending.len()) {
+                        return Err("PipeWire monitor frame is too large".into());
+                    }
+                    pending.extend_from_slice(&chunk);
+                    parse_pending(&mut pending, &mut session);
+                }
+                Ok(Event::Closed(false)) if running.load(Ordering::Relaxed) == 0 => {
+                    return Err("microphone monitor failed".into())
+                }
+                Ok(Event::Closed(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
         }
-        let mut stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Value>();
-        match stream.next() {
-            Some(Ok(value)) => {
-                consumed += stream.byte_offset();
-                consume(value);
-            }
-            Some(Err(error)) if error.is_eof() => break,
-            Some(Err(_)) => {
-                consumed += trimmed.chars().next().unwrap().len_utf8();
-            }
-            None => {
-                consumed = pending.len();
-                break;
+        Ok(())
+    })();
+    stop.local.store(true, Ordering::Relaxed);
+    // Unblock a backpressured observer before waiting for its owned child.
+    drop(receiver);
+    let _ = alsa.join();
+    let _ = graph.join();
+    result
+}
+
+pub fn run(arguments: &[String]) -> Result {
+    let device = arguments
+        .first()
+        .ok_or("device must be vendor:product, such as 14ed:1019")?;
+    let (vendor, product) = device
+        .split_once(':')
+        .ok_or("device must be vendor:product, such as 14ed:1019")?;
+    let vendor = vendor.to_ascii_lowercase();
+    let product = product.to_ascii_lowercase();
+    let root = env::var_os("SEELE_MIC_SYNC_SYSFS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/sys/bus/usb/devices"));
+    let running = crate::command::shutdown_signal();
+    while running.load(Ordering::SeqCst) == 0 {
+        if let Some(card) = card_index(&root, &vendor, &product) {
+            if let Some(numid) = switch_numid(card) {
+                println!("watching card {card} control {numid} for {vendor}:{product}");
+                watch(card, numid, &running)?;
             }
         }
+        thread::sleep(Duration::from_secs(2));
     }
-    pending.drain(..consumed);
+    Ok(())
 }
 
 #[cfg(test)]
 mod stream_tests {
     use super::*;
+
+    #[test]
+    fn fragmented_utf8_inside_json_preserves_device_names() {
+        let encoded = serde_json::to_vec(&serde_json::json!([{"name":"🎤 Große Küche"}])).unwrap();
+        let mut pending = Vec::new();
+        let mut values = Vec::new();
+        for byte in encoded {
+            pending.push(byte);
+            parse_values(&mut pending, |value| values.push(value));
+        }
+        assert_eq!(values, vec![serde_json::json!([{"name":"🎤 Große Küche"}])]);
+        assert!(pending.is_empty());
+    }
 
     #[test]
     fn partial_updates_keep_identity_and_replacement_resets_agreement() {
@@ -299,100 +388,26 @@ mod stream_tests {
 
     #[test]
     fn split_values_and_invalid_utf8_characters_preserve_stream_order() {
-        let mut pending = String::new();
+        let mut pending = Vec::new();
         let mut values = Vec::new();
         for chunk in [" \n[", "1] 🦀 [2,", "3] tr", "ue {\"x\":", "4}"] {
-            pending.push_str(chunk);
+            pending.extend_from_slice(chunk.as_bytes());
             parse_values(&mut pending, |value| values.push(value));
         }
-        assert_eq!(values, [serde_json::json!([1]), serde_json::json!([2, 3]), Value::Bool(true), serde_json::json!({"x":4})]);
+        assert_eq!(
+            values,
+            [
+                serde_json::json!([1]),
+                serde_json::json!([2, 3]),
+                Value::Bool(true),
+                serde_json::json!({"x":4})
+            ]
+        );
         assert!(pending.is_empty());
-        pending.push_str("[1][2][3");
+        pending.extend_from_slice(b"[1][2][3");
         values.clear();
         parse_values(&mut pending, |value| values.push(value));
         assert_eq!(values, [serde_json::json!([1]), serde_json::json!([2])]);
-        assert_eq!(pending, "[3");
+        assert_eq!(pending, b"[3");
     }
-}
-
-fn watch(card: u32, numid: u32, running: &AtomicBool) -> Result {
-    let (sender, receiver) = mpsc::channel();
-    let mut alsa = Command::new("alsactl")
-        .args(["monitor", &format!("hw:{card}")])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let graph = match Command::new("pw-dump")
-        .arg("-m")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(graph) => graph,
-        Err(error) => {
-            let _ = alsa.kill();
-            let _ = alsa.wait();
-            return Err(error.into());
-        }
-    };
-    let mut alsa = stream(alsa, false, sender.clone());
-    let mut graph = stream(graph, true, sender);
-    let mut session = Session {
-        card,
-        numid,
-        node: None,
-        applied: None,
-        node_dirty: false,
-    };
-    let mut pending = String::new();
-    while running.load(Ordering::SeqCst) {
-        match receiver.recv_timeout(Duration::from_secs(1)) {
-            Ok(Event::Alsa) => session.switch_event(),
-            Ok(Event::Graph(chunk)) => {
-                pending.push_str(&chunk);
-                parse_pending(&mut pending, &mut session);
-            }
-            Ok(Event::Closed) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if alsa.try_wait().ok().flatten().is_some()
-                    || graph.try_wait().ok().flatten().is_some()
-                {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    let _ = alsa.kill();
-    let _ = graph.kill();
-    let _ = alsa.wait();
-    let _ = graph.wait();
-    Ok(())
-}
-
-pub fn run(arguments: &[String]) -> Result {
-    let device = arguments
-        .first()
-        .ok_or("device must be vendor:product, such as 14ed:1019")?;
-    let (vendor, product) = device
-        .split_once(':')
-        .ok_or("device must be vendor:product, such as 14ed:1019")?;
-    let vendor = vendor.to_ascii_lowercase();
-    let product = product.to_ascii_lowercase();
-    let root = env::var_os("SEELE_MIC_SYNC_SYSFS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/sys/bus/usb/devices"));
-    let running = Arc::new(AtomicBool::new(true));
-    let signal = running.clone();
-    ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst))?;
-    while running.load(Ordering::SeqCst) {
-        if let Some(card) = card_index(&root, &vendor, &product) {
-            if let Some(numid) = switch_numid(card) {
-                println!("watching card {card} control {numid} for {vendor}:{product}");
-                watch(card, numid, &running)?;
-            }
-        }
-        thread::sleep(Duration::from_secs(2));
-    }
-    Ok(())
 }

@@ -1,6 +1,6 @@
 # Personal transfers
 
-`seele-transfers serve` is the user service behind the Transfers Control Center
+The native Rust `seele-transfers serve` is the user service behind the Transfers Control Center
 module, temporary bar status and panel. `select <file>...` stages original paths
 in memory and opens the panel; picking an available device consumes that
 selection once. The file picker, drop target, file-manager entries and Vicinae
@@ -32,26 +32,34 @@ streams each file independently to the daemon's `file-put` endpoint, never to
 Seele infrastructure. Retry uses the provider's native resumption when offered
 by the receiving platform; otherwise the affected original file restarts. The
 service attempts each file at most three times, preserving successful files.
-Manual Retry keeps the group and target. Source changes, missing files and
+Manual Retry keeps the group and target. Stored source device/inode/size/timestamps detect changes before retries; changes
+during streaming are checked again on the same open descriptor. Source changes, missing files and
 unavailable targets are typed failures, never deferred offline queues.
 
 Progress comes from the daemon's IPN bus, not bytes written to its local socket.
 Old finished outgoing events cannot inflate a new transfer's progress. Incoming
-network progress is followed by local receipt progress. Receipts use atomic,
-mode-0600 exclusive numbered reservations in Downloads, so existing files and
-symlinks never get overwritten. Only an interrupted receipt's own incomplete
+network progress is followed by local receipt progress. Receipts stream to private temporary files and publish complete, synced data
+with exclusive numbered names in Downloads. The destination directory is
+synced before acknowledgement. Existing files and symlinks never get
+overwritten. Only a gracefully interrupted receipt's own incomplete temporary
 file is removed. Completed files are never deleted by cancellation or history
 cleanup. Move reserves a collision-safe name; Trash uses `gio trash`.
 
 ## Protocol and state
 
 `seele-transfers request` reads one bounded JSON request from stdin and reaches
-the mode-0600 `$XDG_RUNTIME_DIR/seele-transfers.sock`. Operations are `snapshot`,
+the mode-0600 `$XDG_RUNTIME_DIR/seele-transfers.sock`. Both peers verify the current
+UID, and a private advisory lock prevents another service instance from
+replacing its socket. Slow or oversized client messages have explicit bounds. Operations are `snapshot`,
 `select` (paths), `send` (target), `cancel`, `retry`, `seen`, `dismiss`, `focus`
 (group id), and `open`, `reveal`, `move`, `trash` (group id and file index; Move
 also supplies a destination directory). Errors are typed, sanitized codes.
 `watch` streams snapshots for the shell. The service owns the shared selection,
 so repeated clicks cannot start another group after it has been consumed.
+
+`seen` accepts one `id` or a nonempty `ids` array of at most 4096 IDs. The
+service validates the complete batch before one durable update; opening a panel
+uses one batch rather than launching and rewriting history once per item.
 
 History is mode-0600 metadata in `$XDG_STATE_HOME/seele-transfers/history.json`:
 filenames, known locations, device labels, direction, sizes, lifecycle and
@@ -88,14 +96,21 @@ and [CLI send implementation](https://github.com/tailscale/tailscale/blob/main/c
 ## Validation
 
 ```
-PYTHONDONTWRITEBYTECODE=1 python3 tests/transfers.py projects/transfers/transfers.py
+cargo build --locked --manifest-path projects/integrations/Cargo.toml
+PYTHONDONTWRITEBYTECODE=1 python3 projects/integrations/tests/transfers.py target/debug/seele-transfers
 node tests/transfers.js projects/shell/TransfersStore.qml projects/shell/TransfersPanel.qml projects/shell/shell.qml
 ```
 
-The Python suite includes a real Unix HTTP fake daemon and checks original bytes,
+The development-only Python suite drives the real Rust binary through its Unix
+socket and includes a real Unix HTTP fake daemon. It checks original bytes,
 own-user/online eligibility, numbered collisions, file permissions, retry bounds,
 cancellation, history and desktop actions. JavaScript executes the production
 QML methods for selection, repeated activation, stable rows and notification
 focus. The package runs both suites plus the existing production shell compile.
 A real `nerv`/iOS Taildrop transfer and native QML/file-dialog validation remain
 necessary on a configured desktop.
+
+See [`projects/integrations/README.md`](../integrations/README.md) for module
+ownership, concurrency and history limits, destination permissions, and the
+private temporary-file boundary after abrupt process or machine failure.
+`SEELE_TAILSCALE_SOCKET` selects a private LocalAPI fixture for isolated tests.

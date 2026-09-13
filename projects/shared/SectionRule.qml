@@ -22,6 +22,7 @@ Item {
     anchors.left: parent.left
     anchors.bottom: parent.bottom
     text: sectionRule.label
+    textFormat: Text.PlainText
     color: sectionRule.collapsible && sectionRuleMouse.pressed
       ? sectionRule.theme.accent
       : sectionRule.collapsible && sectionRuleMouse.containsMouse
@@ -46,6 +47,7 @@ Item {
     anchors.rightMargin: sectionRuleTrailing.width > 0 ? sectionRule.theme.spaceMedium : 0
     anchors.bottom: parent.bottom
     text: sectionRule.detail
+    textFormat: Text.PlainText
     color: sectionRule.detailColor
     font.family: sectionRule.theme.fontFamily
     font.pixelSize: sectionRule.theme.textCaption

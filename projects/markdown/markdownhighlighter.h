@@ -10,6 +10,7 @@
 #pragma once
 
 #include <QColor>
+#include <QPointer>
 #include <QQmlEngine>
 #include <QQuickTextDocument>
 #include <QString>
@@ -49,7 +50,7 @@ class MarkdownHighlighter : public QSyntaxHighlighter {
 public:
   explicit MarkdownHighlighter(QObject *parent = nullptr);
 
-  QQuickTextDocument *document() const { return m_document; }
+  QQuickTextDocument *document() const { return m_document.data(); }
   void setDocument(QQuickTextDocument *document);
 
   void setTextColor(const QColor &value) { assign(m_text, value); }
@@ -69,8 +70,6 @@ protected:
   void highlightBlock(const QString &text) override;
 
 private:
-  enum State { Plain = 0, Fenced = 1, FrontMatter = 2 };
-
   template <typename T> void assign(T &field, const T &value) {
     if (field == value)
       return;
@@ -78,13 +77,8 @@ private:
     rehighlight();
   }
 
-  void marker(int start, int length);
-  void inlineSpans(const QString &text, int from);
-  void codeSpans(const QString &text, int from);
-  bool claimed(int start, int length) const;
-  void claim(int start, int length);
-
-  QQuickTextDocument *m_document = nullptr;
+  QPointer<QQuickTextDocument> m_document;
+  QMetaObject::Connection m_documentDestroyed;
   QColor m_text = QColor(QStringLiteral("#cdd6f4"));
   QColor m_muted = QColor(QStringLiteral("#6c7086"));
   QColor m_accent = QColor(QStringLiteral("#b4befe"));
@@ -94,5 +88,4 @@ private:
   QColor m_done = QColor(QStringLiteral("#a6e3a1"));
   qreal m_baseSize = 13;
   QString m_mono;
-  QList<QPair<int, int>> m_claims;
 };

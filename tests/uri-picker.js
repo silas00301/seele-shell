@@ -1,8 +1,9 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const vm = require("node:vm")
-const context = vm.createContext({})
-vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context)
+const context = vm.createContext({Bridge: nativeBridge()})
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], "utf8")), context)
 
 const links = Array.from({ length: 125 }, (_, index) => ({ number: index + 1, uri: "https://example.org/" + (index + 1) }))
 assert.equal(context.selection(links, "1", true, false), null)

@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import Seele.Markdown
 
 // The editor is checked by driving it the way a person does: real key presses
 // into the real component, so what is proved is the behaviour the application
@@ -45,6 +46,17 @@ TestCase {
     theme: theme
 
     onEdited: value => { suite.edits += 1; suite.lastText = value }
+  }
+
+  MarkdownHighlighter { id: detachedHighlighter }
+  Component { id: temporaryText; TextEdit { text: "**source**" } }
+  function test_document_lifetime_clears_guarded_pointer() {
+    var temporary = temporaryText.createObject(suite)
+    detachedHighlighter.document = temporary.textDocument
+    verify(detachedHighlighter.document !== null)
+    temporary.destroy()
+    wait(1)
+    compare(detachedHighlighter.document, null)
   }
 
   function init() {

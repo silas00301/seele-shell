@@ -1,43 +1,31 @@
 {
   lib,
   pkgs,
-  quickshellInput,
+  quickshell,
 }:
 let
-  quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
   librepods = pkgs.librepods.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ../../packages/core/patches/librepods-status.patch ];
   });
-  homeAssistantPython = pkgs.python3.withPackages (ps: [ ps.aiohttp ]);
-  notes = import ../notes/package.nix { inherit lib pkgs quickshellInput; };
+  notes = import ../notes/package.nix { inherit lib pkgs quickshell; };
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
+  nativeQml = import ../qml/package.nix { inherit pkgs; };
+  tests = ../../tests;
+  runtime = import ../../packages/core/runtime.nix { inherit pkgs; };
+  integrations = import ../../packages/core/native.nix {
+    inherit pkgs;
+    name = "integrations";
+  };
+  prompt = import ../../packages/core/native.nix {
+    inherit pkgs;
+    name = "prompt";
+  };
   fontConfig = pkgs.makeFontsConf {
     fontDirectories = [ pkgs.maple-mono.NF-CN ];
   };
-  generationSwitch = pkgs.writeShellApplication {
-    name = "seele-switch-generation";
-    text = ''
-      if (( EUID != 0 || $# != 1 )) || [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
-        exit 64
-      fi
-
-      target="/nix/var/nix/profiles/system-$1-link"
-      targetStore="$(${pkgs.coreutils}/bin/readlink -e -- "$target")" || exit 66
-      case "$targetStore" in
-        /nix/store/*) ;;
-        *) exit 66 ;;
-      esac
-      test -x "$targetStore/bin/switch-to-configuration" || exit 66
-      test -x /run/current-system/sw/bin/nix-env || exit 69
-
-      runningStore="$(${pkgs.coreutils}/bin/readlink -e -- /run/current-system)" || exit 69
-      test "$targetStore" != "$runningStore" || exit 0
-
-      /run/current-system/sw/bin/nix-env \
-        --profile /nix/var/nix/profiles/system \
-        --switch-generation "$1"
-      exec "$targetStore/bin/switch-to-configuration" switch
-    '';
+  generationSwitch = import ../../packages/core/native.nix {
+    inherit pkgs;
+    name = "repo-tools";
   };
   runtimePath = lib.makeBinPath [
     notes
@@ -60,12 +48,12 @@ let
     pkgs.libnotify
     pkgs.networkmanager
     pkgs.networkmanagerapplet
+    pkgs.nvd
     pkgs.ookla-speedtest
     pkgs.openlogi
     pkgs.pipewire
     pkgs.playerctl
     pkgs.procps
-    pkgs.python3
     pkgs.proton-vpn
     pkgs.proton-vpn-cli
     pkgs.pulseaudio
@@ -96,7 +84,7 @@ pkgs.stdenvNoCC.mkDerivation {
     pkgs.glib
     pkgs.imagemagick
     pkgs.jq
-    pkgs.makeWrapper
+    pkgs.makeBinaryWrapper
     pkgs.nodejs
     pkgs.python3
     pkgs.qt6.qtdeclarative
@@ -113,7 +101,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./TransfersStore.qml} "$out/share/seele-shell/TransfersStore.qml"
     install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
     substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
-    install -m644 ${../transfers/transfers.py} "$out/libexec/seele-shell/transfers.py"
     install -m644 ${./HomeAssistantPanel.qml} "$out/share/seele-shell/HomeAssistantPanel.qml"
     substituteInPlace "$out/share/seele-shell/HomeAssistantPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./AiActivityStore.qml} "$out/share/seele-shell/AiActivityStore.qml"
@@ -123,7 +110,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./AiPrompt.qml} "$out/share/seele-shell/AiPrompt.qml"
     substituteInPlace "$out/share/seele-shell/AiPrompt.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./ai-prompt.js} "$out/share/seele-shell/ai-prompt.js"
-    install -m644 ${../ai-prompt/worker.py} "$out/libexec/seele-shell/ai-prompt.py"
     install -m644 ${./HomeAssistantStore.qml} "$out/share/seele-shell/HomeAssistantStore.qml"
     install -m644 ${./health.js} "$out/share/seele-shell/health.js"
     install -m644 ${./IntegrationHealthStore.qml} "$out/share/seele-shell/IntegrationHealthStore.qml"
@@ -135,8 +121,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
     install -m644 ${./FocusTimer.qml} "$out/share/seele-shell/FocusTimer.qml"
     mkdir -p "$out/share/seele-shell/shared"
-    cp ${../shared}/*.qml "$out/share/seele-shell/shared/"
-    ${tools}/bin/seele-tools grain "$out/share/seele-shell/shared/grain.png"
+    cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-shell/shared/"
+    ${tools}/bin/seele-grain "$out/share/seele-shell/shared/grain.png"
     substituteInPlace "$out/share/seele-shell/shell.qml" \
       --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./DictationState.qml} "$out/share/seele-shell/DictationState.qml"
@@ -157,11 +143,12 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./github.js} "$out/share/seele-shell/github.js"
     install -m644 ${./time.js} "$out/share/seele-shell/time.js"
     install -m644 ${./CameraPreview.qml} "$out/share/seele-shell/CameraPreview.qml"
-    install -m644 ${./opencode-status.ts} "$out/share/seele-shell/opencode-status.ts"
-    install -m644 ${./pi-status.ts} "$out/share/seele-shell/pi-status.ts"
-    install -m644 ${../home-assistant/home_assistant_live.py} "$out/libexec/seele-shell/home_assistant_live.py"
-    install -m644 ${../home-assistant/control.py} "$out/libexec/seele-shell/home-assistant.py"
-    install -m644 ${../github/status.py} "$out/libexec/seele-shell/github-status.py"
+    esbuild ${./.}/opencode-status.ts --bundle --platform=node --format=esm \
+      --external:@opencode-ai/plugin --define:SEELE_AGENT_HOOK=\"$out/bin/seele-agent-hook\" \
+      --outfile="$out/share/seele-shell/opencode-status.ts"
+    esbuild ${./.}/pi-status.ts --bundle --platform=node --format=esm \
+      --external:@earendil-works/pi-coding-agent --define:SEELE_AGENT_HOOK=\"$out/bin/seele-agent-hook\" \
+      --outfile="$out/share/seele-shell/pi-status.ts"
     install -m644 ${../tools/LICENSES/Something-X.txt} "$out/share/licenses/seele-shell/Something-X.txt"
 
     cp ${../vicinae/package.json} "$out/share/vicinae/extensions/seele-shell/package.json"
@@ -178,32 +165,38 @@ pkgs.stdenvNoCC.mkDerivation {
     for command in $(jq -r '.commands[].name' vicinae/package.json); do
       esbuild "vicinae/$command.tsx" --bundle --platform=node --format=cjs --external:@raycast/api --external:react --external:react/jsx-runtime --outfile="$out/share/vicinae/extensions/seele-shell/$command.js"
     done
-    esbuild vicinae/desktop.ts --bundle --platform=node --format=cjs --outfile=desktop.cjs
-    node ${../../tests/vicinae.cjs} "$PWD/desktop.cjs"
+    esbuild vicinae/desktop.ts --bundle --platform=node --format=cjs --external:./runtime --outfile=desktop.cjs
+    node ${tests}/vicinae.cjs "$PWD/desktop.cjs"
+    cp vicinae/keybindings.tsx vicinae/keybindings-fixture.tsx
+    printf '\nexport { loadBindings, executeBinding };\n' >> vicinae/keybindings-fixture.tsx
+    esbuild vicinae/keybindings-fixture.tsx --bundle --platform=node --format=cjs \
+      --external:./runtime --external:react --external:@raycast/api --outfile=keybindings.cjs
+    node ${tests}/vicinae-keybindings.cjs "$PWD/keybindings.cjs"
     esbuild vicinae/runtime.ts --bundle --platform=node --format=cjs --external:@raycast/api --external:react --outfile=runtime.cjs
     esbuild vicinae/status.ts --bundle --platform=node --format=cjs --external:./runtime --external:react --outfile=status.cjs
-    node ${../../tests/vicinae-runtime.cjs} "$PWD/runtime.cjs" "$PWD/status.cjs"
-    node ${../../tests/vicinae-generations.mjs} \
+    esbuild vicinae/generations.tsx --bundle --platform=node --format=cjs \
+      --external:./runtime --external:react --external:@raycast/api --outfile=generation-review.cjs
+    node ${tests}/vicinae-generation-review.cjs "$PWD/generation-review.cjs"
+    node ${tests}/vicinae-runtime.cjs "$PWD/runtime.cjs" "$PWD/status.cjs"
+    node ${tests}/vicinae-generations.mjs \
       "$PWD/vicinae/generation-data.mjs" \
       "$PWD/vicinae/generations.tsx" \
       ${./package.nix}
 
     makeWrapper ${quickshell}/bin/quickshell "$out/bin/seele-shell" \
+      --prefix QML_IMPORT_PATH : "${nativeQml}/lib/qt-6/qml" \
+      --prefix QML2_IMPORT_PATH : "${nativeQml}/lib/qt-6/qml" \
       --add-flags "-n -p $out/share/seele-shell" \
       --prefix QML2_IMPORT_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml" \
       --prefix QT_PLUGIN_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/plugins" \
       --prefix PATH : "$out/bin:${runtimePath}"
-    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-transfers" \
-      --add-flags "$out/libexec/seele-shell/transfers.py" \
+    makeWrapper ${integrations}/bin/seele-transfers "$out/bin/seele-transfers" \
       --prefix PATH : "$out/bin:${runtimePath}"
-    makeWrapper ${homeAssistantPython}/bin/python3 "$out/bin/seele-home-assistant" \
-      --add-flags "$out/libexec/seele-shell/home-assistant.py" \
+    makeWrapper ${integrations}/bin/seele-home-assistant "$out/bin/seele-home-assistant" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
-    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-github-status" \
-      --add-flags "$out/libexec/seele-shell/github-status.py" \
+    makeWrapper ${runtime}/bin/seele-github-status "$out/bin/seele-github-status" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.gh ]}"
-    makeWrapper ${pkgs.python3}/bin/python3 "$out/bin/seele-ai-prompt-worker" \
-      --add-flags "$out/libexec/seele-shell/ai-prompt.py" \
+    makeWrapper ${prompt}/bin/seele-ai-prompt-worker "$out/bin/seele-ai-prompt-worker" \
       --set-default SEELE_SHELL_CODEX "${lib.getExe pkgs.codex}" \
       --set-default SEELE_SHELL_GRIM "${lib.getExe pkgs.grim}" \
       --set-default SEELE_SHELL_HYPRCTL "${pkgs.hyprland}/bin/hyprctl" \
@@ -212,7 +205,7 @@ pkgs.stdenvNoCC.mkDerivation {
       --set-default SEELE_SHELL_WTYPE "${lib.getExe pkgs.wtype}"
     install -m755 ${tools}/bin/seele-tools "$out/libexec/seele-shell/seele-tools"
     for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-mic-sync seele-nothing-headphones seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
-      ln -s seele-tools "$out/libexec/seele-shell/$name"
+      install -m755 "${tools}/bin/$name" "$out/libexec/seele-shell/$name"
     done
     makeTool() {
       local name=$1
@@ -241,6 +234,10 @@ pkgs.stdenvNoCC.mkDerivation {
       --set OMP_THREAD_LIMIT 1 \
       --set OMP_NUM_THREADS 1
 
+    substituteInPlace "$out/share/seele-shell/"*.js "$out/share/seele-shell/"*.qml \
+      --replace-quiet '../shared/Native.js' 'shared/Native.js' \
+      --replace-quiet '../shared/ListModels.js' 'shared/ListModels.js'
+
     runHook postInstall
   '';
 
@@ -248,9 +245,18 @@ pkgs.stdenvNoCC.mkDerivation {
     inherit librepods;
   };
 
+  env = {
+    SEELE_QML_FUNCTIONS = "${nativeQml.core}/bin/seele-qml-functions";
+    SEELE_QML_BRIDGE = "${../shared/Native.js}";
+    QML_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
+    QML2_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
+  };
+
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
+    export SEELE_QML_BRIDGE="$out/share/seele-shell/shared/Native.js"
+    export SEELE_QML_LIST_MODELS="$out/share/seele-shell/shared/ListModels.js"
 
     test -f "$out/share/seele-shell/shell.qml"
     test -f "$out/share/seele-shell/shared/CenteredGlyph.qml"
@@ -266,7 +272,6 @@ pkgs.stdenvNoCC.mkDerivation {
     for source in MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
       test -f "$out/share/seele-shell/$source"
     done
-    test -f "$out/libexec/seele-shell/ai-prompt.py"
     test -f "$out/share/seele-shell/media.js"
     test -f "$out/share/seele-shell/time.js"
     test -f "$out/share/seele-shell/CameraPreview.qml"
@@ -278,73 +283,82 @@ pkgs.stdenvNoCC.mkDerivation {
     for command in $(jq -r '.commands[].name' "$out/share/vicinae/extensions/seele-shell/package.json"); do
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
-    ${quickshell}/bin/quickshell --private-check-compat
-    bash ${../../tests/shell-load.sh} ${quickshell}/bin/quickshell \
-      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
-    bash ${../../tests/home-assistant-panel.sh} ${quickshell}/bin/quickshell \
-      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${../../tests/home-assistant-panel.qml}
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
-    bash ${../../tests/headphones-icon.sh} \
-      "$out/share/seele-shell/HeadphonesIcon.qml" \
-      ${../../tests/tst_headphones.qml} \
+    test -f "$out/share/seele-shell/shared/Palette.js"
+    node ${tests}/palette.js ${../shared/Palette.js} ${../shared/Theme.qml} \
+      ${../lock/shell.qml} ${../greeter/shell.qml} ${../polkit/shell.qml}
+    bash ${tests}/palette.sh "$out/share/seele-shell/shared" ${tests}/tst_palette.qml \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
-    bash ${../../tests/system-state.sh} \
+    ${quickshell}/bin/quickshell --private-check-compat
+    bash ${tests}/shell-load.sh ${quickshell}/bin/quickshell \
+      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
+    bash ${tests}/home-assistant-panel.sh ${quickshell}/bin/quickshell \
+      "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${tests}/home-assistant-panel.qml
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
+    bash ${tests}/headphones-icon.sh \
+      "$out/share/seele-shell/HeadphonesIcon.qml" \
+      ${tests}/tst_headphones.qml \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    bash ${tests}/system-state.sh \
       "$out/share/seele-shell/SystemState.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
-      ${../../tests/tst_systemstate.qml}
-    FONTCONFIG_FILE=${fontConfig} bash ${../../tests/centered-glyph.sh} \
+      ${tests}/tst_systemstate.qml \
+      ${nativeQml}/lib/qt-6/qml
+    bash ${tests}/plain-labels.sh \
+      "$out/share/seele-shell/shared" \
+      ${tests}/tst_plainlabels.qml \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    FONTCONFIG_FILE=${fontConfig} bash ${tests}/centered-glyph.sh \
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
-      ${../../tests/tst_centeredglyph.qml}
+      ${tests}/tst_centeredglyph.qml
     for command in seele-transfers seele-ai-prompt-worker seele-uri-worker seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
-    bash ${../../tests/agent-state.sh} "$out/libexec/seele-shell/seele-agent-state"
-    bash ${../../tests/harness-status.sh} \
+    bash ${tests}/agent-state.sh "$out/libexec/seele-shell/seele-agent-state"
+    bash ${tests}/harness-status.sh \
       "$out/share/seele-shell/pi-status.ts" \
       "$out/share/seele-shell/opencode-status.ts" \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-agent-hook"
-    node ${../../tests/feature-integrations.js} "$out/share/seele-shell/shell.qml" ${./package.nix}
-    node ${../../tests/ai-activity.js} "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
-    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/transfers.py} "$out/libexec/seele-shell/transfers.py"
-    node ${../../tests/transfers.js} "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
-    node ${../../tests/ai-prompt.js} "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
-    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/ai-prompt.py} "$out/libexec/seele-shell/ai-prompt.py"
-    node ${../../tests/focus.js} "$out/share/seele-shell/focus.js"
-    bash ${../../tests/focus-timer.sh} ${quickshell}/bin/quickshell "$out/share/seele-shell"
-    node ${../../tests/panel-layouts.js} "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
-    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/home-assistant.py} "$out/libexec/seele-shell/home-assistant.py"
-    PYTHONDONTWRITEBYTECODE=1 ${homeAssistantPython}/bin/python3 ${../../tests/home-assistant-live.py} "$out/libexec/seele-shell/home-assistant.py"
-    node ${../../tests/home-assistant-store.js} "$out/share/seele-shell/HomeAssistantStore.qml"
-    PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 ${../../tests/github.py} "$out/libexec/seele-shell/github-status.py"
-    node ${../../tests/maintenance.js} "$out/share/seele-shell/MaintenanceStore.qml"
-    node ${../../tests/health.js} "$out/share/seele-shell/health.js"
-    node ${../../tests/github.js} "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
-    node ${../../tests/network-addresses.js} "$out/share/seele-shell/network.js"
-    node ${../../tests/media.js} "$out/share/seele-shell/media.js"
-    node ${../../tests/player-volume.js} "$out/share/seele-shell/player-volume.js"
-    node ${../../tests/media-speed.js} "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
-    node ${../../tests/notifications.js} "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
-    bash ${../../tests/notification-server.sh} ${quickshell}/bin/quickshell \
+    node ${tests}/feature-integrations.js "$out/share/seele-shell/shell.qml" ${./package.nix}
+    node ${tests}/ai-activity.js "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
+    node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/ai-prompt.js "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
+    node ${tests}/focus.js "$out/share/seele-shell/focus.js"
+    bash ${tests}/focus-timer.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
+    node ${tests}/panel-layouts.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    node ${tests}/home-assistant-store.js "$out/share/seele-shell/HomeAssistantStore.qml"
+    node ${tests}/maintenance.js "$out/share/seele-shell/MaintenanceStore.qml"
+    node ${tests}/health.js "$out/share/seele-shell/health.js"
+    node ${tests}/github.js "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
+    node ${tests}/network-addresses.js "$out/share/seele-shell/network.js"
+    node ${tests}/media.js "$out/share/seele-shell/media.js"
+    bash ${tests}/media-host.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
+    node ${tests}/player-volume.js "$out/share/seele-shell/player-volume.js"
+    node ${tests}/media-speed.js "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
+    node ${tests}/notifications.js "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
+    bash ${tests}/notification-server.sh ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
-    node ${../../tests/time.js} "$out/share/seele-shell/time.js"
-    node ${../../tests/uri-picker.js} "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
-    TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${../../tests/uri-picker.sh} \
+    node ${tests}/time.js "$out/share/seele-shell/time.js"
+    node ${tests}/uri-picker.js "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
+    TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${tests}/uri-picker.sh \
       ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
-    node ${../../tests/status-patches.js} "$out/share/seele-shell/shell.qml"
-    python3 ${../../tests/dictation.py} "$out/bin/seele-dictation-levels"
-    bash ${../../tests/clock.sh} "$out/bin/seele-clock"
-    PATH="${runtimePath}:$PATH" bash ${../../tests/audio-routing.sh} "$out/libexec/seele-shell/seele-control"
-    PATH="${runtimePath}:$PATH" bash ${../../tests/network-vpn.sh} "$out/libexec/seele-shell/seele-control"
-    PATH="${runtimePath}:$PATH" bash ${../../tests/bluetooth-receiver-routing.sh} "$out/libexec/seele-shell/seele-control"
-    PATH="${runtimePath}:$PATH" bash ${../../tests/bluetooth-receiver.sh} \
+    node ${tests}/status-patches.js "$out/share/seele-shell/shell.qml"
+    node ${tests}/shell-presentation.js "$out/share/seele-shell/shell.qml"
+    python3 ${tests}/dictation.py "$out/bin/seele-dictation-levels"
+    bash ${tests}/clock.sh "$out/bin/seele-clock"
+    PATH="${runtimePath}:$PATH" bash ${tests}/audio-routing.sh "$out/libexec/seele-shell/seele-control"
+    PATH="${runtimePath}:$PATH" bash ${tests}/network-vpn.sh "$out/libexec/seele-shell/seele-control"
+    PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver-routing.sh "$out/libexec/seele-shell/seele-control"
+    PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver.sh \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-bt-receiver" \
       "$out/libexec/seele-shell/seele-bt-agent"
-    bash ${../../tests/control-actions.sh} "$out/libexec/seele-shell/seele-control"
-    bash ${../../tests/mic-sync.sh} "$out/libexec/seele-shell/seele-mic-sync" "$out/libexec/seele-shell/seele-shellctl"
+    python3 ${tests}/bluetooth-pairing.py "$out/libexec/seele-shell/seele-control"
+    node ${tests}/bluetooth-pairing.js "$out/share/seele-shell/shell.qml"
+    bash ${tests}/control-actions.sh "$out/libexec/seele-shell/seele-control"
+    bash ${tests}/mic-sync.sh "$out/libexec/seele-shell/seele-mic-sync" "$out/libexec/seele-shell/seele-shellctl"
 
     runHook postInstallCheck
   '';

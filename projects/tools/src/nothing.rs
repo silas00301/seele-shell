@@ -10,9 +10,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::mem;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -258,12 +256,7 @@ fn bluetooth_address(address: &str) -> Option<[u8; 6]> {
 }
 
 fn channels(address: &str) -> Vec<u8> {
-    let discovered = Command::new("sdptool")
-        .args(["browse", address])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+    let discovered = crate::command::output("sdptool", ["browse", address])
         .unwrap_or_default()
         .lines()
         .filter_map(|line| line.trim().strip_prefix("Channel:")?.trim().parse().ok())
@@ -379,7 +372,9 @@ fn parse_battery(payload: &[u8]) -> Option<u8> {
 
 fn parse_noise(payload: &[u8]) -> Option<&'static str> {
     payload
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .find(|entry| entry[0] == 1)
         .map(|entry| match entry[1] {
             5 | 0 => "off",
@@ -406,7 +401,7 @@ fn send(socket: &mut BluetoothSocket, sequence: &mut u8, command: u16, payload: 
     Ok(())
 }
 
-fn session(address: &str, running: &AtomicBool) -> Result {
+fn session(address: &str, running: &AtomicUsize) -> Result {
     let mut sequence = 0;
     let (mut socket, mut buffer) = connect(address, &mut sequence)?;
     let mut state = HeadphoneState {
@@ -422,7 +417,7 @@ fn session(address: &str, running: &AtomicBool) -> Result {
     let mut activation_sent = None;
     let mut queried = Instant::now();
     let mut chunk = [0_u8; 512];
-    while running.load(Ordering::SeqCst) {
+    while running.load(Ordering::SeqCst) == 0 {
         let mut changed = false;
         for (command, payload) in messages(&mut buffer) {
             match command {
@@ -528,10 +523,8 @@ pub fn run(arguments: &[String]) -> Result {
     }
     fs::create_dir_all(directory())?;
     let _ = fs::remove_file(command_path());
-    let running = Arc::new(AtomicBool::new(true));
-    let signal = running.clone();
-    ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst))?;
-    while running.load(Ordering::SeqCst) {
+    let running = crate::command::shutdown_signal();
+    while running.load(Ordering::SeqCst) == 0 {
         if let Err(error) = session(address, &running) {
             eprintln!("{error}");
             if let Some(mut state) = state(address) {
@@ -540,7 +533,7 @@ pub fn run(arguments: &[String]) -> Result {
                 save(&mut state)?;
             }
         }
-        if running.load(Ordering::SeqCst) {
+        if running.load(Ordering::SeqCst) == 0 {
             thread::sleep(Duration::from_secs(3));
         }
     }

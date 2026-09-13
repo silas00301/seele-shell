@@ -1,8 +1,8 @@
 use crate::{control, pipewire::Graph, Result};
 use dbus::{blocking::Connection, message::MatchRule, MessageType};
 use serde_json::{json, Value};
-use std::io::{self, BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::io;
+use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, SyncSender},
@@ -93,7 +93,8 @@ fn watch_bus(
     bluetooth: Bluetooth,
     sender: SyncSender<Event>,
 ) {
-    loop {
+    let stop = crate::command::shutdown_signal();
+    while stop.load(Ordering::Relaxed) == 0 {
         let connect = if session {
             Connection::new_session
         } else {
@@ -125,9 +126,14 @@ fn watch_bus(
             dirty[group].mark(false);
             let mut last = Instant::now() - Duration::from_secs(1);
             loop {
+                if stop.load(Ordering::Relaxed) != 0 {
+                    return Ok(());
+                }
                 if last.elapsed() >= Duration::from_millis(50) {
                     if let Some(force) = dirty[group].take() {
-                        if !send_snapshot(group, force, &bluetooth, &sender) { return Ok(()); }
+                        if !send_snapshot(group, force, &bluetooth, &sender) {
+                            return Ok(());
+                        }
                         last = Instant::now();
                     }
                 }
@@ -147,8 +153,9 @@ fn watch_bus(
 }
 
 fn watch_auxiliary(wake: mpsc::Receiver<()>, bluetooth: Bluetooth, sender: SyncSender<Event>) {
+    let stop = crate::command::shutdown_signal();
     let mut force = false;
-    loop {
+    while stop.load(Ordering::Relaxed) == 0 {
         let auxiliary = control::auxiliary_status();
         {
             let cached = bluetooth.lock().unwrap();
@@ -170,72 +177,84 @@ fn watch_auxiliary(wake: mpsc::Receiver<()>, bluetooth: Bluetooth, sender: SyncS
                 return;
             }
         }
-        force = match wake.recv_timeout(Duration::from_secs(5)) {
-            Ok(()) => true,
-            Err(mpsc::RecvTimeoutError::Timeout) => false,
-            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        let deadline = Instant::now() + Duration::from_secs(5);
+        force = loop {
+            if stop.load(Ordering::Relaxed) != 0 {
+                return;
+            }
+            match wake.recv_timeout(Duration::from_millis(100)) {
+                Ok(()) => break true,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() >= deadline => break false,
+                Err(mpsc::RecvTimeoutError::Timeout) => (),
+            }
         };
     }
 }
 
 fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
-    loop {
+    let stop = crate::command::shutdown_signal();
+    while stop.load(Ordering::Relaxed) == 0 {
         let mut command = Command::new("pw-dump");
-        command
-            .args(["-m", "-N", "-i", "0"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        // This reader can block while idle. Ensure the child dies with this
-        // controller, including when Quickshell closes its stdin or is killed.
+        command.args(["-m", "-N", "-i", "0"]);
         let parent = std::process::id();
         unsafe {
             use std::os::unix::process::CommandExt;
             command.pre_exec(move || {
-                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                if libc::getppid() as u32 != parent {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0
+                    || libc::getppid() as u32 != parent
+                {
                     return Err(io::Error::other("status controller exited"));
                 }
                 Ok(())
             });
         }
-        if let Ok(mut child) = command.spawn() {
-            let mut graph = Graph::default();
-            let mut volume_key = Value::Null;
-            let stream =
-                serde_json::Deserializer::from_reader(BufReader::new(child.stdout.take().unwrap()))
-                    .into_iter::<Value>();
-            let mut closed = false;
-            for update in stream {
-                let Ok(update) = update else { break };
-                if !update.is_array() {
-                    break;
+        let mut graph = Graph::default();
+        let mut volume_key = Value::Null;
+        let mut pending = Vec::new();
+        let mut closed = false;
+        let _ = seele_runtime::process::stream_stdout(
+            &mut command,
+            b"",
+            seele_runtime::process::Limits {
+                timeout: Duration::from_secs(365 * 86400),
+                output: 65536,
+            },
+            &stop,
+            |chunk| {
+                if chunk.len() > 16 * 1024 * 1024 - pending.len() {
+                    return Err(io::ErrorKind::InvalidData.into());
                 }
-                graph.update(update);
-                let key = graph.volume_key();
-                let patch = control::graph_status(graph.snapshot());
-                let guard = audio.lock().unwrap();
-                let patch = if key != volume_key {
-                    volume_key = key;
-                    control::merge_status([patch, control::volumes()])
-                } else {
-                    patch
-                };
-                if sender.send(Event::Patch(patch)).is_err() {
-                    closed = true;
-                    break;
+                pending.extend_from_slice(chunk);
+                let mut invalid = false;
+                crate::pipewire::parse_values(&mut pending, |update| {
+                    if invalid || closed {
+                        return;
+                    }
+                    if !graph.update(update) {
+                        invalid = true;
+                        return;
+                    }
+                    let key = graph.volume_key();
+                    let patch = control::graph_status(graph.snapshot());
+                    let _guard = audio.lock().unwrap();
+                    let patch = if key != volume_key {
+                        volume_key = key;
+                        control::merge_status([patch, control::volumes()])
+                    } else {
+                        patch
+                    };
+                    closed = sender.send(Event::Patch(patch)).is_err();
+                });
+                if invalid || closed {
+                    return Err(io::ErrorKind::InvalidData.into());
                 }
-                drop(guard);
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-            if closed {
-                return;
-            }
+                Ok(())
+            },
+        );
+        if closed || stop.load(Ordering::Relaxed) != 0 {
+            return;
         }
-        // A restarted PipeWire instance has a new registry and may reuse IDs.
         {
             let _guard = audio.lock().unwrap();
             let reset = control::merge_status([
@@ -264,6 +283,8 @@ fn changed(previous: &mut Value, patch: Value) -> Option<Value> {
 }
 
 pub(crate) fn run() -> Result {
+    let stop = crate::command::shutdown_signal();
+    let mut workers = Vec::new();
     let dirty: Dirty = Arc::new(std::array::from_fn(|_| GroupFlag::default()));
     let bluetooth: Bluetooth = Arc::new(Mutex::new(None));
     // Bounded backpressure: status floods cannot grow an unbounded JSON queue.
@@ -273,18 +294,26 @@ pub(crate) fn run() -> Result {
         ("org.bluez", false, BLUETOOTH),
     ] {
         let (dirty, bluetooth, sender) = (dirty.clone(), bluetooth.clone(), sender.clone());
-        thread::spawn(move || watch_bus(service, session, group, dirty, bluetooth, sender));
+        workers.push(thread::spawn(move || {
+            watch_bus(service, session, group, dirty, bluetooth, sender)
+        }));
     }
     let (auxiliary, wake) = mpsc::sync_channel(1);
     let (cached, updates) = (bluetooth, sender.clone());
-    thread::spawn(move || watch_auxiliary(wake, cached, updates));
+    workers.push(thread::spawn(move || {
+        watch_auxiliary(wake, cached, updates)
+    }));
     let audio = Arc::new(Mutex::new(()));
     let (updates, guard) = (sender.clone(), audio.clone());
-    thread::spawn(move || watch_pipewire(updates, guard));
+    workers.push(thread::spawn(move || watch_pipewire(updates, guard)));
     thread::spawn(move || {
-        for line in io::stdin().lock().lines() {
-            let Ok(line) = line else { break };
-            let command = line.trim();
+        let mut input = io::stdin().lock();
+        let mut frame = Vec::new();
+        while let Ok(true) = seele_runtime::wire::read_frame(&mut input, &mut frame, 4096) {
+            let Ok(command) = std::str::from_utf8(&frame) else {
+                continue;
+            };
+            let command = command.trim();
             if matches!(command, "audio" | "all") {
                 let _guard = audio.lock().unwrap();
                 if sender.send(Event::Refresh(control::volumes())).is_err() {
@@ -297,21 +326,39 @@ pub(crate) fn run() -> Result {
         }
         let _ = sender.send(Event::Closed);
     });
-    let mut previous = json!({});
-    let mut stdout = io::stdout().lock();
-    while let Ok(event) = receiver.recv() {
-        let (patch, force) = match event {
-            Event::Patch(patch) => (patch, false),
-            Event::Refresh(patch) => (patch, true),
-            Event::Closed => break,
-        };
-        let delta = changed(&mut previous, patch.clone());
-        if let Some(delta) = if force { Some(patch) } else { delta } {
-            writeln!(stdout, "{delta}")?;
-            stdout.flush()?;
+    let result = (|| -> Result {
+        let mut previous = json!({});
+        let mut stdout = seele_runtime::wire::nonblocking_stdout()?;
+        while stop.load(Ordering::Relaxed) == 0 {
+            let event = match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => event,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+            let (patch, force) = match event {
+                Event::Patch(patch) => (patch, false),
+                Event::Refresh(patch) => (patch, true),
+                Event::Closed => break,
+            };
+            let delta = changed(&mut previous, patch.clone());
+            if let Some(delta) = if force { Some(patch) } else { delta } {
+                let bytes = seele_runtime::wire::json_frame(&delta, 4 * 1024 * 1024)?;
+                seele_runtime::wire::write_bytes(
+                    &mut stdout,
+                    &bytes,
+                    Duration::from_secs(5),
+                    &stop,
+                )?;
+            }
         }
+        Ok(())
+    })();
+    stop.store(1, Ordering::Relaxed);
+    drop(receiver);
+    for worker in workers {
+        let _ = worker.join();
     }
-    Ok(())
+    result
 }
 
 #[cfg(test)]

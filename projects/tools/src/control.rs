@@ -1,17 +1,16 @@
 use crate::agents;
 use crate::command::{
-    atomic_write, config_home, detached, json_output, output, process_alive, require_status,
-    runtime_home, status,
+    atomic_write, config_home, detached, json_output, output, require_status, runtime_home, status,
 };
 use crate::nothing;
 use crate::Result;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
+use std::fs;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -34,33 +33,31 @@ fn string_data(value: Option<&Value>) -> String {
     data(value).and_then(Value::as_str).unwrap_or("").to_owned()
 }
 
-fn pid(path: &Path) -> Option<u32> {
-    fs::read_to_string(path).ok()?.trim().parse().ok()
-}
-fn cmdline_contains(pid: u32, name: &str) -> bool {
-    fs::read(format!("/proc/{pid}/cmdline"))
-        .map(|bytes| String::from_utf8_lossy(&bytes).contains(name))
-        .unwrap_or(false)
-}
-fn kill_group(pid: u32) {
-    unsafe {
-        if libc::kill(-(pid as i32), libc::SIGTERM) != 0 {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
-    }
-}
-
 // Hyprland reads `hyprctl dispatch` as Lua, so a dispatcher arrives as one
 // `hl.dsp` call rather than as a bare name followed by its arguments. The bare
 // name resolves to no global and the dispatch is dropped with an error hyprctl
 // still exits zero on, which is why every legacy form failed in silence.
-fn dispatch(call: &str) -> Result {
-    require_status("hyprctl", ["dispatch", call])
+pub(crate) fn dispatch(call: &str) -> Result {
+    let reply = crate::command::output_with_input(
+        "hyprctl",
+        ["dispatch", call],
+        b"",
+        Duration::from_secs(15),
+        64 * 1024,
+    )
+    .ok_or("Hyprland dispatch failed")?;
+    if reply.trim() != "ok" {
+        return Err("Hyprland rejected the action".into());
+    }
+    Ok(())
 }
 
-fn window_address(value: &str) -> Result<String> {
+pub(crate) fn window_address(value: &str) -> Result<String> {
     let address = value.strip_prefix("0x").unwrap_or(value);
-    if address.is_empty() || !address.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if address.is_empty()
+        || address.len() > 16
+        || !address.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
         return Err("valid window address required".into());
     }
     Ok(address.to_ascii_lowercase())
@@ -82,22 +79,20 @@ fn force_quit_application(address: &str) -> Result {
     let pid = application_pid(address)
         .filter(|pid| *pid > 1)
         .ok_or("application not found")?;
-    if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
-        return Err(std::io::Error::last_os_error().into());
+    let process = crate::daemon::Pinned::open(pid)?;
+    // Revalidate the compositor selection after pinning the process lifetime.
+    if application_pid(address) != Some(pid) {
+        return Err("application changed before force quit".into());
     }
+    process.signal(libc::SIGKILL)?;
     Ok(())
 }
 
 fn daemon_active(path: &Path, name: &str) -> bool {
-    pid(path)
-        .map(|pid| process_alive(pid) && cmdline_contains(pid, name))
-        .unwrap_or(false)
+    crate::daemon::active(path, name, None)
 }
 fn stop_daemon(path: &Path, name: &str) {
-    if let Some(pid) = pid(path).filter(|pid| cmdline_contains(*pid, name)) {
-        kill_group(pid);
-    }
-    let _ = fs::remove_file(path);
+    crate::daemon::stop(path, name);
 }
 fn start_daemon(
     path: &Path,
@@ -106,37 +101,7 @@ fn start_daemon(
     environment: &[(&str, String)],
     log: Option<&Path>,
 ) -> Result {
-    stop_daemon(path, program.trim_start_matches("seele-"));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut command = Command::new(program);
-    command
-        .args(arguments)
-        .envs(environment.iter().map(|(key, value)| (*key, value)))
-        .stdin(Stdio::null());
-    if let Some(log) = log {
-        let file = File::create(log)?;
-        command.stdout(file.try_clone()?).stderr(file);
-    } else {
-        command.stdout(Stdio::null()).stderr(Stdio::null());
-    }
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        command.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
-    let child = command.spawn()?;
-    atomic_write(path, child.id().to_string().as_bytes())?;
-    for _ in 0..20 {
-        if process_alive(child.id()) {
-            break;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    Ok(())
+    crate::daemon::start(path, program, arguments, environment, log)
 }
 
 fn nothing_headphones_stop() {
@@ -149,13 +114,11 @@ fn nothing_headphones_stop() {
 }
 
 fn nothing_headphones_active(address: &str) -> bool {
-    pid(&runtime_file("nothing-headphones.pid"))
-        .map(|pid| {
-            process_alive(pid)
-                && cmdline_contains(pid, "nothing-headphones")
-                && cmdline_contains(pid, address)
-        })
-        .unwrap_or(false)
+    crate::daemon::active(
+        &runtime_file("nothing-headphones.pid"),
+        "nothing-headphones",
+        Some(address),
+    )
 }
 
 fn nothing_headphones_start(address: &str) -> Result {
@@ -173,26 +136,14 @@ fn nothing_headphones_start(address: &str) -> Result {
 }
 
 fn bluetooth_scan_active() -> bool {
-    let path = runtime_file("bluetooth-scan.pid");
-    pid(&path)
-        .map(|pid| {
-            process_alive(pid)
-                && (cmdline_contains(pid, "bluetoothctl")
-                    || fs::read_to_string(format!("/proc/{pid}/comm"))
-                        .unwrap_or_default()
-                        .contains("bluetoothctl"))
-        })
-        .unwrap_or(false)
+    crate::daemon::active(&runtime_file("bluetooth-scan.pid"), "bluetoothctl", None)
 }
 fn bluetooth_receiver_active() -> bool {
     daemon_active(&runtime_file("bluetooth-receiver.pid"), "bt-receiver")
 }
 fn bluetooth_scan_stop() {
     let path = runtime_file("bluetooth-scan.pid");
-    if let Some(pid) = pid(&path) {
-        kill_group(pid);
-    }
-    let _ = fs::remove_file(path);
+    crate::daemon::stop(&path, "bluetoothctl");
     status("bluetoothctl", ["scan", "off"]);
 }
 fn bluetooth_scan_start() -> Result {
@@ -738,13 +689,24 @@ pub(crate) fn auxiliary_status() -> Value {
     let address_route = if route.pointer("/0/dev").and_then(Value::as_str).is_some() {
         route.clone()
     } else {
-        json_output("ip", ["-6", "-json", "route", "get", "2606:4700:4700::1111"], json!([]))
+        json_output(
+            "ip",
+            ["-6", "-json", "route", "get", "2606:4700:4700::1111"],
+            json!([]),
+        )
     };
-    let interface = address_route.pointer("/0/dev").and_then(Value::as_str).unwrap_or("");
+    let interface = address_route
+        .pointer("/0/dev")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let addresses = if interface.is_empty() {
         json!([])
     } else {
-        json_output("ip", ["-json", "address", "show", "dev", interface], json!([]))
+        json_output(
+            "ip",
+            ["-json", "address", "show", "dev", interface],
+            json!([]),
+        )
     };
     json!({"tailscale":tailscale_state(),"sshServer":ssh_state(),"trayHidden":tray_hidden(),
         "barModules":bar_modules(),"agentStates":agents::aggregate_states(),
@@ -824,48 +786,75 @@ fn print_status() {
     }
 }
 
+fn speedtest_row(line: &[u8]) -> Option<Value> {
+    let value: Value = serde_json::from_slice(line).ok()?;
+    let result = match value["type"].as_str().unwrap_or("") {
+        "ping" => {
+            json!({"phase":"ping","ping":value.pointer("/ping/latency").and_then(Value::as_f64).unwrap_or(0.0),"jitter":value.pointer("/ping/jitter").and_then(Value::as_f64).unwrap_or(0.0)})
+        }
+        "download" => {
+            json!({"phase":"download","download":value.pointer("/download/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0})
+        }
+        "upload" => {
+            json!({"phase":"upload","upload":value.pointer("/upload/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0})
+        }
+        "result" => {
+            json!({"ping":value.pointer("/ping/latency").and_then(Value::as_f64).unwrap_or(0.0),"jitter":value.pointer("/ping/jitter").and_then(Value::as_f64).unwrap_or(0.0),"download":value.pointer("/download/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0,"upload":value.pointer("/upload/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0,"server":value.pointer("/server/name").and_then(Value::as_str).unwrap_or("Ookla Speedtest")})
+        }
+        _ => return None,
+    };
+    Some(result)
+}
 fn speedtest() -> Result {
-    let mut child = Command::new("speedtest")
-        .args([
+    let stop = crate::command::shutdown_signal();
+    let mut stdout = seele_runtime::wire::nonblocking_stdout()?;
+    let mut emit = |value: &Value| -> std::io::Result<()> {
+        let bytes = seele_runtime::wire::json_frame(value, 1024 * 1024)?;
+        seele_runtime::wire::write_bytes(&mut stdout, &bytes, Duration::from_secs(5), &stop)
+    };
+    let mut pending = Vec::new();
+    let result = seele_runtime::process::stream_stdout(
+        Command::new("speedtest").args([
             "--accept-license",
             "--accept-gdpr",
             "--format=jsonl",
             "--progress=yes",
             "--progress-update-interval=250",
-        ])
-        .stdout(Stdio::piped())
-        .spawn()?;
-    for line in BufReader::new(child.stdout.take().unwrap())
-        .lines()
-        .map_while(std::result::Result::ok)
-    {
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let result = match value["type"].as_str().unwrap_or("") {
-            "ping" => {
-                json!({"phase":"ping","ping":value.pointer("/ping/latency").and_then(Value::as_f64).unwrap_or(0.0),"jitter":value.pointer("/ping/jitter").and_then(Value::as_f64).unwrap_or(0.0)})
+        ]),
+        b"",
+        seele_runtime::process::Limits {
+            timeout: Duration::from_secs(5 * 60),
+            output: 64 * 1024,
+        },
+        &crate::command::shutdown_signal(),
+        |chunk| {
+            for part in chunk.split_inclusive(|b| *b == b'\n') {
+                if part.len() > 1024 * 1024 - pending.len() {
+                    return Err(std::io::ErrorKind::InvalidData.into());
+                }
+                pending.extend_from_slice(part);
+                if part.last() == Some(&b'\n') {
+                    if let Some(value) = speedtest_row(&pending) {
+                        emit(&value)?;
+                    }
+                    pending.clear();
+                }
             }
-            "download" => {
-                json!({"phase":"download","download":value.pointer("/download/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0})
-            }
-            "upload" => {
-                json!({"phase":"upload","upload":value.pointer("/upload/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0})
-            }
-            "result" => {
-                json!({"ping":value.pointer("/ping/latency").and_then(Value::as_f64).unwrap_or(0.0),"jitter":value.pointer("/ping/jitter").and_then(Value::as_f64).unwrap_or(0.0),"download":value.pointer("/download/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0,"upload":value.pointer("/upload/bandwidth").and_then(Value::as_f64).unwrap_or(0.0)*8.0/1_000_000.0,"server":value.pointer("/server/name").and_then(Value::as_str).unwrap_or("Ookla Speedtest")})
-            }
-            _ => continue,
-        };
-        println!("{result}");
+            Ok(())
+        },
+    )?;
+    if !pending.is_empty() {
+        if let Some(value) = speedtest_row(&pending) {
+            emit(&value)?;
+        }
     }
-    let result = child.wait()?;
-    if result.success() {
+    if result.status.success() {
         Ok(())
     } else {
         Err("speedtest failed".into())
     }
 }
+
 fn set_json_list(path: &Path, key: &str, id: &str, action: &str) -> Result {
     let mut values = if key == "hidden" {
         tray_hidden().as_array().cloned().unwrap_or_default()
@@ -948,11 +937,49 @@ fn camera_settings(device: &str) -> Result {
     Ok(())
 }
 
+fn restart_user_service(arguments: &[String]) -> Result {
+    let unit = arguments.first().ok_or("service required")?;
+    let stem = unit.strip_suffix(".service").ok_or("invalid service")?;
+    if arguments.len() != 1
+        || stem.is_empty()
+        || stem.len() > 101
+        || !stem.as_bytes()[0].is_ascii_alphanumeric()
+        || !stem
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"@_.-".contains(&byte))
+    {
+        return Err("invalid service".into());
+    }
+    let status = seele_runtime::process::discard(
+        Command::new("systemctl").args(["--user", "restart", "--", unit]),
+        b"",
+        seele_runtime::process::Limits {
+            timeout: Duration::from_secs(40),
+            output: 0,
+        },
+        &*crate::command::shutdown_signal(),
+    )?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("service restart failed".into())
+    }
+}
+
 pub fn run(arguments: &[String]) -> Result {
     let command = arguments.first().map(String::as_str).unwrap_or("status");
     let arg = |index: usize| arguments.get(index).map(String::as_str).unwrap_or("");
     match command {
+        "vicinae-keybindings"
+        | "vicinae-input-keybinding"
+        | "vicinae-desktop"
+        | "vicinae-generations"
+        | "vicinae-generation-check"
+        | "vicinae-generation-diff"
+        | "vicinae-focus"
+        | "vicinae-audio" => return crate::vicinae::run(arguments),
         "watch-status" => return crate::live::run(),
+        "restart-user-service" => return restart_user_service(&arguments[1..]),
         "notifications-status" => {
             println!(
                 "{}",
@@ -965,7 +992,9 @@ pub fn run(arguments: &[String]) -> Result {
         "agent-status" => println!("{}", agents::aggregate_states()),
         "bluetooth-status" => println!("{}", bluetooth_state()),
         "speedtest" => return speedtest(),
-        "launcher-toggle" => require_status("vicinae", ["toggle"])?,
+        "launcher-toggle" => {
+            crate::command::launch_with_input("vicinae", ["toggle"], b"", Duration::from_secs(20))?
+        }
         "application" => {
             let address = window_address(arg(2))?;
             match arg(1) {
@@ -983,15 +1012,37 @@ pub fn run(arguments: &[String]) -> Result {
                 "hl.dsp.focus({{ window = \"address:0x{address}\" }})"
             ))?;
         }
-        "bluetooth-pairing-answer" => {
-            if !matches!(arg(2), "accept" | "reject") {
-                return Err("accept or reject required".into());
-            }
-            let path = runtime_file("bluetooth-pairing.answer");
-            atomic_write(
-                &path,
-                format!("{} {} {}\n", arg(1), arg(2), arg(3)).as_bytes(),
+        "bluetooth-pairing-read" => {
+            let request = crate::bluetooth::pairing_request(arg(1))?;
+            let bytes = seele_runtime::wire::json_frame(&request, 4096)?;
+            let mut stdout = seele_runtime::wire::nonblocking_stdout()?;
+            seele_runtime::wire::write_bytes(
+                &mut stdout,
+                &bytes,
+                Duration::from_secs(5),
+                &crate::command::shutdown_signal(),
             )?;
+            return Ok(());
+        }
+        "bluetooth-pairing-answer-stdin" => {
+            use std::os::fd::AsFd;
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Answer {
+                token: String,
+                verdict: String,
+                #[serde(default)]
+                value: String,
+            }
+            let stop = crate::command::shutdown_signal();
+            let mut stdin = seele_runtime::wire::NonblockingFile::new(
+                std::io::stdin().as_fd().try_clone_to_owned()?.into(),
+            )?;
+            let bytes =
+                seele_runtime::wire::read_bytes(&mut stdin, 4096, Duration::from_secs(2), &stop)?;
+            let answer: Answer = serde_json::from_slice(&bytes)?;
+            crate::bluetooth::pairing_answer(&answer.token, &answer.verdict, &answer.value)?;
+            return Ok(());
         }
         "bluetooth-pair-worker" => {
             require_status("timeout", ["90", "bluetoothctl", "pair", arg(1)])?;
@@ -1407,7 +1458,9 @@ pub fn run(arguments: &[String]) -> Result {
         }
         "notification-action" => {
             let _: u32 = arg(1).parse().map_err(|_| "invalid notification id")?;
-            if arg(2).is_empty() { return Err("notification action required".into()); }
+            if arg(2).is_empty() {
+                return Err("notification action required".into());
+            }
             require_status("seele-shellctl", ["notification", "invoke", arg(1), arg(2)])?;
             return Ok(());
         }
@@ -1416,17 +1469,20 @@ pub fn run(arguments: &[String]) -> Result {
             if !(4..=8).contains(&code.len()) || !code.bytes().all(|c| c.is_ascii_alphanumeric()) {
                 return Err("invalid verification code".into());
             }
-            let mut child = Command::new("wl-copy").args(["--type", "text/plain"])
-                .stdin(Stdio::piped()).spawn()?;
-            child.stdin.take().ok_or("clipboard input unavailable")?.write_all(code.as_bytes())?;
-            if !child.wait()?.success() { return Err("clipboard copy failed".into()); }
+            crate::command::clipboard(code, "text/plain")?;
         }
         "notifications" => {
             let action = arg(1);
-            if !matches!(action, "dismiss" | "invoke" | "clear" | "clear-history" | "retire" | "pin") {
+            if !matches!(
+                action,
+                "dismiss" | "invoke" | "clear" | "clear-history" | "retire" | "pin"
+            ) {
                 return Err("invalid notification action".into());
             }
-            require_status("seele-shellctl", ["notification", action, arg(2), "default"])?;
+            require_status(
+                "seele-shellctl",
+                ["notification", action, arg(2), "default"],
+            )?;
             return Ok(());
         }
         "dnd" => {
@@ -1437,38 +1493,22 @@ pub fn run(arguments: &[String]) -> Result {
         "outages" => detached("xdg-open", &["https://xn--allestrungen-9ib.de/".to_owned()])?,
         "copy-address" => {
             let address = arg(1);
-            let (literal, zone) = address.split_once('%').map_or((address, None), |(ip, zone)| (ip, Some(zone)));
+            let (literal, zone) = address
+                .split_once('%')
+                .map_or((address, None), |(ip, zone)| (ip, Some(zone)));
             let parsed: std::net::IpAddr = literal.parse().map_err(|_| "invalid IP address")?;
             if let Some(zone) = zone {
-                if !parsed.is_ipv6() || zone.is_empty() || zone.len() > 15
-                    || !zone.bytes().all(|c| c.is_ascii_alphanumeric() || b"_.:-".contains(&c)) {
+                if !parsed.is_ipv6()
+                    || zone.is_empty()
+                    || zone.len() > 15
+                    || !zone
+                        .bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || b"_.:-".contains(&c))
+                {
                     return Err("invalid address scope".into());
                 }
             }
-            let mut child = Command::new("wl-copy").args(["--type", "text/plain;charset=utf-8"])
-                .stdin(Stdio::piped()).spawn()?;
-            let written = match child.stdin.take() {
-                Some(mut input) => input.write_all(address.as_bytes()),
-                None => Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "clipboard input unavailable")),
-            };
-            if let Err(error) = written {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error.into());
-            }
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            loop {
-                if let Some(status) = child.try_wait()? {
-                    if !status.success() { return Err("clipboard copy failed".into()); }
-                    break;
-                }
-                if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err("clipboard copy timed out".into());
-                }
-                thread::sleep(Duration::from_millis(20));
-            }
+            crate::command::clipboard(address, "text/plain;charset=utf-8")?;
         }
         "copy-ip" => {
             let ip = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]))
@@ -1476,9 +1516,7 @@ pub fn run(arguments: &[String]) -> Result {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_owned();
-            let mut child = Command::new("wl-copy").stdin(Stdio::piped()).spawn()?;
-            child.stdin.take().unwrap().write_all(ip.as_bytes())?;
-            child.wait()?;
+            crate::command::clipboard(&ip, "text/plain")?;
         }
         "lock" | "lock-suspend" => {
             if !status(

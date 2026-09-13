@@ -1,6 +1,8 @@
+import "../shared/ListModels.js" as Models
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../shared/Native.js" as Bridge
 
 Scope {
   id: store
@@ -18,16 +20,9 @@ Scope {
   property string payload: ""
   property alias model: rows
   readonly property bool busy: action.running || queue.length > 0
-  readonly property bool attention: groups.some(g => ["sending", "receiving", "retrying", "failed"].indexOf(g.state) >= 0 || !g.seen)
-  readonly property string barText: {
-    var active = groups.filter(g => ["sending", "receiving", "retrying"].indexOf(g.state) >= 0)
-    if (active.length) {
-      var size = active.reduce((n, g) => n + g.size, 0)
-      var bytes = active.reduce((n, g) => n + g.bytes, 0)
-      return "󰇚 " + (size > 0 ? Math.floor(bytes / size * 100) + "%" : "…")
-    }
-    return groups.some(g => g.state === "failed") ? "󰇚 !" : "󰇚 " + groups.filter(g => !g.seen).length
-  }
+  readonly property var projection: Bridge.call("transfers.project", [groups.map(function(group) { return {state: group.state, size: group.size, bytes: group.bytes, seen: group.seen} })])
+  readonly property bool attention: projection.attention
+  readonly property string barText: projection.barText
   signal revealRequested()
 
   ListModel { id: rows }
@@ -38,16 +33,7 @@ Scope {
     selection = value.selection || []
     capabilities = value.capabilities || ({})
     error = value.error || ""
-    for (var i = 0; i < groups.length; i++) {
-      var found = -1
-      for (var j = i; j < rows.count; j++) if (rows.get(j).entry.id === groups[i].id) { found = j; break }
-      if (found < 0) rows.insert(i, { entry: groups[i] })
-      else {
-        if (found !== i) rows.move(found, i, 1)
-        if (JSON.stringify(rows.get(i).entry) !== JSON.stringify(groups[i])) rows.setProperty(i, "entry", groups[i])
-      }
-    }
-    while (rows.count > groups.length) rows.remove(rows.count - 1)
+    Models.reconcile(rows, groups, "entry", function(item) { return item.id })
     if (value.focus && (value.focus !== lastFocus || Number(value.focusRevision || 0) !== lastFocusRevision)) {
       lastFocus = value.focus
       lastFocusRevision = Number(value.focusRevision || 0)
@@ -57,14 +43,16 @@ Scope {
     if (panelOpen && !busy) markSeen()
   }
   function markSeen() {
-    for (var i = 0; i < groups.length; i++) if (!groups[i].seen) enqueue({ op: "seen", id: groups[i].id })
+    var ids = []
+    for (var i = 0; i < groups.length; i++) if (!groups[i].seen) ids.push(groups[i].id)
+    if (ids.length) enqueue({ op: "seen", ids: ids })
   }
   onPanelOpenChanged: if (panelOpen) markSeen()
   function enqueue(value) {
-    var next = queue.slice()
-    if (next.some(v => JSON.stringify(v) === JSON.stringify(value))) return
-    next.push(value)
-    queue = next
+    var next = Bridge.call("transfers.enqueue", [queue, value])
+    if (next === null) return
+    if (next.error) { actionError = next.error; return }
+    queue = next.queue
     runNext()
   }
   function runNext() {
@@ -75,28 +63,14 @@ Scope {
     action.running = true
   }
   function selectUrls(urls) {
-    var paths = []
-    for (var i = 0; i < urls.length; i++) {
-      var url = String(urls[i])
-      if (url.indexOf("file:///") !== 0) { actionError = "Only local files can be sent."; return }
-      try { paths.push(decodeURIComponent(url.slice(7))) } catch (_) { actionError = "Invalid file."; return }
-    }
-    enqueue({ op: "select", paths: paths })
+    var values = []
+    for (var i = 0; i < urls.length; i++) values.push(String(urls[i]))
+    var result = Bridge.call("transfers.selectUrls", [values])
+    if (result.error) { actionError = result.error; return }
+    enqueue({ op: "select", paths: result.paths })
   }
   function failure(code) {
-    var messages = {
-      "provider-unavailable": "Tailscale is unavailable. Connect it and try again.",
-      "service-unavailable": "Transfers service is unavailable.",
-      "target-unavailable": "This device is unavailable. Bring it online, then retry.",
-      "source-missing": "A source file is missing. Choose the file again.",
-      "source-changed": "A source file changed. Choose it again.",
-      "not-a-file": "Choose files; folders are not supported.",
-      "cancel-at-sender": "Stop this incoming transfer on the sending device.",
-      "interrupted": "Transfer interrupted. Retry when the device is available.",
-      "choose-files": "Choose files before selecting a device.",
-      "cancelled": "Cancelled", "already-active": "This transfer is already active."
-    }
-    return messages[code] || (code ? "The action failed. Try again." : "")
+    return Bridge.call("transfers.failure", [code])
   }
   Process {
     id: watch

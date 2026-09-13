@@ -71,13 +71,27 @@ Module._load = function (name, ...args) {
   assert.equal(events[2].style, "failure");
   assert(!JSON.stringify(events).includes("private subprocess output"));
   const { useStatus } = require(process.argv[3]);
-  const status = useStatus();
+  const begin = () => {
+    states.length = 0;
+    return useStatus();
+  };
+  const status = begin();
   worker.stdout.write('{"volume":42,"muted":false}\n');
   worker.stdout.write('{"dnd":true}\n');
   assert.deepEqual(states[0], { volume: 42, muted: false, dnd: true });
   worker.stdout.write('{"muted":true}\n');
   assert.equal(states[0].volume, 42);
   assert.equal(states[0].muted, true);
+  for (let i = 0; i < 1000; i++) status.refresh();
+  assert.equal(
+    worker.stdin.read().toString(),
+    "all\n",
+    "Refresh requests must coalesce until a status reply",
+  );
+  worker.stdout.write('{"volume":');
+  worker.stdout.write('43,"injectedUnknownField":{"retain":"nothing"}}\n');
+  assert.equal(states[0].volume, 43);
+  assert.equal(states[0].injectedUnknownField, undefined);
   status.refresh();
   assert.equal(worker.stdin.read().toString(), "all\n");
   worker.stdout.write("invalid JSON\n");
@@ -85,7 +99,52 @@ Module._load = function (name, ...args) {
   cleanup();
   assert(worker.stdin.writableEnded);
   worker.stdout.write('{"volume":99}\n');
-  assert.equal(states[0].volume, 42);
+  assert.equal(states[0].volume, 43);
+  for (const bad of [
+    '{"volume":"42"}\n',
+    '{"muted":1}\n',
+    '{"volume":1e999}\n',
+    '{"headphones":{"connected":true,"name":42}}\n',
+    '{"audioDevices":[{"id":1}]}\n',
+    "[]\n",
+    " ".repeat(256 * 1024 + 1),
+  ]) {
+    begin();
+    worker.stdout.write(bad);
+    assert.equal(
+      states[1],
+      true,
+      "Malformed or oversized frames must stop the worker",
+    );
+    assert.equal(worker.stdout.listenerCount("data"), 0);
+    assert.equal(worker.stdin.writableEnded, true);
+    worker.stdout.emit("data", Buffer.from('{"volume":99}\n'));
+    assert.deepEqual(states[0], {});
+    cleanup();
+  }
+  begin();
+  const device = {
+    id: 1,
+    kind: "output",
+    name: "Speakers",
+    node: "speaker",
+    profile: null,
+    selected: true,
+    default: true,
+  };
+  worker.stdout.write(
+    JSON.stringify({
+      headphones: { connected: false, name: "", ignored: "x" },
+      audioDevices: [device],
+    }) + "\n",
+  );
+  assert.deepEqual(states[0], {
+    headphones: { connected: false, name: "" },
+    audioDevices: [device],
+  });
+  worker.emit("close", 0);
+  assert.equal(states[1], true);
+  cleanup();
   console.log(
     "Vicinae focus handoff, error privacy, field patches, and worker cleanup tests passed",
   );

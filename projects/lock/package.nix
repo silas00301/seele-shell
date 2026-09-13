@@ -1,10 +1,9 @@
 {
   lib,
   pkgs,
-  quickshellInput,
+  quickshell,
 }:
 let
-  quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
   runtimePath = lib.makeBinPath [
     pkgs.coreutils
@@ -20,7 +19,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontUnpack = true;
   dontWrapQtApps = true;
   nativeBuildInputs = [
-    pkgs.makeWrapper
+    pkgs.makeBinaryWrapper
     pkgs.qt6.qtdeclarative
   ];
 
@@ -29,9 +28,11 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/bin" "$out/share/seele-lock"
     install -m644 ${./shell.qml} "$out/share/seele-lock/shell.qml"
-    ${tools}/bin/seele-tools grain "$out/share/seele-lock/grain.png"
-    makeWrapper ${tools}/bin/seele-tools "$out/bin/seele-lock" \
-      --add-flags lock-run \
+    install -m644 ${../shared/Palette.js} "$out/share/seele-lock/Palette.js"
+    substituteInPlace "$out/share/seele-lock/shell.qml" \
+      --replace-fail 'import "../shared/Palette.js" as Palette' 'import "Palette.js" as Palette'
+    ${tools}/bin/seele-grain "$out/share/seele-lock/grain.png"
+    makeWrapper ${tools}/bin/seele-lock-run "$out/bin/seele-lock" \
       --set SEELE_QUICKSHELL '${quickshell}/bin/quickshell' \
       --set SEELE_CONFIG "$out/share/seele-lock" \
       --prefix PATH : "${runtimePath}"
@@ -44,6 +45,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstallCheck
 
     test -f "$out/share/seele-lock/shell.qml"
+    test -f "$out/share/seele-lock/Palette.js"
     test -s "$out/share/seele-lock/grain.png"
     head -c 8 "$out/share/seele-lock/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     test -x "$out/bin/seele-lock"

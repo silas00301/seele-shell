@@ -17,6 +17,7 @@ Button {
   contentItem: Text {
     id: label
     text: button.text
+    textFormat: Text.PlainText
     color: button.danger ? button.theme.red : button.selected ? button.theme.accent : button.theme.text
     font.family: button.theme.fontFamily
     font.pixelSize: button.theme.textLabel

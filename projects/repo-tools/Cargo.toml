@@ -1,0 +1,12 @@
+[package]
+rust-version.workspace = true
+name = "seele-repo-tools"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+seele-runtime = { workspace = true }
+libc = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }

@@ -1,10 +1,9 @@
 {
   lib,
   pkgs,
-  quickshellInput,
+  quickshell,
 }:
 let
-  quickshell = quickshellInput.packages.${pkgs.stdenv.hostPlatform.system}.default;
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -14,7 +13,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontUnpack = true;
   dontWrapQtApps = true;
   nativeBuildInputs = [
-    pkgs.makeWrapper
+    pkgs.makeBinaryWrapper
     pkgs.qt6.qtdeclarative
   ];
 
@@ -24,9 +23,11 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/bin" "$out/share/seele-greeter"
     substitute ${./shell.qml} "$out/share/seele-greeter/shell.qml" \
       --replace-fail '@SYSTEMCTL@' '${pkgs.systemd}/bin/systemctl'
-    ${tools}/bin/seele-tools grain "$out/share/seele-greeter/grain.png"
-    makeWrapper ${tools}/bin/seele-tools "$out/bin/seele-greeter" \
-      --add-flags greeter-run \
+    install -m644 ${../shared/Palette.js} "$out/share/seele-greeter/Palette.js"
+    substituteInPlace "$out/share/seele-greeter/shell.qml" \
+      --replace-fail 'import "../shared/Palette.js" as Palette' 'import "Palette.js" as Palette'
+    ${tools}/bin/seele-grain "$out/share/seele-greeter/grain.png"
+    makeWrapper ${tools}/bin/seele-greeter-run "$out/bin/seele-greeter" \
       --set SEELE_QUICKSHELL '${quickshell}/bin/quickshell' \
       --set SEELE_HYPRCTL '${pkgs.hyprland}/bin/hyprctl' \
       --set SEELE_CONFIG "$out/share/seele-greeter"
@@ -39,6 +40,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstallCheck
 
     test -f "$out/share/seele-greeter/shell.qml"
+    test -f "$out/share/seele-greeter/Palette.js"
     test -s "$out/share/seele-greeter/grain.png"
     head -c 8 "$out/share/seele-greeter/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     test -x "$out/bin/seele-greeter"

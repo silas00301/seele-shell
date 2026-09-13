@@ -28,7 +28,7 @@ function model() {
     setProperty(i, key, value) { this.rows[i][key] = value; this.replacements++; },
   };
 }
-const ctx = vm.createContext({
+const ctx = vm.createContext({Models:require("./list-models.cjs")(),
   snapshot: {active: [], snoozed: [], history: [], count: 0},
   activeRows: model(), snoozedRows: model(), historyRows: model(),
   expandedIds: {}, error: '', pendingId: '', actionErrorId: '', actionError: '', confirmation: null,

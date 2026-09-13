@@ -3,6 +3,12 @@
   pkgs,
   ...
 }:
+let
+  core = import ../../packages/core/native.nix {
+    inherit pkgs;
+    name = "markdown-core";
+  };
+in
 pkgs.stdenv.mkDerivation {
   pname = "seele-markdown-qml";
   version = "1.0.0";
@@ -10,15 +16,21 @@ pkgs.stdenv.mkDerivation {
 
   nativeBuildInputs = [
     pkgs.cmake
+    pkgs.pkg-config
     pkgs.ninja
     pkgs.qt6.qtdeclarative
     pkgs.qt6.wrapQtAppsHook
   ];
   buildInputs = [
+    core
+    pkgs.pcre2
     pkgs.qt6.qtbase
     pkgs.qt6.qtdeclarative
   ];
   dontWrapQtApps = true;
+  nativeCheckInputs = [ pkgs.python3 ];
+  doCheck = true;
+  env.QT_QPA_PLATFORM = "offscreen";
 
   # The engine resolves `import Seele.Markdown` from this tree, so the module
   # directory has to arrive intact: plugin, qmldir and type description.

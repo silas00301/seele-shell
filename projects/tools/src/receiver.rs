@@ -4,8 +4,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
@@ -35,30 +34,39 @@ fn sources() -> HashSet<String> {
 fn bridge(node: &str) -> std::io::Result<Child> {
     Command::new("pw-loopback")
         .args([
-            "--capture", node,
-            &format!("--capture-props={}", json!({
-                "node.name": format!("seele-bluetooth-receiver.{node}"),
-                "seele.role": "bluetooth-receiver",
-            })),
-            &format!("--playback-props={}", json!({
-                "node.name": format!("seele-bluetooth-receiver-out.{node}"),
-                "node.description": "Bluetooth Receiver",
-                "seele.role": "bluetooth-receiver",
-            })),
+            "--capture",
+            node,
+            &format!(
+                "--capture-props={}",
+                json!({
+                    "node.name": format!("seele-bluetooth-receiver.{node}"),
+                    "seele.role": "bluetooth-receiver",
+                })
+            ),
+            &format!(
+                "--playback-props={}",
+                json!({
+                    "node.name": format!("seele-bluetooth-receiver-out.{node}"),
+                    "node.description": "Bluetooth Receiver",
+                    "seele.role": "bluetooth-receiver",
+                })
+            ),
         ])
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
 }
 
 pub fn run() -> Result {
     let interval = env::var("SEELE_BLUETOOTH_RECEIVER_INTERVAL")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
         .unwrap_or(2.0);
-    let running = Arc::new(AtomicBool::new(true));
-    let signal = running.clone();
-    ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst))?;
+    let running = crate::command::shutdown_signal();
     let mut bridges: HashMap<String, Child> = HashMap::new();
-    while running.load(Ordering::SeqCst) {
+    while running.load(Ordering::SeqCst) == 0 {
         let current = sources();
         bridges.retain(|node, child| {
             let alive = child.try_wait().ok().flatten().is_none();
@@ -77,7 +85,7 @@ pub fn run() -> Result {
                 }
             }
         }
-        thread::sleep(Duration::from_secs_f64(interval.max(0.01)));
+        thread::sleep(Duration::from_secs_f64(interval.clamp(0.01, 30.0)));
     }
     for (_, mut child) in bridges {
         let _ = child.kill();

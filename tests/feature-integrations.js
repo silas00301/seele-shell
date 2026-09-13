@@ -70,25 +70,26 @@ for (const source of packagedSources) {
 const focusedTests = [
   'health.js',
   'ai-prompt.js',
-  'ai-prompt.py',
   'focus.js',
   'focus-timer.sh',
   'panel-layouts.js',
   'shell-load.sh',
   'home-assistant-store.js',
-  'home-assistant.py',
-  'home-assistant-live.py',
   'home-assistant-panel.sh',
   'github.js',
-  'github.py',
   'network-addresses.js',
   'player-volume.js',
   'media-speed.js',
   'vicinae-generations.mjs',
 ];
 for (const test of focusedTests) {
-  assert.ok(pkg.includes(`tests/${test}`), `${test} is not run by the shell package`);
+  assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);
 }
+
+for (const helper of ['integrations', 'prompt', 'runtime']) {
+  assert.ok(pkg.includes('${' + helper + '}/bin/seele-'), helper + ' native package is not wired');
+}
+assert.ok(!pkg.includes('/bin/python3'), 'Python must not be a shell runtime wrapper');
 
 assert.ok(!/notificationSearch|notificationClipboard/.test(shell), 'notification UI must retain the 11:00 behavior');
 console.log('production QML, packaged helpers, and focused checks cover the enabled features');

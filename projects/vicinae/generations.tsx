@@ -10,17 +10,8 @@ import {
   showToast,
   Toast,
 } from "@raycast/api";
-import { realpath } from "node:fs/promises";
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  escapeMarkdown,
-  formatGenerationDate,
-  formatPackageDiff,
-  markActiveGenerations,
-  parseGenerations,
-  runningSystemPath,
-  switchGenerationArguments,
-} from "./generation-data.mjs";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { formatGenerationDate } from "./generation-data.mjs";
 import { binaries, run, useQuery } from "./runtime";
 
 type Generation = {
@@ -34,39 +25,20 @@ type Generation = {
   storePath?: string;
   runningStorePath: string;
   active: boolean;
+  switchArguments?: string[];
+  escaped: {
+    date: string;
+    nixosVersion: string;
+    kernelVersion: string;
+    configurationRevision: string;
+    specialisations: string[];
+  };
 };
 
-async function resolve(path: string) {
-  try {
-    return await realpath(path);
-  } catch {
-    return undefined;
-  }
-}
-
 async function loadGenerations(signal?: AbortSignal): Promise<Generation[]> {
-  const payload = await run(
-    binaries.nixosRebuild,
-    ["list-generations", "--json"],
-    signal,
+  return JSON.parse(
+    await run(binaries.control, ["vicinae-generations"], signal),
   );
-  const generations = parseGenerations(payload) as Generation[];
-  const runningStorePath = await resolve(runningSystemPath);
-  if (!runningStorePath) throw new Error("Running system is unavailable");
-  const resolved = await Promise.all(
-    generations.map(async (generation) => [
-      generation.generation,
-      await resolve(generation.profilePath),
-    ]),
-  );
-  const storePaths = new Map<number, string>(
-    resolved.filter((entry): entry is [number, string] => Boolean(entry[1])),
-  );
-  return markActiveGenerations(
-    generations,
-    runningStorePath,
-    storePaths,
-  ) as Generation[];
 }
 
 function generationMarkdown(generation: Generation, packageDiff: string) {
@@ -76,18 +48,18 @@ function generationMarkdown(generation: Generation, packageDiff: string) {
       ? "Retained rollback target"
       : "No longer retained";
   const revision = generation.configurationRevision
-    ? `\n**Configuration revision:** ${escapeMarkdown(generation.configurationRevision)}`
+    ? `\n**Configuration revision:** ${generation.escaped.configurationRevision}`
     : "";
   const specialisations = generation.specialisations.length
-    ? `\n**Specialisations:** ${generation.specialisations.map(escapeMarkdown).join(", ")}`
+    ? `\n**Specialisations:** ${generation.escaped.specialisations.join(", ")}`
     : "";
   return `# Generation ${generation.generation}
 
-**Built:** ${escapeMarkdown(formatGenerationDate(generation.date))}
+**Built:** ${formatGenerationDate(generation.date, generation.escaped.date)}
 
-**Kernel:** ${escapeMarkdown(generation.kernelVersion)}
+**Kernel:** ${generation.escaped.kernelVersion}
 
-**NixOS:** ${escapeMarkdown(generation.nixosVersion)}
+**NixOS:** ${generation.escaped.nixosVersion}
 
 **State:** ${state}${revision}${specialisations}
 
@@ -96,26 +68,45 @@ function generationMarkdown(generation: Generation, packageDiff: string) {
 ${packageDiff}`;
 }
 
-function GenerationDetail({ generation }: { generation: Generation }) {
+export function GenerationDetail({ generation }: { generation: Generation }) {
   const [packageDiff, setPackageDiff] = useState("_Calculating package diff…_");
   const [diffLoading, setDiffLoading] = useState(!generation.active);
   const [switching, setSwitching] = useState(false);
+  const [reviewed, setReviewed] = useState<Generation>();
+  const review = useRef<Generation>();
+  const switchPending = useRef(false);
 
   useEffect(() => {
+    review.current = undefined;
+    setReviewed(undefined);
     if (generation.active) {
       setPackageDiff("_This generation is already running._");
+      setDiffLoading(false);
+      return;
+    }
+    if (!generation.storePath || !generation.switchArguments) {
+      setPackageDiff("_Package diff unavailable._");
       setDiffLoading(false);
       return;
     }
     const controller = new AbortController();
     setDiffLoading(true);
     void run(
-      binaries.nvd,
-      ["diff", runningSystemPath, generation.profilePath],
+      binaries.control,
+      ["vicinae-generation-diff", ...generation.switchArguments],
       controller.signal,
       60_000,
     )
-      .then((output) => setPackageDiff(formatPackageDiff(output)))
+      .then((output) => {
+        if (!controller.signal.aborted) {
+          const result = JSON.parse(output);
+          if (typeof result.diff !== "string")
+            throw new Error("Invalid package diff");
+          setPackageDiff(result.diff);
+          review.current = generation;
+          setReviewed(generation);
+        }
+      })
       .catch(() => {
         if (!controller.signal.aborted)
           setPackageDiff("_Package diff unavailable._");
@@ -123,49 +114,44 @@ function GenerationDetail({ generation }: { generation: Generation }) {
       .finally(() => {
         if (!controller.signal.aborted) setDiffLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      review.current = undefined;
+    };
   }, [generation]);
 
   async function switchGeneration() {
-    const confirmed = await confirmAlert({
-      title: `Switch to generation ${generation.generation}?`,
-      message: `Built ${formatGenerationDate(generation.date)} with kernel ${generation.kernelVersion}. This activates the reviewed generation now and makes it the system profile.`,
-      primaryAction: {
-        title: `Switch to Generation ${generation.generation}`,
-        style: Alert.ActionStyle.Destructive,
-      },
-    });
-    if (!confirmed || switching) return;
-
-    setSwitching(true);
-    await closeMainWindow();
-    const toast = await showToast({
-      style: Toast.Style.Animated,
-      title: `Switching to generation ${generation.generation}`,
-      message: "Waiting for authorization and system activation…",
-    });
+    if (review.current !== generation || switchPending.current) return;
+    switchPending.current = true;
+    let toast: Awaited<ReturnType<typeof showToast>> | undefined;
     try {
-      // The view may be stale after cleanup or another switch. Re-resolve the
-      // selected generation and ensure it still names the reviewed closure.
-      const fresh = await loadGenerations();
-      const selected = fresh.find(
-        (candidate) => candidate.generation === generation.generation,
-      );
-      if (
-        !selected ||
-        selected.active ||
-        !selected.storePath ||
-        selected.storePath !== generation.storePath ||
-        selected.runningStorePath !== generation.runningStorePath
-      )
-        throw new Error("Generation changed while the picker was open");
+      const confirmed = await confirmAlert({
+        title: `Switch to generation ${generation.generation}?`,
+        message: `Built ${formatGenerationDate(generation.date)} with kernel ${generation.kernelVersion}. This activates the reviewed generation now and makes it the system profile.`,
+        primaryAction: {
+          title: `Switch to Generation ${generation.generation}`,
+          style: Alert.ActionStyle.Destructive,
+        },
+      });
+      if (!confirmed || review.current !== generation) return;
+
+      setSwitching(true);
+      await closeMainWindow();
+      toast = await showToast({
+        style: Toast.Style.Animated,
+        title: `Switching to generation ${generation.generation}`,
+        message: "Waiting for authorization and system activation…",
+      });
+      // Native preflight rechecks both reviewed identities before escalation;
+      // the privileged helper repeats that check after authorization as well.
+      await run(binaries.control, [
+        "vicinae-generation-check",
+        ...generation.switchArguments!,
+      ]);
 
       await run(
         binaries.run0,
-        [
-          binaries.switchGeneration,
-          ...switchGenerationArguments(generation.generation),
-        ],
+        [binaries.switchGeneration, ...generation.switchArguments!],
         undefined,
         10 * 60_000,
       );
@@ -173,11 +159,16 @@ function GenerationDetail({ generation }: { generation: Generation }) {
       toast.title = `Generation ${generation.generation} is active`;
       toast.message = `Built ${formatGenerationDate(generation.date)}`;
     } catch {
+      toast ??= await showToast({
+        style: Toast.Style.Failure,
+        title: "Generation switch failed",
+      });
       toast.style = Toast.Style.Failure;
       toast.title = "Generation switch failed";
       toast.message =
         "Open the picker to review current generations and try again.";
     } finally {
+      switchPending.current = false;
       setSwitching(false);
     }
   }
@@ -192,7 +183,10 @@ function GenerationDetail({ generation }: { generation: Generation }) {
       navigationTitle={`Generation ${generation.generation}`}
       markdown={markdown}
       actions={
-        !generation.active && generation.storePath && !diffLoading ? (
+        !generation.active &&
+        generation.storePath &&
+        !diffLoading &&
+        reviewed === generation ? (
           <ActionPanel>
             <Action
               title={`Switch to Generation ${generation.generation}`}

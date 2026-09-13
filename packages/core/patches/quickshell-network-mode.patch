@@ -1,0 +1,22 @@
+--- a/src/network/nm/wireless.cpp
++++ b/src/network/nm/wireless.cpp
+@@ -267,6 +267,7 @@
+ 		case NM80211Mode::Ap: return WifiDeviceMode::AccessPoint;
+ 		case NM80211Mode::Mesh: return WifiDeviceMode::Mesh;
+ 		}
++		return WifiDeviceMode::Unknown;
+ 	};
+ 	frontend->bindableMode().setBinding(translateMode);
+ 	this->bindableScanning().setBinding([frontend]() { return frontend->scannerEnabled(); });
+--- a/src/network/nm/accesspoint.cpp
++++ b/src/network/nm/accesspoint.cpp
+@@ -65,6 +65,9 @@
+ 
+ DBusResult<qs::network::NM80211Mode::Enum>
+ DBusDataTransform<qs::network::NM80211Mode::Enum>::fromWire(quint32 wire) {
++	if (wire > qs::network::NM80211Mode::Mesh) {
++		return DBusResult(qs::network::NM80211Mode::Unknown);
++	}
+ 	return DBusResult(static_cast<qs::network::NM80211Mode::Enum>(wire));
+ }
+ 

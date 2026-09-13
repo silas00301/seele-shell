@@ -2,11 +2,14 @@ use crate::command::{
     atomic_write, epoch, exec, home, json_output, output, process_alive, state_home, timestamp,
 };
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal};
+use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -20,6 +23,7 @@ fn clean_key(value: &str) -> String {
     value
         .chars()
         .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+        .take(128)
         .collect()
 }
 
@@ -71,29 +75,163 @@ fn owning_pid(agent: &str) -> u32 {
     fallback
 }
 
+#[derive(Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct HostSessions {
+    busy: std::collections::BTreeSet<String>,
+    waiting: std::collections::BTreeSet<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostEvent {
+    event: String,
+    #[serde(default, rename = "sessionID")]
+    session_id: Option<Value>,
+    #[serde(default)]
+    session: Option<Value>,
+    #[serde(default)]
+    status: Option<Value>,
+}
+impl HostSessions {
+    fn apply(&mut self, event: HostEvent) -> Option<&'static str> {
+        // Retain only hashes of opaque host identities; prompts, permissions and
+        // model content never enter lifecycle metadata.
+        let empty = json!("");
+        let session = event
+            .session_id
+            .as_ref()
+            .filter(|v| !v.is_null())
+            .or(event.session.as_ref())
+            .unwrap_or(&empty)
+            .as_str()?;
+        if session.encode_utf16().count() > 1024 {
+            return None;
+        }
+        let key = format!("{:x}", Sha256::digest(session.as_bytes()));
+        if !self.busy.contains(&key)
+            && !self.waiting.contains(&key)
+            && self.busy.len() + self.waiting.len() >= 4096
+        {
+            return None;
+        }
+        match event.event.as_str() {
+            "session.status" => match event.status.as_ref().and_then(Value::as_str) {
+                Some("busy" | "retry") => {
+                    self.busy.insert(key);
+                }
+                Some("idle") => {
+                    self.busy.remove(&key);
+                    self.waiting.remove(&key);
+                }
+                _ => {}
+            },
+            "session.idle" | "session.deleted" => {
+                self.busy.remove(&key);
+                self.waiting.remove(&key);
+            }
+            "permission.asked"
+            | "permission.v2.asked"
+            | "question.asked"
+            | "question.v2.asked"
+            | "session.error" => {
+                self.waiting.insert(key);
+            }
+            "permission.replied"
+            | "permission.v2.replied"
+            | "question.replied"
+            | "question.rejected"
+            | "question.v2.replied"
+            | "question.v2.rejected" => {
+                self.waiting.remove(&key);
+            }
+            _ => return None,
+        }
+        Some(if !self.waiting.is_empty() || self.busy.is_empty() {
+            "input"
+        } else {
+            "working"
+        })
+    }
+}
+
 pub fn hook(arguments: &[String]) -> Result {
     let agent = arguments.first().ok_or("agent required")?;
-    let event = arguments.get(1).ok_or("event required")?;
-    let mut payload = String::new();
-    if !io::stdin().is_terminal() {
-        io::stdin().read_to_string(&mut payload)?;
+    if agent.is_empty() || agent.len() > 64 || clean_key(agent) != *agent {
+        return Err("Invalid agent name".into());
     }
-    let key = serde_json::from_str::<Value>(&payload)
+    let event = arguments.get(1).ok_or("event required")?;
+    if arguments.len() != 2
+        || !(matches!(event.as_str(), "input" | "working" | "end")
+            || agent == "opencode" && event == "host-event")
+    {
+        return Err("Invalid agent event".into());
+    }
+    let payload = if io::stdin().is_terminal() {
+        Vec::new()
+    } else {
+        let mut input = seele_runtime::wire::NonblockingFile::new(
+            io::stdin().as_fd().try_clone_to_owned()?.into(),
+        )?;
+        seele_runtime::wire::read_bytes(
+            &mut input,
+            1024 * 1024,
+            Duration::from_secs(2),
+            &*crate::command::shutdown_signal(),
+        )?
+    };
+    let key = serde_json::from_slice::<Value>(&payload)
         .ok()
         .and_then(|value| value.get("session_id")?.as_str().map(clean_key))
         .filter(|value| !value.is_empty());
     let pid = owning_pid(agent);
     let key = key.unwrap_or_else(|| pid.to_string());
-    let path = agent_dir().join(format!("{agent}-native-{key}.json"));
+    let directory = agent_dir();
+    seele_runtime::fs::private_directory(&directory)?;
+    let path = directory.join(format!("{agent}-native-{key}.json"));
+    let sessions_path = directory.join(format!(".opencode-sessions-{pid}"));
+    if agent == "opencode" && matches!(event.as_str(), "input" | "end") {
+        let _ = fs::remove_file(&sessions_path);
+    }
     if event == "end" {
         let _ = fs::remove_file(path);
         return Ok(());
     }
+    let event = if event == "host-event" {
+        let incoming: HostEvent =
+            serde_json::from_slice(&payload).map_err(|_| "Invalid host event")?;
+        let mut sessions = seele_runtime::fs::read_private(&sessions_path, 1024 * 1024)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<HostSessions>(&bytes).ok())
+            .unwrap_or_default();
+        if sessions.busy.len() > 4096
+            || sessions.waiting.len() > 4096
+            || sessions
+                .busy
+                .iter()
+                .chain(&sessions.waiting)
+                .any(|key| key.len() != 64 || !key.bytes().all(|c| c.is_ascii_hexdigit()))
+        {
+            sessions = HostSessions::default();
+        }
+        let Some(status) = sessions.apply(incoming) else {
+            return Ok(());
+        };
+        atomic_write(&sessions_path, &serde_json::to_vec(&sessions)?)?;
+        status
+    } else {
+        event.as_str()
+    };
     let now = timestamp();
-    let started = fs::read_to_string(&path)
+    let started = seele_runtime::fs::read_private(&path, 4096)
         .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|value| value.get("startedAt")?.as_str().map(str::to_owned))
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("startedAt")?
+                .as_str()
+                .filter(|text| text.len() <= 64)
+                .map(str::to_owned)
+        })
         .unwrap_or_else(|| now.clone());
     let record = json!({
         "agent": agent,
@@ -186,10 +324,13 @@ fn write_run_state(
 
 pub fn run_agent(arguments: &[String]) -> Result {
     let agent = arguments.first().ok_or("agent required")?;
+    if agent.is_empty() || agent.len() > 64 || clean_key(agent) != *agent {
+        return Err("Invalid agent name".into());
+    }
     let command = arguments.get(1).ok_or("command required")?;
     let command_arguments = &arguments[2..];
     let directory = agent_dir();
-    fs::create_dir_all(&directory)?;
+    seele_runtime::fs::private_directory(&directory)?;
     let path = directory.join(format!("{agent}-heuristic-{}.json", std::process::id()));
     let started = timestamp();
     write_run_state(&path, agent, "working", &started, None, None)?;
@@ -530,16 +671,16 @@ pub(crate) fn aggregate_states() -> Value {
     let now = epoch();
     let mut groups: HashMap<String, Vec<Value>> = HashMap::new();
     if let Ok(entries) = fs::read_dir(&directory) {
-        for entry in entries.flatten() {
+        for entry in entries.flatten().take(4096) {
             if entry.path().extension().and_then(|value| value.to_str()) != Some("json")
                 || entry.file_name().to_string_lossy().starts_with('.')
             {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(entry.path()) else {
+            let Ok(bytes) = seele_runtime::fs::read_private(&entry.path(), 4096) else {
                 continue;
             };
-            let Ok(mut value) = serde_json::from_str::<Value>(&text) else {
+            let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
                 continue;
             };
             let Some(agent) = value
@@ -552,7 +693,8 @@ pub(crate) fn aggregate_states() -> Value {
             let live = value
                 .get("pid")
                 .and_then(Value::as_u64)
-                .map(|pid| process_alive(pid as u32))
+                .and_then(|pid| u32::try_from(pid).ok())
+                .map(process_alive)
                 .unwrap_or(false);
             let updated = value
                 .get("updatedAt")
@@ -564,6 +706,16 @@ pub(crate) fn aggregate_states() -> Value {
                 .and_then(|text| text.trim().parse::<i64>().ok())
                 .unwrap_or(0);
             if !live && now - at >= 300 {
+                if agent == "opencode" {
+                    if let Some(pid) = value
+                        .get("pid")
+                        .and_then(Value::as_u64)
+                        .and_then(|pid| u32::try_from(pid).ok())
+                    {
+                        let _ =
+                            fs::remove_file(directory.join(format!(".opencode-sessions-{pid}")));
+                    }
+                }
                 let _ = fs::remove_file(entry.path());
                 continue;
             }
@@ -679,9 +831,9 @@ fn sampled_idle(last: Option<&Value>, ticks: u64, now: i64) -> i64 {
 fn sampled_harnesses() -> Vec<Value> {
     let samples = running_harnesses();
     let path = agent_dir().join(".cpu-sample.json");
-    let previous = fs::read_to_string(&path)
+    let previous = seele_runtime::fs::read_private(&path, 1024 * 1024)
         .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .filter(Value::is_object)
         .unwrap_or_else(|| json!({}));
     let now = epoch();
@@ -817,23 +969,30 @@ mod tests {
         // Independent reference: repeatedly expand a set, including duplicate
         // rows, orphaned parents and cycles from an inconsistent /proc snapshot.
         for seed in 0..100_u32 {
-            let processes: Vec<_> = (0..40).map(|i| {
-                ((i * 17 + seed) % 37, (i * 13 + seed * 3) % 43, u64::from(i))
-            }).collect();
+            let processes: Vec<_> = (0..40)
+                .map(|i| ((i * 17 + seed) % 37, (i * 13 + seed * 3) % 43, u64::from(i)))
+                .collect();
             let tree = ProcessTree::new(&processes);
             for root in 0..43 {
                 let mut members = HashSet::from([root]);
                 loop {
                     let before = members.len();
                     for &(pid, parent, _) in &processes {
-                        if members.contains(&parent) { members.insert(pid); }
+                        if members.contains(&parent) {
+                            members.insert(pid);
+                        }
                     }
-                    if members.len() == before { break; }
+                    if members.len() == before {
+                        break;
+                    }
                 }
-                let expected: u64 = processes.iter().filter(|(pid, _, _)| members.contains(pid)).map(|(_, _, ticks)| ticks).sum();
+                let expected: u64 = processes
+                    .iter()
+                    .filter(|(pid, _, _)| members.contains(pid))
+                    .map(|(_, _, ticks)| ticks)
+                    .sum();
                 assert_eq!(tree.subtree_ticks(root), expected);
             }
         }
     }
-
 }

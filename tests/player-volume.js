@@ -1,8 +1,9 @@
+const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const volume = vm.createContext({});
-vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), volume);
+const volume = vm.createContext({Bridge: nativeBridge()});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), volume);
 const player = {canControl:true, volumeSupported:true, volume:.5};
 assert.equal(volume.percent(player),50);
 assert.equal(volume.adjust(player,.05),true);

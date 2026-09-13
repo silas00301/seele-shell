@@ -1,4 +1,5 @@
 import QtQuick
+import "Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
 
@@ -7,26 +8,26 @@ ShellRoot {
   id: root
 
   // Seele's native desktop shell.
-  property color base: "#1e1e2e"
-  property color mantle: "#181825"
+  property color base: Palette.fallback.base
+  property color mantle: Palette.fallback.mantle
   // The darkest step in the palette. Chrome is cut out of the wallpaper with
   // it, wells are cut back to it, and every surface is grounded on it, so the
   // shell's depth comes from ink rather than from grey.
-  property color crust: "#11111b"
-  property color surface: "#313244"
-  property color overlay: "#6c7086"
-  property color text: "#cdd6f4"
-  property color subtext: "#a6adc8"
-  property color accent: "#b4befe"
-  property color red: "#f38ba8"
-  property color green: "#a6e3a1"
-  property color yellow: "#f9e2af"
-  property string fontFamily: "Maple Mono NF CN"
+  property color crust: Palette.fallback.crust
+  property color surface: Palette.fallback.surface
+  property color overlay: Palette.fallback.overlay
+  property color text: Palette.fallback.text
+  property color subtext: Palette.fallback.subtext
+  property color accent: Palette.fallback.accent
+  property color red: Palette.fallback.red
+  property color green: Palette.fallback.green
+  property color yellow: Palette.fallback.yellow
+  property string fontFamily: Palette.fallback.fontFamily
   // iOS-style privacy indicator colours, deliberately outside the theme palette.
   property color iosOrange: "#ff9f0a"
   property color iosGreen: "#30d158"
   property color iosRed: "#ff453a"
-  property string wallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || "/etc/wallpaper/wallpaper.jpg"
+  property string wallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || Palette.fallback.wallpaper
 
   // Shared shape and surface tokens. Hyprland rounds windows at 8px, so every
   // panel, button, and bar entry rounds the same way, and each hover, press,
@@ -207,18 +208,7 @@ ShellRoot {
     onLoaded: {
       try {
         var theme = JSON.parse(text())
-        root.base = theme.base || root.base
-        root.mantle = theme.mantle || root.mantle
-        root.crust = theme.crust || root.crust
-        root.surface = theme.surface || root.surface
-        root.overlay = theme.overlay || root.overlay
-        root.text = theme.text || root.text
-        root.subtext = theme.subtext || root.subtext
-        root.accent = theme.accent || root.accent
-        root.red = theme.red || root.red
-        root.green = theme.green || root.green
-        root.yellow = theme.yellow || root.yellow
-        root.fontFamily = theme.fontFamily || root.fontFamily
+        Palette.assign(root, theme)
       } catch (error) {
         console.warn("seele-shell/theme", error)
       }

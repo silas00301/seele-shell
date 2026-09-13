@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../shared/Native.js" as Bridge
 
 Scope {
   id: store
@@ -21,10 +22,11 @@ Scope {
   property string summaryText: ""
   property bool settingsPending: false
   readonly property bool busy: settingsPending || !ready
+  readonly property var projection: Bridge.call("home_assistant.project", [entities, preferences])
   signal setupComplete()
 
   function send(message) {
-    if (!ready || !worker.running) return false
+    if (!ready || !worker.running || Object.keys(requests).length >= 128) return false
     message.request = ++serial
     var next = Object.assign({}, requests)
     // Never retain credentials in the request bookkeeping.
@@ -63,63 +65,26 @@ Scope {
     settingsPending = send({action: "preferences", entities: entries, summary: reading})
   }
   function preference(id) {
-    return preferences.find(function(item) { return item.entity_id === id }) || null
+    return Object.prototype.hasOwnProperty.call(projection.preferences, id) ? projection.preferences[id] : null
   }
   function edit(id, field, value) {
-    var next = preferences.map(function(item) { return Object.assign({}, item) })
-    var item = next.find(function(entry) { return entry.entity_id === id })
-    if (!item) return
-    item[field] = value
-    save(next, summary)
+    var next = Bridge.call("home_assistant.edit", [preferences, id, field, value])
+    if (next !== null) save(next, summary)
   }
   function select(id) {
-    var selected = preference(id)
-    var next = preferences.filter(function(item) { return item.entity_id !== id })
-    if (!selected) next.push({entity_id: id, name: "", room: "", favorite: false})
-    save(next, summary === id && selected ? "" : summary)
+    var next = Bridge.call("home_assistant.select", [preferences, id, summary])
+    save(next.entries, next.summary)
   }
   function moveTarget(id, offset) {
-    var index = preferences.findIndex(function(item) { return item.entity_id === id })
-    var entity = entities.find(function(item) { return item.entity_id === id })
-    if (!entity) return -1
-    for (var i = index + offset; i >= 0 && i < preferences.length; i += offset) {
-      var candidate = entities.find(function(item) { return item.entity_id === preferences[i].entity_id })
-      if (!candidate || roomReading(entity) !== roomReading(candidate)) continue
-      if (roomReading(entity) ? candidate.room === entity.room : entity.favorite ? candidate.favorite : !candidate.favorite && candidate.room === entity.room) return i
-    }
-    return -1
+    var move = Object.prototype.hasOwnProperty.call(projection.moves, id) ? projection.moves[id] : null
+    return !move ? -1 : offset === -1 ? move.before : offset === 1 ? move.after : -1
   }
   function move(id, offset) {
-    var next = preferences.slice()
-    var index = next.findIndex(function(item) { return item.entity_id === id })
-    var destination = moveTarget(id, offset)
-    if (index < 0 || destination < 0) return
-    var swap = next[destination]
-    next[destination] = next[index]
-    next[index] = swap
-    save(next, summary)
-  }
-  function roomReading(item) {
-    return item.entity_id.indexOf("sensor.") === 0 && (item.device_class === "temperature" || item.device_class === "humidity" || item.unit === "°C" || item.unit === "°F")
+    var next = Bridge.call("home_assistant.move", [preferences, id, moveTarget(id, offset)])
+    if (next !== null) save(next, summary)
   }
   function rows() {
-    var result = []
-    var favorites = entities.filter(function(item) { return item.favorite && !roomReading(item) })
-    if (favorites.length) {
-      result.push({heading: "Favorites"})
-      favorites.forEach(function(item) { result.push(item) })
-    }
-    var rooms = []
-    entities.forEach(function(item) { if ((!item.favorite || roomReading(item)) && rooms.indexOf(item.room) < 0) rooms.push(item.room) })
-    rooms.forEach(function(room) {
-      var members = entities.filter(function(item) { return !item.favorite && item.room === room && !roomReading(item) })
-      var readings = entities.filter(function(item) { return item.room === room && roomReading(item) })
-      result.push({heading: room, detail: readings.map(function(item) {
-        return item.available ? item.state + item.unit : (item.device_class === "humidity" ? "Humidity" : "Temperature") + " unavailable"
-      }).join(" · ")})
-      members.forEach(function(item) { result.push(item) })
-    })
-    return result
+    return projection.rows
   }
   function receive(line) {
     try {

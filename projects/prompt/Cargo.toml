@@ -1,0 +1,16 @@
+[package]
+rust-version.workspace = true
+name = "seele-prompt"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+seele-runtime = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+libc = { workspace = true }
+
+[[bin]]
+name = "seele-ai-prompt-worker"
+path = "src/main.rs"

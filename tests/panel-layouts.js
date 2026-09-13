@@ -90,7 +90,10 @@ TestCase {
   QtObject { id: timezoneList; property int currentIndex: 0 }
   function findText(item, text) {
     if (item.text === text) return item
-    for (var child of item.children || []) { var found = findText(child, text); if (found) return found }
+    var children = item.children || []
+    for (var index = 0; index < children.length; ++index) {
+      var found = findText(children[index], text); if (found) return found
+    }
     return null
   }
   function clickText(text) {

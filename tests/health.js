@@ -1,5 +1,6 @@
+const {nativeBridge,source:nativeSource}=require("./native-functions.cjs");
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict');
-const api=vm.createContext({}); vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),api);
+const api=vm.createContext({Bridge:nativeBridge()}); vm.runInContext(nativeSource(fs.readFileSync(process.argv[2],'utf8')),api);
 const reg=api.registration({id:'fixture',name:'Fixture',deadline:5000,actions:['retry','settings','restart'],service:'fixture.service',setup:'github'});
 let values={fixture:api.publication(reg,{state:'healthy',summary:'Connected',lastSuccess:10000,actions:['settings'],rawPrivateContent:'MUST NOT COPY'},10000)};
 assert.equal(api.rows({fixture:reg},values,14999)[0].state,'healthy');
@@ -43,3 +44,32 @@ core.configure([]);core.complete('fixture',token,false);
 assert.equal(core.rows.length,0);assert.equal(Object.keys(core.values).length,0);assert.equal(Object.keys(core.errors).length,0);
 assert.equal(core.publish('fixture',{state:'healthy',summary:'Late update'}),false);
 console.log('Production Health store confirmation, action deduplication, unregister and stale callbacks passed');
+
+// Valid provider names can overlap Object.prototype; inherited properties are
+// never registrations, pending actions, handlers or published health metadata.
+const constructorReg=api.registration({id:'constructor',name:'Constructor',actions:['retry']});
+assert.equal(api.rows({constructor:constructorReg},{},10000)[0].state,'stale');
+core.configure([]);
+assert.equal(core.publish('constructor',{state:'healthy',summary:'Unregistered'}),false);
+core.configure([{id:'constructor',name:'Constructor',actions:['retry']}]);
+core.publish('constructor',{state:'degraded',summary:'Retry',actions:['retry']});
+assert.equal(core.act('constructor','retry',false),true);
+assert.equal(core.errors.constructor,'Action failed. Try again.');
+assert.equal(Object.keys(core.pending).length,0);
+console.log('Health provider identity collisions do not resolve inherited object properties');
+
+let restartTask;
+core.store=core;
+core.restartFactory.createObject=(_,task)=>{ restartTask=task;return {running:false}; };
+core.configure([{id:'fixture',name:'Fixture',actions:['restart'],service:'fixture.service'}]);
+core.publish('fixture',{state:'degraded',summary:'Restart',actions:['restart']});
+assert.equal(core.act('fixture','restart',false),true);
+assert.deepEqual(Array.from(restartTask.command),['seele-control','restart-user-service','fixture.service']);
+console.log('Health restarts use the bounded native service action');
+
+// Equal display names keep provider registration order across Rust serialization.
+{
+ const b=api.registration({id:'zeta',name:'Same'}),a=api.registration({id:'alpha',name:'Same'});
+ assert.deepEqual(Array.from(api.rows({zeta:b,alpha:a},{},0),x=>x.id),['zeta','alpha']);
+ for (const summary of ['🦀'.repeat(121),'x\u0000']) assert.throws(()=>api.publication(reg,{state:'healthy',summary},0));
+}

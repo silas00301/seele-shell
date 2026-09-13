@@ -12,6 +12,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Wayland
 import Quickshell.Widgets
 import "../shared" as Shared
+import "../shared/Native.js" as Bridge
 import "media.js" as Media
 import "media-speed.js" as MediaSpeed
 import "player-volume.js" as PlayerVolume
@@ -125,6 +126,14 @@ Shared.Theme {
     return periods[agentMetricPeriod] || { totalTokens: 0, totalCost: 0, models: [] }
   }
   readonly property SystemState systemData: SystemState {}
+  readonly property var agentProjection: Bridge.call("presentation.agents", [
+    (agentData.launchers || []).map(function(item) { return {id:item.id, name:item.name} }),
+    (agentData.subscriptions || []).map(function(item) { return {id:item.id, name:item.name, limits:(item.limits || []).map(function(limit) { return {usedPercent:limit.usedPercent} })} }),
+    Object.keys(systemData.agentStates || {}).map(function(id) { var state=systemData.agentStates[id]; return {id:id,state:{active:state.active,status:state.status}} }),
+    agentRefreshing, agentError])
+  readonly property var bluetoothProjection: Bridge.call("presentation.bluetooth", [bluetoothDevices(), bluetoothReceiverActive, bluetoothForget, bluetoothBusy, bluetoothAction])
+  readonly property var batteryProjection: Bridge.call("presentation.batteries", [systemData.batteries || [], systemData.headphones || {}])
+
   property bool agentRefreshing: false
   property string bluetoothBusy: ""
   property string bluetoothAction: ""
@@ -380,24 +389,11 @@ Shared.Theme {
   }
 
   function formatTokens(value) {
-    var count = Number(value || 0)
-    if (count >= 1000000000) return (count / 1000000000).toFixed(1) + "B"
-    if (count >= 1000000) return (count / 1000000).toFixed(1) + "M"
-    if (count >= 1000) return (count / 1000).toFixed(0) + "K"
-    return String(Math.round(count))
+    return Bridge.call("presentation.tokens", [Bridge.number(value || 0)])
   }
 
   function resetText(value) {
-    if (!value) return ""
-    var reset = new Date(value)
-    var delta = reset.getTime() - now.getTime()
-    if (!(delta > 0)) return "now"
-    var minutes = Math.floor(delta / 60000)
-    var hours = Math.floor(minutes / 60)
-    var days = Math.floor(hours / 24)
-    if (days > 0) return days + "d " + (hours % 24) + "h"
-    if (hours > 0) return hours + "h " + (minutes % 60) + "m"
-    return Math.max(1, minutes) + "m"
+    return Bridge.call("presentation.reset", [value ? Bridge.number(new Date(value).getTime()) : null, now.getTime()])
   }
 
   function workspaceIds(screen) {
@@ -578,8 +574,7 @@ Shared.Theme {
   }
 
   function agentStatus(id) {
-    var states = systemData.agentStates || {}
-    return states[id] ? String(states[id].status || "idle") : "idle"
+    return Object.prototype.hasOwnProperty.call(agentProjection.statuses, id) ? agentProjection.statuses[id] : "idle"
   }
 
   function bluetoothDevices() {
@@ -589,59 +584,27 @@ Shared.Theme {
   // Devices playing into this machine. They stay in the one device list with
   // everything else and are only counted here, for what the receiver row says
   // about itself.
-  function bluetoothSources() {
-    return root.bluetoothDevices().filter(function(device) { return device.source && device.connected })
-  }
+
 
   function bluetoothReceiverDetail() {
-    // Discoverability belongs to the search row, which owns that window; this
-    // row only reports what is actually playing here.
-    var sources = root.bluetoothSources()
-    var streaming = sources.filter(function(device) { return device.streaming }).length
-    if (streaming > 0) return streaming + " device" + (streaming === 1 ? "" : "s") + " streaming"
-    if (sources.length > 0) return sources.length + " device" + (sources.length === 1 ? "" : "s") + " connected"
-    if (!root.bluetoothReceiverActive) return "Play a phone through this PC"
-    return "Waiting for a paired device"
+    return bluetoothProjection.receiver
+  }
+
+  function bluetoothLabel(device) {
+    if (device && Object.prototype.hasOwnProperty.call(bluetoothProjection.labels, device.address)) return bluetoothProjection.labels[device.address]
+    return Bridge.call("presentation.bluetoothLabel", [device, bluetoothForget, bluetoothBusy, bluetoothAction])
   }
 
   function bluetoothIcon(device) {
-    var icon = String(device && device.icon || "")
-    var name = String(device && device.name || "").toLowerCase()
-    if (icon.indexOf("headset") >= 0 || icon.indexOf("headphone") >= 0 || /airpod|buds|headphone|headset|beats|wh-|wf-/.test(name)) return "󰋋"
-    if (icon.indexOf("speaker") >= 0 || icon === "audio-card" || /speaker|soundcore|boom|jbl|sonos/.test(name)) return "󰓃"
-    if (icon === "input-keyboard" || /keyboard|keychron|k[0-9]+ /.test(name)) return "󰌌"
-    if (icon === "input-mouse" || /mouse|mx master/.test(name)) return "󰍽"
-    if (icon === "input-gaming" || /controller|gamepad|dualsense|xbox/.test(name)) return "󰊴"
-    if (icon === "phone" || /phone|pixel|galaxy|iphone/.test(name)) return "󰄜"
-    if (icon === "computer" || /macbook|thinkpad|laptop/.test(name)) return "󰌢"
-    if (icon === "video-display" || /\[tv\]|fernseher|television/.test(name)) return "󰔂"
-    if (icon === "printer") return "󰐪"
-    if (/watch|band/.test(name)) return "󰖐"
-    return "󰂱"
+    return bluetoothLabel(device).icon
   }
 
   function bluetoothDetail(device) {
-    if (!device) return ""
-    if (root.bluetoothForget === device.address) return "Tap again to forget"
-    if (root.bluetoothBusy === device.address) {
-      if (root.bluetoothAction === "trust") return "Updating autoconnect…"
-      if (root.bluetoothAction === "forget") return "Forgetting…"
-      return device.connected ? "Disconnecting…" : device.paired ? "Connecting…" : "Pairing…"
-    }
-    var suffix = device.trusted ? " · auto" : ""
-    if (device.streaming) return "Streaming here" + suffix
-    if (device.connected) return "Connected" + suffix
-    if (device.paired) return "Paired" + suffix
-    return "Available"
+    return bluetoothLabel(device).detail
   }
 
   function bluetoothSignal(device) {
-    if (!device || device.connected) return ""
-    if (device.battery !== null && device.battery !== undefined) return device.battery + "%"
-    if (device.rssi === null || device.rssi === undefined) return ""
-    if (device.rssi >= -60) return "󰤨"
-    if (device.rssi >= -75) return "󰤥"
-    return "󰤟"
+    return bluetoothLabel(device).signal
   }
 
   function toggleBluetoothDevice(device) {
@@ -688,29 +651,68 @@ Shared.Theme {
     root.bluetoothReceiverIntent = enabled ? 1 : 0
   }
 
-  function setBluetoothPairing(payload) {
+  property string pairingLoadToken: ""
+
+  function setBluetoothPairing(token) {
+    token = String(token || "")
+    if (!/^[0-9a-fA-F]{1,64}$/.test(token)) return
+    root.pairingLoadToken = token
+    root.loadBluetoothPairing()
+  }
+
+  function loadBluetoothPairing() {
+    if (!root.pairingLoadToken || bluetoothPairingReadProcess.running) return
+    bluetoothPairingReadProcess.token = root.pairingLoadToken
+    bluetoothPairingReadProcess.command = ["seele-control", "bluetooth-pairing-read", root.pairingLoadToken]
+    bluetoothPairingReadProcess.running = true
+  }
+
+  function receiveBluetoothPairing(payload) {
     try {
       var parsed = JSON.parse(String(payload || ""))
-      if (!parsed || !parsed.token) return
-      // Pin the prompt to the output that is focused when the request lands,
-      // the way every other surface here pins itself at open time.
+      if (!parsed || parsed.token !== root.pairingLoadToken) return
+      // Pin the prompt to the output focused when the authenticated request lands.
       root.pairingScreen = root.currentScreen()
       root.pairingRequest = parsed
     } catch (error) {
-      console.warn("seele-shell/bluetooth-pairing", error)
+      console.warn("seele-shell/bluetooth-pairing", "Invalid pairing request")
     }
   }
 
   function clearBluetoothPairing() {
+    root.pairingLoadToken = ""
     root.pairingRequest = ({})
     root.pairingScreen = ""
   }
 
   function answerBluetoothPairing(verdict, value) {
     var token = String((root.pairingRequest || {}).token || "")
-    if (token === "") return
-    Quickshell.execDetached(["seele-control", "bluetooth-pairing-answer", token, String(verdict), String(value || "")])
+    if (token === "" || token !== root.pairingLoadToken || bluetoothPairingAnswerProcess.running) return
+    bluetoothPairingAnswerProcess.payload = JSON.stringify({token: token, verdict: String(verdict), value: String(value || "")})
+    bluetoothPairingAnswerProcess.stdinEnabled = true
+    bluetoothPairingAnswerProcess.running = true
     root.clearBluetoothPairing()
+  }
+
+  Process {
+    id: bluetoothPairingReadProcess
+    property string token: ""
+    stdout: StdioCollector { onStreamFinished: root.receiveBluetoothPairing(text) }
+    onExited: {
+      if (root.pairingLoadToken && root.pairingLoadToken !== token) root.loadBluetoothPairing()
+    }
+  }
+
+  Process {
+    id: bluetoothPairingAnswerProcess
+    property string payload: ""
+    command: ["seele-control", "bluetooth-pairing-answer-stdin"]
+    onStarted: {
+      write(payload + "\n")
+      payload = ""
+      stdinEnabled = false
+    }
+    onExited: { payload = "" }
   }
 
   // The models that make this end type the code rather than compare one.
@@ -882,53 +884,29 @@ Shared.Theme {
   }
 
   function batteryPrimary() {
-    var entries = root.batteryEntries()
-    var system = null
-    var lowest = null
-    for (var i = 0; i < entries.length; i++) {
-      if (entries[i].kind === "system" && !system) system = entries[i]
-      if (!lowest || Number(entries[i].percent) < Number(lowest.percent)) lowest = entries[i]
-    }
-    return system || lowest
+    var index = batteryProjection.primary
+    return index === null ? null : batteryEntries()[index]
+  }
+
+  function batteryStyle(entry) {
+    if (entry && Object.prototype.hasOwnProperty.call(batteryProjection.labels, entry.name)) return batteryProjection.labels[entry.name]
+    return Bridge.call("presentation.battery", [entry])
   }
 
   function batteryCharging(entry) {
-    return !!entry && String(entry.status || "").toLowerCase() === "charging"
+    return batteryStyle(entry).charging
   }
 
   function batteryIcon(entry) {
-    if (!entry) return "󰂑"
-    if (root.batteryCharging(entry)) return "󰂄"
-    var percent = Number(entry.percent || 0)
-    if (percent >= 80) return "󰁹"
-    if (percent >= 55) return "󰂀"
-    if (percent >= 30) return "󰁾"
-    if (percent >= 15) return "󰁻"
-    return "󰂃"
+    return batteryStyle(entry).icon
   }
 
   function batteryColor(entry) {
-    if (root.batteryCharging(entry)) return root.green
-    var percent = Number(entry && entry.percent || 0)
-    if (percent <= 15) return root.red
-    if (percent <= 30) return root.yellow
-    return root.text
+    return root[batteryStyle(entry).color]
   }
 
   function headphonesBatteryText() {
-    var headphones = root.systemData.headphones || ({})
-    if (headphones.kind === "nothing" && headphones.battery !== null && headphones.battery !== undefined) {
-      return Number(headphones.battery) + "%"
-    }
-    var entries = root.batteryEntries()
-    var values = []
-    for (var i = 0; i < entries.length; i++) {
-      if (String(entries[i].name || "").toLowerCase().indexOf("airpods") >= 0) {
-        var component = String(entries[i].name).replace(/^AirPods\s*/i, "") || "battery"
-        values.push(component + " " + Number(entries[i].percent) + "%")
-      }
-    }
-    return values.join(" · ")
+    return batteryProjection.headphonesBattery
   }
 
   function privateNetworkActive() {
@@ -1092,19 +1070,15 @@ Shared.Theme {
   }
 
   function headphonesIconKind() {
-    var headphones = root.systemData.headphones || ({})
-    return headphones.connected && /airpods/i.test(String(headphones.name || "")) ? "airpods" : "headphones"
+    return batteryProjection.headphonesKind
   }
 
   function headphonesLabel() {
-    var headphones = root.systemData.headphones || ({})
-    return headphones.connected && headphones.name ? String(headphones.name) : "Headphones"
+    return batteryProjection.headphonesLabel
   }
 
   function headphonesDetail() {
-    var headphones = root.systemData.headphones || ({})
-    if (!headphones.connected) return "Not connected"
-    return root.headphonesBatteryText() || "Connected"
+    return batteryProjection.headphonesDetail
   }
 
   function startSpeedtest() {
@@ -1200,88 +1174,42 @@ Shared.Theme {
   }
 
   function activeAgents() {
-    var launchers = root.agentData.launchers || []
-    var states = root.systemData.agentStates || {}
-    var names = { pi: "Pi", opencode: "OpenCode", codex: "Codex", claude: "Claude Code" }
-    var ids = ["pi", "opencode", "codex", "claude"]
-    var result = []
-    for (var i = 0; i < launchers.length; i++) names[launchers[i].id] = launchers[i].name
-    for (var id in states) if (ids.indexOf(id) < 0) ids.push(id)
-    for (var j = 0; j < ids.length; j++) {
-      var state = states[ids[j]]
-      if (state && state.active) result.push({ id: ids[j], name: names[ids[j]] || ids[j], status: String(state.status || "running") })
-    }
-    return result
+    return agentProjection.active
   }
 
   function agentBadge(id) {
-    var badges = { pi: "PI", opencode: "OC", codex: "CX", claude: "CC" }
-    return badges[id] || String(id).substring(0, 2).toUpperCase()
+    return Bridge.call("presentation.agentBadge", [id])
   }
 
   // The vendored mark for a harness, or for the provider behind it. Anything
   // without one keeps its two-letter badge, so a provider this flake has never
   // heard of still reads on the bar.
   function agentMark(id) {
-    var marks = { pi: "pi.svg", opencode: "opencode.svg", codex: "openai.svg", openai: "openai.svg", claude: "claude.svg" }
-    return marks[String(id).toLowerCase()] || ""
+    return Bridge.call("presentation.agentMark", [id])
   }
 
   function agentColor(status) {
-    if (status === "input") return root.yellow
-    if (status === "working") return root.accent
-    if (status === "finished") return root.green
-    return root.subtext
+    return root[Bridge.call("presentation.agentColor", [status])]
   }
 
   // Every harness the cockpit draws an indicator for: the launchers CodexBar
   // reports, plus any harness that published lifecycle state without one, so a
   // session started outside all of this is still on the readout.
   function agentIndicators() {
-    var launchers = root.agentData.launchers || []
-    var states = root.systemData.agentStates || {}
-    var result = []
-    var seen = {}
-    for (var i = 0; i < launchers.length; i++) {
-      result.push({ id: launchers[i].id, name: launchers[i].name })
-      seen[launchers[i].id] = true
-    }
-    for (var id in states) {
-      if (seen[id] || !states[id].active) continue
-      result.push({ id: id, name: id })
-    }
-    return result
+    return agentProjection.indicators
   }
 
   // Only `idle` means there is no session. A record whose chosen source reports
   // something else is passed through rather than called "not running", because
   // the menu bar draws this for a harness it already knows is active.
   function agentStatusText(status) {
-    if (status === "working") return "working"
-    if (status === "input") return "needs input"
-    if (status === "finished") return "finished"
-    if (status === "idle") return "not running"
-    return String(status)
+    return Bridge.call("presentation.agentStatusText", [status])
   }
 
   // The words behind the indicator row's dots, held at the end of its rule.
   // Nothing running says nothing at all.
   function agentSummary() {
-    var states = root.systemData.agentStates || {}
-    var working = 0
-    var waiting = 0
-    var finished = 0
-    for (var id in states) {
-      var status = String(states[id].status || "idle")
-      if (status === "working") working++
-      else if (status === "input") waiting++
-      else if (status === "finished") finished++
-    }
-    var parts = []
-    if (working > 0) parts.push(working + " working")
-    if (waiting > 0) parts.push(waiting + (waiting === 1 ? " needs input" : " need input"))
-    if (finished > 0) parts.push(finished + " finished")
-    return parts.join(" · ")
+    return agentProjection.summary
   }
 
   // Usage figures are only worth what their age says they are. Until the first
@@ -1293,16 +1221,11 @@ Shared.Theme {
   }
 
   function agentRunning(id) {
-    var states = root.systemData.agentStates || {}
-    return !!(states[id] && states[id].active)
+    return Object.prototype.hasOwnProperty.call(agentProjection.running, id) && agentProjection.running[id]
   }
 
   function subscriptionSummary() {
-    var subscriptions = root.agentData.subscriptions || []
-    if (subscriptions.length === 0) return "No subscriptions"
-    var names = []
-    for (var i = 0; i < subscriptions.length; i++) names.push(subscriptions[i].name)
-    return names.join(" · ")
+    return agentProjection.subscriptions
   }
 
   function patchSystemData(patch) {
@@ -1310,13 +1233,7 @@ Shared.Theme {
   }
 
   function agoText(value) {
-    var seconds = Math.max(0, Math.floor(root.now.getTime() / 1000) - Number(value || 0))
-    if (seconds < 60) return "just now"
-    var minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return minutes + "m ago"
-    var hours = Math.floor(minutes / 60)
-    if (hours < 24) return hours + "h ago"
-    return Math.floor(hours / 24) + "d ago"
+    return Bridge.call("presentation.ago", [Bridge.number(value || 0), root.now.getTime()])
   }
 
   QsMenuOpener {
@@ -1365,25 +1282,11 @@ Shared.Theme {
   // The bar shows each provider's mark and a bare number. This is where that
   // number says which subscription it belongs to and what it is counting.
   function menuBarCapacityTip() {
-    var capacities = root.menuBarCapacities()
-    if (capacities.length === 0) return "AI cockpit"
-    var parts = []
-    for (var i = 0; i < capacities.length; i++) parts.push(capacities[i].name + " " + capacities[i].free + "% free")
-    return parts.join(" · ")
+    return agentProjection.capacityTip
   }
 
   function codexCapacityText() {
-    var subscriptions = root.agentData.subscriptions || []
-    for (var i = 0; i < subscriptions.length; i++) {
-      var subscription = subscriptions[i]
-      var identity = (String(subscription.id || "") + " " + String(subscription.name || "")).toLowerCase()
-      if (identity.indexOf("codex") < 0 && identity.indexOf("openai") < 0) continue
-      var limit = root.subscriptionLimit(subscription.id)
-      return String(subscription.name || "Codex") + (limit ? " · " + root.freePercent(limit) + "% free" : "")
-    }
-    if (root.agentRefreshing) return "Codex · checking usage…"
-    if (root.agentError !== "") return "Codex · usage unavailable"
-    return "Codex · starts when you send"
+    return agentProjection.codex
   }
 
   // A lit indicator takes you to the session it reports on. `seele-control`
@@ -1472,32 +1375,16 @@ Shared.Theme {
     wheel.accepted = true
   }
 
-  function subscriptionLimit(id) {
-    var subscriptions = root.agentData.subscriptions || []
-    var wanted = String(id).toLowerCase()
-    var result = null
-    for (var i = 0; i < subscriptions.length; i++) {
-      var subscriptionId = String(subscriptions[i].id || "").toLowerCase()
-      var subscriptionName = String(subscriptions[i].name || "").toLowerCase()
-      if (subscriptionId !== wanted && subscriptionName.indexOf(wanted) < 0) continue
-      var limits = subscriptions[i].limits || []
-      for (var j = 0; j < limits.length; j++) {
-        if (!result || Number(limits[j].usedPercent) > Number(result.usedPercent)) result = limits[j]
-      }
-    }
-    return result
-  }
+
 
   function freePercent(limit) {
-    return limit ? Math.max(0, 100 - Math.round(Number(limit.usedPercent || 0))) : 100
+    return Bridge.call("presentation.free", [limit])
   }
 
   // A window worth watching before it is a window already spent: the meter and
   // its number leave the accent once a third of the allowance is left.
   function capacityColor(free) {
-    if (free <= 15) return root.red
-    if (free <= 30) return root.yellow
-    return root.accent
+    return root[Bridge.call("presentation.capacityColor", [Bridge.number(free)])]
   }
 
   // Every subscription that has actually been spent against, in the order the
@@ -1506,16 +1393,7 @@ Shared.Theme {
   // window still at full capacity is left off, because it needs the width to
   // say nothing.
   function menuBarCapacities() {
-    var subscriptions = root.agentData.subscriptions || []
-    var result = []
-    for (var i = 0; i < subscriptions.length; i++) {
-      var limit = root.subscriptionLimit(subscriptions[i].id)
-      if (!limit) continue
-      var free = root.freePercent(limit)
-      if (free >= 100) continue
-      result.push({ id: subscriptions[i].id, name: subscriptions[i].name, free: free })
-    }
-    return result
+    return agentProjection.capacities
   }
 
   function refreshClock() {

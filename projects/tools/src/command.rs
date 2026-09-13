@@ -1,36 +1,128 @@
 use crate::Result;
+use seele_runtime::process::{capture, discard, Limits};
 use serde_json::Value;
 use std::env;
-use std::ffi::{CStr, OsStr};
+use std::ffi::OsStr;
+#[cfg(test)]
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{atomic::AtomicUsize, Arc, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub fn output<I, S>(program: &str, arguments: I) -> Option<String>
+/// One signal owner for all ordinary tool commands and resident daemons.
+/// Native capture uses this same flag to terminate and reap subprocess groups.
+pub fn shutdown_signal() -> Arc<AtomicUsize> {
+    static SIGNAL: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
+    SIGNAL
+        .get_or_init(|| {
+            seele_runtime::process::termination_signal().expect("tool termination signal")
+        })
+        .clone()
+}
+pub fn output_with_input<I, S>(
+    program: &str,
+    arguments: I,
+    input: &[u8],
+    timeout: Duration,
+    limit: usize,
+) -> Option<String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let result = Command::new(program).args(arguments).output().ok()?;
+    let result = capture(
+        Command::new(program).args(arguments),
+        input,
+        Limits {
+            timeout,
+            output: limit,
+        },
+        &shutdown_signal(),
+    )
+    .ok()?;
     result
         .status
         .success()
         .then(|| String::from_utf8_lossy(&result.stdout).into_owned())
 }
-
+pub fn output<I, S>(program: &str, arguments: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    output_with_input(
+        program,
+        arguments,
+        b"",
+        Duration::from_secs(20),
+        16 * 1024 * 1024,
+    )
+}
 pub fn status<I, S>(program: &str, arguments: I) -> bool
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    Command::new(program)
-        .args(arguments)
-        .stdin(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    discard(
+        Command::new(program).args(arguments),
+        b"",
+        Limits {
+            timeout: Duration::from_secs(120),
+            output: 0,
+        },
+        &shutdown_signal(),
+    )
+    .is_ok_and(|status| status.success())
+}
+/// Clipboard owners and desktop launchers intentionally outlive their caller.
+/// Preserve their descendants only after a successful launcher exit.
+pub fn launch_with_input<I, S>(
+    program: &str,
+    arguments: I,
+    input: &[u8],
+    timeout: Duration,
+) -> Result
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    if seele_runtime::process::discard_detaching(
+        Command::new(program).args(arguments),
+        input,
+        Limits { timeout, output: 0 },
+        &shutdown_signal(),
+    )?
+    .success()
+    {
+        Ok(())
+    } else {
+        Err(format!("{program} failed").into())
+    }
+}
+
+pub fn clipboard(text: &str, mime: &str) -> Result {
+    launch_with_input(
+        "wl-copy",
+        ["--type", mime],
+        text.as_bytes(),
+        Duration::from_secs(5),
+    )
+}
+
+/// The explicitly opened OS session runs long foreground rebuilds and keeps
+/// their terminal I/O; ordinary desktop actions use the bounded status helper.
+pub fn interactive_status<I, S>(program: &str, arguments: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    seele_runtime::process::interactive(
+        Command::new(program).args(arguments),
+        &shutdown_signal(),
+        Duration::from_secs(24 * 60 * 60),
+    )
+    .is_ok_and(|status| status.success())
 }
 
 pub fn require_status<I, S>(program: &str, arguments: I) -> Result
@@ -56,7 +148,9 @@ pub fn detached(program: &str, arguments: &[String]) -> Result {
     unsafe {
         use std::os::unix::process::CommandExt;
         command.pre_exec(|| {
-            libc::setsid();
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             Ok(())
         });
     }
@@ -107,41 +201,9 @@ pub fn runtime_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
-pub fn timestamp() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| libc::time_t::try_from(duration.as_secs()).ok())
-        .and_then(format_timestamp)
-        .unwrap_or_else(|| {
-            output("date", ["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-                .unwrap_or_default()
-                .trim()
-                .to_owned()
-        })
-}
-
-fn format_timestamp(seconds: libc::time_t) -> Option<String> {
-    // gmtime_r is independent of the process timezone and uses caller-owned
-    // storage, so concurrent status reads cannot overwrite one another.
-    unsafe {
-        let mut utc: libc::tm = std::mem::zeroed();
-        if libc::gmtime_r(&seconds, &mut utc).is_null() {
-            return None;
-        }
-        let mut buffer = [0 as libc::c_char; 64];
-        let written = libc::strftime(
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            b"%Y-%m-%dT%H:%M:%SZ\0".as_ptr().cast(),
-            &utc,
-        );
-        if written == 0 {
-            return None;
-        }
-        Some(CStr::from_ptr(buffer.as_ptr()).to_str().ok()?.to_owned())
-    }
-}
+#[cfg(test)]
+use seele_runtime::time::format_timestamp;
+pub use seele_runtime::time::timestamp;
 
 pub fn epoch() -> i64 {
     SystemTime::now()
@@ -151,14 +213,7 @@ pub fn epoch() -> i64 {
 }
 
 pub fn atomic_write(path: &Path, data: &[u8]) -> Result {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
-    let mut file = fs::File::create(&temporary)?;
-    file.write_all(data)?;
-    file.sync_all()?;
-    fs::rename(temporary, path)?;
+    seele_runtime::fs::atomic_write(path, data)?;
     Ok(())
 }
 
@@ -187,12 +242,23 @@ mod tests {
         let path = std::env::temp_dir().join(format!("seele-detached-test-{}", std::process::id()));
         let _ = fs::remove_file(&path);
         let started = std::time::Instant::now();
-        detached("sh", &["-c".into(), "echo $$ > \"$1\"; sleep 0.2".into(), "sh".into(), path.to_string_lossy().into_owned()]).unwrap();
+        detached(
+            "sh",
+            &[
+                "-c".into(),
+                "echo $$ > \"$1\"; sleep 0.2".into(),
+                "sh".into(),
+                path.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap();
         assert!(started.elapsed() < std::time::Duration::from_millis(150));
         let deadline = started + std::time::Duration::from_secs(3);
         let pid = loop {
             if let Ok(text) = fs::read_to_string(&path) {
-                if let Ok(pid) = text.trim().parse::<u32>() { break pid; }
+                if let Ok(pid) = text.trim().parse::<u32>() {
+                    break pid;
+                }
             }
             assert!(std::time::Instant::now() < deadline, "child never started");
             std::thread::sleep(std::time::Duration::from_millis(10));

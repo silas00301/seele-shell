@@ -1,3 +1,4 @@
+import "../shared/ListModels.js" as Models
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -20,16 +21,7 @@ Scope {
   readonly property int count: snapshot.count || 0
   readonly property string urgency: snapshot.urgency || ""
   function reconcile(model, values) {
-    for (var i=0;i<values.length;i++) {
-      var found=-1
-      for(var j=i;j<model.count;j++) if(model.get(j).modelData.id===values[i].id){found=j;break}
-      if(found<0) model.insert(i,{modelData:values[i]})
-      else {
-        if(found!==i) model.move(found,i,1)
-        if(JSON.stringify(model.get(i).modelData)!==JSON.stringify(values[i])) model.setProperty(i,"modelData",values[i])
-      }
-    }
-    if(model.count>values.length) model.remove(values.length,model.count-values.length)
+    Models.reconcile(model, values, "modelData", function(item) { return item.id })
   }
   function row(id) {
     return snapshot.active.concat(snapshot.snoozed, snapshot.history).find(function(value){return value.id===id})
