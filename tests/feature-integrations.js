@@ -25,7 +25,9 @@ const shellPatterns = {
   'world-clock copy': /copyClockTimestamp\(/,
   'network address rows': /Network\.addresses\(/,
   'per-player volume': /PlayerVolume\.adjust\(/,
+  'per-player volume level': /component PlayerLevelRow: Item/,
   'playback speed': /MediaSpeed\.cycle\(/,
+  'playback speed presets': /id: playbackSpeedWell/,
   'timed quiet periods': /id: quietPresets/,
 };
 

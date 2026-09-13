@@ -204,6 +204,23 @@ fn rates(player: &Value) -> Vec<f64> {
         .filter(|value| *value >= minimum && *value <= maximum)
         .collect()
 }
+fn same_rate(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 0.000001
+}
+fn rate_active(player: &Value, requested: Option<f64>) -> bool {
+    let current = number(player.get("rate"));
+    if !current.is_finite() || current <= 0.0 {
+        return false;
+    }
+    requested.is_some_and(|value| same_rate(value, current))
+}
+fn rate_for(player: &Value, requested: Option<f64>) -> Option<f64> {
+    let current = number(player.get("rate"));
+    requested
+        .filter(|value| value.is_finite())
+        .filter(|value| rates(player).iter().any(|rate| same_rate(*rate, *value)))
+        .filter(|value| !same_rate(*value, current))
+}
 fn next_rate(player: &Value) -> Option<f64> {
     let choices = rates(player);
     let current = number(player.get("rate"));
@@ -401,6 +418,10 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         }),
         "rates" => json!(rates(player)),
         "nextRate" => json!(next_rate(player)),
+        // A preset the player is already running is lit rather than offered,
+        // and a rate the player was given elsewhere lights none of them.
+        "rateActive" => json!(rate_active(player, args.get(1).and_then(Value::as_f64))),
+        "rateFor" => json!(rate_for(player, args.get(1).and_then(Value::as_f64))),
         "rateLabel" => {
             let rate = number(player.get("rate"));
             json!(if rate.is_finite() && rate > 0.0 {
@@ -412,6 +433,27 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         "volumeSupported" => json!(volume(player).is_some()),
         "volumeWritable" => json!(writable(player)),
         "volumePercent" => json!(volume(player).map(|volume| (volume.max(0.0) * 100.0).round())),
+        // The share of the track a level fills. A player amplified past unity
+        // elsewhere still reports its percentage, but the track it is drawn in
+        // ends at full volume, which is as far as the shell ever writes.
+        "volumeRatio" => json!(volume(player).map(|volume| volume.clamp(0.0, 1.0))),
+        // Where a level is dragged to, rather than how far it moved. The
+        // position is a share of the track, so it is clamped and dropped when
+        // it lands on the volume the player is already at.
+        "volumeAt" => {
+            let next = volume(player)
+                .filter(|_| writable(player))
+                .zip(
+                    args.get(1)
+                        .and_then(Value::as_f64)
+                        .filter(|ratio| ratio.is_finite()),
+                )
+                .and_then(|(volume, ratio)| {
+                    let value = ratio.clamp(0.0, 1.0);
+                    (value != volume).then_some(value)
+                });
+            json!(next)
+        }
         "nextVolume" => {
             let next = volume(player)
                 .filter(|_| writable(player))

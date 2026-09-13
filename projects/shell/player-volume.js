@@ -13,3 +13,10 @@ function adjust(player, delta) {
   player.volume = next
   return true
 }
+function ratio(player) { return Bridge.call("media.volumeRatio", [snapshot(player)]) }
+function seek(player, position) {
+  var next = Bridge.call("media.volumeAt", [snapshot(player), typeof position === "number" ? Bridge.number(position) : position])
+  if (next === null) return false
+  player.volume = next
+  return true
+}

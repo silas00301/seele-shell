@@ -24,11 +24,31 @@ for (const invalid of [null, {}, make({canControl:false}), make({rate:NaN}), mak
 assert.equal(speed.label(make({rate:1.25})), '1.25×');
 assert.equal(speed.label(null), 'Unavailable');
 
+// Only the presets the player supports are offered, the one it is running is
+// lit, and a rate outside the set lights none of them.
+assert.equal(speed.active(make({rate:1.25}), 1.25), true);
+assert.equal(speed.active(make({rate:1.25}), 1), false);
+assert.equal(speed.active(make({rate:1.1}), 1), false, 'an externally set rate lights no preset');
+assert.equal(speed.active(null, 1), false);
+const picked = make();
+assert.equal(speed.select(picked, 1.5), true);
+assert.equal(picked.rate, 1.5);
+assert.equal(speed.select(picked, 1.5), false, 'the lit preset is not offered again');
+assert.equal(picked.rate, 1.5);
+for (const invalid of [3, 1.1, 0, NaN, Infinity, '1.25', null, undefined]) {
+  assert.equal(speed.select(picked, invalid), false, 'only supported presets are written');
+  assert.equal(picked.rate, 1.5);
+}
+assert.equal(speed.select(make({minRate:1.25,maxRate:1.5}), 2), false, 'a rate the player cannot reach is refused');
+for (const incapable of [null, {}, make({canControl:false})]) assert.equal(speed.select(incapable, 1.25), false);
+
 // Execute the real QML handlers, including keyboard repeat/modifier guards.
 const qml = fs.readFileSync(process.argv[3], 'utf8');
 const action = qml.match(/      function cyclePlaybackSpeed\([^]*?\n      }/);
-const key = qml.slice(qml.indexOf('id: playbackSpeedButton')).match(/Keys.onPressed: event => \{([^]*?)\n              }/);
+const key = qml.slice(qml.indexOf('id: playbackSpeedWell')).match(/Keys.onPressed: event => \{([^]*?)\n\s*}/);
 assert(action && key, 'production playback action and key handler exist');
+assert.match(qml, /onClicked: MediaSpeed\.select\(mediaWindow\.player, speedPreset\.modelData\)/,
+  'each preset in the well writes its own rate');
 const selected = make();
 const other = make();
 const context = vm.createContext({MediaSpeed:speed,mediaWindow:{player:selected},Qt:{Key_Return:1,Key_Enter:2,Key_Space:3,ControlModifier:1,AltModifier:2,MetaModifier:4}});
@@ -48,4 +68,4 @@ context.press(unrelated);
 assert.equal(unrelated.accepted, undefined);
 context.mediaWindow.player = null;
 assert.equal(context.cyclePlaybackSpeed(), false, 'a player disappearing before the click is safe');
-console.log('Playback speed bounds, selection and keyboard intent checks passed');
+console.log('Playback speed bounds, preset selection and keyboard intent checks passed');

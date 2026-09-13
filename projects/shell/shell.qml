@@ -3579,6 +3579,162 @@ Shared.Theme {
     HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
 
+  // The player's own volume. It is a level rather than a number between two
+  // nudge buttons, drawn in the shape the Audio panel gives the output the
+  // shell mixes, and the mark that silences the player rides in the track it
+  // belongs to instead of taking a column of its own.
+  component PlayerLevelRow: Item {
+    id: playerLevel
+
+    property var player: null
+    readonly property bool supported: PlayerVolume.supported(playerLevel.player)
+    readonly property bool writable: PlayerVolume.writable(playerLevel.player)
+    readonly property int percent: playerLevel.supported ? PlayerVolume.percent(playerLevel.player) : 0
+    readonly property real fillRatio: playerLevel.supported ? PlayerVolume.ratio(playerLevel.player) : 0
+    readonly property bool silent: playerLevel.supported && playerLevel.percent <= 0
+    // The mark says how loud the player is, so the same glyph serves the track
+    // and the button that silences it.
+    readonly property string glyph: !playerLevel.supported ? "󰸈"
+      : playerLevel.silent ? "󰝟"
+      : playerLevel.percent < 34 ? "󰕿"
+      : playerLevel.percent < 67 ? "󰖀" : "󰕾"
+    // Where a silenced player comes back to. One silenced from here returns to
+    // the level it was taken from; one that was already silent returns to
+    // full, because there is no earlier level of its own to return to.
+    property real restore: 0
+
+    implicitHeight: root.rowHeight
+    activeFocusOnTab: playerLevel.writable
+
+    function write(ratio) {
+      if (playerLevel.writable) PlayerVolume.seek(playerLevel.player, ratio)
+    }
+
+    function silence() {
+      if (!playerLevel.writable) return
+      if (playerLevel.silent) {
+        playerLevel.write(playerLevel.restore > 0 ? playerLevel.restore : 1)
+      } else {
+        playerLevel.restore = playerLevel.fillRatio
+        playerLevel.write(0)
+      }
+    }
+
+    Keys.onPressed: event => {
+      if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right) return
+      event.accepted = true
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      PlayerVolume.adjust(playerLevel.player, event.key === Qt.Key_Right ? 0.05 : -0.05)
+    }
+
+    Rectangle {
+      id: playerLevelTrack
+
+      anchors.left: parent.left
+      anchors.right: playerLevelMute.left
+      anchors.rightMargin: root.spaceMedium
+      height: parent.height
+      radius: root.radius
+      color: root.wellColor
+      border.width: 1
+      border.color: playerLevel.activeFocus ? root.accent : root.alpha(root.text, 0.05)
+      clip: true
+      antialiasing: true
+
+      Rectangle {
+        width: parent.width * playerLevel.fillRatio
+        height: parent.height
+        radius: parent.radius
+        color: root.fillColor
+        antialiasing: true
+      }
+
+      Text {
+        id: playerLevelReadout
+
+        anchors.right: parent.right
+        anchors.rightMargin: root.spaceLarge
+        anchors.verticalCenter: parent.verticalCenter
+        text: playerLevel.supported ? playerLevel.percent + "%" : ""
+        color: root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textBody
+      }
+
+      Text {
+        anchors.left: parent.left
+        anchors.leftMargin: root.spaceLarge
+        anchors.right: playerLevelReadout.left
+        anchors.rightMargin: root.spaceMedium
+        anchors.verticalCenter: parent.verticalCenter
+        text: playerLevel.glyph + "  " + (playerLevel.supported
+          ? root.mediaPlayerName(playerLevel.player)
+          : playerLevel.player ? "Volume unavailable" : "Nothing playing")
+        elide: Text.ElideRight
+        color: playerLevel.supported ? root.text : root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textBody
+        font.weight: root.weightStrong
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        enabled: playerLevel.writable
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        function ratioAt(x) { return width > 0 ? x / width : 0 }
+        onPressed: function(mouse) {
+          playerLevel.forceActiveFocus()
+          playerLevel.write(ratioAt(mouse.x))
+        }
+        onPositionChanged: function(mouse) {
+          if (pressed) playerLevel.write(ratioAt(mouse.x))
+        }
+        onWheel: function(wheel) {
+          var steps = root.audioWheelSteps(wheel)
+          if (steps !== 0) PlayerVolume.adjust(playerLevel.player, steps * 0.05)
+        }
+      }
+    }
+
+    IconButton {
+      id: playerLevelMute
+
+      anchors.right: parent.right
+      width: root.rowHeight
+      height: root.rowHeight
+      opacity: playerLevel.writable ? 1 : 0.35
+      active: playerLevel.silent
+      tint: playerLevel.silent ? root.red : root.accent
+      hovered: playerLevelMuteMouse.containsMouse
+      pressed: playerLevelMuteMouse.pressed
+
+      CenteredGlyph {
+        anchors.fill: parent
+        text: playerLevel.glyph
+        color: playerLevel.silent ? root.red : root.text
+        font.family: root.fontFamily
+        font.pixelSize: root.textSubhead
+      }
+
+      MouseArea {
+        id: playerLevelMuteMouse
+
+        anchors.fill: parent
+        enabled: playerLevel.writable
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: playerLevel.silence()
+      }
+
+      HoverTip {
+        mouse: playerLevelMuteMouse
+        inOverlay: true
+        text: playerLevel.silent ? "Restore this player's volume" : "Silence this player"
+      }
+    }
+  }
+
   component MediaTimeline: Column {
     id: mediaTimeline
 
@@ -7504,82 +7660,116 @@ Shared.Theme {
             height: root.mediaBodyHeight
             player: mediaWindow.player
           }
-          Rectangle {
-            id: playerVolumeCard
-            readonly property var player: mediaWindow.player
-            readonly property bool writable: PlayerVolume.writable(player)
+
+          // What the player is doing and how fast it is doing it are two
+          // groups, so each opens with its own rule instead of restating its
+          // name inside a card beside the control that already carries it.
+          SectionRule {
             width: parent.width
-            height: root.controlHeight + root.cardPadding * 2
-            radius: root.radius
-            color: playerVolumeHover.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-            HoverHandler { id: playerVolumeHover }
-            CardEdge {}
-            Text {
-              anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: root.cardPadding }
-              text: "Player volume"
-              color: root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            Row {
-              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.cardPadding }
-              spacing: root.spaceSmall
-              NotificationButton {
-                label: "−"
-                Accessible.name: "Decrease player volume"
-                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume > 0
-                onClicked: PlayerVolume.adjust(playerVolumeCard.player, -0.05)
-              }
-              Text {
-                width: root.controlHeight * 2
-                anchors.verticalCenter: parent.verticalCenter
-                text: PlayerVolume.supported(playerVolumeCard.player) ? PlayerVolume.percent(playerVolumeCard.player) + "%" : "Unavailable"
-                horizontalAlignment: Text.AlignHCenter
-                color: playerVolumeCard.writable ? root.text : root.subtext
-                font.family: root.fontFamily
-                font.pixelSize: root.textCaption
-              }
-              NotificationButton {
-                label: "+"
-                Accessible.name: "Increase player volume"
-                enabled: playerVolumeCard.writable && playerVolumeCard.player.volume < 1
-                onClicked: PlayerVolume.adjust(playerVolumeCard.player, 0.05)
-              }
-            }
+            label: "VOLUME"
+            detail: !mediaWindow.player
+              ? ""
+              : playerVolumeLevel.supported
+                ? (playerVolumeLevel.writable ? "" : "Set by the player")
+                : "Not offered by this player"
           }
-          Rectangle {
+
+          PlayerLevelRow {
+            id: playerVolumeLevel
+
             width: parent.width
-            height: root.controlHeight + root.spaceMedium * 2
-            radius: root.radius
-            color: root.cardColor
-            CardEdge {}
-            Text {
-              anchors { left: parent.left; right: playbackSpeedButton.left; verticalCenter: parent.verticalCenter; margins: root.spaceMedium }
-              text: "Playback speed"
-              color: root.text
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-              elide: Text.ElideRight
+            player: mediaWindow.player
+          }
+
+          SectionRule {
+            width: parent.width
+            // The rate the player is actually running at is worth stating even
+            // when it arrived from somewhere else and lights no preset here.
+            label: "SPEED"
+            detail: mediaWindow.player ? MediaSpeed.label(mediaWindow.player) : ""
+            detailColor: playbackSpeedWell.rates.length > 0 ? root.subtext : root.overlay
+          }
+
+          // The speeds worth offering are an exclusive choice, so they are one
+          // well with the running one lit rather than a button that has to be
+          // clicked through the set to find out what else is in it. The
+          // keyboard still steps through them, because the well is one control.
+          Item {
+            id: playbackSpeedWell
+
+            readonly property var rates: MediaSpeed.rates(mediaWindow.player)
+
+            width: parent.width
+            height: root.controlHeight
+            activeFocusOnTab: playbackSpeedWell.rates.length > 0
+
+            Keys.onPressed: event => {
+              if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+              event.accepted = true
+              if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+              mediaWindow.cyclePlaybackSpeed()
             }
-            NotificationButton {
-              id: playbackSpeedButton
-              readonly property bool containsMouse: hovered
-              anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: root.spaceMedium }
-              label: MediaSpeed.label(mediaWindow.player)
-              enabled: MediaSpeed.nextRate(mediaWindow.player) !== null
-              autoRepeat: false
-              onClicked: mediaWindow.cyclePlaybackSpeed()
-              Keys.onPressed: event => {
-                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
-                event.accepted = true
-                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                mediaWindow.cyclePlaybackSpeed()
+
+            SegmentWell {
+              anchors.fill: parent
+
+              Text {
+                visible: playbackSpeedWell.rates.length === 0
+                width: parent.width
+                height: parent.height
+                text: mediaWindow.player ? "This player has one speed" : "Nothing playing"
+                color: root.overlay
+                font.family: root.fontFamily
+                font.pixelSize: root.textLabel
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
               }
-              HoverTip {
-                mouse: playbackSpeedButton
-                inOverlay: true
-                text: "Cycle supported speeds · " + MediaSpeed.rates(mediaWindow.player).join("× / ") + "×"
+
+              Repeater {
+                model: playbackSpeedWell.rates
+
+                Segment {
+                  id: speedPreset
+
+                  required property var modelData
+
+                  width: parent.width / Math.max(1, playbackSpeedWell.rates.length)
+                  selected: MediaSpeed.active(mediaWindow.player, speedPreset.modelData)
+                  hovered: speedPresetMouse.containsMouse
+                  pressed: speedPresetMouse.pressed
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: speedPreset.modelData + "×"
+                    color: speedPreset.selected ? root.text : root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textLabel
+                    font.weight: speedPreset.selected ? root.weightStrong : root.weightMedium
+
+                    Behavior on color { ColorAnimation { duration: root.durationFast } }
+                  }
+
+                  MouseArea {
+                    id: speedPresetMouse
+
+                    anchors.fill: parent
+                    enabled: !speedPreset.selected
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: MediaSpeed.select(mediaWindow.player, speedPreset.modelData)
+                  }
+                }
               }
+            }
+
+            Rectangle {
+              visible: playbackSpeedWell.activeFocus
+              anchors.fill: parent
+              radius: root.radius
+              color: "transparent"
+              border.width: 1
+              border.color: root.accent
+              antialiasing: true
             }
           }
         }
