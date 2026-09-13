@@ -147,6 +147,30 @@ class HomeAssistant(unittest.IsolatedAsyncioTestCase):
         preferences={'action':'preferences','entities':[{'entity_id':'light.desk','name':TOKEN+'\nReading','room':'Study','favorite':True}],'summary':'light.desk'}
         self.assertTrue((await self.rpc(preferences))['ok']);disk=json.loads(self.config_path.read_text());self.assertEqual(disk['entities'][0]['name'],'[redacted]Reading');self.assertEqual(disk['entities'][0]['room'],'Study')
 
+    async def test_live_presenter_classes_and_unavailable_controls(self):
+        classes = ['temperature', 'humidity', 'moisture', 'battery', 'power', 'energy',
+                   'voltage', 'current', 'door', 'window', 'opening', 'garage_door',
+                   'motion', 'occupancy', 'presence']
+        for index, device_class in enumerate(classes + ['unsupported_private_class']):
+            self.states.append({'entity_id':f'binary_sensor.fixture_{index}', 'state':'off',
+                                'attributes':{'device_class':device_class, 'private_attribute':TOKEN}})
+        await self.start()
+        self.assertTrue((await self.rpc({'action':'catalog', 'open':True}))['ok'])
+        await self.until(lambda:any('catalog' in m for m in self.messages))
+        catalog = next(m['catalog'] for m in reversed(self.messages) if 'catalog' in m)
+        by_id = {e['entity_id']:e for e in catalog}
+        for index, device_class in enumerate(classes):
+            self.assertEqual(by_id[f'binary_sensor.fixture_{index}']['device_class'], device_class)
+        self.assertEqual(by_id[f'binary_sensor.fixture_{len(classes)}']['device_class'], '')
+        for state in ['unavailable', 'unknown', 'on']:
+            self.states[0]['state'] = state
+            await self.event(self.states[0])
+            await self.until(lambda:self.latest()['entities'][0]['state'] == state)
+            entry = self.latest()['entities'][0]
+            self.assertEqual(entry['entity_id'], 'light.desk')
+            self.assertEqual(entry['controllable'], state == 'on')
+            self.assertEqual(entry['available'], state == 'on')
+
     async def test_service_result_waits_for_device_and_reconnects(self):
         await self.start();self.confirm=False
         await self.send({'action':'set','entity_id':'light.desk','desired':{'state':'on'},'request':1});await self.until(lambda:bool(self.calls))

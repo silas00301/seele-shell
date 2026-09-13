@@ -83,8 +83,8 @@ Scope {
     var next = Bridge.call("home_assistant.move", [preferences, id, moveTarget(id, offset)])
     if (next !== null) save(next, summary)
   }
-  function rows() {
-    return projection.rows
+  function groups() {
+    return projection.groups
   }
   function receive(line) {
     try {

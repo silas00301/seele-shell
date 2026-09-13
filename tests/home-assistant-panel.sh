@@ -11,7 +11,7 @@ export HOME="$work/home" XDG_CONFIG_HOME="$work/home" XDG_STATE_HOME="$work/home
 export XDG_RUNTIME_DIR="$work/runtime"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$work/no-session-bus"
 unset DISPLAY WAYLAND_DISPLAY SWAYSOCK I3SOCK
-printf '%s\n' 'xwayland disable' 'output * mode 800x600' > "$work/sway.conf"
+printf '%s\n' 'xwayland disable' 'output * mode 1000x900' > "$work/sway.conf"
 WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_HEADLESS_OUTPUTS=1 \
   "$sway" --config "$work/sway.conf" > "$work/compositor.log" 2>&1 &
 compositor=$!
@@ -48,4 +48,4 @@ if ! grep -q 'HOME_ASSISTANT_PANEL_PASS' "$work/log" || grep -Eq 'Error|Cannot a
   tail -40 "$work/log" >&2
   exit 1
 fi
-printf '%s\n' 'Home Assistant setup, light controls, entity picker and offline state render on a private compositor'
+printf '%s\n' 'Home Assistant setup, overview, controls, picker, offline, empty and small-screen states render on a private compositor'

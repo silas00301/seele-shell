@@ -293,6 +293,9 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${tests}/home-assistant-panel.sh ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${tests}/home-assistant-panel.qml
+    bash ${tests}/home-assistant-interaction.sh "$out/share/seele-shell" \
+      ${tests}/tst_homeassistant.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+      ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
     qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \

@@ -9,26 +9,49 @@ KWallet and other compatible providers work without provider-specific code.
 The token travels on the helper's stdin, never in command arguments or logs, and
 the password field clears after submission and when the panel closes.
 
-Choose **Devices** to search available entities and select up to 32. **Edit** opens
-a selected entity's display name, room override, favorite, menu bar reading, and
-ordering controls. Blank names and rooms use Home Assistant's values. Rooms come
-from the entity, device and area registries when the account can read them;
-manual room overrides also work with restricted accounts. Favorites appear first,
-then the other selected entities grouped by room. Selected temperature and humidity
-readings appear only in the room summary, without duplicate device rows.
-Numeric sensor readings round to one decimal place throughout the panel and menu bar, omitting a trailing `.0`. Choose **Menu bar** again to clear its reading.
+The home view leads with Favorites, then a card for each room. Every selected
+sensor has a named readout; temperature and humidity no longer disappear into
+room headings. Readouts can be favorites too. Favorite controls include their
+room, and changing device state never reorders the cards. Supported control domains
+keep their control rows while unavailable; permission to act still follows the
+worker's current availability and controllability flags. Numeric sensor readings
+round to one decimal place throughout the panel and menu bar, omitting a trailing
+`.0`. Unavailable readings stay visible and are labeled explicitly.
 
-Lights, fans, switches and input booleans have explicit on/off controls. Expand supported
-lights for brightness and warm/cool sliders, and fans for supported percentage speed control. Slider changes send on release, with
-arrow-key control available. Tab reaches controls, Space/Enter activates them,
-and Escape backs out or closes the panel. Scenes and arbitrary services are not
-exposed. Other domains remain read-only.
+![Home view with fixture devices](preview-home.png)
 
-Room/favorite projection, same-group ordering, preference edits and catalog
-merge/search run in the shared Rust UI policy library. The store updates the
-projection when source data changes; Qt retains actual ListModel objects,
-selection, focus and process signals. At most 128 unanswered UI requests are
-retained, without tokens in that bookkeeping.
+The header's **Devices** action opens the searchable **Your devices / Add
+devices** picker. Select up to 32 devices and star favorites directly in the list.
+Each selected device's settings expand in place: edit its display name and room,
+then **Save** both together. Blank fields use Home Assistant's values. **Menu bar**
+toggles the optional reading; arrows reorder controls or readouts within their
+room or Favorites. Rooms come from the entity, device and area registries when the
+account can read them; manual overrides work with restricted accounts too.
+
+![Device organization with fixture devices](preview-devices.png)
+
+Lights, fans, switches and input booleans have explicit on/off controls. Click a
+light or fan row to expand its available levels without changing power. Brightness,
+color temperature and fan speed commit on pointer release or an arrow-key change.
+An active drag ignores incoming values, and a pending level keeps the requested
+value until the device confirms it. Other devices remain usable.
+
+Tab reaches actions and levels, Space/Enter activates buttons, and focused home
+controls scroll into view. Escape first closes an expanded editor/control, then
+returns home or closes the panel. Search receives focus when the picker opens.
+The panel's scrollable body is bounded by its output, including on small screens.
+Offline state and failed requests have an inline Retry action. Scenes and arbitrary
+services are not exposed; other domains remain read-only.
+
+Room/favorite grouping, glyphs and state labels, same-group ordering, preference
+edits and catalog merge/search run in the shared Rust UI policy library. The store
+updates the projection when source data changes; keyed nested Qt models retain
+actual delegates, selection, focus and process signals. At most 128 unanswered UI
+requests are retained, without tokens in that bookkeeping.
+
+The worker retains only the bounded device classes used by the presenter, so
+door/window, motion, battery and electrical readings keep their semantic labels
+and glyphs without exposing arbitrary attributes.
 
 The resident Rust `seele-home-assistant` worker uses Home Assistant's
 [WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) for live
@@ -82,9 +105,16 @@ The package and `test-shell` run:
   cancellation while the keyring is blocked. Python and aiohttp are test tools.
 - `tests/home-assistant-store.js`: concurrent UI requests, stale controls,
   credential lifetime, preference failures and deliberate keyboard input.
-- `tests/home-assistant-panel.sh`: setup, expanded lights, picker and offline
-  rendering on a private headless compositor with fixture data. Set
-  `SEELE_HA_RENDER_DIR` to retain its PNG previews.
+- `tests/home-assistant-panel.sh`: setup, home, expanded lights, picker, offline,
+  empty and small-screen rendering on a private headless compositor with fixture
+  data. Set `SEELE_HA_RENDER_DIR` to retain its PNG previews.
+- `tests/home-assistant-interaction.sh`: production QML under QtTest, exercising
+  actual pointer/keyboard events, pending levels, concurrent snapshots during a
+  drag, focus/delegate identity, atomic display edits, token clearing, search,
+  offline controls and bounded long-name/32-device layouts. Only the theme's
+  Quickshell root/config IO is substituted for this offscreen Qt host.
+- `qml-core` Rust tests: each selection appears once, favorite sensors, unavailable
+  and binary readings, stable groups, same-kind ordering and catalog filtering.
 
 The main package also compiles production QML and runs `qmllint`. Build Notes
 when changing the shared switch, which is also installed with that app.
