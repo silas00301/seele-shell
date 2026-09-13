@@ -6268,6 +6268,16 @@ Shared.Theme {
             label: timezoneSearch.text.trim() ? "SEARCH RESULTS" : (root.clockData.pinned.length ? "PINNED FIRST · ALL TIMEZONES" : "TIMEZONES")
             detail: timezoneList.count > 0 ? String(timezoneList.count) : ""
           }
+          // The pin control changes its label with the row's state, so the
+          // widest label fixes its width and keeps every row's time column on
+          // one vertical line.
+          TextMetrics {
+            id: timezonePinMetrics
+            text: "Unpin"
+            font.family: root.fontFamily
+            font.pixelSize: root.textLabel
+            font.weight: root.weightMedium
+          }
           SeeleListView {
             id: timezoneList
             width: parent.width
@@ -6326,6 +6336,7 @@ Shared.Theme {
                 }
                 Shared.ActionButton {
                   theme: root
+                  Layout.preferredWidth: Math.max(implicitWidth, timezonePinMetrics.advanceWidth + root.spaceLarge * 2)
                   text: timezoneRow.pinned ? "Unpin" : "Pin"
                   selected: timezoneRow.pinned
                   enabled: !clockActionProcess.running
