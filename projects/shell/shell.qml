@@ -8925,7 +8925,7 @@ Shared.Theme {
       visible: root.panelHere("home-assistant", modelData)
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 400
+      implicitWidth: root.homeAssistantWidth
       implicitHeight: homeAssistantContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -8941,6 +8941,7 @@ Shared.Theme {
           id: homeAssistantContent
           theme: root
           store: homeAssistantStore
+          maximumHeight: Math.min(root.homeAssistantMaximumHeight, homeAssistantWindow.modelData.height - root.barHeight - root.panelGap - root.panelMargin * 3)
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
           onCloseRequested: root.closeOverlays()
         }

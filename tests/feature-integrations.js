@@ -78,6 +78,7 @@ const focusedTests = [
   'shell-load.sh',
   'home-assistant-store.js',
   'home-assistant-panel.sh',
+  'home-assistant-interaction.sh',
   'github.js',
   'network-addresses.js',
   'player-volume.js',

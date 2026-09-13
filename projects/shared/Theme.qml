@@ -158,6 +158,8 @@ ShellRoot {
   // durations so the whole shell settles at the same speed.
   readonly property int durationFast: 110
   readonly property int durationNormal: 180
+  // Disabled actions stay legible while clearly withdrawing interaction.
+  readonly property real disabledOpacity: 0.45
   // The media block is one object at one size, so its height is decided here
   // rather than by whichever surface happens to be holding it.
   readonly property int mediaBodyHeight: 148
@@ -178,6 +180,9 @@ ShellRoot {
   readonly property int notesMemoListHeight: 112
   readonly property int notesPickerHeight: 220
   readonly property int waveformWidth: 280
+  // The home panel stays compact, with a viewport bounded by its output.
+  readonly property int homeAssistantWidth: 420
+  readonly property int homeAssistantMaximumHeight: 640
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
 
