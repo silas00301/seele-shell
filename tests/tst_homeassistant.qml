@@ -105,6 +105,21 @@ TestCase {
     compare(reading.payload.state_label, "22.1")
     compare(fixture.writes.length, 0)
   }
+  function test_unavailable_device_keeps_its_control_delegate() {
+    var control = child("control:light.desk")
+    for (var state of ["unavailable", "unknown", "off"]) {
+      var next = JSON.parse(JSON.stringify(fixture.entities))
+      next[0].state = state
+      next[0].available = state === "off"
+      next[0].controllable = state === "off"
+      fixture.entities = next
+      wait(20)
+      compare(child("control:light.desk"), control)
+      verify(findChild(panel, "reading:light.desk") === null)
+      compare(child("power:light.desk").enabled, state === "off")
+    }
+    compare(fixture.writes.length, 0)
+  }
   function test_pointer_opens_controls_without_switching_power() {
     var control = child("control:light.desk")
     mouseClick(control, theme.controlHeight + theme.spaceLarge, theme.rowHeight / 2)

@@ -220,11 +220,10 @@ Column {
     detailColor: panel.store.connected || panel.setupShown ? panel.theme.subtext : panel.theme.yellow
     Row {
       spacing: panel.theme.spaceTight
-      GlyphAction {
+      Action {
         objectName: "homeNavigation"
         visible: panel.store.configured
-        glyph: panel.page === "home" ? "󰒓" : "󰁍"
-        text: panel.page === "home" ? "Choose devices" : "Back to home"
+        text: panel.page === "home" ? "Devices" : "Back"
         onClicked: panel.page = panel.page === "home" ? "devices" : "home"
       }
       GlyphAction {
@@ -588,7 +587,7 @@ Column {
                   id: homeRow
                   required property var payload
                   readonly property var pending: panel.store.pending[payload.entity_id]
-                  readonly property bool actionable: panel.store.connected && payload.available && !pending && !panel.store.settingsPending
+                  readonly property bool actionable: panel.store.connected && payload.available && payload.controllable && !pending && !panel.store.settingsPending
                   readonly property bool adjustable: !!payload.dimmable || !!payload.temperature || !!payload.speed_control
                   readonly property bool unfolded: adjustable && panel.expanded === payload.entity_id
                   readonly property bool isOn: pending && pending.state !== undefined ? pending.state === "on" : payload.state === "on"

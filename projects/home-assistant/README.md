@@ -12,13 +12,15 @@ the password field clears after submission and when the panel closes.
 The home view leads with Favorites, then a card for each room. Every selected
 sensor has a named readout; temperature and humidity no longer disappear into
 room headings. Readouts can be favorites too. Favorite controls include their
-room, and changing device state never reorders the cards. Numeric sensor readings
+room, and changing device state never reorders the cards. Supported control domains
+keep their control rows while unavailable; permission to act still follows the
+worker's current availability and controllability flags. Numeric sensor readings
 round to one decimal place throughout the panel and menu bar, omitting a trailing
 `.0`. Unavailable readings stay visible and are labeled explicitly.
 
 ![Home view with fixture devices](preview-home.png)
 
-The header's **Choose devices** action opens the searchable **Your devices / Add
+The header's **Devices** action opens the searchable **Your devices / Add
 devices** picker. Select up to 32 devices and star favorites directly in the list.
 Each selected device's settings expand in place: edit its display name and room,
 then **Save** both together. Blank fields use Home Assistant's values. **Menu bar**
@@ -46,6 +48,10 @@ edits and catalog merge/search run in the shared Rust UI policy library. The sto
 updates the projection when source data changes; keyed nested Qt models retain
 actual delegates, selection, focus and process signals. At most 128 unanswered UI
 requests are retained, without tokens in that bookkeeping.
+
+The worker retains only the bounded device classes used by the presenter, so
+door/window, motion, battery and electrical readings keep their semantic labels
+and glyphs without exposing arbitrary attributes.
 
 The resident Rust `seele-home-assistant` worker uses Home Assistant's
 [WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) for live

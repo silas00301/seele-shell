@@ -7,7 +7,12 @@ fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 fn reading(item: &Value) -> bool {
-    !truthy(item.get("controllable"))
+    // Availability is transient. Keep supported device domains in their control
+    // rows even while the worker withdraws permission to act on them.
+    !matches!(
+        text(item, "entity_id").split('.').next(),
+        Some("light" | "fan" | "switch" | "input_boolean")
+    )
 }
 fn present(item: &Value) -> Value {
     let mut item = if item.is_object() {
@@ -269,6 +274,37 @@ mod tests {
                     .map(|v| text(v, "entity_id"))
                     .collect::<Vec<_>>()
             );
+        }
+    }
+
+    #[test]
+    fn control_categories_and_order_survive_unavailability() {
+        for domain in ["light", "fan", "switch", "input_boolean"] {
+            let mut entities = json!([
+                {"entity_id":format!("{domain}.a"),"room":"Office","controllable":true,"available":true,"state":"on"},
+                {"entity_id":format!("{domain}.b"),"room":"Office","controllable":true,"available":true,"state":"off"}
+            ]);
+            let preferences = entities.clone();
+            let before = project(
+                entities.as_array().unwrap(),
+                preferences.as_array().unwrap(),
+            );
+            for state in ["unavailable", "unknown", "off"] {
+                entities[0]["state"] = json!(state);
+                entities[0]["controllable"] = json!(state == "off");
+                entities[0]["available"] = json!(state == "off");
+                let after = project(
+                    entities.as_array().unwrap(),
+                    preferences.as_array().unwrap(),
+                );
+                assert_eq!(after["moves"], before["moves"]);
+                assert_eq!(after["groups"][0]["readings"], json!([]));
+                assert_eq!(
+                    after["groups"][0]["controls"][0]["entity_id"],
+                    format!("{domain}.a")
+                );
+                assert_eq!(after["groups"][0]["controls"].as_array().unwrap().len(), 2);
+            }
         }
     }
 

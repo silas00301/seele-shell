@@ -76,7 +76,7 @@ impl Live {
         let features = number(&attrs["supported_features"], 0.) as u64;
         json!({"entity_id":id,"name":common::clean(&name,token,120),"state":display_state,"unit":common::clean(&attrs["unit_of_measurement"],token,24),
             "room":common::clean(&json!(room),token,120),"favorite":selected["favorite"].as_bool().unwrap_or(false),
-            "device_class":attrs["device_class"].as_str().filter(|s| matches!(*s,"temperature"|"humidity")).unwrap_or(""),
+            "device_class":attrs["device_class"].as_str().filter(|s| matches!(*s,"temperature"|"humidity"|"moisture"|"battery"|"power"|"energy"|"voltage"|"current"|"door"|"window"|"opening"|"garage_door"|"motion"|"occupancy"|"presence")).unwrap_or(""),
             "available":!matches!(state,"unknown"|"unavailable"),"controllable":allowed(id)&&matches!(state,"on"|"off"),
             "speed_control":id.starts_with("fan.")&&features&1!=0,"percentage":number(&attrs["percentage"],0.),"percentage_step":number(&attrs["percentage_step"],1.).clamp(1.,100.),
             "dimmable":id.starts_with("light.")&&["brightness","color_temp","hs","xy","rgb","rgbw","rgbww","white"].iter().any(|s| mode(s)),
