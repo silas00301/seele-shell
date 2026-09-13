@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     os::unix::fs::PermissionsExt,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc,
@@ -115,6 +116,7 @@ impl Worker {
         let deadline = Instant::now() + Duration::from_secs(2);
         let terminal = loop {
             match Command::new(bin.join("ghostty"))
+                .arg0("sleep")
                 .arg("30")
                 .current_dir(root.path())
                 .spawn()
@@ -364,11 +366,12 @@ fn privacy_context_consumption_session_reuse_actions_and_cleanup() {
     worker.send(json!({"command":"close","id":1}));
     await_file(&worker.root.path().join("deleted"));
     worker.stop();
-    assert!(!fs::read_dir(worker.root.path()).unwrap().any(|e| e
-        .unwrap()
-        .file_name()
-        .to_string_lossy()
-        .starts_with("seele-ai-prompt-")));
+    assert!(!fs::read_dir(worker.root.path()).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("seele-ai-prompt-")
+    }));
 }
 #[test]
 fn failed_refresh_cannot_submit_old_screen_or_clipboard() {

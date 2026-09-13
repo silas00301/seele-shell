@@ -143,7 +143,12 @@ mod tests {
         let system = temp.path().join("systemctl");
         let log = temp.path().join("calls");
         let log = quote(log.to_str().unwrap());
-        script(&efi,&format!("printf 'efi %s\\n' \"$*\" >>{log}\nif [ \"$#\" -eq 0 ]; then printf 'Boot0001* Windows Boot Manager\\n'; fi"));
+        script(
+            &efi,
+            &format!(
+                "printf 'efi %s\\n' \"$*\" >>{log}\nif [ \"$#\" -eq 0 ]; then printf 'Boot0001* Windows Boot Manager\\n'; fi"
+            ),
+        );
         script(&system, &format!("printf 'systemctl %s\\n' \"$*\" >>{log}"));
         reboot(&efi, &system, &AtomicUsize::new(0)).unwrap();
         let logfile = temp.path().join("calls");
@@ -152,7 +157,12 @@ mod tests {
             "efi \nefi --bootnext 0001\nsystemctl --no-block reboot\n"
         );
         fs::write(&logfile, "").unwrap();
-        script(&efi,&format!("printf 'efi %s\\n' \"$*\" >>{log}\nif [ \"$#\" -eq 0 ]; then printf 'Boot0001* Windows Boot Manager\\n'; else exit 7; fi"));
+        script(
+            &efi,
+            &format!(
+                "printf 'efi %s\\n' \"$*\" >>{log}\nif [ \"$#\" -eq 0 ]; then printf 'Boot0001* Windows Boot Manager\\n'; else exit 7; fi"
+            ),
+        );
         assert!(reboot(&efi, &system, &AtomicUsize::new(0)).is_err());
         assert_eq!(
             fs::read_to_string(&logfile).unwrap(),

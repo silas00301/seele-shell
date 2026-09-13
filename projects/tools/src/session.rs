@@ -54,7 +54,9 @@ fn commit_message(repo: &Path, pi: &str) -> String {
     let diff = output("jj", ["diff", "--stat"])
         .or_else(|| output("git", ["-C", &repo.to_string_lossy(), "diff", "--stat"]))
         .unwrap_or_default();
-    let prompt = format!("Write the commit message for this change to the Seele Nix flake.\n\nMatch the style of the repository's recent subjects:\n{recent}\nRules: one line, imperative mood, no trailing period, no conventional-commit prefix, no quotes around it, at most 72 characters. Reply with the subject line and nothing else.\n\nChanged files:\n{diff}");
+    let prompt = format!(
+        "Write the commit message for this change to the Seele Nix flake.\n\nMatch the style of the repository's recent subjects:\n{recent}\nRules: one line, imperative mood, no trailing period, no conventional-commit prefix, no quotes around it, at most 72 characters. Reply with the subject line and nothing else.\n\nChanged files:\n{diff}"
+    );
     output_with_input(
         pi,
         ["-p", "--no-session", "--no-tools"],
@@ -72,9 +74,15 @@ fn commit_message(repo: &Path, pi: &str) -> String {
 fn session(repo: &Path) -> Result {
     env::set_current_dir(repo)?;
     print!("\x1b]0;Seele OS session\x07");
-    println!("Seele OS session · {}\nDescribe the change you want. The system rebuilds when you exit Pi.\n", repo.display());
+    println!(
+        "Seele OS session · {}\nDescribe the change you want. The system rebuilds when you exit Pi.\n",
+        repo.display()
+    );
     let pi = variable("SEELE_SHELL_PI", "pi");
-    let briefing = format!("You are running inside the Seele desktop shell's OS session, opened from the AI cockpit in {}.\n\nThe user describes a change they want to their own desktop or system. Implement it in this repository, following AGENTS.md and the seele skill under .agents/skills/.\n\nDo not activate the system and do not commit: when you finish implementing, say so and end your turn. This session then runs 'nh os switch' and offers to record the change with Jujutsu.", repo.display());
+    let briefing = format!(
+        "You are running inside the Seele desktop shell's OS session, opened from the AI cockpit in {}.\n\nThe user describes a change they want to their own desktop or system. Implement it in this repository, following AGENTS.md and the seele skill under .agents/skills/.\n\nDo not activate the system and do not commit: when you finish implementing, say so and end your turn. This session then runs 'nh os switch' and offers to record the change with Jujutsu.",
+        repo.display()
+    );
     let _ = Command::new("seele-agent-run")
         .args([
             "pi",
@@ -92,7 +100,9 @@ fn session(repo: &Path) -> Result {
     }
     println!("\nRebuilding the system with nh os switch.");
     if !interactive_status(&variable("SEELE_SHELL_NH", "nh"), ["os", "switch"]) {
-        println!("\nThe rebuild failed. The working copy is untouched, so you can reopen this session and keep going.");
+        println!(
+            "\nThe rebuild failed. The working copy is untouched, so you can reopen this session and keep going."
+        );
         let _ = tty_line("Press enter to close. ");
         return Err("system rebuild failed".into());
     }

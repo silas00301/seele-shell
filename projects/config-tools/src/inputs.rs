@@ -157,7 +157,7 @@ impl Graph {
                 }
                 match reference {
                     Reference::Node(target) if !lock.nodes.contains_key(target) => {
-                        return Err("input references a missing node".into())
+                        return Err("input references a missing node".into());
                     }
                     Reference::Follows(path)
                         if path.len() > 4096
@@ -165,7 +165,7 @@ impl Graph {
                                 .iter()
                                 .any(|part| part.is_empty() || part.contains('/')) =>
                     {
-                        return Err("invalid follows path".into())
+                        return Err("invalid follows path".into());
                     }
                     _ => (),
                 }
@@ -428,14 +428,16 @@ pub fn run(args: &[String]) -> Result {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--help" | "-h" => {
-                println!("usage: seele-inputs [--lock-file PATH] [--all] [--json] [INPUT]\nInspect version-7 flake lock graphs without fetching or evaluating inputs.");
+                println!(
+                    "usage: seele-inputs [--lock-file PATH] [--all] [--json] [INPUT]\nInspect version-7 flake lock graphs without fetching or evaluating inputs."
+                );
                 return Ok(());
             }
             "--lock-file" => lock = iter.next().ok_or("--lock-file requires a path")?.into(),
             "--all" => all = true,
             "--json" => json = true,
             _ if arg.starts_with('-') || selected.is_some() => {
-                return Err("invalid arguments; see --help".into())
+                return Err("invalid arguments; see --help".into());
             }
             _ => selected = Some(arg.as_str()),
         }

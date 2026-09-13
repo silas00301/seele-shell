@@ -90,7 +90,9 @@ fn run() -> Result<i32> {
             let selected = suggestions::select(&values, &cancel)?;
             eprintln!("→ {}", selected.description);
             if selected.destructive {
-                eprintln!("⚠ destructive command inserted as a comment; review and uncomment it deliberately");
+                eprintln!(
+                    "⚠ destructive command inserted as a comment; review and uncomment it deliberately"
+                );
             }
             println!("{}", suggestions::format_insertion(&selected));
             Ok(0)

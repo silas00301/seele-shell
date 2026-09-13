@@ -100,10 +100,16 @@ pub fn set(names: &[String]) -> Result {
             .ok_or("both Seele output slots are occupied")?
             .to_string();
         let joined = names.join(",");
-        let args = vec!["load-module".into(), "module-combine-sink".into(),
-            format!("sink_name={target}"), format!("sinks={joined}"),
+        let args = vec![
+            "load-module".into(),
+            "module-combine-sink".into(),
+            format!("sink_name={target}"),
+            format!("sinks={joined}"),
             "latency_compensate=true".into(),
-            format!("sink_properties=\"device.description='Multiple Outputs' seele.outputs='{joined}'\"")];
+            format!(
+                "sink_properties=\"device.description='Multiple Outputs' seele.outputs='{joined}'\""
+            ),
+        ];
         let id = output("pactl", &args)
             .ok_or("could not combine outputs")?
             .trim()

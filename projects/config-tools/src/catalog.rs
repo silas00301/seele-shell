@@ -53,7 +53,9 @@ pub fn run(path: &Path, args: &[String]) -> Result {
             "--all-systems" => all = true,
             "--json" => json = true,
             "--help" | "-h" => {
-                println!("Discover Seele's configured portable applications.\nUsage: seele-portable-apps [--all-systems] [--json] [COMMAND]");
+                println!(
+                    "Discover Seele's configured portable applications.\nUsage: seele-portable-apps [--all-systems] [--json] [COMMAND]"
+                );
                 return Ok(());
             }
             value if !value.starts_with('-') && selected.is_none() => selected = Some(value),
@@ -77,7 +79,14 @@ pub fn run(path: &Path, args: &[String]) -> Result {
     if json {
         println!("{}", serde_json::to_string_pretty(&catalog.applications)?);
     } else if let Some(app) = catalog.applications.first().filter(|_| selected.is_some()) {
-        println!("{} (executable: {})\nFeatures: {}\nPlatforms: {}\nRun: nix run github:silas00301/seele#{}",app.name,app.binary,app.modules.join(", "),app.systems.join(", "),app.name);
+        println!(
+            "{} (executable: {})\nFeatures: {}\nPlatforms: {}\nRun: nix run github:silas00301/seele#{}",
+            app.name,
+            app.binary,
+            app.modules.join(", "),
+            app.systems.join(", "),
+            app.name
+        );
     } else {
         println!(
             "Seele portable applications — {}\n",
@@ -113,7 +122,9 @@ pub fn run(path: &Path, args: &[String]) -> Result {
                 app.modules.join(", ")
             );
         }
-        println!("\nRun: nix run github:silas00301/seele#COMMAND\nInspect a command: nix run github:silas00301/seele#portable-apps -- COMMAND");
+        println!(
+            "\nRun: nix run github:silas00301/seele#COMMAND\nInspect a command: nix run github:silas00301/seele#portable-apps -- COMMAND"
+        );
     }
     Ok(())
 }

@@ -7,6 +7,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     quickshell.url = "github:outfoxxed/quickshell";
     quickshell.inputs.nixpkgs.follows = "nixpkgs";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -19,6 +21,7 @@
 
       imports = [
         inputs.devshell.flakeModule
+        inputs.treefmt-nix.flakeModule
       ];
 
       flake.lib.mkNativePackage = import ./packages/core/native.nix;
@@ -44,8 +47,6 @@
           fontConfig = pkgs.makeFontsConf {
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
-        in
-        {
           packages = {
             qml-core = import ./packages/core/native.nix {
               inherit pkgs;
@@ -107,10 +108,57 @@
             lock = import ./projects/lock/package.nix packageArgs;
             polkit = import ./projects/polkit/package.nix packageArgs;
           };
+          runnablePackages = pkgs.lib.getAttrs [
+            "codex-broker"
+            "config-tools"
+            "default"
+            "desktop-tools"
+            "failure-analysis"
+            "greeter"
+            "integrations"
+            "lock"
+            "maintenance"
+            "notes"
+            "polkit"
+            "prompt"
+            "qml-core"
+            "repo-tools"
+            "runtime"
+            "shell-ai"
+            "tools"
+          ] packages;
+          mkApp = package: {
+            type = "app";
+            program = pkgs.lib.getExe package;
+          };
+          cargoFmt = pkgs.writeShellApplication {
+            name = "cargo-fmt";
+            runtimeInputs = [
+              pkgs.cargo
+              pkgs.rustfmt
+            ];
+            text = "cargo fmt --all";
+          };
+        in
+        {
+          inherit packages;
+
+          apps = pkgs.lib.mapAttrs (_: mkApp) runnablePackages // {
+            shell = mkApp packages.default;
+          };
 
           # Each package owns its protocol and integration checks; flake check
           # now builds them instead of merely exposing unchecked outputs.
-          checks = config.packages;
+          checks = packages;
+
+          treefmt = {
+            projectRootFile = "flake.nix";
+            programs.nixfmt.enable = true;
+            settings.formatter.cargo-fmt = {
+              command = pkgs.lib.getExe cargoFmt;
+              includes = [ "*.rs" ];
+            };
+          };
 
           devshells.default = {
             name = "seele-shell";
@@ -121,6 +169,7 @@
               esbuild
               jq
               nodejs
+              nix
               qt6.qtdeclarative
               cargo
               dbus
@@ -134,6 +183,7 @@
               tesseract
               zbar
               quickshell
+              config.treefmt.build.wrapper
             ];
 
             env = [

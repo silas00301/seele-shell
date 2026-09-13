@@ -8,7 +8,9 @@ pub fn run(args: &[String], cancel: &AtomicUsize) -> Result<()> {
         match arg.as_str() {
             "--build" => build = true,
             "-h" | "--help" => {
-                println!("Usage: nix run .#check -- [--build]\n\nRun from the Seele checkout root. Formats the whole repository, checks\nflake outputs, and evaluates the native host. --build also builds it.\nKeeps flake.lock unchanged and does not activate the system.");
+                println!(
+                    "Usage: nix run .#check -- [--build]\n\nRun from the Seele checkout root. Formats the whole repository, checks\nflake outputs, and evaluates the native host. --build also builds it.\nKeeps flake.lock unchanged and does not activate the system."
+                );
                 return Ok(());
             }
             _ => {

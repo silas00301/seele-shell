@@ -217,7 +217,7 @@ fn queue(jobs: &mpsc::SyncSender<Job>, mut job: Job) -> Result {
         match jobs.try_send(job) {
             Ok(()) => return Ok(()),
             Err(mpsc::TrySendError::Disconnected(_)) => {
-                return Err("recognition workers unavailable".into())
+                return Err("recognition workers unavailable".into());
             }
             Err(mpsc::TrySendError::Full(pending)) => {
                 job = pending;
@@ -370,7 +370,7 @@ fn scan(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err("OCR workers disconnected".into())
+                return Err("OCR workers disconnected".into());
             }
         }
     }
@@ -488,7 +488,9 @@ fn requests() -> Result<mpsc::Receiver<Option<Request>>> {
 pub fn run() -> Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--help") {
-        println!("seele-uri-worker: newline JSON capture/cancel requests on stdin\n  --image <ppm>  Recognize a fixture and emit the same event stream");
+        println!(
+            "seele-uri-worker: newline JSON capture/cancel requests on stdin\n  --image <ppm>  Recognize a fixture and emit the same event stream"
+        );
         return Ok(());
     }
     // Set before creating threads or entering libtesseract/libgomp.

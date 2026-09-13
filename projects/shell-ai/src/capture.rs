@@ -250,7 +250,7 @@ fn control(shared: &Shared, request: &Value) -> Result<Value> {
             return state
                 .failure()
                 .map(|failure| json!({"ok":true,"failure":failure}))
-                .ok_or("no captured failure")
+                .ok_or("no captured failure");
         }
         _ => return Err("invalid capture operation"),
     }

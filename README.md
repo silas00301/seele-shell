@@ -302,16 +302,31 @@ generations are retained.
 ## Build and test
 
 ```sh
-nix build .#default
+nix build
 nix build .#greeter
 nix build .#lock
 nix build .#polkit
+nix run
+nix run .#notes
+nix shell
+nix develop
+nix fmt
+nix flake check
 ```
 
-The package install checks run during each build. Enter the development shell
-with `nix develop`. It includes the Nix, QML, Node, Python, and Rust tools used
-by this repository. `RUST_SRC_PATH` points rust-analyzer at the standard
-library sources.
+`nix build`, `nix run`, and `nix shell` use the main desktop shell by default.
+Named runnable packages are also exposed as apps, so package names such as
+`notes`, `greeter`, `lock`, `polkit`, and `repo-tools` work with both
+`nix build .#<name>` and `nix run .#<name>`. Use `nix flake show` for the full
+output list.
+
+Package install checks run during each build. `nix flake check` builds every
+package check and verifies formatting. `nix fmt` reproducibly formats Nix and
+Rust sources with the versions pinned in `flake.lock`.
+
+The `nix develop` environment includes Nix, QML, Node, Python, Rust, native
+build dependencies, rust-analyzer, and the repository formatter.
+`RUST_SRC_PATH` points rust-analyzer at the standard library sources.
 
 The shell provides these commands:
 

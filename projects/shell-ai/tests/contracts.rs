@@ -229,5 +229,14 @@ fn unchanged_fish_binding_still_has_one_review_path() {
 
 #[test]
 fn fzf_theme_is_preserved_without_executable_bindings() {
-    assert_eq!(suggestions::fzf_style("--color='bg:#1e1e2e,fg:#cdd6f4' --bind='start:execute(evil)' --border=rounded --preview=evil --no-color"), vec!["--color=bg:#1e1e2e,fg:#cdd6f4", "--border=rounded", "--no-color"]);
+    assert_eq!(
+        suggestions::fzf_style(
+            "--color='bg:#1e1e2e,fg:#cdd6f4' --bind='start:execute(evil)' --border=rounded --preview=evil --no-color"
+        ),
+        vec![
+            "--color=bg:#1e1e2e,fg:#cdd6f4",
+            "--border=rounded",
+            "--no-color"
+        ]
+    );
 }

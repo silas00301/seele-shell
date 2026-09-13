@@ -23,6 +23,7 @@ if [[ "$*" == "clients -j" ]]; then
   printf '[{"address":"0xabc","pid":%s}]\n' "${MOCK_APP_PID:-0}"
 else
   printf 'hyprctl %s\n' "$*" >>"$MOCK_ACTIONS"
+  printf 'ok\n'
 fi
 SH
 for mock in "$work/bin/"*; do
@@ -135,3 +136,5 @@ if MOCK_COPY_DELAY=1 "$control" copy-address '192.0.2.1'; then
   echo "stalled clipboard reported success" >&2
   exit 1
 fi
+
+echo "Control action failure propagation and input validation checks passed"

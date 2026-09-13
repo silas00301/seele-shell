@@ -41,7 +41,9 @@ fn failed_service_snapshot_is_distinct_from_probe_failure() {
     }
 }
 fn state(result: &str, status: &str, stamp: &str, load: &str) -> String {
-    format!("LoadState={load}\nActiveState=inactive\nResult={result}\nExecMainStatus={status}\nExecMainExitTimestamp={stamp}\n")
+    format!(
+        "LoadState={load}\nActiveState=inactive\nResult={result}\nExecMainStatus={status}\nExecMainExitTimestamp={stamp}\n"
+    )
 }
 #[test]
 fn backups_require_loaded_units_recent_success_and_stable_evidence() {

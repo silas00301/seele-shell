@@ -245,7 +245,9 @@ pub fn submodule(args: &[String], cancel: &AtomicUsize) -> Result<()> {
         }
     }
     if keep_lock {
-        println!("Kept identical submodule and unchanged parent lock files. No Nix evaluation or lock refresh was performed; unchanged flake inputs require independent review.");
+        println!(
+            "Kept identical submodule and unchanged parent lock files. No Nix evaluation or lock refresh was performed; unchanged flake inputs require independent review."
+        );
     } else {
         interactive(
             Command::new("nix")
@@ -256,9 +258,13 @@ pub fn submodule(args: &[String], cancel: &AtomicUsize) -> Result<()> {
     }
     println!("{name} now points to {new}");
     if pr {
-        println!("Review the gitlink commit and any flake.lock changes, then set and push only the parent PR bookmark.");
+        println!(
+            "Review the gitlink commit and any flake.lock changes, then set and push only the parent PR bookmark."
+        );
     } else {
-        println!("commit the refreshed flake.lock if it changed, then push the parent with: jj git push --bookmark main");
+        println!(
+            "commit the refreshed flake.lock if it changed, then push the parent with: jj git push --bookmark main"
+        );
     }
     Ok(())
 }

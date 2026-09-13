@@ -350,7 +350,9 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/clock.sh "$out/bin/seele-clock"
     PATH="${runtimePath}:$PATH" bash ${tests}/audio-routing.sh "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${tests}/network-vpn.sh "$out/libexec/seele-shell/seele-control"
-    PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver-routing.sh "$out/libexec/seele-shell/seele-control"
+    PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver-routing.sh \
+      "$out/libexec/seele-shell/seele-control" \
+      "$out/libexec/seele-shell/seele-bt-receiver"
     PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver.sh \
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-bt-receiver" \

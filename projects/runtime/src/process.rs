@@ -505,7 +505,7 @@ fn execute(
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         "command output exceeds its limit",
-                    ))
+                    ));
                 }
                 Ok(count) => {
                     if index == 1 {

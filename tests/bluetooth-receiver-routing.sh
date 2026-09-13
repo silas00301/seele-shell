@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 control=${1:?control executable required}
+receiver=${2:?receiver executable required}
 if [[ ${SEELE_AUDIO_TEST_BUS:-0} != 1 ]]; then
   bus_config=$(mktemp)
   trap 'rm -f "$bus_config"' EXIT
@@ -9,7 +10,7 @@ if [[ ${SEELE_AUDIO_TEST_BUS:-0} != 1 ]]; then
 <policy context="default"><allow send_destination="*"/><allow receive_sender="*"/><allow own="*"/></policy>
 </busconfig>
 CONF
-  env SEELE_AUDIO_TEST_BUS=1 dbus-run-session --config-file="$bus_config" -- bash "$0" "$control"
+  env SEELE_AUDIO_TEST_BUS=1 dbus-run-session --config-file="$bus_config" -- bash "$0" "$control" "$receiver"
   exit
 fi
 work=$(mktemp -d)
@@ -47,7 +48,7 @@ done
 if [[ $ready != 1 ]]; then cat "$work/"*.log; exit 1; fi
 
 mkdir -p "$work/bin"
-ln -s "$control" "$work/bin/seele-bt-receiver"
+ln -s "$receiver" "$work/bin/seele-bt-receiver"
 printf '#!%s\nexit 0\n' "$BASH" > "$work/bin/bluetoothctl"
 chmod +x "$work/bin/bluetoothctl"
 export PATH="$work/bin:$PATH"
@@ -59,7 +60,18 @@ for _ in $(seq 1 100); do
 done
 if [[ $created != 1 ]]; then cat "$work/create.log"; exit 1; fi
 pactl set-default-sink receiver_output
-pw-cli create-node adapter '{ factory.name = support.null-audio-sink node.name = bluez_input.fixture media.class = Audio/Source object.linger = true audio.position = [ FL FR ] }'
+source_created=0
+for _ in $(seq 1 100); do
+  if pw-cli create-node adapter '{ factory.name = support.null-audio-sink node.name = bluez_input.fixture media.class = Audio/Source object.linger = true audio.position = [ FL FR ] }' >/dev/null 2>&1; then
+    source_created=1
+    break
+  fi
+  sleep 0.05
+done
+if [[ $source_created != 1 ]]; then
+  echo 'PipeWire adapter factory did not become ready' >&2
+  exit 1
+fi
 receiver_links() {
   pw-dump | jq '[.[] | select(.type == "PipeWire:Interface:Node") | select(.info.props["seele.role"] == "bluetooth-receiver")] | length'
 }

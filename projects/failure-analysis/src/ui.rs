@@ -291,7 +291,13 @@ pub fn rebuild(arguments: &[String], cancel: &AtomicUsize) -> io::Result<i32> {
         return Ok(0);
     }
     let output = String::from_utf8_lossy(&bytes);
-    let report=format!("Seele failure report\nCollected: {}\nFailed command: {} {}\nExit status: {code}\n\n[Output from failed rebuild]\n{}\n",seele_runtime::time::timestamp(),binary.to_string_lossy(),args.join(" "),clean(&output,crate::MAX_COMMAND_OUTPUT));
+    let report = format!(
+        "Seele failure report\nCollected: {}\nFailed command: {} {}\nExit status: {code}\n\n[Output from failed rebuild]\n{}\n",
+        seele_runtime::time::timestamp(),
+        binary.to_string_lossy(),
+        args.join(" "),
+        clean(&output, crate::MAX_COMMAND_OUTPUT)
+    );
     let last = output
         .lines()
         .rev()

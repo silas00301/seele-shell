@@ -400,7 +400,9 @@ fn close_window() {
 
 pub fn agent(arguments: &[String]) -> Result {
     if arguments.first().map(String::as_str) == Some("--describe") {
-        println!("{{\"capability\":\"{CAPABILITY}\",\"methods\":[\"RequestConfirmation\",\"RequestAuthorization\",\"RequestPasskey\",\"RequestPinCode\",\"DisplayPasskey\"]}}");
+        println!(
+            "{{\"capability\":\"{CAPABILITY}\",\"methods\":[\"RequestConfirmation\",\"RequestAuthorization\",\"RequestPasskey\",\"RequestPinCode\",\"DisplayPasskey\"]}}"
+        );
         return Ok(());
     }
     let running = crate::command::shutdown_signal();
@@ -643,7 +645,7 @@ pub fn watch_yubikey() -> Result {
                                 | std::io::ErrorKind::Interrupted
                         ) =>
                     {
-                        continue
+                        continue;
                     }
                     Err(_) => break,
                 }

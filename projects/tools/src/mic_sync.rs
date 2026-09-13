@@ -304,7 +304,7 @@ fn watch(card: u32, numid: u32, running: &Arc<AtomicUsize>) -> Result {
                     parse_pending(&mut pending, &mut session);
                 }
                 Ok(Event::Closed(false)) if running.load(Ordering::Relaxed) == 0 => {
-                    return Err("microphone monitor failed".into())
+                    return Err("microphone monitor failed".into());
                 }
                 Ok(Event::Closed(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}

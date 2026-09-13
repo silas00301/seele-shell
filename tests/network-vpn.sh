@@ -279,3 +279,5 @@ if grep -qx 'protonvpn --help' "$MOCK_ACTIONS"; then
   echo "status unnecessarily launched the Proton client" >&2
   exit 1
 fi
+
+echo "Network, VPN, device, and control action checks passed"

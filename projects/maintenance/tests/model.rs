@@ -201,7 +201,10 @@ fn protocol_types_and_duplicate_actions_are_rejected_before_mutation() {
 }
 #[test]
 fn redaction_handles_quoted_tokens_multiline_keys_links_and_direction_controls() {
-    let text = clean("password=abc token: \"space separated secret\" Bearer abc https://secret.example/?token=abc \u{202e}safe\n-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",4096);
+    let text = clean(
+        "password=abc token: \"space separated secret\" Bearer abc https://secret.example/?token=abc \u{202e}safe\n-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
+        4096,
+    );
     for secret in [
         "abc",
         "space separated",

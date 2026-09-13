@@ -2,14 +2,14 @@
 use dbus::{
     arg::Variant,
     blocking::SyncConnection,
-    channel::{MatchingReceiver, Sender},
+    channel::{Channel, MatchingReceiver, Sender},
     message::{MatchRule, MessageType},
     Message, Path as BusPath,
 };
 use dbus_crossroads::Crossroads;
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
+    io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -41,6 +41,11 @@ fn until(mut predicate: impl FnMut() -> bool) {
         thread::sleep(Duration::from_millis(10));
     }
 }
+fn connect(address: &str) -> SyncConnection {
+    let mut channel = Channel::open_private(address).unwrap();
+    channel.register().unwrap();
+    channel.into()
+}
 #[test]
 fn private_bus_authorization_cancel_release_owner_and_sender() {
     let temporary = tempfile::tempdir().unwrap();
@@ -54,22 +59,32 @@ fn private_bus_authorization_cancel_release_owner_and_sender() {
         fs::write(&path, format!("#!{}\nexit 0\n", executable("sh").display())).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    let socket = temporary.path().join("bus");
+    let address = format!("unix:path={}", socket.display());
+    let daemon = executable("dbus-daemon");
+    let config = daemon
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("share/dbus-1/session.conf");
     let mut bus = ChildGuard(
-        Command::new(executable("dbus-daemon"))
-            .args(["--session", "--nofork", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+        Command::new(daemon)
+            .arg(format!("--config-file={}", config.display()))
+            .args(["--nofork", "--address", &address])
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
             .spawn()
             .unwrap(),
     );
-    let mut address = String::new();
-    BufReader::new(bus.0.stdout.take().unwrap())
-        .read_line(&mut address)
-        .unwrap();
-    let address = address.trim().to_owned();
+    until(|| socket.exists() || bus.0.try_wait().unwrap().is_some());
+    assert!(
+        socket.exists(),
+        "private D-Bus daemon exited before binding"
+    );
     // This integration-test process has one test; never points at the host bus.
     std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", &address);
-    let connection = Arc::new(SyncConnection::new_system().unwrap());
+    let connection = Arc::new(connect(&address));
     connection
         .request_name("org.bluez", false, true, false)
         .unwrap();
@@ -231,7 +246,7 @@ fn private_bus_authorization_cancel_release_owner_and_sender() {
             .to_owned()
     };
     let mut child = launch();
-    let intruder = SyncConnection::new_system().unwrap();
+    let intruder = connect(&address);
     let denied: Result<(), _> = intruder
         .with_proxy(
             registered.lock().unwrap().clone().unwrap(),

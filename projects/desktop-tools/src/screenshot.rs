@@ -514,7 +514,22 @@ pub fn run(mode: &str, cancel: &AtomicUsize) -> io::Result<()> {
     publish(&mut image, &output, &local_stamp())?;
     image.seek(SeekFrom::Start(0))?;
     if mode == "upload" {
-        let response=command("zenity",&["--question","--title=Upload screenshot?","--icon-name=dialog-warning","--width=460","--ok-label=Upload","--cancel-label=Copy image","--text=This sends the screenshot to 0x0.st, a public third-party host.\n\nAnyone with the secret link can view it for 24 hours. Only upload images that contain no private or sensitive information."],b"",900,4096,cancel);
+        let response = command(
+            "zenity",
+            &[
+                "--question",
+                "--title=Upload screenshot?",
+                "--icon-name=dialog-warning",
+                "--width=460",
+                "--ok-label=Upload",
+                "--cancel-label=Copy image",
+                "--text=This sends the screenshot to 0x0.st, a public third-party host.\n\nAnyone with the secret link can view it for 24 hours. Only upload images that contain no private or sensitive information.",
+            ],
+            b"",
+            900,
+            4096,
+            cancel,
+        );
         if response.is_ok_and(|v| v.status.success()) {
             return upload(&image, cancel);
         }
