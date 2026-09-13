@@ -52,6 +52,15 @@ const notificationCard = shell.slice(shell.indexOf('component NotificationCard:'
 assert.ok(!/id: notificationImage\b/.test(notificationCard),
   'notification profile images must not return to the expandable body');
 
+// A toast maps while the user is typing somewhere else, and Hyprland focuses a
+// layer surface that asks for on-demand keyboard interactivity as it maps, so
+// any interactivity here swallows the next keystrokes.
+const notificationPopup = shell.slice(shell.indexOf('id: notificationPopupWindow'), shell.indexOf('component MediaSlot:'));
+assert.ok(notificationPopup.includes('WlrLayershell.keyboardFocus: WlrKeyboardFocus.None'),
+  'notification toasts must declare no keyboard focus');
+assert.ok(!/WlrKeyboardFocus\.(OnDemand|Exclusive)/.test(notificationPopup),
+  'notification toasts must never take keyboard focus away from the focused window');
+
 const packagedSources = [
   'health.js', 'IntegrationHealthStore.qml', 'SystemHealthPanel.qml',
   'AiPrompt.qml',
