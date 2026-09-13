@@ -107,5 +107,14 @@ assert.match(panel, /component FindingCard: Rectangle/);
 assert.equal((panel.match(/FindingCard \{\s*required property var modelData;\s*finding:\s*modelData\s*\}/g) || []).length, 3);
 assert.doesNotMatch(panel, /onLoaded|sourceComponent:\s*cardComponent/);
 assert.match(panel, /validator:\s*IntValidator \{\s*bottom:\s*1;\s*top:\s*43200\s*\}/);
+// The finding's own head is its disclosure, so the fold is not also a button
+// beside it saying what the chevron already says.
+assert.match(panel, /onClicked: card\.toggle\(\)/);
+// A disclosure that replaced a button keeps that button's keyboard path.
+assert.match(panel, /activeFocusOnTab: true/);
+assert.match(panel, /Keys\.onPressed: event => \{[^]*?card\.toggle\(\)/);
+assert.doesNotMatch(panel, /"Less" : "Details"/);
+for (const seconds of [3600, 86400, 604800])
+  assert.ok(panel.includes('seconds: ' + seconds), 'snooze presets keep their durations');
 assert.match(source, /code!==0 \|\| !received/, 'empty replies fail visibly');
 console.log('Maintenance production QML methods: stable rows, revision-bound confirmation, typed actions, snooze, stale replies and unavailable source passed');

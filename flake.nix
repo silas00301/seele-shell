@@ -254,7 +254,7 @@
                   node tests/network-addresses.js projects/shell/network.js
                   node tests/media.js projects/shell/media.js
                   bash tests/media-host.sh ${quickshell}/bin/quickshell projects/shell
-                  node tests/player-volume.js projects/shell/player-volume.js
+                  node tests/player-volume.js projects/shell/player-volume.js projects/shell/shell.qml
                   node tests/media-speed.js projects/shell/media-speed.js projects/shell/shell.qml
                   node tests/notifications.js projects/shell/notifications.js projects/shell/NotificationStore.qml
                   node tests/time.js projects/shell/time.js
