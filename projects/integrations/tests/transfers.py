@@ -35,7 +35,7 @@ class Transfers(unittest.TestCase):
             script.write_text(f"#!{sys.executable}\nimport json,os,sys,time\nfrom pathlib import Path\np=Path(os.environ['FIXTURE_ACTIONS'])\nwith p.open('a') as f:f.write(json.dumps({{'args':sys.argv,'pid':os.getpid()}})+'\\n')\nif Path(sys.argv[0]).name=='notify-send':time.sleep(60)\n")
             script.chmod(0o700)
         self.env={**os.environ,'XDG_RUNTIME_DIR':str(self.runtime),'XDG_STATE_HOME':str(self.state),'SEELE_TRANSFERS_DOWNLOADS':str(self.downloads),'SEELE_TAILSCALE_SOCKET':str(self.root/'daemon.sock'),'FIXTURE_ACTIONS':str(self.actions),'PATH':str(self.bin)+os.pathsep+os.environ['PATH']}
-        self.available=True;self.pending={};self.deleted=[];self.sent=[];self.failures=0;self.fail_ack=0;self.send_hold=threading.Event();self.send_hold.set();self.receive_hold=threading.Event();self.receive_hold.set();self.send_started=threading.Event();self.receiving=threading.Event();self.stop=threading.Event();self.events=[]
+        self.available=True;self.pending={};self.empty_waiting_as_null=False;self.files_queries=0;self.deleted=[];self.sent=[];self.failures=0;self.fail_ack=0;self.send_hold=threading.Event();self.send_hold.set();self.receive_hold=threading.Event();self.receive_hold.set();self.send_started=threading.Event();self.receiving=threading.Event();self.stop=threading.Event();self.events=[]
         fixture=self
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self,*args):pass
@@ -55,7 +55,9 @@ class Transfers(unittest.TestCase):
                             except (BrokenPipeError,ConnectionResetError):return
                             offset+=1
                 elif route.endswith('/files/'):
-                    self.reply([{'Name':n,'Size':len(payload)} for n,payload in list(fixture.pending.items())])
+                    fixture.files_queries+=1
+                    files=[{'Name':n,'Size':len(payload)} for n,payload in list(fixture.pending.items())]
+                    self.reply(None if fixture.empty_waiting_as_null and not files else files)
                 elif '/files/' in route:
                     name=route.split('/files/',1)[1];payload=fixture.pending.get(name)
                     if payload is None:self.reply(b'',404);return
@@ -119,6 +121,11 @@ class Transfers(unittest.TestCase):
         group=self.wait(id);self.assertEqual([b for _,b in self.sent],[b'original\x00bytes',b'second']);self.assertEqual(len(group['files']),2);self.assertNotIn('path',group['files'][0]);self.assertIn('space%20%23%20and%0Anewline.txt',self.sent[-1][0])
         disk=self.state/'seele-transfers/history.json';self.assertEqual(disk.stat().st_mode&0o777,0o600);self.assertNotIn('original',disk.read_text());self.assertFalse(self.actions.exists())
         self.assertEqual((self.runtime/'seele-transfers.sock').stat().st_mode&0o777,0o600)
+
+    def test_null_empty_waiting_list_is_healthy(self):
+        self.empty_waiting_as_null=True;before=self.files_queries
+        self.until(lambda:self.files_queries>=before+2)
+        snapshot=self.snapshot();self.assertEqual(snapshot['error'],'');self.assertEqual(snapshot['targets'],[{'id':'same','name':'Phone'}])
 
     def test_offline_directory_and_unknown_target_preserve_selection(self):
         path=self.file();self.request({'op':'select','paths':[path]});self.available=False

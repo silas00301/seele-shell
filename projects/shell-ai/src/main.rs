@@ -12,10 +12,9 @@ fn main() {
 }
 fn run() -> Result<i32> {
     let arguments: Vec<_> = env::args().skip(1).collect();
-    let mode = arguments
-        .first()
-        .map(String::as_str)
-        .ok_or("expected capture, should-capture, begin, finish, context or suggest")?;
+    let mode = arguments.first().map(String::as_str).ok_or(
+        "expected capture, capture-ready, should-capture, begin, finish, context or suggest",
+    )?;
     match mode {
         "capture" if arguments.len() == 3 && arguments[1] == "--fish" => {
             capture::capture_fish(Path::new(&arguments[2]))
@@ -31,6 +30,10 @@ fn run() -> Result<i32> {
                 1
             },
         ),
+        "capture-ready" if arguments.len() == 1 => {
+            capture::request(&json!({"op":"ready"}), true)?;
+            Ok(0)
+        }
         "begin" if arguments.len() == 1 => {
             capture::request(&json!({"op":"begin"}), false)?;
             Ok(0)

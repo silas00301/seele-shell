@@ -17,7 +17,11 @@ Linux Codex broker's model selection, queue, retries and cancellation.
 ## Private capture
 
 Only plain interactive Fish processes are wrapped; script and `-ic` invocations
-retain their original semantics. The wrapper preserves login mode, shell nesting,
+retain their original semantics. Startup probes an inherited session before using
+it as the recursion guard. A stale session left by a dead or upgraded wrapper is
+cleared and wrapped again. The background begin/finish hooks stay quiet while a
+stale owner is unavailable, but an explicit debug request still reports that no
+capture is available. The wrapper preserves login mode, shell nesting,
 stdin/stdout and foreground terminal behavior. Its separate stderr PTY forwards
 exact bytes and window-size changes. It ignores terminal interrupt/quit itself
 so Fish receives them normally, forwards termination/hangup, owns and reaps Fish,

@@ -131,10 +131,13 @@ pub fn current_session(required: bool) -> Result<Option<PathBuf>> {
     Ok(Some(path))
 }
 pub fn request(message: &Value, required: bool) -> Result<Value> {
-    let Some(session) = current_session(required)? else {
-        return Ok(json!({"ok":true}));
+    let session = match current_session(required) {
+        Ok(Some(session)) => session,
+        Ok(None) => return Ok(json!({"ok":true})),
+        Err(_) if !required => return Ok(json!({"ok":true})),
+        Err(error) => return Err(error),
     };
-    let response = seele_runtime::wire::rpc(
+    let response = match seele_runtime::wire::rpc(
         &session.join("control.sock"),
         message,
         seele_runtime::wire::RpcLimits {
@@ -143,8 +146,11 @@ pub fn request(message: &Value, required: bool) -> Result<Value> {
             response_bytes: IPC_LIMIT,
         },
         &AtomicUsize::new(0),
-    )
-    .map_err(|_| "shell-assistance capture is unavailable")?;
+    ) {
+        Ok(response) => response,
+        Err(_) if !required => return Ok(json!({"ok":true})),
+        Err(_) => return Err("shell-assistance capture is unavailable"),
+    };
     if response["ok"] != true {
         return Err("no failed command has been captured in this Fish session");
     }
@@ -212,6 +218,7 @@ fn control(shared: &Shared, request: &Value) -> Result<Value> {
     let op = request["op"].as_str().ok_or("invalid capture operation")?;
     let mut state = shared.state.lock().unwrap();
     match op {
+        "ready" if object.len() == 1 => (),
         "begin" if object.len() == 1 => state.begin(),
         "finish" if object.len() == 3 => {
             let command = request["command"]

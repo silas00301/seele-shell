@@ -301,11 +301,16 @@ mod tests {
     fn exact_executable_match_and_stale_start_time_fail_closed() {
         let mut child = Command::new("sleep").arg("30").spawn().unwrap();
         let identity = Identity::read(child.id()).unwrap();
-        assert!(
-            matches_command(child.id(), "sleep", Some("30")),
-            "fixture argv: {:?}",
-            argv(child.id())
-        );
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !matches_command(child.id(), "sleep", Some("30")) {
+            assert!(child.try_wait().unwrap().is_none(), "fixture exited early");
+            assert!(
+                Instant::now() < deadline,
+                "fixture argv: {:?}",
+                argv(child.id())
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
         assert!(!matches_command(child.id(), "bluetoothctl", None));
         assert!(!matches_command(child.id(), "sleep", Some("3")));
         let root = std::env::temp_dir().join(format!("seele-daemon-test-{}", uuid_free()));

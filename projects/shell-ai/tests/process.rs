@@ -110,6 +110,7 @@ fn real_capture_tees_stderr_debug_uses_memory_and_session_is_cleaned() {
         root.path(),
         "fish",
         r#"#!/bin/sh
+"$SEELE_TEST_BINARY" capture-ready
 "$SEELE_TEST_BINARY" begin
 printf '\033[31mcaptured failure\033[0m\n' >&2
 "$SEELE_TEST_BINARY" finish --status 19 --command 'broken command'
@@ -278,6 +279,56 @@ exec sleep 30
     assert!(!Path::new(&session).exists());
 }
 #[test]
+fn stale_inherited_capture_is_quiet_for_hooks_and_fails_readiness() {
+    let root = private();
+    let session = root.path().join("seele-shell-ai/session-old");
+    fs::create_dir_all(&session).unwrap();
+    fs::set_permissions(session.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(&session, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(session.join("current.stderr"), "").unwrap();
+    fs::write(session.join("failure.json"), "{}").unwrap();
+
+    for arguments in [
+        vec!["begin"],
+        vec!["finish", "--status", "0", "--command", "true"],
+    ] {
+        let output = wait(
+            command()
+                .args(arguments)
+                .env("XDG_RUNTIME_DIR", root.path())
+                .env("SEELE_SHELL_AI_SESSION", &session)
+                .spawn()
+                .unwrap(),
+        );
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+    }
+
+    let output = wait(
+        command()
+            .arg("capture-ready")
+            .env("XDG_RUNTIME_DIR", root.path())
+            .env("SEELE_SHELL_AI_SESSION", &session)
+            .spawn()
+            .unwrap(),
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("capture is unavailable"));
+
+    fs::remove_dir_all(&session).unwrap();
+    let output = wait(
+        command()
+            .arg("begin")
+            .env("XDG_RUNTIME_DIR", root.path())
+            .env("SEELE_SHELL_AI_SESSION", &session)
+            .spawn()
+            .unwrap(),
+    );
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn failed_spawn_and_invalid_or_symlinked_sessions_do_not_leave_capture_artifacts() {
     let root = private();
     let output = wait(
@@ -299,7 +350,7 @@ fn failed_spawn_and_invalid_or_symlinked_sessions_do_not_leave_capture_artifacts
     std::os::unix::fs::symlink(external.path(), sessionroot.join("session-link")).unwrap();
     let output = wait(
         command()
-            .arg("begin")
+            .arg("capture-ready")
             .env("XDG_RUNTIME_DIR", root.path())
             .env("SEELE_SHELL_AI_SESSION", sessionroot.join("session-link"))
             .spawn()

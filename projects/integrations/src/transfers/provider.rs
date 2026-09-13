@@ -87,6 +87,9 @@ impl Provider {
     }
     pub async fn waiting(&self) -> Result<Vec<Value>> {
         let list = self.request(reqwest::Method::GET, "files/").await?;
+        if list.is_null() {
+            return Ok(vec![]);
+        }
         let list = list.as_array().ok_or("invalid-response")?;
         list.iter()
             .take(4096)

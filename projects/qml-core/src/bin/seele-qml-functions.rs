@@ -5,7 +5,7 @@ fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
     let mut frame = Vec::new();
-    while seele_runtime::wire::read_frame(&mut input, &mut frame, seele_qml_core::MAX_MESSAGE)? {
+    if seele_runtime::wire::read_frame(&mut input, &mut frame, seele_qml_core::MAX_MESSAGE)? {
         output.write_all(&if fixture {
             seele_qml_core::notification_fixture(&frame)
         } else {

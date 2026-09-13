@@ -224,6 +224,8 @@ fn unchanged_fish_binding_still_has_one_review_path() {
     assert!(source.contains("__seele_ai_insert debug"));
     assert!(source.contains("commandline --replace -- \"$suggestion\""));
     assert_eq!(source.matches("return \"$command_status\"").count(), 2);
+    assert!(source.contains("if not ${command} capture-ready"));
+    assert!(source.contains("set -e SEELE_SHELL_AI_SESSION"));
     assert!(!source.contains("commandline -f execute\n              return"));
 }
 
