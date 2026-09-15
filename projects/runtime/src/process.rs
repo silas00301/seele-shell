@@ -886,3 +886,56 @@ mod file_tests {
         assert_eq!(group, unsafe { libc::getpgrp() });
     }
 }
+
+/// Pin a Linux process before validating its identity, then signal that handle.
+/// Failure to obtain a pidfd fails closed; numeric PID signalling is never a fallback.
+#[cfg(target_os = "linux")]
+pub fn signal_checked(pid: u32, number: i32, validate: &mut dyn FnMut() -> bool) -> bool {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    if pid < 2 || pid > i32::MAX as u32 {
+        return false;
+    }
+    // SAFETY: pidfd_open takes scalar arguments and returns a newly owned fd.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    if fd < 0 {
+        return false;
+    }
+    // SAFETY: the successful syscall returned this owned descriptor.
+    let pinned = unsafe { OwnedFd::from_raw_fd(fd as i32) };
+    if !validate() {
+        return false;
+    }
+    // SAFETY: the descriptor remains owned here and a null siginfo is permitted.
+    unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pinned.as_raw_fd(),
+            number,
+            std::ptr::null::<libc::siginfo_t>(),
+            0,
+        ) == 0
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod pinned_signal_tests {
+    use super::*;
+    #[test]
+    fn refused_validation_does_not_signal_and_exited_handles_fail_closed() {
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        assert!(!signal_checked(child.id(), libc::SIGTERM, &mut || false));
+        assert!(child.try_wait().unwrap().is_none());
+        assert!(signal_checked(child.id(), libc::SIGTERM, &mut || true));
+        child.wait().unwrap();
+        assert!(!signal_checked(child.id(), libc::SIGTERM, &mut || true));
+    }
+    #[test]
+    fn exit_during_validation_cannot_redirect_signal() {
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        assert!(!signal_checked(child.id(), libc::SIGTERM, &mut || {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            true
+        }));
+    }
+}

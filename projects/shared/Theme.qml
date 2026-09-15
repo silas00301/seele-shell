@@ -189,6 +189,9 @@ ShellRoot {
   // The GitHub inbox scrolls inside this bound, tall enough that an opened
   // thread shows its analysis and the start of its conversation together.
   readonly property int githubInboxMaximumHeight: 520
+  // The port inspector scrolls inside this bound, tall enough that an open
+  // listener shows its address, its owners and a confirmation together.
+  readonly property int portsMaximumHeight: 520
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
 
