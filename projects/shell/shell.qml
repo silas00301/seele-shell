@@ -1728,6 +1728,11 @@ Shared.Theme {
       if(healthToken) { integrationHealth.complete("home-assistant",healthToken,state === "healthy"); healthToken=0 }
     }
   }
+  MicTestStore {
+    id: micTest
+    panelOpen: root.controlPanel === "audio"
+    devices: root.systemData.audioDevices || []
+  }
   TransfersStore {
     id: transfersStore
     panelOpen: root.controlPanel === "transfers"
@@ -7870,12 +7875,15 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-audio"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { audioContent.forceActiveFocus() })
 
       PanelSurface {
         Column {
           id: audioContent
 
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰕾"; title: "Audio" }
           AudioLevelRow { width: parent.width }
           AudioLevelRow { width: parent.width; microphone: true }
@@ -7972,6 +7980,7 @@ Shared.Theme {
               }
             }
           }
+          MicTestCard { theme: root; store: micTest; width: parent.width }
         }
       }
     }

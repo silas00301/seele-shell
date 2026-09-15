@@ -118,13 +118,44 @@ data, preserves exact sample bytes, and finalizes recoverable audio after an
 unexpected disconnect. SIGKILL, power loss or finalization I/O failure can leave a
 private `.part` staging file; it is not automatically discarded.
 
+## Microphone test
+
+`seele-mic-test` is resident for exactly as long as the Audio panel is open and
+reads line-delimited JSON requests on stdin, answering with `mode`, `level` and
+`users` events. It owns two shapes of one question: a five-second sample, held
+in memory and played back once when it is complete, and a live monitor that
+accumulates nothing. Nothing is played into the output while a sample is being
+captured.
+
+Capture and playback are `parecord` and `pacat` streams that name their device
+explicitly, so the test never changes a default sink or moves another
+application's stream. The live monitor hands audio to its playback child through
+a private non-blocking pipe sized to about eighty-five milliseconds; an output
+that stalls costs one buffer of dropped audio rather than latency the user then
+hears for the rest of the session. Levels and clipping are measured from the
+captured samples, with clipping decided on linear values and held for 1.5
+seconds, so a compressed meter cannot hide it.
+
+Device identity is resolved when a test starts, not when the panel opened.
+Monitor sources are refused as inputs because playing one back into its own
+output is the feedback this test exists to avoid. Microphone use comes from
+`pactl list source-outputs`, excluding corked streams, monitor readers and the
+test's own named streams; a server that cannot be asked reports that limitation
+rather than an empty list. The report is republished while a test runs, because
+a warning does not make the microphone exclusive.
+
+The sample never reaches disk, and no state outlives the process: closing the
+panel terminates the worker, which ends the capture stream, the playback stream
+and the retained sample together.
+
 ## Validation
 
 Run `cargo test -p seele-tools` and `cargo clippy -p seele-tools --all-targets -- -D
 warnings`. Focused external fixtures are `tests/mic-sync.sh`,
-`tests/control-actions.sh`, `tests/bluetooth-receiver.sh`, `tests/agent-state.sh`,
-`tests/notes.py` and `tests/uri-picker.sh`. They use isolated fake desktop programs,
-private temporary vaults and synthetic images. Python/Node in these fixtures are
+`tests/mic-test.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
+`tests/agent-state.sh`, `tests/notes.py` and `tests/uri-picker.sh`. They use isolated fake desktop programs,
+private temporary vaults, a private PipeWire instance with synthetic audio, and
+synthetic images; no fixture opens the user's real microphone or outputs. Python/Node in these fixtures are
 development-only. Give temporary fixtures an ordinary private umask (077 or 022).
 
 The local OCR validation used extracted Ubuntu ImageMagick 6, Tesseract English

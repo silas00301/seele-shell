@@ -41,7 +41,12 @@ player object. The real Quickshell media fixture verifies that enum singleton
 values are projected without sending a QObject through the ABI. Home Assistant's room/favorite projection and preference ordering
 run when source data changes; catalog merging uses indexed deduplication.
 Transfers' progress projection, strict local URL decoding and action admission
-are native, with one batched durable seen request when opening the panel.
+are native, with one batched durable seen request when opening the panel. The
+Audio panel's microphone test resolves its own devices, derives the card's whole
+state and owns the microphone-use gate here: the meter reads zero whenever
+nothing is being captured, clipping is reported from the worker's own sample
+measurement rather than from the bar, a lost microphone or test output is named
+instead of being replaced, and both test modes reach the same confirmation.
 
 `ListModels.js` is the single Qt adapter for matching stable row contracts in
 Home Assistant, Transfers, Maintenance and AI Activity. The Rust planner receives

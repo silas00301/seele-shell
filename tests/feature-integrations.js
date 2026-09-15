@@ -31,6 +31,9 @@ const shellPatterns = {
   'playback speed': /MediaSpeed\.cycle\(/,
   'playback speed presets': /id: playbackSpeedWell/,
   'timed quiet periods': /id: quietPresets/,
+  'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,
+  'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
+  'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -67,6 +70,9 @@ const packagedSources = [
   'network.js',
   'player-volume.js',
   'media-speed.js',
+  'MicTestStore.qml',
+  'MicTestCard.qml',
+  'mic-test.js',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -88,6 +94,8 @@ const focusedTests = [
   'player-volume.js',
   'media-speed.js',
   'vicinae-generations.mjs',
+  'mic-test.js',
+  'mic-test.sh',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);
