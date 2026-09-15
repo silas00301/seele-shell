@@ -3,6 +3,7 @@ mod agents;
 mod audio;
 mod audio_route;
 mod bluetooth;
+mod caffeinate;
 mod clock;
 mod command;
 mod control;
@@ -27,6 +28,7 @@ pub enum Tool {
     AgentLaunch,
     AgentRun,
     AgentHook,
+    Caffeinate,
     Control,
     BluetoothReceiver,
     BluetoothAgent,
@@ -48,6 +50,7 @@ const TOOLS: &[(&str, &str, Tool)] = &[
     ("agent-launch", "seele-agent", Tool::AgentLaunch),
     ("agent-run", "seele-agent-run", Tool::AgentRun),
     ("agent-hook", "seele-agent-hook", Tool::AgentHook),
+    ("caffeinate", "seele-caffeinate", Tool::Caffeinate),
     ("control", "seele-control", Tool::Control),
     ("bt-receiver", "seele-bt-receiver", Tool::BluetoothReceiver),
     ("bt-agent", "seele-bt-agent", Tool::BluetoothAgent),
@@ -75,6 +78,7 @@ impl Tool {
             Self::AgentLaunch => agents::launch(&arguments),
             Self::AgentRun => agents::run_agent(&arguments),
             Self::AgentHook => agents::hook(&arguments),
+            Self::Caffeinate => caffeinate::run(&arguments),
             Self::Control => control::run(&arguments),
             Self::BluetoothReceiver => receiver::run(),
             Self::BluetoothAgent => bluetooth::agent(&arguments),

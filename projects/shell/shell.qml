@@ -1733,6 +1733,9 @@ Shared.Theme {
     panelOpen: root.controlPanel === "transfers"
     onRevealRequested: if (root.controlPanel !== "transfers") root.toggleControl("transfers")
   }
+  CaffeinateStore {
+    id: caffeinateStore
+  }
 
   IpcHandler {
     target: "seele-shell"
@@ -5259,6 +5262,18 @@ Shared.Theme {
             HoverTip { mouse: transfersMouse; text: "Transfers · active, new or failed" }
           }
 
+          // The cup is here only while a Caffeinate session holds the idle
+          // inhibitor, so the bar states the exception rather than the rule.
+          BarItem {
+            visible: caffeinateStore.active
+            width: caffeinateLabel.implicitWidth + root.spaceLarge
+            active: root.panelHere("caffeinate", barWindow.modelData)
+            hovered: caffeinateMouse.containsMouse
+            Text { id: caffeinateLabel; anchors.centerIn: parent; text: caffeinateStore.barText; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            MouseArea { id: caffeinateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("caffeinate", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: caffeinateMouse; text: caffeinateStore.hoverText }
+          }
+
           BarItem {
             width: githubBarContent.implicitWidth + root.spaceLarge
             hovered: githubBarHover.hovered
@@ -7672,6 +7687,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰇚"; title: "Transfers"; detail: "Personal devices · original files" }
           TransfersPanel { theme: root; store: transfersStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Caffeinate --------------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: caffeinateWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "caffeinate" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: 320
+      implicitHeight: caffeinateContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-caffeinate"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { caffeinateContent.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: caffeinateContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰅶"; title: "Caffeinate"; detail: "Idle lock, display and sleep held off" }
+          CaffeinatePanel { theme: root; store: caffeinateStore; width: parent.width }
         }
       }
     }

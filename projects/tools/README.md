@@ -56,6 +56,23 @@ counts and bytes and reject symlink, hardlink and foreign-owner records. The
 host-event parity and hostile-file tests live in `tests/harness-status.sh` at
 the workspace root.
 
+## Caffeinate
+
+`seele-caffeinate serve|request|watch` is the resident session service behind the
+launcher command and the shell's conditional bar item. It holds one
+systemd-logind `idle`/`block` inhibitor for the life of a session and nothing
+else: the returned descriptor is the inhibition, so owner exit, logout and a
+crash all release it, and no `sleep` lock is taken because that would refuse an
+explicit suspend. Tracked processes use the same pidfd identity as the daemon
+records above, so PID reuse cannot extend a session; tracked transfers follow the
+transfer group id through the transfers socket, and a probe that cannot be read
+ends the session after tolerating a service restart. Requests are bounded to
+64 KiB behind a mode-0600 peer-verified socket with a private advisory lock, four
+workers and a queue of eight. Nothing is persisted, so no session survives a
+reboot. Duration parsing, labels and failure text belong to `qml-core`; see
+[`projects/caffeinate/README.md`](../caffeinate/README.md) for the protocol,
+the inhibition boundary and its fixtures.
+
 ## Recognition
 
 The warmed OCR pool has at most six single-threaded engines and a 128-job queue.

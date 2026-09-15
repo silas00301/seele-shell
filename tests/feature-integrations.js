@@ -31,6 +31,9 @@ const shellPatterns = {
   'playback speed': /MediaSpeed\.cycle\(/,
   'playback speed presets': /id: playbackSpeedWell/,
   'timed quiet periods': /id: quietPresets/,
+  'Caffeinate session store': /CaffeinateStore \{\s*\n\s*id: caffeinateStore/,
+  'conditional Caffeinate bar item': /visible: caffeinateStore\.active/,
+  'Caffeinate panel shares the session store': /CaffeinatePanel \{ theme: root; store: caffeinateStore/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -53,6 +56,8 @@ assert.ok(!/id: notificationImage\b/.test(notificationCard),
   'notification profile images must not return to the expandable body');
 
 const packagedSources = [
+  'CaffeinateStore.qml',
+  'CaffeinatePanel.qml',
   'health.js', 'IntegrationHealthStore.qml', 'SystemHealthPanel.qml',
   'AiPrompt.qml',
   'ai-prompt.js',
@@ -88,6 +93,8 @@ const focusedTests = [
   'player-volume.js',
   'media-speed.js',
   'vicinae-generations.mjs',
+  'caffeinate.js',
+  'vicinae-caffeinate.cjs',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);

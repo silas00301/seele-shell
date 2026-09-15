@@ -24,6 +24,20 @@ Vicinae's extension directory. Search for `Seele` in Vicinae to find:
   contains no cleanup control; the existing `nh` policy owns retention.
 - **Search Keybindings**: the compositor's active bindings. Enter closes the
   launcher and inputs the shortcut. Shift+Enter copies it; Ctrl+R reloads it.
+- **Seele Caffeinate**: keep the machine awake, its displays on and its session
+  unlocked until a selected task ends, a chosen duration passes, or the session
+  is stopped. The searchable list shows the current session first, then the
+  presets and whatever duration is typed into the search bar, then running
+  builds and transfers, then other processes. Enter starts the highlighted
+  choice; the current session's row offers Stop. The command composes no session
+  text, parses no duration and keeps no time: `seele-control vicinae-caffeinate`
+  returns display-ready rows, one projection of the live session, and the
+  message for a refused start. A typed duration reaches native validation
+  exactly as it was typed, because parsing it during rendering would mean a
+  subprocess per keystroke. Stopping releases the same inhibitor the shell's
+  coffee bar item releases, and never stops the tracked task. See
+  [`projects/caffeinate/README.md`](../caffeinate/README.md) for the inhibition
+  boundary, task identity and the protocol.
 - **Seele Notes and Voice Memos**: open the separate Notes desktop app.
 - **Seele Screen Links and Codes**, **Seele Control Center**, **Seele AI
   Cockpit**, and **Seele Session Controls**: direct commands for root search,
@@ -78,7 +92,9 @@ typed field-patch merging, fragmented/oversized frames, and worker cleanup.
 `tests/vicinae-keybindings.cjs` tests the actual host callback adapter against
 native policy; with a saved reference bundle it compares complete sorted display
 rows and input argument vectors. Keybinding refresh performs one native query;
-rendering only maps returned rows and retains host locale collation. `tests/vicinae-generations.mjs` checks
+rendering only maps returned rows and retains host locale collation. `tests/vicinae-caffeinate.cjs` runs the actual Caffeinate component against
+controlled native replies, covering verbatim duration handoff, task identity,
+row ordering, a refused start and one in-flight Stop. `tests/vicinae-generations.mjs` checks
 native generation-number validation, active-closure detection, JSON normalization,
 and safe diff rendering. Native tests bound filesystem resolution to four workers
 and exercise cancellation before filesystem lookup.
