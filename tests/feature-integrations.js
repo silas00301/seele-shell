@@ -31,6 +31,10 @@ const shellPatterns = {
   'playback speed': /MediaSpeed\.cycle\(/,
   'playback speed presets': /id: playbackSpeedWell/,
   'timed quiet periods': /id: quietPresets/,
+  'port inspector store': /PortsStore\s*\{\s*\n\s*id: portsStore/,
+  'port inspector panel': /PortsPanel \{ id: portsPanel; theme: root; store: portsStore/,
+  'port inspector tile': /label: "Ports"/,
+  'port inspector leaves the bar and takes focus only when opened': /namespace: "seele-shell-ports"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -67,6 +71,8 @@ const packagedSources = [
   'network.js',
   'player-volume.js',
   'media-speed.js',
+  'PortsStore.qml',
+  'PortsPanel.qml',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -87,6 +93,7 @@ const focusedTests = [
   'network-addresses.js',
   'player-volume.js',
   'media-speed.js',
+  'ports.js',
   'vicinae-generations.mjs',
 ];
 for (const test of focusedTests) {
