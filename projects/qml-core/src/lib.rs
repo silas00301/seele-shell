@@ -11,6 +11,7 @@ mod github;
 mod health;
 mod home_assistant;
 mod media;
+mod mic_test;
 mod models;
 mod network;
 mod notes;
@@ -51,6 +52,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "github" => github::call(function, arguments),
         "health" => health::call(function, arguments),
         "media" => media::call(function, arguments),
+        "mic_test" => mic_test::call(function, arguments),
         "home_assistant" => home_assistant::call(function, arguments),
         "transfers" => transfers::call(function, arguments),
         "models" => models::call(function, arguments),

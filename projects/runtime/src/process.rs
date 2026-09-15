@@ -268,6 +268,33 @@ pub fn stream_stdout(
     )
 }
 
+/// Stream without retaining stdout and service control messages every poll,
+/// even when the child produces no bytes. Callbacks run on the caller thread.
+pub fn stream_stdout_watched(
+    command: &mut Command,
+    input: &[u8],
+    limits: Limits,
+    cancelled: &dyn Cancellation,
+    observe: impl FnMut(&[u8]) -> io::Result<()>,
+    tick: impl FnMut() -> io::Result<()>,
+) -> io::Result<Output> {
+    execute_watched(
+        command,
+        Input::Bytes(input),
+        limits,
+        cancelled,
+        CaptureMode {
+            collect: true,
+            retain_stdout: false,
+            own_group: true,
+            visible_stderr: false,
+            detach_on_success: false,
+        },
+        observe,
+        tick,
+    )
+}
+
 enum Input<'a> {
     Bytes(&'a [u8]),
     File(&'a std::fs::File),
@@ -338,7 +365,19 @@ fn execute(
     limits: Limits,
     cancelled: &dyn Cancellation,
     mode: CaptureMode,
+    observe: impl FnMut(&[u8]) -> io::Result<()>,
+) -> io::Result<Output> {
+    execute_watched(command, input, limits, cancelled, mode, observe, || Ok(()))
+}
+
+fn execute_watched(
+    command: &mut Command,
+    input: Input<'_>,
+    limits: Limits,
+    cancelled: &dyn Cancellation,
+    mode: CaptureMode,
     mut observe: impl FnMut(&[u8]) -> io::Result<()>,
+    mut tick: impl FnMut() -> io::Result<()>,
 ) -> io::Result<Output> {
     let CaptureMode {
         collect,
@@ -398,6 +437,7 @@ fn execute(
     let mut out = Vec::new();
     let mut err = Vec::new();
     loop {
+        tick()?;
         if cancelled.is_cancelled() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
@@ -937,5 +977,36 @@ mod pinned_signal_tests {
             child.wait().unwrap();
             true
         }));
+    }
+}
+
+#[cfg(test)]
+mod stream_watch_tests {
+    use super::*;
+    #[test]
+    fn a_silent_child_still_services_control_and_is_reaped() {
+        let cancel = AtomicUsize::new(0);
+        let started = Instant::now();
+        let mut ticks = 0;
+        let result = stream_stdout_watched(
+            Command::new("sleep").arg("30"),
+            b"",
+            Limits {
+                timeout: Duration::from_secs(3),
+                output: 16,
+            },
+            &cancel,
+            |_| panic!("silent child emitted output"),
+            || {
+                ticks += 1;
+                if started.elapsed() >= Duration::from_millis(100) {
+                    cancel.store(1, Ordering::Relaxed);
+                }
+                Ok(())
+            },
+        );
+        assert_eq!(result.err().unwrap().kind(), io::ErrorKind::Interrupted);
+        assert!(ticks >= 2);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

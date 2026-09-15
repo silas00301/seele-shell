@@ -38,6 +38,9 @@ const shellPatterns = {
   'port inspector panel': /PortsPanel \{ id: portsPanel; theme: root; store: portsStore/,
   'port inspector tile': /label: "Ports"/,
   'port inspector leaves the bar and takes focus only when opened': /namespace: "seele-shell-ports"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
+  'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,
+  'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
+  'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -87,6 +90,9 @@ const packagedSources = [
   'media-speed.js',
   'PortsStore.qml',
   'PortsPanel.qml',
+  'MicTestStore.qml',
+  'MicTestCard.qml',
+  'mic-test.js',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -111,6 +117,8 @@ const focusedTests = [
   'vicinae-generations.mjs',
   'caffeinate.js',
   'vicinae-caffeinate.cjs',
+  'mic-test.js',
+  'mic-test.sh',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);
