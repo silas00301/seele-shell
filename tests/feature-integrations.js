@@ -31,6 +31,9 @@ const shellPatterns = {
   'playback speed': /MediaSpeed\.cycle\(/,
   'playback speed presets': /id: playbackSpeedWell/,
   'timed quiet periods': /id: quietPresets/,
+  'Caffeinate session store': /CaffeinateStore \{\s*\n\s*id: caffeinateStore/,
+  'conditional Caffeinate bar item': /visible: caffeinateStore\.active/,
+  'Caffeinate panel shares the session store': /CaffeinatePanel \{ theme: root; store: caffeinateStore/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -62,6 +65,8 @@ assert.ok(!/WlrKeyboardFocus\.(OnDemand|Exclusive)/.test(notificationPopup),
   'notification toasts must never take keyboard focus away from the focused window');
 
 const packagedSources = [
+  'CaffeinateStore.qml',
+  'CaffeinatePanel.qml',
   'health.js', 'IntegrationHealthStore.qml', 'SystemHealthPanel.qml',
   'AiPrompt.qml',
   'ai-prompt.js',
@@ -97,6 +102,8 @@ const focusedTests = [
   'player-volume.js',
   'media-speed.js',
   'vicinae-generations.mjs',
+  'caffeinate.js',
+  'vicinae-caffeinate.cjs',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);

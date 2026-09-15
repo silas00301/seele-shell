@@ -70,6 +70,21 @@ impl Pinned {
         let identity = Identity::read(pid).ok_or(io::ErrorKind::NotFound)?;
         Ok(Self { fd, identity })
     }
+    pub(crate) fn started(&self) -> u64 {
+        self.identity.started
+    }
+    /// A pidfd becomes readable exactly once its process has terminated, even
+    /// for a process this one never forked. Following a task therefore costs one
+    /// poll of a descriptor no recycled PID can be attached to.
+    pub(crate) fn exited(&self) -> bool {
+        let mut descriptor = libc::pollfd {
+            fd: self.fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one initialized pollfd stays live for the duration of the call.
+        unsafe { libc::poll(&mut descriptor, 1, 0) > 0 }
+    }
     pub(crate) fn signal(&self, signal: i32) -> io::Result<()> {
         if unsafe {
             libc::syscall(
@@ -85,6 +100,14 @@ impl Pinned {
         }
         Ok(())
     }
+}
+/// The Linux start time of a live process owned by this user. Two processes
+/// sharing a PID never share it, which is what makes a selection outlive a fork.
+pub(crate) fn start_time(pid: u32) -> Option<u64> {
+    Identity::read(pid).map(|identity| identity.started)
+}
+pub(crate) fn command_line(pid: u32) -> Option<Vec<String>> {
+    argv(pid)
 }
 fn normalized(value: &str) -> &str {
     value
