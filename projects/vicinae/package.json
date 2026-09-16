@@ -2,7 +2,7 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "seele-shell",
   "title": "Seele Shell",
-  "description": "Live desktop controls, audio devices, windows, workspaces, and Hyprland keybindings",
+  "description": "Live desktop controls, audio devices, windows, workspaces, panels, and Hyprland keybindings",
   "icon": "seele.svg",
   "author": "seele",
   "categories": [
@@ -18,68 +18,225 @@
     {
       "name": "seele",
       "title": "Seele Controls",
-      "description": "Open agents and desktop controls",
-      "mode": "view"
+      "description": "Live volume, Do Not Disturb, radios, batteries, panels, and agents",
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "desktop",
+        "volume",
+        "mute",
+        "dnd",
+        "wifi",
+        "bluetooth",
+        "battery"
+      ]
     },
     {
       "name": "keybindings",
       "title": "Search Keybindings",
-      "description": "Search active Hyprland keybindings",
-      "mode": "view"
+      "description": "Search active Hyprland keybindings and replay one",
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "shortcut",
+        "hyprland",
+        "keys",
+        "cheatsheet"
+      ]
     },
     {
       "name": "windows",
       "title": "Seele Windows and Workspaces",
-      "description": "Search running windows and switch workspaces",
-      "mode": "view"
+      "description": "Search running windows, switch workspaces, and close applications",
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "window",
+        "workspace",
+        "switch",
+        "focus",
+        "close"
+      ]
     },
     {
       "name": "audio",
       "title": "Seele Audio Devices",
       "description": "Switch speakers, headphones, and microphones",
-      "mode": "view"
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "sound",
+        "output",
+        "input",
+        "speaker",
+        "microphone",
+        "volume"
+      ]
     },
     {
       "name": "generations",
       "title": "Seele NixOS Generations",
       "description": "Review and switch retained NixOS generations",
-      "mode": "view"
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "nixos",
+        "rollback",
+        "generation",
+        "system"
+      ]
     },
     {
       "name": "screen-links",
       "title": "Seele Screen Links and Codes",
       "description": "Open or copy a numbered link, QR code, or barcode on screen",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "qr",
+        "barcode",
+        "url",
+        "ocr"
+      ]
     },
     {
       "name": "control-center",
       "title": "Seele Control Center",
       "description": "Open the desktop control center",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "center",
+        "quick",
+        "settings"
+      ]
+    },
+    {
+      "name": "notifications",
+      "title": "Seele Notifications",
+      "description": "Open notification history and Do Not Disturb",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "alerts",
+        "history",
+        "dnd",
+        "quiet"
+      ]
+    },
+    {
+      "name": "media",
+      "title": "Seele Now Playing",
+      "description": "Open artwork, transport controls, and the track timeline",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "media",
+        "music",
+        "player",
+        "spotify",
+        "mpris"
+      ]
     },
     {
       "name": "agents",
       "title": "Seele AI Cockpit",
       "description": "Open agent sessions, usage, and limits",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "ai",
+        "usage",
+        "limits",
+        "agents"
+      ]
+    },
+    {
+      "name": "prompt",
+      "title": "Seele Quick AI Prompt",
+      "description": "Ask about the screen, selection, clipboard, or focused window",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "ai",
+        "ask",
+        "codex",
+        "prompt"
+      ]
+    },
+    {
+      "name": "github",
+      "title": "Seele GitHub Inbox",
+      "description": "Open triaged GitHub notifications and pull requests",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "github",
+        "notifications",
+        "reviews",
+        "issues"
+      ]
+    },
+    {
+      "name": "home-assistant",
+      "title": "Seele Home Assistant",
+      "description": "Open rooms, favorites, and device controls",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "home",
+        "assistant",
+        "lights",
+        "sensors",
+        "smart"
+      ]
+    },
+    {
+      "name": "system-health",
+      "title": "Seele System Health",
+      "description": "Open integration health and maintenance findings",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "health",
+        "maintenance",
+        "diagnostics",
+        "status"
+      ]
     },
     {
       "name": "session",
       "title": "Seele Session Controls",
       "description": "Open lock, suspend, restart, and shutdown controls",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "lock",
+        "suspend",
+        "reboot",
+        "shutdown",
+        "logout"
+      ]
     },
     {
       "name": "notes",
       "title": "Seele Notes",
       "description": "Capture a Markdown note or voice memo into the Obsidian vault",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "notes",
+        "obsidian",
+        "memo",
+        "capture"
+      ]
     },
     {
       "name": "transfers",
       "title": "Seele Transfers",
       "description": "Send files to personal devices and view received files",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": ["seele", "taildrop", "send", "receive", "files"]
     },
     {
       "name": "caffeinate",

@@ -106,6 +106,10 @@ Module._load = function (name, ...args) {
     '{"volume":1e999}\n',
     '{"headphones":{"connected":true,"name":42}}\n',
     '{"audioDevices":[{"id":1}]}\n',
+    '{"batteries":{}}\n',
+    '{"tailscale":{"available":true}}\n',
+    '{"connection":42}\n',
+    '{"bluetoothConnected":-1}\n',
     "[]\n",
     " ".repeat(256 * 1024 + 1),
   ]) {
@@ -142,11 +146,74 @@ Module._load = function (name, ...args) {
     headphones: { connected: false, name: "" },
     audioDevices: [device],
   });
+  // Peripherals name themselves: an unrenderable battery is dropped and an
+  // out-of-range reading is bounded, without stopping the whole feed.
+  worker.stdout.write(
+    JSON.stringify({
+      connection: "home",
+      batteries: [
+        { kind: "system", name: "BAT0", percent: 250.6, status: "Charging" },
+        { kind: "device", name: "bad\u0001name", percent: 40, status: "" },
+        { kind: "device", name: "Mouse", percent: "40", status: "" },
+      ],
+    }) + "\n",
+  );
+  assert.equal(states[0].connection, "home");
+  assert.deepEqual(states[0].batteries, [
+    { kind: "system", name: "BAT0", percent: 100, status: "Charging" },
+  ]);
   worker.emit("close", 0);
   assert.equal(states[1], true);
   cleanup();
+
+  // A polled view must not flash its loading indicator on every tick, while a
+  // first load and an explicit refresh still report that they are working.
+  states.length = 0;
+  let loads = 0;
+  let deliver;
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const query = runtime.useQuery(() => {
+    loads++;
+    return new Promise((resolve) => {
+      deliver = resolve;
+    });
+  }, 50);
+  assert.equal(loads, 1);
+  assert.equal(states[2], true, "The first load reports that it is working");
+  deliver("first");
+  await settle();
+  assert.equal(states[0], "first");
+  assert.equal(states[2], false);
+  await wait(90);
+  assert.equal(loads, 2, "The interval keeps polling on its own");
+  assert.equal(
+    states[2],
+    false,
+    "A background poll must not flash the loading indicator",
+  );
+  deliver("second");
+  await settle();
+  assert.equal(states[0], "second");
+  query.refresh();
+  assert.equal(loads, 3);
+  assert.equal(
+    states[2],
+    true,
+    "An explicit refresh reports that it is working",
+  );
+  deliver("third");
+  await settle();
+  assert.equal(states[2], false);
+  cleanup();
+  const polled = loads;
+  await wait(90);
+  assert.equal(loads, polled, "No query survives the view that owns it");
+
   console.log(
-    "Vicinae focus handoff, error privacy, field patches, and worker cleanup tests passed",
+    "Vicinae focus handoff, error privacy, field patches, quiet polling, and worker cleanup tests passed",
   );
 })().catch((error) => {
   console.error(error);

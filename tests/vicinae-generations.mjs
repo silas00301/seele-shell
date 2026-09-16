@@ -115,6 +115,25 @@ assert.match(formatPackageDiff("abcdef", 3), /diff truncated/);
 assert.equal(formatPackageDiff("\n"), "_No package changes reported._");
 assert.equal(escapeMarkdown("kernel *preview*"), "kernel \\*preview\\*");
 
+// Date and relative-age rendering stay in the launcher's own Intl, so the
+// assertions here are locale-independent by design.
+const { formatGenerationAge, formatGenerationDate } = await import(
+  process.argv[2]
+);
+const now = Date.UTC(2026, 3, 12, 10, 0, 0);
+const ago = (days) => new Date(now - days * 86400000).toISOString();
+assert.equal(formatGenerationAge("not a date"), "");
+assert.equal(formatGenerationDate("not a date", "Unknown"), "Unknown");
+assert.notEqual(formatGenerationAge(ago(3), now), "");
+assert.notEqual(
+  formatGenerationAge(ago(3), now),
+  formatGenerationAge(ago(150), now),
+);
+assert.equal(
+  formatGenerationAge(ago(3), now),
+  formatGenerationAge(ago(3.4), now),
+);
+
 const interfaceSource = readFileSync(process.argv[3], "utf8");
 const packageSource = readFileSync(process.argv[4], "utf8");
 assert.match(interfaceSource, /confirmAlert\(/);
@@ -133,4 +152,6 @@ assert.doesNotMatch(packageSource, /NIXOS_NO_CHECK/);
 // Privileged argument, path and race behavior is exercised by the native
 // repo-tools generation fixtures, without activating this host.
 
-console.log("Vicinae NixOS generation parsing and diff safety tests passed");
+console.log(
+  "Vicinae NixOS generation parsing, age rendering and diff safety tests passed",
+);

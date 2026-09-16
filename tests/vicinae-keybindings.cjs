@@ -58,7 +58,8 @@ Module._load = function (name, ...args) {
       },
     };
   if (name === "react") return {};
-  if (name === "@raycast/api") return {};
+  if (name === "@raycast/api")
+    return { Icon: new Proxy({}, { get: (_target, key) => String(key) }) };
   return original.call(this, name, ...args);
 };
 (async () => {

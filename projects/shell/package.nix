@@ -195,6 +195,13 @@ pkgs.stdenvNoCC.mkDerivation {
     esbuild vicinae/generations.tsx --bundle --platform=node --format=cjs \
       --external:./runtime --external:react --external:@raycast/api --outfile=generation-review.cjs
     node ${tests}/vicinae-generation-review.cjs "$PWD/generation-review.cjs"
+    for view in seele windows audio keybindings; do
+      esbuild "vicinae/$view.tsx" --bundle --platform=node --format=cjs \
+        --external:@raycast/api --external:react --external:./runtime --external:./status \
+        --outfile="views-$view.cjs"
+    done
+    node ${tests}/vicinae-views.cjs "$PWD/views-seele.cjs" "$PWD/views-windows.cjs" \
+      "$PWD/views-audio.cjs" "$PWD/views-keybindings.cjs"
     node ${tests}/vicinae-runtime.cjs "$PWD/runtime.cjs" "$PWD/status.cjs"
     node ${tests}/vicinae-generations.mjs \
       "$PWD/vicinae/generation-data.mjs" \

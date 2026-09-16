@@ -151,6 +151,7 @@ fn keybinding_snapshot_and_input_use_the_native_validated_contract() {
     assert!(output.status.success());
     let rows: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rows[0]["shortcut"], "Super + Ctrl + S");
+    assert_eq!(rows[0]["modifiers"], json!(["Super", "Ctrl"]));
     assert_eq!(
         rows[0]["description"],
         "Open a visible URI from the frozen screens"
