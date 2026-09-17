@@ -9146,7 +9146,45 @@ Shared.Theme {
       // there is a count to report and a counted constant would not follow it.
       readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
         + root.panelSpacing + notificationViews.height + root.panelSpacing
-        + quietRule.height + root.panelSpacing + quietPresets.height + root.panelSpacing
+      property bool quietMenuOpen: false
+      // Every way silence can be set, in one menu, so the header carries one
+      // control instead of a switch beside a well. A length starts a period
+      // from now, zero holds the shell quiet with no end, and the way out only
+      // appears once there is something to leave.
+      readonly property var quietChoices: {
+        var choices = [
+          { minutes: 15, label: "For 15 minutes" },
+          { minutes: 60, label: "For 1 hour" },
+          { minutes: 240, label: "For 4 hours" },
+          { minutes: 0, label: "Until I turn it off" }
+        ]
+        if (root.systemData.dnd) choices.push({ minutes: -1, label: "Turn off" })
+        return choices
+      }
+      // The menu is as wide as the longest choice it offers, measured rather
+      // than counted, so another set of choices cannot quietly elide one.
+      readonly property string quietLongest: {
+        var longest = ""
+        for (var i = 0; i < quietChoices.length; i++)
+          if (quietChoices[i].label.length > longest.length) longest = quietChoices[i].label
+        return longest
+      }
+      readonly property int quietMenuWidth: root.spaceMedium + root.textIcon + root.spaceSmall
+        + Math.ceil(quietMeasure.width) + root.spaceLarge
+      readonly property int quietMenuHeight: quietChoices.length * root.controlHeight + root.spaceTight * 2
+      // What the open menu reaches down to. The panel holds at least this much
+      // so a dropdown of its own is never clipped by the surface it drops
+      // inside, which an empty inbox would otherwise be too short to show.
+      readonly property int quietMenuReach: root.panelMargin * 2 + notificationHeader.height
+        + root.spaceTight + quietMenuHeight
+      // A quiet period is the one thing in this panel that changes on its own,
+      // so the countdown reads a clock that runs only while a period is running
+      // and only on the screen the panel was opened on: a silent shell costs
+      // nothing and an open panel ticks once a second.
+      property double quietTick: Date.now() / 1000
+      readonly property var quiet: Notifications.quietPeriod(root.systemData.dnd,
+        root.systemData.notifications.dndUntil, root.systemData.notifications.dndMinutes, quietTick)
+      readonly property bool quietTimed: quiet.state === "timed"
       // An empty list is worth exactly one card: the panel says there is
       // nothing here in the space one notification would have taken, rather
       // than holding open a void the size of several.
@@ -9169,9 +9207,19 @@ Shared.Theme {
       // It measures the list that is on screen, so the height follows the
       // side of the panel being read instead of whichever side is longer.
       function suggestedHeight() {
-        if (entries.length === 0) return emptyHeight
-        var content = root.notificationHistoryOpen ? notificationHistoryList.contentHeight : notificationCurrentList.contentHeight
-        return Math.min(560, chromeHeight + Math.max(root.notificationRowHeight, content))
+        var list = entries.length === 0 ? emptyHeight
+          : Math.min(560, chromeHeight + Math.max(root.notificationRowHeight,
+            root.notificationHistoryOpen ? notificationHistoryList.contentHeight : notificationCurrentList.contentHeight))
+        return quietMenuOpen ? Math.max(list, quietMenuReach) : list
+      }
+
+      // Silence is set from one menu, so every way of setting it is one call:
+      // a length starts a period from now, zero holds the shell quiet with no
+      // end, and anything else is the way out.
+      function chooseQuiet(minutes) {
+        quietMenuOpen = false
+        if (minutes > 0) notificationStore.controller.snooze(minutes, Date.now() / 1000)
+        else notificationStore.controller.setDnd(minutes === 0)
       }
 
       // Deferred, because the lists have not laid out their rows at the moment
@@ -9181,7 +9229,13 @@ Shared.Theme {
         Qt.callLater(function() { notificationWindow.stableHeight = notificationWindow.suggestedHeight() })
       }
 
-      onVisibleChanged: remeasure()
+      // A menu belongs to the surface it dropped out of, so closing the panel
+      // takes it with it rather than leaving it open behind the next one.
+      onVisibleChanged: {
+        if (!visible) quietMenuOpen = false
+        remeasure()
+      }
+      onQuietMenuOpenChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
       // list says it changed.
@@ -9191,6 +9245,20 @@ Shared.Theme {
       Connections {
         target: root
         function onNotificationHistoryOpenChanged() { notificationWindow.remeasure() }
+      }
+      TextMetrics {
+        id: quietMeasure
+        text: notificationWindow.quietLongest
+        font.family: root.fontFamily
+        font.pixelSize: root.textBody
+      }
+
+      Timer {
+        interval: 1000
+        repeat: true
+        running: notificationWindow.visible && Number(root.systemData.notifications.dndUntil) > 0
+        onRunningChanged: if (running) notificationWindow.quietTick = Date.now() / 1000
+        onTriggered: notificationWindow.quietTick = Date.now() / 1000
       }
 
       PanelSurface {
@@ -9214,40 +9282,116 @@ Shared.Theme {
                 ? notificationWindow.entries.length + " in the past 24 hours"
                 : notificationWindow.entries.length + " waiting"
 
-            // Silence is an action, not a setting with a caption: the header
-            // mark already reports whether the shell is muted, so the control
-            // beside it is the same square button every other panel header
-            // uses rather than a labelled switch wedged into the title row.
-            IconButton {
+            // Silence is a header control again, and one control: the mark says
+            // whether the shell is quiet, the time beside it says how much of
+            // the period is left, and the whole button drops the menu of every
+            // way to set it. Nothing below the title row is spent on silence,
+            // which in an inbox is a notification the panel can show instead.
+            Item {
+              id: quietButton
+
               readonly property bool busy: root.controlBusy("dnd", "")
 
               anchors.verticalCenter: parent.verticalCenter
-              width: root.chipHeight
+              width: quietButtonRow.implicitWidth + root.spaceMedium * 2
               height: root.chipHeight
-              tint: root.yellow
-              active: root.systemData.dnd
-              hovered: dndMouse.containsMouse
-              pressed: dndMouse.pressed
+              activeFocusOnTab: true
 
-              Text {
-                visible: !parent.busy
-                anchors.centerIn: parent
-                text: "󰂛"
-                color: root.systemData.dnd ? root.yellow : dndMouse.containsMouse ? root.text : root.subtext
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
-                font.family: root.fontFamily
-                font.pixelSize: root.textStrong
+              Keys.onPressed: event => {
+                if (event.key === Qt.Key_Escape && notificationWindow.quietMenuOpen) {
+                  notificationWindow.quietMenuOpen = false
+                  event.accepted = true
+                  return
+                }
+                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+                event.accepted = true
+                if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                if (!quietButton.busy) notificationWindow.quietMenuOpen = !notificationWindow.quietMenuOpen
               }
-              RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea {
-                id: dndMouse
+
+              IconButton {
                 anchors.fill: parent
-                enabled: !parent.busy
+                tint: root.yellow
+                // An open menu keeps the button lit, so the control the pointer
+                // left still says where the surface in front of it came from.
+                active: root.systemData.dnd || notificationWindow.quietMenuOpen
+                hovered: quietMouse.containsMouse
+                pressed: quietMouse.pressed
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: parent.radius
+                  color: root.clearColor
+                  border.width: 1
+                  border.color: quietButton.activeFocus ? root.accent : root.alpha(root.accent, 0)
+                  antialiasing: true
+
+                  Behavior on border.color { ColorAnimation { duration: root.durationFast } }
+                }
+              }
+
+              Row {
+                id: quietButtonRow
+
+                visible: !quietButton.busy
+                anchors.centerIn: parent
+                spacing: root.spaceTight
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.systemData.dnd ? "󰂛" : "󰂚"
+                  color: root.systemData.dnd ? root.yellow : quietMouse.containsMouse ? root.text : root.subtext
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textStrong
+
+                  Behavior on color { ColorAnimation { duration: root.durationFast } }
+                }
+
+                // A running period reports itself on the control that started
+                // it, so the panel says how long it has left without spending
+                // a line on saying it.
+                Text {
+                  visible: notificationWindow.quiet.compact !== ""
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: notificationWindow.quiet.compact
+                  color: root.yellow
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  font.weight: root.weightStrong
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: notificationWindow.quietMenuOpen ? "󰅃" : "󰅀"
+                  color: quietMouse.containsMouse || notificationWindow.quietMenuOpen ? root.text : root.overlay
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                }
+              }
+
+              RefreshGlyph { visible: quietButton.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
+
+              MouseArea {
+                id: quietMouse
+
+                anchors.fill: parent
+                enabled: !quietButton.busy
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: notificationStore.controller.setDnd(!notificationStore.controller.dnd)
+                onClicked: notificationWindow.quietMenuOpen = !notificationWindow.quietMenuOpen
               }
-              HoverTip { mouse: dndMouse; inOverlay: true; text: root.systemData.dnd ? "Do not disturb is on" : "Silence notifications" }
+
+              // The tip stands down while the menu is open: the surface it
+              // would land on is already saying more than the tip could.
+              HoverTip {
+                mouse: quietMouse
+                inOverlay: true
+                text: notificationWindow.quietMenuOpen ? ""
+                  : notificationWindow.quietTimed
+                    ? "Quiet · " + notificationWindow.quiet.label + " · until "
+                      + Qt.formatDateTime(new Date(Number(root.systemData.notifications.dndUntil) * 1000), "HH:mm")
+                    : root.systemData.dnd ? "Quiet · until you turn it off" : "Silence notifications"
+              }
             }
           }
           // Current and history are two views of one list, not two errands, so
@@ -9322,95 +9466,11 @@ Shared.Theme {
               HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
             }
           }
-          // Silence has a length as well as a switch. The rule says when the
-          // shell comes back and the well offers the three lengths worth
-          // offering, with the one that is running lit -- so the control that
-          // started a quiet period is also the one that reports it.
-          SectionRule {
-            id: quietRule
-
-            width: parent.width
-            label: "QUIET"
-            detail: Number(root.systemData.notifications.dndUntil) > 0
-              ? "Until " + Qt.formatDateTime(new Date(root.systemData.notifications.dndUntil * 1000), "HH:mm")
-              : root.systemData.dnd ? "Until you turn it back on" : ""
-            detailColor: root.systemData.dnd ? root.yellow : root.overlay
-          }
-
-          SegmentWell {
-            id: quietPresets
-
-            width: parent.width
-
-            Repeater {
-              model: [
-                { minutes: 15, label: "15 min" },
-                { minutes: 60, label: "1 hour" },
-                { minutes: 240, label: "4 hours" }
-              ]
-
-              Segment {
-                id: quietPreset
-
-                required property var modelData
-
-                width: parent.width / 3
-                selected: Number(root.systemData.notifications.dndMinutes) === quietPreset.modelData.minutes
-                hovered: quietPresetMouse.containsMouse
-                pressed: quietPresetMouse.pressed
-                activeFocusOnTab: true
-
-                function activate() {
-                  notificationStore.controller.snooze(quietPreset.modelData.minutes, Date.now() / 1000)
-                }
-
-                Keys.onPressed: event => {
-                  if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                    activate()
-                    event.accepted = true
-                  }
-                }
-
-                Rectangle {
-                  visible: quietPreset.activeFocus
-                  anchors.fill: parent
-                  radius: parent.radius
-                  color: "transparent"
-                  border.width: 1
-                  border.color: root.accent
-                  antialiasing: true
-                }
-
-                Text {
-                  anchors.centerIn: parent
-                  text: quietPreset.modelData.label
-                  color: quietPreset.selected ? root.text : root.subtext
-                  font.family: root.fontFamily
-                  font.pixelSize: root.textLabel
-                  font.weight: quietPreset.selected ? root.weightStrong : root.weightMedium
-
-                  Behavior on color { ColorAnimation { duration: root.durationFast } }
-                }
-
-                MouseArea {
-                  id: quietPresetMouse
-
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: quietPreset.activate()
-                }
-              }
-            }
-          }
-
           Item {
             id: notificationViewport
 
             width: parent.width
             height: parent.height - notificationHeader.height - root.panelSpacing - notificationViews.height - root.panelSpacing
-              - quietRule.height - root.panelSpacing - quietPresets.height - root.panelSpacing
             clip: true
             NotificationList {
               id: notificationCurrentList
@@ -9438,6 +9498,124 @@ Shared.Theme {
                 font.family: root.fontFamily
                 font.pixelSize: root.textLabel
                 horizontalAlignment: Text.AlignHCenter
+              }
+            }
+          }
+        }
+
+        // The menu drops out of the header control instead of opening a row in
+        // the panel, so the list under it stays exactly where the pointer left
+        // it. It is a sibling of the column rather than a child of it, because
+        // a dropdown draws over the content it covers; the catcher behind it is
+        // what closes it when the next click lands anywhere else, and it reports
+        // no hover of its own so the surface underneath keeps its own.
+        MouseArea {
+          anchors.fill: parent
+          visible: notificationWindow.quietMenuOpen
+          hoverEnabled: false
+          onClicked: notificationWindow.quietMenuOpen = false
+        }
+
+        Rectangle {
+          id: quietMenu
+
+          visible: notificationWindow.quietMenuOpen
+          width: notificationWindow.quietMenuWidth
+          height: notificationWindow.quietMenuHeight
+          anchors.right: parent.right
+          anchors.rightMargin: root.panelMargin
+          anchors.top: parent.top
+          anchors.topMargin: root.panelMargin + notificationHeader.height + root.spaceTight
+          radius: root.radius
+          // The one nearly solid step in the ramp, because this surface
+          // overlaps rows whose own fill moves under the pointer.
+          color: root.floatColor
+          antialiasing: true
+
+          CardEdge {}
+
+          Column {
+            anchors.fill: parent
+            anchors.topMargin: root.spaceTight
+            anchors.bottomMargin: root.spaceTight
+
+            Repeater {
+              model: notificationWindow.quietChoices
+
+              Item {
+                id: quietChoice
+
+                required property var modelData
+
+                // A length is running, silence is held with no end, or neither.
+                // The choice that is on is the one the check belongs to.
+                readonly property bool selected: modelData.minutes > 0
+                  ? notificationWindow.quietTimed && Number(root.systemData.notifications.dndMinutes) === modelData.minutes
+                  : modelData.minutes === 0 && root.systemData.dnd && !notificationWindow.quietTimed
+
+                width: parent.width
+                height: root.controlHeight
+                activeFocusOnTab: notificationWindow.quietMenuOpen
+
+                Keys.onPressed: event => {
+                  if (event.key === Qt.Key_Escape) {
+                    notificationWindow.quietMenuOpen = false
+                    event.accepted = true
+                    return
+                  }
+                  if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
+                  event.accepted = true
+                  if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+                  notificationWindow.chooseQuiet(quietChoice.modelData.minutes)
+                }
+
+                Rectangle {
+                  anchors.fill: parent
+                  anchors.leftMargin: root.spaceTight
+                  anchors.rightMargin: root.spaceTight
+                  radius: root.radiusSmall
+                  color: quietChoiceMouse.pressed ? root.pressColor : root.clearColor
+                  border.width: 1
+                  border.color: quietChoice.activeFocus ? root.accent : root.alpha(root.accent, 0)
+                  antialiasing: true
+
+                  Behavior on color { ColorAnimation { duration: root.durationFast } }
+                  Behavior on border.color { ColorAnimation { duration: root.durationFast } }
+
+                  HoverWash { hovered: quietChoiceMouse.containsMouse }
+                }
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.leftMargin: root.spaceMedium
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: root.textIcon
+                  text: quietChoice.selected ? "✓" : ""
+                  color: root.accent
+                  horizontalAlignment: Text.AlignHCenter
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textBody
+                }
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.leftMargin: root.spaceMedium + root.textIcon + root.spaceSmall
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: quietChoice.modelData.label
+                  color: quietChoice.selected ? root.accent : root.text
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textBody
+                  font.weight: quietChoice.selected ? root.weightStrong : root.weightRegular
+                }
+
+                MouseArea {
+                  id: quietChoiceMouse
+
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: notificationWindow.chooseQuiet(quietChoice.modelData.minutes)
+                }
               }
             }
           }
