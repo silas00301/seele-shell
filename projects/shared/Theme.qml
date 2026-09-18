@@ -83,6 +83,7 @@ ShellRoot {
   readonly property real trackingLabel: 1.4
   // Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`.
   readonly property int spaceTight: 4
+  readonly property int hairline: 1
   readonly property int spaceSmall: 6
   readonly property int spaceMedium: 8
   readonly property int spaceLarge: 12
@@ -200,6 +201,13 @@ ShellRoot {
   // The port inspector scrolls inside this bound, tall enough that an open
   // listener shows its address, its owners and a confirmation together.
   readonly property int portsMaximumHeight: 520
+  // The colour picker's lens magnifies this many captured pixels across: few
+  // enough that each one is still a square the eye can aim at, many enough to
+  // show which side of a one-pixel border the point is on. Its size is built
+  // from the control ramp so the lens keeps the shell's rhythm instead of
+  // arriving at a counted constant of its own.
+  readonly property int colorLensCells: 9
+  readonly property int colorLensSize: controlHeight * 4
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
 
