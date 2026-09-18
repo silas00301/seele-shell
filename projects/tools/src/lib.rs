@@ -12,6 +12,7 @@ mod grain;
 mod launch;
 mod live;
 mod mic_sync;
+mod mic_test;
 mod notes;
 mod nothing;
 mod pipewire;
@@ -33,6 +34,7 @@ pub enum Tool {
     BluetoothReceiver,
     BluetoothAgent,
     MicrophoneSync,
+    MicrophoneTest,
     NothingHeadphones,
     OsSession,
     ShellControl,
@@ -55,6 +57,7 @@ const TOOLS: &[(&str, &str, Tool)] = &[
     ("bt-receiver", "seele-bt-receiver", Tool::BluetoothReceiver),
     ("bt-agent", "seele-bt-agent", Tool::BluetoothAgent),
     ("mic-sync", "seele-mic-sync", Tool::MicrophoneSync),
+    ("mic-test", "seele-mic-test", Tool::MicrophoneTest),
     (
         "nothing-headphones",
         "seele-nothing-headphones",
@@ -83,6 +86,7 @@ impl Tool {
             Self::BluetoothReceiver => receiver::run(),
             Self::BluetoothAgent => bluetooth::agent(&arguments),
             Self::MicrophoneSync => mic_sync::run(&arguments),
+            Self::MicrophoneTest => mic_test::run(&arguments),
             Self::NothingHeadphones => nothing::run(&arguments),
             Self::OsSession => session::run(&arguments),
             Self::ShellControl => shellctl::run(&arguments),

@@ -107,6 +107,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./PortsStore.qml} "$out/share/seele-shell/PortsStore.qml"
     install -m644 ${./PortsPanel.qml} "$out/share/seele-shell/PortsPanel.qml"
     substituteInPlace "$out/share/seele-shell/PortsPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./MicTestStore.qml} "$out/share/seele-shell/MicTestStore.qml"
+    install -m644 ${./MicTestCard.qml} "$out/share/seele-shell/MicTestCard.qml"
+    install -m644 ${./mic-test.js} "$out/share/seele-shell/mic-test.js"
+    substituteInPlace "$out/share/seele-shell/MicTestCard.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./HomeAssistantPanel.qml} "$out/share/seele-shell/HomeAssistantPanel.qml"
     substituteInPlace "$out/share/seele-shell/HomeAssistantPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./AiActivityStore.qml} "$out/share/seele-shell/AiActivityStore.qml"
@@ -226,7 +230,7 @@ pkgs.stdenvNoCC.mkDerivation {
       --set-default SEELE_SHELL_WL_COPY "${pkgs.wl-clipboard}/bin/wl-copy" \
       --set-default SEELE_SHELL_WTYPE "${lib.getExe pkgs.wtype}"
     install -m755 ${tools}/bin/seele-tools "$out/libexec/seele-shell/seele-tools"
-    for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-mic-sync seele-nothing-headphones seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for name in seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-mic-sync seele-mic-test seele-nothing-headphones seele-bt-agent seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       install -m755 "${tools}/bin/$name" "$out/libexec/seele-shell/$name"
     done
     makeTool() {
@@ -244,6 +248,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-control
     makeTool seele-bt-receiver
     makeTool seele-mic-sync
+    makeTool seele-mic-test
     makeTool seele-nothing-headphones
     makeTool seele-bt-agent
     makeTool seele-os-session
@@ -296,7 +301,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js; do
+    for source in CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -323,7 +328,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/home-assistant-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_homeassistant.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -341,7 +346,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-transfers seele-ai-prompt-worker seele-uri-worker seele-ports seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-transfers seele-ai-prompt-worker seele-uri-worker seele-ports seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -357,6 +362,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ports.js "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/mic-test.js "$out/share/seele-shell/mic-test.js" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ai-prompt.js "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
     node ${tests}/focus.js "$out/share/seele-shell/focus.js"
     bash ${tests}/focus-timer.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
@@ -395,6 +401,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/bluetooth-pairing.js "$out/share/seele-shell/shell.qml"
     bash ${tests}/control-actions.sh "$out/libexec/seele-shell/seele-control"
     bash ${tests}/mic-sync.sh "$out/libexec/seele-shell/seele-mic-sync" "$out/libexec/seele-shell/seele-shellctl"
+    PATH="${runtimePath}:$PATH" bash ${tests}/mic-test.sh "$out/libexec/seele-shell/seele-mic-test"
 
     runHook postInstallCheck
   '';
