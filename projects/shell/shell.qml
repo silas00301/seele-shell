@@ -20,6 +20,7 @@ import "network.js" as Network
 import "time.js" as Time
 import "notifications.js" as Notifications
 import "uri-picker.js" as Uris
+import "color-picker.js" as Colors
 import "github.js" as GitHub
 
 Shared.Theme {
@@ -158,6 +159,17 @@ Shared.Theme {
   property bool speedtestReceived: false
   property date now: new Date()
 
+  // The palette the colour picker measures a sampled pixel against. It is the
+  // same block every surface here is drawn from, named by role, so the picker
+  // can only ever report a token this desktop actually has -- and a repaint
+  // through theme.json moves the picker's answers with everything else.
+  readonly property var colorTokens: ({
+    base: String(root.base), mantle: String(root.mantle), crust: String(root.crust),
+    surface: String(root.surface), overlay: String(root.overlay), text: String(root.text),
+    subtext: String(root.subtext), accent: String(root.accent), red: String(root.red),
+    green: String(root.green), yellow: String(root.yellow)
+  })
+
   function focusedScreen(screen) {
     return !Hyprland.focusedMonitor || Hyprland.focusedMonitor.name === screen.name
   }
@@ -203,6 +215,7 @@ Shared.Theme {
   function closeOverlays() {
     aiPrompt.close()
     uriPicker.close()
+    colorPicker.close()
     cancelModuleDrag()
     agentsOpen = false
     controlPanel = ""
@@ -221,6 +234,14 @@ Shared.Theme {
     // surface covers it without changing what will be restored on dismissal.
     if (uriPicker.active) uriPicker.close()
     else uriPicker.open()
+  }
+
+  function toggleColor() {
+    // The frozen capture includes whatever the shell itself is drawing, so an
+    // open panel is sampled exactly as it looks instead of disappearing out
+    // from under the pointer aimed at it.
+    if (colorPicker.active) colorPicker.close()
+    else colorPicker.open()
   }
 
   function togglePrompt() {
@@ -1775,6 +1796,7 @@ Shared.Theme {
     function toggleAgents(): void { root.toggleAgents() }
     function togglePrompt(): void { root.togglePrompt() }
     function toggleUris(): void { root.toggleUris() }
+    function toggleColor(): void { root.toggleColor() }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
     function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
@@ -3463,7 +3485,7 @@ Shared.Theme {
         notificationStore.controller.pause(false, Date.now() / 1000)
       }
       screen: modelData
-      visible: !uriPicker.presented && !root.systemData.dnd
+      visible: !uriPicker.presented && !colorPicker.presented && !root.systemData.dnd
         && root.controlPanel !== "notifications"
         && entries.length > 0
         && root.pinnedScreen(root.notificationPopupScreen, modelData)
@@ -4479,6 +4501,304 @@ Shared.Theme {
             font.pixelSize: root.textBody
           }
         }
+        SurfaceEdge {}
+        SurfaceGrain { inset: root.radius / 3 }
+      }
+    }
+  }
+
+  // Frozen colour picker ------------------------------------------------------
+  ColorPicker {
+    id: colorPicker
+    palette: root.colorTokens
+  }
+
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: colorWindow
+      required property var modelData
+      readonly property var frame: colorPicker.frame(modelData.name)
+      readonly property bool here: colorPicker.output === modelData.name
+      readonly property var lens: frame && here
+        ? Colors.loupe(colorPicker.pointX, colorPicker.pointY, frame.width, frame.height, root.colorLensCells)
+        : null
+      screen: modelData
+      anchors { top: true; bottom: true; left: true; right: true }
+      exclusionMode: ExclusionMode.Ignore
+      visible: colorPicker.active && colorPicker.presented
+      onVisibleChanged: if (visible) colorKeys.forceActiveFocus()
+      color: root.crust
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-color"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+      Image {
+        id: colorFrame
+        anchors.fill: parent
+        source: colorWindow.frame ? "file://" + colorWindow.frame.path.split("/").map(encodeURIComponent).join("/") : ""
+        asynchronous: true
+        cache: false
+        smooth: false
+        fillMode: Image.Stretch
+        onStatusChanged: {
+          if (status === Image.Ready) colorPicker.imageReady(colorWindow.modelData.name)
+          else if (status === Image.Error && colorPicker.active) colorPicker.fail("Could not display the capture")
+        }
+      }
+
+      Item {
+        id: colorKeys
+        anchors.fill: parent
+        focus: true
+        Keys.onPressed: event => colorPicker.key(event)
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.CrossCursor
+        onPositionChanged: mouse => colorPicker.aim(colorWindow.modelData.name, mouse.x / width, mouse.y / height)
+        // The compositor delivers an enter event when the frozen surface maps
+        // under a pointer that has not moved, which is what seeds the first
+        // reading instead of asking the user to wiggle the mouse for it.
+        onContainsMouseChanged: if (containsMouse) colorPicker.aim(colorWindow.modelData.name, mouseX / width, mouseY / height)
+        onClicked: colorPicker.commit()
+      }
+
+      // The lens magnifies the frozen pixels already uploaded for the image
+      // behind it rather than re-reading the capture, so aiming costs no
+      // decode. It sits centred on the point, because a loupe that dodges the
+      // thing it magnifies is harder to aim than one that does not. It takes
+      // the shell's float material and edge but deliberately neither the wash
+      // nor the grain: both are films laid over their whole surface, and a
+      // film over the pixels being measured changes the colour being read.
+      Rectangle {
+        id: colorLens
+        readonly property real scaleX: colorWindow.frame ? colorWindow.width / colorWindow.frame.width : 1
+        readonly property real scaleY: colorWindow.frame ? colorWindow.height / colorWindow.frame.height : 1
+        readonly property real cell: colorWindow.lens ? colorLensBody.width / colorWindow.lens.w : 0
+        visible: !!colorWindow.lens && !!colorPicker.entry
+        width: root.colorLensSize
+        height: colorLensBody.height + colorLensCaption.height + root.spaceTight
+        x: Math.max(0, Math.min(colorWindow.width - width, colorPicker.pointX * colorWindow.width - width / 2))
+        y: Math.max(0, Math.min(colorWindow.height - height, colorPicker.pointY * colorWindow.height - colorLensBody.height / 2))
+        z: 2
+        radius: root.radius
+        color: root.floatColor
+        border.width: 1
+        border.color: root.panelBorder
+        antialiasing: true
+
+        ClippingRectangle {
+          id: colorLensBody
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: 1
+          height: root.colorLensSize - 2
+          radius: root.radius - 1
+          color: root.wellColor
+
+          ShaderEffectSource {
+            anchors.fill: parent
+            sourceItem: colorFrame
+            sourceRect: colorWindow.lens
+              ? Qt.rect(colorWindow.lens.x * colorLens.scaleX, colorWindow.lens.y * colorLens.scaleY,
+                colorWindow.lens.w * colorLens.scaleX, colorWindow.lens.h * colorLens.scaleY)
+              : Qt.rect(0, 0, 0, 0)
+            smooth: false
+          }
+
+          // The exact pixel the reading came from, outlined twice so the mark
+          // survives landing on a light colour and on a dark one alike.
+          Rectangle {
+            visible: !!colorWindow.lens
+            x: colorWindow.lens ? colorWindow.lens.cx * colorLens.cell : 0
+            y: colorWindow.lens ? colorWindow.lens.cy * colorLens.cell : 0
+            width: colorLens.cell
+            height: colorLens.cell
+            color: root.clearColor
+            border.width: 1
+            border.color: root.crust
+
+            Rectangle {
+              anchors.fill: parent
+              anchors.margins: 1
+              color: root.clearColor
+              border.width: 1
+              border.color: root.text
+            }
+          }
+        }
+
+        Item {
+          id: colorLensCaption
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: colorLensBody.bottom
+          height: root.chipHeight
+
+          Text {
+            anchors.centerIn: parent
+            width: parent.width - root.spaceSmall * 2
+            horizontalAlignment: Text.AlignHCenter
+            text: colorPicker.payloadText
+            textFormat: Text.PlainText
+            elide: Text.ElideMiddle
+            color: root.text
+            font.family: root.fontFamily
+            font.pixelSize: root.textCaption
+            font.weight: root.weightMedium
+          }
+        }
+
+        SurfaceEdge { radius: root.radius - 1 }
+      }
+
+      Connections {
+        target: colorWindow.modelData
+        function onWidthChanged() { if (colorPicker.active) colorPicker.close() }
+        function onHeightChanged() { if (colorPicker.active) colorPicker.close() }
+      }
+    }
+  }
+
+  // The reading and the session history share one input-transparent card, so
+  // the result stays legible after the overlay has released the screen and the
+  // five seconds it lingers for never take a click aimed at what is underneath.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      anchors.bottom: true
+      margins.bottom: root.panelMargin
+      implicitWidth: Math.min(modelData.width - root.panelMargin * 2, root.controlHeight * 16)
+      implicitHeight: colorStatus.implicitHeight + root.cardPadding * 2
+      visible: colorPicker.presented || colorPicker.copyingNow || colorPicker.notice !== ""
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      mask: Region {}
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-color-status"
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+      Rectangle {
+        anchors.fill: parent
+        radius: root.radius
+        color: root.panelColor
+        border.width: 1
+        border.color: root.panelBorder
+        SurfaceWash { radius: root.radius - 1 }
+
+        Column {
+          id: colorStatus
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: root.cardPadding
+          spacing: root.spaceSmall
+
+          PanelHeader {
+            width: parent.width
+            glyph: "󰈋"
+            title: "Screen colour"
+            detail: colorPicker.detail
+            detailColor: colorPicker.error !== "" ? root.red : root.subtext
+
+            // A token is named as a chip only where the pixel is that token
+            // exactly. Anything merely close says so in prose below, with the
+            // distance attached, because a name is something the reader will
+            // go and write down.
+            StatusChip {
+              anchors.verticalCenter: parent.verticalCenter
+              visible: !!colorPicker.entry && colorPicker.entry.exact
+              text: colorPicker.entry ? colorPicker.entry.token : ""
+              tint: root.accent
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: root.spaceMedium
+            visible: !!colorPicker.entry
+
+            Rectangle {
+              width: root.rowHeight
+              height: root.rowHeight
+              radius: root.radiusSmall
+              color: colorPicker.entry ? colorPicker.entry.hex : root.wellColor
+              border.width: 1
+              border.color: root.panelBorder
+              antialiasing: true
+            }
+
+            Column {
+              width: parent.width - root.rowHeight - root.spaceMedium
+              spacing: 1
+
+              Text {
+                width: parent.width
+                text: colorPicker.payloadText
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.text
+                font.family: root.fontFamily
+                font.pixelSize: root.textLead
+                font.weight: root.weightStrong
+              }
+
+              Text {
+                width: parent.width
+                visible: !!colorPicker.entry && !colorPicker.entry.exact && colorPicker.entry.note !== ""
+                text: colorPicker.entry ? colorPicker.entry.note : ""
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.subtext
+                font.family: root.fontFamily
+                font.pixelSize: root.textCaption
+              }
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            visible: colorPicker.history.length > 0
+
+            Repeater {
+              model: colorPicker.history
+
+              delegate: Column {
+                required property var modelData
+                required property int index
+                spacing: 1
+
+                Rectangle {
+                  width: root.chipHeight
+                  height: root.chipHeight
+                  radius: root.radiusSmall
+                  color: modelData.hex
+                  border.width: 1
+                  border.color: root.panelBorder
+                  antialiasing: true
+                }
+
+                Text {
+                  width: root.chipHeight
+                  horizontalAlignment: Text.AlignHCenter
+                  text: index + 1
+                  color: root.subtext
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textMicro
+                }
+              }
+            }
+          }
+        }
+
         SurfaceEdge {}
         SurfaceGrain { inset: root.radius / 3 }
       }
@@ -9828,7 +10148,7 @@ Shared.Theme {
     PanelWindow {
       required property var modelData
       screen: modelData
-      visible: !uriPicker.presented && root.osdOpen && root.pinnedScreen(root.osdScreen, modelData)
+      visible: !uriPicker.presented && !colorPicker.presented && root.osdOpen && root.pinnedScreen(root.osdScreen, modelData)
       // The YubiKey OSD is the polkit dialog's card without the password field,
       // so it is placed where that dialog places its own: anchoring to no edge
       // leaves a layer surface centred on the output, which is where the dialog
