@@ -977,6 +977,7 @@ pub fn run(arguments: &[String]) -> Result {
         | "vicinae-generation-check"
         | "vicinae-generation-diff"
         | "vicinae-focus"
+        | "vicinae-caffeinate"
         | "vicinae-audio" => return crate::vicinae::run(arguments),
         "watch-status" => return crate::live::run(),
         "restart-user-service" => return restart_user_service(&arguments[1..]),

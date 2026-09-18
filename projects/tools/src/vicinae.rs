@@ -128,6 +128,42 @@ fn check_review(arguments: &[String], profiles: &Path, running: &Path) -> Result
     }
     Ok(())
 }
+/// Caffeinate rows, session metadata and failure text are prepared here, so the
+/// launcher renders strings it never has to compose, validate or translate.
+fn caffeinate(arguments: &[String]) -> Result<Value> {
+    let (operation, rest) = arguments
+        .split_first()
+        .ok_or("Caffeinate operation required")?;
+    let request = match operation.as_str() {
+        "snapshot" if rest.is_empty() => json!({"op": "snapshot"}),
+        "tasks" if rest.is_empty() => json!({"op": "tasks"}),
+        "stop" if rest.is_empty() => json!({"op": "stop"}),
+        "start" if rest.len() == 1 => {
+            if rest[0].len() > 4096 {
+                return Err("Caffeinate request exceeds its limit".into());
+            }
+            let mut request: Value = serde_json::from_str(&rest[0])?;
+            if !request.is_object() {
+                return Err("Invalid Caffeinate request".into());
+            }
+            // The operation is never taken from the launcher's payload.
+            request["op"] = json!("start");
+            request
+        }
+        _ => return Err("Invalid Caffeinate operation".into()),
+    };
+    let reply = crate::caffeinate::request(&request);
+    if reply["ok"] != json!(true) {
+        let code = reply["error"].as_str().unwrap_or("");
+        let message = seele_qml_core::call("caffeinate.failure", &[json!(code)])?;
+        return Ok(json!({"ok": false, "message": message}));
+    }
+    if operation == "tasks" {
+        return Ok(json!({"ok": true, "tasks": reply["tasks"].clone()}));
+    }
+    let display = seele_qml_core::call("caffeinate.project", std::slice::from_ref(&reply))?;
+    Ok(json!({"ok": true, "session": reply, "display": display}))
+}
 fn desktop() -> Result<Value> {
     let (clients, workspaces) = std::thread::scope(|scope| {
         let clients = scope.spawn(|| parsed("hyprctl", &["clients", "-j"]));
@@ -210,6 +246,7 @@ pub fn run(arguments: &[String]) -> Result {
                 json!({"diff":core("formatPackageDiff",&[json!(output)])?})
             );
         }
+        "vicinae-caffeinate" => println!("{}", caffeinate(args)?),
         "vicinae-focus" => focus(args)?,
         "vicinae-audio" if args.len() == 2 && matches!(args[1].as_str(), "select" | "toggle") => {
             if args[0].len() > 16384 {

@@ -80,6 +80,12 @@
       "title": "Seele Transfers",
       "description": "Send files to personal devices and view received files",
       "mode": "no-view"
+    },
+    {
+      "name": "caffeinate",
+      "title": "Seele Caffeinate",
+      "description": "Keep the session awake until a task ends, a time passes, or you stop it",
+      "mode": "view"
     }
   ]
 }
