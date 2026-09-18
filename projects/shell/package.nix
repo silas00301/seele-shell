@@ -392,6 +392,7 @@ pkgs.stdenvNoCC.mkDerivation {
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${tests}/uri-picker.sh \
       ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
     node ${tests}/status-patches.js "$out/share/seele-shell/shell.qml"
+    node ${tests}/audio-streams.js "$out/share/seele-shell/shell.qml"
     node ${tests}/shell-presentation.js "$out/share/seele-shell/shell.qml"
     python3 ${tests}/dictation.py "$out/bin/seele-dictation-levels"
     bash ${tests}/clock.sh "$out/bin/seele-clock"
