@@ -2,6 +2,7 @@ import {
   Action,
   ActionPanel,
   Alert,
+  Color,
   closeMainWindow,
   confirmAlert,
   Detail,
@@ -11,8 +12,12 @@ import {
   Toast,
 } from "@raycast/api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { formatGenerationDate } from "./generation-data.mjs";
+import {
+  formatGenerationAge,
+  formatGenerationDate,
+} from "./generation-data.mjs";
 import { binaries, run, useQuery } from "./runtime";
+import { RefreshAction, Unavailable, shortcuts } from "./ui";
 
 type Generation = {
   generation: number;
@@ -41,29 +46,19 @@ async function loadGenerations(signal?: AbortSignal): Promise<Generation[]> {
   );
 }
 
+function generationState(generation: Generation) {
+  if (generation.active) return { text: "Running now", color: Color.Green };
+  if (generation.storePath)
+    return { text: "Retained rollback target", color: Color.PrimaryText };
+  return { text: "No longer retained", color: Color.SecondaryText };
+}
+
+// The diff is the whole reason this view exists, so it owns the markdown and
+// every fixed field moves into the metadata panel beside it.
 function generationMarkdown(generation: Generation, packageDiff: string) {
-  const state = generation.active
-    ? "Running now"
-    : generation.storePath
-      ? "Retained rollback target"
-      : "No longer retained";
-  const revision = generation.configurationRevision
-    ? `\n**Configuration revision:** ${generation.escaped.configurationRevision}`
-    : "";
-  const specialisations = generation.specialisations.length
-    ? `\n**Specialisations:** ${generation.escaped.specialisations.join(", ")}`
-    : "";
   return `# Generation ${generation.generation}
 
-**Built:** ${formatGenerationDate(generation.date, generation.escaped.date)}
-
-**Kernel:** ${generation.escaped.kernelVersion}
-
-**NixOS:** ${generation.escaped.nixosVersion}
-
-**State:** ${state}${revision}${specialisations}
-
-## Package diff against the running system
+## Package changes against the running system
 
 ${packageDiff}`;
 }
@@ -73,7 +68,7 @@ export function GenerationDetail({ generation }: { generation: Generation }) {
   const [diffLoading, setDiffLoading] = useState(!generation.active);
   const [switching, setSwitching] = useState(false);
   const [reviewed, setReviewed] = useState<Generation>();
-  const review = useRef<Generation>();
+  const review = useRef<Generation | undefined>(undefined);
   const switchPending = useRef(false);
 
   useEffect(() => {
@@ -177,31 +172,83 @@ export function GenerationDetail({ generation }: { generation: Generation }) {
     () => generationMarkdown(generation, packageDiff),
     [generation, packageDiff],
   );
+  const state = generationState(generation);
+  const activatable =
+    !generation.active &&
+    Boolean(generation.storePath) &&
+    !diffLoading &&
+    reviewed === generation;
   return (
     <Detail
       isLoading={diffLoading || switching}
       navigationTitle={`Generation ${generation.generation}`}
       markdown={markdown}
+      metadata={
+        <Detail.Metadata>
+          <Detail.Metadata.Label
+            title="Built"
+            icon={Icon.Clock}
+            text={formatGenerationDate(generation.date)}
+          />
+          <Detail.Metadata.Label
+            title="Age"
+            text={formatGenerationAge(generation.date) || "Unknown"}
+          />
+          <Detail.Metadata.Separator />
+          <Detail.Metadata.Label
+            title="Kernel"
+            text={generation.kernelVersion}
+          />
+          <Detail.Metadata.Label title="NixOS" text={generation.nixosVersion} />
+          {generation.configurationRevision ? (
+            <Detail.Metadata.Label
+              title="Revision"
+              text={generation.configurationRevision}
+            />
+          ) : null}
+          {generation.specialisations.length ? (
+            <Detail.Metadata.TagList title="Specialisations">
+              {generation.specialisations.map((name) => (
+                <Detail.Metadata.TagList.Item key={name} text={name} />
+              ))}
+            </Detail.Metadata.TagList>
+          ) : null}
+          <Detail.Metadata.Separator />
+          <Detail.Metadata.Label
+            title="State"
+            text={{ value: state.text, color: state.color }}
+          />
+        </Detail.Metadata>
+      }
       actions={
-        !generation.active &&
-        generation.storePath &&
-        !diffLoading &&
-        reviewed === generation ? (
-          <ActionPanel>
+        <ActionPanel>
+          {activatable ? (
             <Action
               title={`Switch to Generation ${generation.generation}`}
               icon={Icon.ArrowClockwise}
               style={Action.Style.Destructive}
               onAction={switchGeneration}
             />
-          </ActionPanel>
-        ) : undefined
+          ) : null}
+          {generation.storePath ? (
+            <Action.CopyToClipboard
+              title="Copy Store Path"
+              content={generation.storePath}
+              shortcut={shortcuts.copy}
+            />
+          ) : null}
+          <Action.CopyToClipboard
+            title="Copy Generation Number"
+            content={String(generation.generation)}
+          />
+        </ActionPanel>
       }
     />
   );
 }
 
 function GenerationItem({ generation }: { generation: Generation }) {
+  const state = generationState(generation);
   return (
     <List.Item
       title={`Generation ${generation.generation}`}
@@ -212,10 +259,18 @@ function GenerationItem({ generation }: { generation: Generation }) {
         generation.kernelVersion,
         generation.nixosVersion,
         generation.configurationRevision,
+        "rollback",
+        "generation",
       ]}
       accessories={[
-        { text: generation.kernelVersion },
-        ...(generation.active ? [{ tag: "Running" }] : []),
+        { text: formatGenerationAge(generation.date) },
+        { text: generation.nixosVersion, tooltip: "NixOS version" },
+        { text: generation.kernelVersion, tooltip: "Kernel" },
+        ...(generation.active
+          ? [{ tag: { value: "Running", color: Color.Green } }]
+          : generation.storePath
+            ? []
+            : [{ tag: { value: state.text, color: Color.SecondaryText } }]),
       ]}
       actions={
         <ActionPanel>
@@ -224,6 +279,13 @@ function GenerationItem({ generation }: { generation: Generation }) {
             icon={Icon.Eye}
             target={<GenerationDetail generation={generation} />}
           />
+          {generation.storePath ? (
+            <Action.CopyToClipboard
+              title="Copy Store Path"
+              content={generation.storePath}
+              shortcut={shortcuts.copy}
+            />
+          ) : null}
         </ActionPanel>
       }
     />
@@ -235,12 +297,7 @@ export default function Command() {
   const active = data?.filter((generation) => generation.active) ?? [];
   const retained = data?.filter((generation) => !generation.active) ?? [];
   const reload = (
-    <Action
-      title="Refresh Generations"
-      icon={Icon.ArrowClockwise}
-      shortcut={{ modifiers: ["ctrl"], key: "r" }}
-      onAction={refresh}
-    />
+    <RefreshAction title="Refresh Generations" onAction={refresh} />
   );
 
   return (
@@ -249,11 +306,11 @@ export default function Command() {
       searchBarPlaceholder="Search generation, build date, kernel, or NixOS version…"
     >
       {error && (
-        <List.Item
+        <Unavailable
           title="NixOS generations unavailable"
-          subtitle="Refresh after the system profile is available"
-          icon={Icon.Warning}
-          actions={<ActionPanel>{reload}</ActionPanel>}
+          hint="The system profile did not answer. Refresh to try again."
+          refreshTitle="Refresh Generations"
+          onRefresh={refresh}
         />
       )}
       {active.length > 0 && (

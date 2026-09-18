@@ -38,21 +38,25 @@ export function useQuery<T>(
   const [data, setData] = useState<T>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const refreshRef = useRef<() => void>(() => {});
+  const refreshRef = useRef<(quiet?: boolean) => void>(() => {});
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let busy = false;
-    async function refresh() {
+    let settled = false;
+    async function refresh(quiet = false) {
       if (busy || controller.signal.aborted) return;
       clearTimeout(timer);
       busy = true;
-      setLoading(true);
+      // A poll the user did not ask for must not flash the loading indicator
+      // over a list they are already reading or moving through.
+      if (!quiet || !settled) setLoading(true);
       try {
         const next = await load(controller.signal);
         if (!controller.signal.aborted) {
           setData(next);
           setError(undefined);
+          settled = true;
         }
       } catch (error) {
         if (!controller.signal.aborted)
@@ -61,7 +65,7 @@ export function useQuery<T>(
         busy = false;
         if (!controller.signal.aborted) {
           setLoading(false);
-          if (interval) timer = setTimeout(refresh, interval);
+          if (interval) timer = setTimeout(() => refresh(true), interval);
         }
       }
     }
@@ -88,6 +92,7 @@ export async function perform(
   try {
     if (dismiss) await closeMainWindow();
     await action();
+    return true;
   } catch {
     // Child errors can include private command output; keep notifications generic.
     await showToast({
@@ -95,9 +100,15 @@ export async function perform(
       title: `${title} failed`,
       message: "Check that the desktop service is running and try again.",
     });
+    return false;
   }
 }
 
 export function shell(args: string[]) {
   return perform("Seele action", () => run(binaries.shell, args), true);
+}
+
+// Panels own their own presentation, so opening one always dismisses Vicinae.
+export function control(args: string[], dismiss = false) {
+  return perform("Seele action", () => run(binaries.control, args), dismiss);
 }

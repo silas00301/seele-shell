@@ -22,6 +22,12 @@ function deferred() {
 }
 const Action = Object.assign(() => {}, {
   Style: { Destructive: "destructive" },
+  CopyToClipboard: () => {},
+});
+const metadata = Object.assign(() => {}, {
+  Label: () => {},
+  Separator: () => {},
+  TagList: Object.assign(() => {}, { Item: () => {} }),
 });
 const react = {
   createElement: (type, props, ...children) => ({
@@ -67,7 +73,12 @@ Module._load = function (name, ...args) {
     return {
       Action,
       ActionPanel: "actions",
-      Detail: "detail",
+      Color: {
+        Green: "green",
+        PrimaryText: "primary",
+        SecondaryText: "secondary",
+      },
+      Detail: Object.assign(() => {}, { Metadata: metadata }),
       List: {},
       Icon: {},
       Alert: { ActionStyle: { Destructive: "destructive" } },
@@ -132,8 +143,13 @@ function render(value = generation) {
   for (const effect of effects.splice(0)) effect();
   return tree;
 }
+// Only a destructive switch action authorizes activation; the panel keeps its
+// ordinary copy actions in every state, including a failed or stale review.
 function action(tree) {
-  return tree.props.actions?.props.children?.props.onAction;
+  const children = tree.props.actions?.props.children;
+  return (Array.isArray(children) ? children : [children]).find(
+    (child) => child && child.props && child.props.style === "destructive",
+  )?.props.onAction;
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 (async () => {

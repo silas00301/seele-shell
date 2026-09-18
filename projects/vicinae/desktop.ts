@@ -2,8 +2,6 @@ export type Client = {
   address: string;
   title: string;
   class: string;
-  mapped: boolean;
-  hidden: boolean;
   workspace: { id: number; name: string };
   monitor: number;
   focusHistoryID: number;
@@ -36,4 +34,12 @@ export async function focusWorkspace(id: number) {
     "workspace",
     String(JSON.stringify(id)),
   ]);
+}
+// The desktop's own application endpoints already validate the address and own
+// the compositor request, so window closing is not duplicated here.
+export async function closeWindow(address: string) {
+  await run(binaries.control, ["application", "quit", address]);
+}
+export async function forceQuitWindow(address: string) {
+  await run(binaries.control, ["application", "force-quit", address]);
 }

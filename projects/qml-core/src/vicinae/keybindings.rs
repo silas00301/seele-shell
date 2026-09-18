@@ -109,7 +109,8 @@ pub fn snapshot(value: &Value) -> Result<Value, String> {
                 .unwrap_or("Hyprland keybinding")
         };
         let index = result.len();
-        result.push(json!({"id":format!("{shortcut}-{action}-{index}"),"shortcut":shortcut,"action":action,"description":description,"key":key,"modmask":mask,"inputAllowed":!key.starts_with("code:")}));
+        result.push(json!({"id":format!("{shortcut}-{action}-{index}"),"shortcut":shortcut,"action":action,"description":description,"key":key,"modmask":mask,
+            "modifiers":modifiers(mask),"inputAllowed":!key.starts_with("code:")}));
     }
     Ok(json!(result))
 }
@@ -120,6 +121,7 @@ mod tests {
     fn metadata_is_bounded_and_input_is_an_exact_argument_vector() {
         let rows=snapshot(&json!([{"key":"mouse:272"},{"key":"S","modmask":68,"dispatcher":"exec","arg":"private ignored","description":"__lua 42"}])).unwrap();
         assert_eq!(rows[0]["shortcut"], "Super + Ctrl + S");
+        assert_eq!(rows[0]["modifiers"], json!(["Super", "Ctrl"]));
         assert_eq!(
             rows[0]["description"],
             "Open a visible URI from the frozen screens"

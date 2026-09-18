@@ -119,6 +119,7 @@ const focusedTests = [
   'vicinae-caffeinate.cjs',
   'mic-test.js',
   'mic-test.sh',
+  'vicinae-views.cjs',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);

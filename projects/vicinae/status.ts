@@ -3,6 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import { AudioDevice } from "./desktop";
 import { binaries } from "./runtime";
 
+export type Battery = {
+  kind: string;
+  name: string;
+  percent: number;
+  status: string;
+};
+export type Tailscale = {
+  available: boolean;
+  connected: boolean;
+  needsLogin: boolean;
+  name: string;
+  tailnet: string;
+  onlinePeers: number;
+  peers: number;
+};
 export type Status = {
   volume?: number;
   muted?: boolean;
@@ -13,10 +28,17 @@ export type Status = {
   wifiAvailable?: boolean;
   bluetoothAvailable?: boolean;
   bluetoothPowered?: boolean;
+  bluetoothConnected?: number;
   microphoneActive?: boolean;
   cameraActive?: boolean;
   screenRecording?: boolean;
+  connection?: string;
+  connectionType?: string;
+  connectivity?: string;
+  voxtypeStatus?: string;
   audioDevices?: AudioDevice[];
+  batteries?: Battery[];
+  tailscale?: Tailscale;
   headphones?: { connected: boolean; name: string };
 };
 
@@ -33,6 +55,12 @@ const booleans = new Set([
   "cameraActive",
   "screenRecording",
 ]);
+const labels = new Set([
+  "connection",
+  "connectionType",
+  "connectivity",
+  "voxtypeStatus",
+]);
 const text = (value: unknown): value is string =>
   typeof value === "string" &&
   value.length <= 1024 &&
@@ -48,6 +76,12 @@ function patchValue(value: unknown): Status {
   for (const [key, field] of Object.entries(value)) {
     if (booleans.has(key)) {
       if (typeof field !== "boolean") throw new Error("Invalid switch");
+      result[key] = field;
+    } else if (labels.has(key)) {
+      if (!text(field)) throw new Error("Invalid label");
+      result[key] = field;
+    } else if (key === "bluetoothConnected") {
+      if (!id(field)) throw new Error("Invalid device count");
       result[key] = field;
     } else if (key === "volume" || key === "microphoneVolume") {
       if (
@@ -66,6 +100,52 @@ function patchValue(value: unknown): Status {
       )
         throw new Error("Invalid headphones");
       result[key] = { connected: field.connected, name: field.name };
+    } else if (key === "tailscale") {
+      if (
+        !object(field) ||
+        typeof field.available !== "boolean" ||
+        typeof field.connected !== "boolean" ||
+        typeof field.needsLogin !== "boolean" ||
+        !text(field.name) ||
+        !text(field.tailnet) ||
+        !id(field.onlinePeers) ||
+        !id(field.peers)
+      )
+        throw new Error("Invalid Tailscale state");
+      result[key] = {
+        available: field.available,
+        connected: field.connected,
+        needsLogin: field.needsLogin,
+        name: field.name,
+        tailnet: field.tailnet,
+        onlinePeers: field.onlinePeers,
+        peers: field.peers,
+      };
+    } else if (key === "batteries") {
+      if (!Array.isArray(field) || field.length > 64)
+        throw new Error("Invalid batteries");
+      // A peripheral names itself, so one device this view cannot render must
+      // not blank every live control: drop that entry and bound the rest.
+      result[key] = field.flatMap((battery) =>
+        object(battery) &&
+        text(battery.kind) &&
+        text(battery.name) &&
+        text(battery.status) &&
+        typeof battery.percent === "number" &&
+        Number.isFinite(battery.percent)
+          ? [
+              {
+                kind: battery.kind,
+                name: battery.name,
+                percent: Math.min(
+                  100,
+                  Math.max(0, Math.round(battery.percent)),
+                ),
+                status: battery.status,
+              },
+            ]
+          : [],
+      );
     } else if (key === "audioDevices") {
       if (!Array.isArray(field) || field.length > 512)
         throw new Error("Invalid devices");

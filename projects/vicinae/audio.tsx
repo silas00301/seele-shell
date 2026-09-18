@@ -1,8 +1,15 @@
-import { Action, ActionPanel, Icon, List } from "@raycast/api";
+import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
 import React, { useRef, useState } from "react";
 import { AudioDevice } from "./desktop";
 import { binaries, perform, run, shell } from "./runtime";
 import { useStatus } from "./status";
+import {
+  RefreshAction,
+  Unavailable,
+  audioIcon,
+  levelAccessories,
+  shortcuts,
+} from "./ui";
 
 export default function Command() {
   const { data, error, loading, refresh } = useStatus();
@@ -25,85 +32,154 @@ export default function Command() {
     pending.current = false;
     setBusy(false);
   }
-  const reload = (
-    <Action
-      title="Refresh Audio"
-      icon={Icon.ArrowClockwise}
-      shortcut={{ modifiers: ["ctrl"], key: "r" }}
-      onAction={refresh}
-    />
+  const level = (
+    kind: "volume" | "microphone",
+    action: string,
+    title: string,
+  ) =>
+    perform(title, async () => {
+      await run(binaries.shell, [kind, action]);
+      refresh();
+    });
+  const reload = <RefreshAction title="Refresh Audio" onAction={refresh} />;
+  const devices = data.audioDevices ?? [];
+  const playing = devices.filter(
+    (device) =>
+      device.kind === "output" &&
+      device.node &&
+      (device.selected || device.default),
   );
+
   return (
     <List
       isLoading={loading || busy}
       searchBarPlaceholder="Search speakers, headphones, or microphones..."
     >
       {error && (
-        <List.Item
+        <Unavailable
           title="Audio status unavailable"
-          subtitle="Refresh to reconnect"
-          icon={Icon.Warning}
-          actions={<ActionPanel>{reload}</ActionPanel>}
+          hint="The desktop status feed stopped. Refresh to reconnect."
+          refreshTitle="Reconnect Audio"
+          onRefresh={refresh}
         />
       )}
-      {(["output", "input"] as const).map((kind) => (
-        <List.Section
-          key={kind}
-          title={kind === "output" ? "Output" : "Microphone"}
-        >
-          {(data.audioDevices ?? [])
-            .filter((device) => device.kind === kind)
-            .map((device) => (
-              <List.Item
-                key={`${kind}-${device.id}-${device.profile}`}
-                title={device.name}
-                subtitle={
-                  device.default
-                    ? "Default"
-                    : device.profile !== null
-                      ? "Activate output profile"
-                      : undefined
-                }
-                icon={kind === "output" ? Icon.SpeakerHigh : Icon.Microphone}
-                accessories={
-                  device.selected || device.default
-                    ? [{ text: "Selected" }]
-                    : []
-                }
-                actions={
-                  <ActionPanel>
-                    <Action
-                      title="Use Device"
-                      icon={Icon.Checkmark}
-                      onAction={() => select(device)}
-                    />
-                    {kind === "output" && device.node && (
+      {(["output", "input"] as const).map((kind) => {
+        const kindDevices = devices.filter((device) => device.kind === kind);
+        const stream = kind === "output" ? "volume" : "microphone";
+        const muted = kind === "output" ? data.muted : data.microphoneMuted;
+        const value = kind === "output" ? data.volume : data.microphoneVolume;
+        return (
+          <List.Section
+            key={kind}
+            title={kind === "output" ? "Output" : "Microphone"}
+            subtitle={
+              kind === "output" && playing.length > 1
+                ? `${playing.length} outputs playing together`
+                : String(kindDevices.length)
+            }
+          >
+            {kindDevices.map((device) => {
+              const active = device.default || device.selected;
+              const shared = Boolean(device.selected) && !device.default;
+              const inactiveProfile = device.profile !== null;
+              return (
+                <List.Item
+                  key={`${kind}-${device.id}-${device.profile}`}
+                  title={device.name}
+                  subtitle={
+                    inactiveProfile ? "Activates this card profile" : undefined
+                  }
+                  icon={audioIcon(device.name, kind)}
+                  keywords={[kind, device.node, "device", "sound"]}
+                  accessories={[
+                    ...(device.default
+                      ? [{ tag: { value: "Default", color: Color.Green } }]
+                      : shared
+                        ? [
+                            {
+                              tag: { value: "Also playing", color: Color.Blue },
+                            },
+                          ]
+                        : inactiveProfile
+                          ? [
+                              {
+                                tag: {
+                                  value: "Profile",
+                                  color: Color.SecondaryText,
+                                },
+                              },
+                            ]
+                          : []),
+                    ...(active ? levelAccessories(value, muted) : []),
+                  ]}
+                  actions={
+                    <ActionPanel>
                       <Action
                         title={
-                          device.selected || device.default
-                            ? "Remove from Playback"
-                            : "Play Here Too"
+                          playing.length > 1 && active
+                            ? "Use Only This Device"
+                            : "Use Device"
                         }
-                        icon={Icon.SpeakerHigh}
-                        shortcut={{ modifiers: ["ctrl"], key: "enter" }}
-                        onAction={() => select(device, true)}
+                        icon={Icon.Checkmark}
+                        onAction={() => select(device)}
                       />
-                    )}
-                    <Action
-                      title="Open Audio Controls"
-                      icon={Icon.SpeakerHigh}
-                      onAction={() => shell(["control", "audio"])}
-                    />
-                    {reload}
-                  </ActionPanel>
-                }
-              />
-            ))}
-        </List.Section>
-      ))}
+                      {kind === "output" && device.node && (
+                        <Action
+                          title={
+                            shared || device.default
+                              ? "Remove from Playback"
+                              : "Play Here Too"
+                          }
+                          icon={
+                            shared || device.default ? Icon.Minus : Icon.Plus
+                          }
+                          shortcut={shortcuts.toggle}
+                          onAction={() => select(device, true)}
+                        />
+                      )}
+                      <Action
+                        title={muted ? "Unmute" : "Mute"}
+                        icon={
+                          kind === "output"
+                            ? muted
+                              ? Icon.SpeakerHigh
+                              : Icon.SpeakerOff
+                            : muted
+                              ? Icon.Microphone
+                              : Icon.MicrophoneDisabled
+                        }
+                        onAction={() => level(stream, "mute", "Toggle mute")}
+                      />
+                      <Action
+                        title="Raise Volume"
+                        icon={Icon.Plus}
+                        shortcut={shortcuts.raise}
+                        onAction={() => level(stream, "up", "Raise volume")}
+                      />
+                      <Action
+                        title="Lower Volume"
+                        icon={Icon.Minus}
+                        shortcut={shortcuts.lower}
+                        onAction={() => level(stream, "down", "Lower volume")}
+                      />
+                      <Action
+                        title="Open Audio Controls"
+                        icon={Icon.SpeakerHigh}
+                        shortcut={shortcuts.panel}
+                        onAction={() => shell(["control", "audio"])}
+                      />
+                      {reload}
+                    </ActionPanel>
+                  }
+                />
+              );
+            })}
+          </List.Section>
+        );
+      })}
       <List.EmptyView
         title="No audio devices"
-        description="Connect a device or open Seele Audio Controls."
+        description="Connect a device, or open the Seele Audio panel."
       />
     </List>
   );
