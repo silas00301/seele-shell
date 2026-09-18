@@ -146,11 +146,14 @@ by `tests/dictation.py`. Voxtype's own OSD remains disabled.
 
 Quickshell owns the notification service; disable Mako when running the shell.
 Notifications stack by app and expand in place. The panel has Current and
-History views, explicit actions, and Do Not Disturb both as a switch in the
-header and as a quiet period of 15 minutes, 1 hour, or 4 hours. A timed quiet
-period keeps an absolute deadline, so suspending does not extend it, and its
-expiry never replays the toasts it suppressed. Throwing the switch by hand
-cancels any running period. Ordinary toasts last 30 seconds and pause while
+History views, explicit actions, and Do Not Disturb as one header control. Its
+mark says whether the shell is quiet, the time beside it says how much of a
+running period is left, and it drops a menu of every way to set silence: 15
+minutes, 1 hour, 4 hours, until it is turned off, and the way out once there is
+something to leave. The checked row is whichever is running. Nothing below the
+title row is spent on silence. A timed quiet period keeps an absolute deadline,
+so suspending does not extend it, and its expiry never replays the toasts it
+suppressed. Turning it off by hand cancels any running period. Ordinary toasts last 30 seconds and pause while
 hovered; critical and pinned toasts remain visible. A toast's close button
 hides it without dismissing the inbox entry.
 

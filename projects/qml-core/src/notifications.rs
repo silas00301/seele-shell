@@ -121,6 +121,52 @@ fn from_native(n: &Value, now: Option<&Value>) -> Value {
         .or_else(|| hints.get("x-canonical-private-synchronous"));
     json!({"id":n["id"],"app_name":n["appName"],"app_icon":n["appIcon"],"desktop_entry":n["desktopEntry"],"summary":n["summary"],"body":n["body"],"action_icons":truthy(n.get("hasActionIcons")),"image":local_image(n.get("image")),"urgency":number(n.get("urgency")),"resident":truthy(n.get("resident")),"transient":truthy(n.get("transient")),"timeout":number(n.get("expireTimeout")),"time":now,"progress":if progress.is_finite() {progress.clamp(0.0,100.0)} else {-1.0},"tag":text(tag),"pinned":false})
 }
+// A quiet period is one length being spent, so the panel is handed what it
+// should draw -- which of the three states silence is in, what is left of the
+// period and how much of it that is -- instead of three raw numbers it would
+// have to do countdown arithmetic on at the call site. The wall-clock end
+// stays with Qt, which owns dates and the user's locale.
+fn quiet_minutes(remaining: f64) -> u64 {
+    if remaining.is_finite() {
+        (remaining / 60.0).ceil().max(0.0) as u64
+    } else {
+        0
+    }
+}
+// What is left of a period, short enough to ride beside a glyph on the control
+// that opens the menu.
+fn quiet_span(remaining: f64) -> String {
+    let minutes = quiet_minutes(remaining);
+    match minutes {
+        0 => String::new(),
+        1..=59 => format!("{minutes}m"),
+        _ if minutes.is_multiple_of(60) => format!("{}h", minutes / 60),
+        _ => format!("{}h {}m", minutes / 60, minutes % 60),
+    }
+}
+fn quiet_label(remaining: f64) -> String {
+    if quiet_minutes(remaining) == 0 {
+        "Ending".to_owned()
+    } else {
+        format!("{} left", quiet_span(remaining))
+    }
+}
+fn quiet_period(dnd: bool, until: f64, minutes: f64, now: f64) -> Value {
+    let span = minutes * 60.0;
+    let timed = dnd && until > 0.0 && span > 0.0 && now.is_finite();
+    if !timed {
+        let (state, label) = if dnd {
+            ("held", "Until switched off")
+        } else {
+            ("off", "")
+        };
+        return json!({"state":state,"minutes":0.0,"remaining":0.0,"label":label,"compact":""});
+    }
+    // A clock that jumped keeps the countdown inside the length that was asked
+    // for rather than reporting a longer period than the one that is running.
+    let remaining = (until - now).clamp(0.0, span);
+    json!({"state":"timed","minutes":minutes,"remaining":remaining,"label":quiet_label(remaining),"compact":quiet_span(remaining)})
+}
 fn permanent(entry: &Value) -> bool {
     truthy(entry.get("pinned"))
         || entry.get("timeout").and_then(Value::as_f64) == Some(0.0)
@@ -593,6 +639,12 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         "fromNative" => from_native(first, args.get(1)),
         "permanent" => json!(permanent(first)),
         "popupDuration" => json!(popup_duration(first)),
+        "quietPeriod" => quiet_period(
+            truthy(args.first()),
+            number(args.get(1)),
+            number(args.get(2)),
+            number(args.get(3)),
+        ),
         _ => return Err("unknown notifications function".into()),
     })
 }

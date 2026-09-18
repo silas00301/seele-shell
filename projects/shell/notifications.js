@@ -28,6 +28,9 @@ function fromNative(n, now) {
 }
 function permanent(entry) { return Bridge.call("notifications.permanent",[entry]) }
 function popupDuration(entry) { return Bridge.call("notifications.popupDuration",[entry]) }
+// The panel draws a countdown, so quiet-period state, what is left of it and
+// how much of it that is come from the same core the period itself lives in.
+function quietPeriod(dnd, until, minutes, now) { return Bridge.call("notifications.quietPeriod",[!!dnd,Bridge.number(until),Bridge.number(minutes),Bridge.number(now)]) }
 
 // Qt owns live QObject handles and callback invocation. Rust owns all serializable
 // state, timing, quiet periods, replacement, pinning, history and grouping policy.

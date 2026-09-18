@@ -53,6 +53,31 @@ assert.deepEqual(imageRoles({app_icon:'chat'}), {profile:'',icon:'chat',badge:''
 assert.deepEqual(imageRoles({image:'https://example.invalid/tracker.png',app_icon:'chat'}),
   {profile:'',icon:'chat',badge:''}, 'remote images never enter either image role');
 
+// The panel draws a countdown rather than three raw numbers, so the core says
+// which state silence is in, what is left of a period, and the short form of
+// that the header control carries beside its mark.
+const quiet = (dnd, until, minutes, now) => JSON.parse(JSON.stringify(notifications.quietPeriod(dnd, until, minutes, now)));
+assert.deepEqual(quiet(false, 0, 0, 1000), {state:'off',minutes:0,remaining:0,label:'',compact:''});
+assert.deepEqual(quiet(true, 0, 0, 1000),
+  {state:'held',minutes:0,remaining:0,label:'Until switched off',compact:''},
+  'an indefinite hold says so instead of counting down to nothing');
+assert.deepEqual(quiet(true, 4600, 60, 1000),
+  {state:'timed',minutes:60,remaining:3600,label:'1h left',compact:'1h'});
+assert.deepEqual(quiet(true, 4600, 60, 1900),
+  {state:'timed',minutes:60,remaining:2700,label:'45m left',compact:'45m'});
+assert.equal(quiet(true, 15400, 240, 1000).compact, '4h');
+assert.equal(quiet(true, 15400, 240, 5000).label, '2h 54m left');
+assert.equal(quiet(true, 1030, 15, 1000).label, '1m left', 'the last minute is still a minute');
+assert.deepEqual(quiet(true, 1000, 15, 1000),
+  {state:'timed',minutes:15,remaining:0,label:'Ending',compact:''},
+  'a period with nothing left carries no time for the control to show');
+// A clock that jumped keeps the countdown inside the length that was asked for.
+assert.equal(quiet(true, 99999, 15, 1000).remaining, 900);
+assert.equal(quiet(true, 1000, 15, 99999).remaining, 0);
+assert.equal(quiet(true, 4600, 0, 1000).state, 'held',
+  'a deadline without the length that asked for it is not a countdown');
+assert.equal(quiet(true, 4600, 60, NaN).state, 'held');
+
 function harness() {
   let view, dnd, arrivals = 0;
   const store = notifications.createStore((v,d) => {view=v;dnd=d}, () => arrivals++, 1000);
@@ -221,11 +246,11 @@ console.log('timed Do Not Disturb lifecycle checks passed');
 // shortcuts belong to whatever else is listening.
 {
   const quietSource = fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]), 'shell.qml'), 'utf8');
-  const quietMarkup = quietSource.slice(quietSource.indexOf('id: quietPreset\n'));
+  const quietMarkup = quietSource.slice(quietSource.indexOf('id: quietChoice\n'));
   const quietHandler = quietMarkup.match(/^(\s*)Keys\.onPressed: event => \{\n([^]*?)^\1\}/m);
-  assert(quietHandler, 'the quiet presets still guard their key handling');
+  assert(quietHandler, 'the quiet choices still guard their key handling');
   let quietStarts = 0;
-  const quietContext = vm.createContext({activate:()=>quietStarts++,Qt:{Key_Return:1,Key_Enter:2,Key_Space:3,ControlModifier:1,AltModifier:2,MetaModifier:4}});
+  const quietContext = vm.createContext({notificationWindow:{chooseQuiet:()=>quietStarts++,quietMenuOpen:true},quietChoice:{modelData:{minutes:15}},Qt:{Key_Return:1,Key_Enter:2,Key_Space:3,ControlModifier:1,AltModifier:2,MetaModifier:4}});
   vm.runInContext('function press(event) {' + quietHandler[2] + '}', quietContext);
   quietContext.press({key:2,isAutoRepeat:false,modifiers:0});
   quietContext.press({key:2,isAutoRepeat:true,modifiers:0});

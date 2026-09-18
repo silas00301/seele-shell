@@ -30,7 +30,7 @@ const shellPatterns = {
   'per-player volume level': /component PlayerLevelRow: Item/,
   'playback speed': /MediaSpeed\.cycle\(/,
   'playback speed presets': /id: playbackSpeedWell/,
-  'timed quiet periods': /id: quietPresets/,
+  'timed quiet periods': /id: quietMenu/,
   'Caffeinate session store': /CaffeinateStore \{\s*\n\s*id: caffeinateStore/,
   'conditional Caffeinate bar item': /visible: caffeinateStore\.active/,
   'Caffeinate panel shares the session store': /CaffeinatePanel \{ theme: root; store: caffeinateStore/,
