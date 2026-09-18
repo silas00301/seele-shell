@@ -16,6 +16,7 @@ mod network;
 mod notes;
 mod notifications;
 mod pi;
+mod ports;
 mod presentation;
 mod system;
 mod time;
@@ -55,6 +56,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "models" => models::call(function, arguments),
         "system" => system::call(function, arguments),
         "presentation" => presentation::call(function, arguments),
+        "ports" => ports::call(function, arguments),
         "notes" => notes::call(function, arguments),
         "ai_activity" => ai_activity::call(function, arguments),
         "network" => network::call(function, arguments),

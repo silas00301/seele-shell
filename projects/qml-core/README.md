@@ -43,8 +43,14 @@ run when source data changes; catalog merging uses indexed deduplication.
 Transfers' progress projection, strict local URL decoding and action admission
 are native, with one batched durable seen request when opening the panel.
 
+The port inspector's proposed URL, refusal wording, row summary and bounded
+action queue are native. A destination is accepted only as the kernel's own
+rendering of an address, already bracketed when it is IPv6, and only `http` and
+`https` are ever proposed, because a port number is proof of neither. Every
+refusal has wording that does not read as a success.
+
 `ListModels.js` is the single Qt adapter for matching stable row contracts in
-Home Assistant, Transfers, Maintenance and AI Activity. The Rust planner receives
+Home Assistant, Transfers, Maintenance, AI Activity and Ports. The Rust planner receives
 only IDs and computes the original insert/move sequence in O(n log n); actual
 role values, unchanged payloads and delegate identity stay with Qt. System status
 passes a known-field/type schema before Qt retains unchanged branches. Agent,

@@ -34,6 +34,10 @@ const shellPatterns = {
   'Caffeinate session store': /CaffeinateStore \{\s*\n\s*id: caffeinateStore/,
   'conditional Caffeinate bar item': /visible: caffeinateStore\.active/,
   'Caffeinate panel shares the session store': /CaffeinatePanel \{ theme: root; store: caffeinateStore/,
+  'port inspector store': /PortsStore\s*\{\s*\n\s*id: portsStore/,
+  'port inspector panel': /PortsPanel \{ id: portsPanel; theme: root; store: portsStore/,
+  'port inspector tile': /label: "Ports"/,
+  'port inspector leaves the bar and takes focus only when opened': /namespace: "seele-shell-ports"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
@@ -81,6 +85,8 @@ const packagedSources = [
   'network.js',
   'player-volume.js',
   'media-speed.js',
+  'PortsStore.qml',
+  'PortsPanel.qml',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -101,6 +107,7 @@ const focusedTests = [
   'network-addresses.js',
   'player-volume.js',
   'media-speed.js',
+  'ports.js',
   'vicinae-generations.mjs',
   'caffeinate.js',
   'vicinae-caffeinate.cjs',

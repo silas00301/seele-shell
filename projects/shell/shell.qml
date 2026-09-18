@@ -1736,6 +1736,10 @@ Shared.Theme {
   CaffeinateStore {
     id: caffeinateStore
   }
+  PortsStore {
+    id: portsStore
+    panelOpen: root.controlPanel === "ports"
+  }
 
   IpcHandler {
     target: "seele-shell"
@@ -2659,7 +2663,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 3 + gap * 2
+    height: devicesY + smallTileHeight * 4 + gap * 3
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -2682,6 +2686,17 @@ Shared.Theme {
       active: transfersStore.attention
       glyph: Text { text: "󰇚"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("transfers", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 3 + controlGrid.gap * 3
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Ports"
+      detail: portsStore.total ? portsStore.total + " local TCP listeners" : "Find what is listening on this machine"
+      glyph: Text { text: "󰛳"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("ports", controlGrid.screenName)
     }
 
     Rectangle {
@@ -7735,6 +7750,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰅶"; title: "Caffeinate"; detail: "Idle lock, display and sleep held off" }
           CaffeinatePanel { theme: root; store: caffeinateStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Ports and localhost --------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: portsWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "ports" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: portsContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-ports"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { portsPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: portsContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰛳"; title: "Ports"; detail: portsPanel.hint }
+          PortsPanel { id: portsPanel; theme: root; store: portsStore; width: parent.width }
         }
       }
     }

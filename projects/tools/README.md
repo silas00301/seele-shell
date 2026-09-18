@@ -135,12 +135,79 @@ data, preserves exact sample bytes, and finalizes recoverable audio after an
 unexpected disconnect. SIGKILL, power loss or finalization I/O failure can leave a
 private `.part` staging file; it is not automatically discarded.
 
+## Port inspector
+
+`seele-ports` is the resident, unprivileged worker behind the shell's Ports
+panel. `seele-stop-listener` is the narrow privileged helper it reaches through
+`run0`. Both link only `/proc` reading and `seele-runtime`, so neither carries
+the D-Bus, image or recognition code of the rest of this crate.
+
+Discovery parses `/proc/net/tcp` and `/proc/net/tcp6` and keeps only sockets in
+the `0A` listening state, in the host network namespace. UDP, remote scanning
+and other namespaces are out of scope. Ownership comes from mapping socket
+inodes through `/proc/<pid>/fd`, with metadata from `comm`, `stat`, `status`,
+`cgroup` and `cwd`; a project is the nearest `.jj`/`.git` root or build-manifest
+directory above the working directory. Every root is injected, so the tests
+build a synthetic process table instead of reading the host's. A field the
+kernel will not show stays empty and is rendered as unknown; another user's
+listener is listed with no owner rather than a guessed one. A host-side proxy is
+named as a proxy instead of being presented as the application it forwards to.
+Scans are bounded to 512 listeners, 4096 processes, 1024 descriptors per process
+and 16 owners per socket. Listing reads `/proc` and nothing else: it starts no
+system manager, contacts no listening service and raises no authentication
+prompt.
+
+A row's identity is its socket inode, so a rebound port is a different row. An
+action carries a review token holding the whole decision — inode, binding, port,
+target kind, unit, manager scope, PID, process start time and UID — and nothing
+descriptive. Before acting, the worker rebuilds that token from a fresh scan and
+compares tokens; it then acts on the freshly derived target rather than on
+anything parsed out of the token, because privilege belongs to the current owner
+and not to the review. The privileged helper repeats the same resolution after
+authentication. A recycled PID has a different start time and a rebound port a
+different inode, so a stale confirmation is refused rather than redirected. Both
+process signal paths pin a pidfd before repeating the identity checks and signal
+that handle; unsupported or exited handles fail closed. System service actions
+also require every owner to belong to the system manager, not a same-named user unit.
+
+Only a `.service` becomes a stop target, and only when every process holding the
+socket belongs to it. A `.scope` and `user@<uid>.service` are excluded: stopping
+either would end a session rather than a listener. A user unit is stopped through
+the caller's own manager and needs no authentication; a system unit or a process
+owned by another user goes through `run0`. Force is enforced in Rust, not in QML:
+`stop` with mode `force` is refused as `not-escalatable` unless that exact token
+already had a graceful attempt that left the listener bound. Force stays inside
+the reviewed unit and never falls back to signalling a PID. Nothing is ever
+disabled. Restart and `TriggeredBy` are read with `systemctl show` only while a
+plan is being built, so a reactivating unit is disclosed rather than silently
+worked around, and a refresh stays a pure `/proc` read.
+
+The helper accepts a typed target — `identify`, `service` or `process` with
+strictly parsed decimal and address arguments — and never a command, a path or
+an argument list. It rejects a leading zero, a sign, surrounding whitespace and
+any trailing character, and it refuses a unit name that is not a plain
+`.service`. Each refusal has its own exit code, and every outcome is one JSON
+line. The worker locates it beside its own canonicalized `current_exe()` rather
+than through `PATH`, and requires a regular, executable file that is not group-
+or world-writable, so nothing in the environment can substitute the program that
+runs as root. `identify` is a separately authorized read that resolves owners and
+signals nothing.
+
+Nothing is written to disk. Closing the panel clears rows, selections,
+escalations and the identities an authentication paid for. `qml-core`'s `ports`
+functions own the proposed URL, the failure wording, the row summary and the
+bounded action queue, so an address is never assembled by string concatenation
+in QML.
+
 ## Validation
 
 Run `cargo test -p seele-tools` and `cargo clippy -p seele-tools --all-targets -- -D
-warnings`. Focused external fixtures are `tests/mic-sync.sh`,
-`tests/control-actions.sh`, `tests/bluetooth-receiver.sh`, `tests/agent-state.sh`,
-`tests/notes.py` and `tests/uri-picker.sh`. They use isolated fake desktop programs,
+warnings`. `tests/ports.rs` exercises the port inspector against a synthetic
+`/proc` in a private temporary directory, recording the system manager, signal
+and authentication calls instead of performing them; the panel's own store is
+covered by `tests/ports.js` at the workspace root. Focused external fixtures are
+`tests/mic-sync.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
+`tests/agent-state.sh`, `tests/notes.py` and `tests/uri-picker.sh`. They use isolated fake desktop programs,
 private temporary vaults and synthetic images. Python/Node in these fixtures are
 development-only. Give temporary fixtures an ordinary private umask (077 or 022).
 
