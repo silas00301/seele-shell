@@ -79,7 +79,7 @@ SH
   sed -i "1s|.*|#!$BASH|" "$work/bin/$name"
   chmod +x "$work/bin/$name"
 done
-for action in 'volume up' 'microphone mute' 'tailscale up' 'proton-vpn connect' 'audio-device 3' 'bluetooth-pair-worker AA:BB:CC:DD:EE:FF'; do
+for action in 'volume up' 'microphone mute' 'tailscale up' 'proton-vpn connect' 'audio-device 3' 'stream-volume 42 60' 'stream-volume 42 mute' 'bluetooth-pair-worker AA:BB:CC:DD:EE:FF'; do
   : >"$MOCK_ACTIONS"
   read -r -a args <<<"$action"
   if "$control" "${args[@]}"; then
@@ -91,6 +91,20 @@ done
 : >"$MOCK_ACTIONS"
 if "$control" audio-device; then exit 1; fi
 test ! -s "$MOCK_ACTIONS"
+
+# An application's own level is written with a node id the graph published and
+# a level inside the track. The ceiling is full volume: the boost above it
+# belongs to the output as a whole, and neither a bad id nor an amplified
+# level may reach wpctl at all.
+for rejected in '' 'x 50' '42' '42 101' '42 -5' '42 2%' '42 toggle' '42 1e2'; do
+  : >"$MOCK_ACTIONS"
+  read -r -a args <<<"$rejected"
+  if "$control" stream-volume "${args[@]}"; then
+    echo "invalid application volume reported success: $rejected" >&2
+    exit 1
+  fi
+  test ! -s "$MOCK_ACTIONS"
+done
 
 cat >"$work/bin/seele-shellctl" <<'SH'
 #!/usr/bin/env bash

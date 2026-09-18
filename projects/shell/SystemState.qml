@@ -37,6 +37,7 @@ QtObject {
   property bool cameraActive: false
   property bool screenRecording: false
   property var audioDevices: []
+  property var audioStreams: []
   property var batteries: []
   property var trayHidden: []
   property var barModules: ({})
