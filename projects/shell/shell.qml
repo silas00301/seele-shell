@@ -3454,7 +3454,13 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-notifications"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      // A toast arrives on its own schedule, in the middle of whatever is being
+      // typed. Hyprland hands keyboard focus to an on-demand layer surface as it
+      // maps, so asking for any keyboard interactivity here would take the next
+      // keystrokes away from the window the user is working in. Toasts are
+      // pointer-only; the panel at the bottom of this file is where a
+      // notification is read with the keyboard.
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
       NotificationList {
         id: notificationPopupList
