@@ -83,3 +83,14 @@ root. No rollback races another firmware writer: as before, failure after a
 successful BootNext write may leave that selection for the next boot. Native
 fixtures exercise parsing and execution order using fake scripts only; they do
 not touch firmware, invoke real systemctl, or reboot anything.
+
+## Firmware update notification
+
+`seele-firmware-check` reads bounded `fwupdmgr get-updates --json` output and
+publishes sanitized pending device names and versions through systembus-notify.
+It never installs updates. A mode-0600 record under `/run/seele-firmware-check`
+suppresses repeated successful announcements until the pending set changes or
+clears. Failed delivery does not advance that record. `--test` exercises delivery
+without querying or changing firmware. The parent pins fwupdmgr and dbus-send on
+the wrapper's PATH and owns the timer. Unit tests cover malformed vendor data,
+control characters, failed delivery, deduplication and rearming after no updates.
