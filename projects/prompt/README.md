@@ -8,6 +8,10 @@ protocol. Four workers and bounded queues keep subprocess waits away from its
 message loop; shared runtime code enforces subprocess groups, output limits,
 cancellation and transport deadlines.
 
+The panel keeps its layer surface mapped and takes exclusive keyboard focus
+while it is open, so typing lands in the prompt field immediately and the
+keyboard stays there until Super + Space, Close or Escape dismisses it.
+
 Opening the panel invokes no model and reads no clipboard, selection or screen.
 Context is collected only through explicit preview requests. Clipboard and
 selection require the matching permission at submission. Screenshots are private

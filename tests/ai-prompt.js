@@ -29,7 +29,8 @@ for (const [feature, pattern] of Object.entries({
   "model-free resident helper": /Process\s*\{\s*id: worker\s*command: \["seele-ai-prompt-worker"\]\s*running: true/,
   "active-output pin": /prompt\.screenName === modelData\.name/,
   "centered layer surface": /implicitWidth: Math\.min\(640,[\s\S]*WlrLayershell\.namespace: "seele-shell-prompt"/,
-  "focus-loss privacy": /else if \(sawFocus && panelActive && !prompt\.needsAction\) prompt\.close\(\)/,
+  "immediate keyboard focus": /WlrLayershell\.keyboardFocus: panelActive \? WlrKeyboardFocus\.Exclusive : WlrKeyboardFocus\.None/,
+  "caret reclaimed when the compositor grants focus": /onActiveFocusChanged: if \(activeFocus && panelActive && !promptField\.activeFocus\) promptField\.forceActiveFocus\(\)/,
   "one-time clipboard permission": /Ai.has\(permissionContexts, "clip"\).*"Allow once"/,
   "exact screen preview": /this exact image will be sent/,
   "explicit copy shortcut": /text: "Copy · Enter"/,
@@ -39,7 +40,14 @@ for (const [feature, pattern] of Object.entries({
   "answer-only response card": /label: "ANSWER"/,
 })) assert.ok(pattern.test(qml), `${feature} is missing from AiPrompt.qml`)
 
-console.log("AI prompt mentions, permission gates, shortcuts, focus lifetime, and UI disclosure passed")
+// The panel used to close itself as soon as it lost keyboard focus. It now
+// holds the keyboard until it is dismissed by hand, so nothing may bring that
+// focus-loss shortcut back.
+assert.ok(!/sawFocus/.test(qml), "the prompt must not close itself on focus loss")
+assert.ok(/function onActiveChanged\(\) \{\s*if \(promptWindow\.panelActive\) Qt\.callLater/.test(qml),
+  "opening the panel must focus its field")
+
+console.log("AI prompt mentions, permission gates, shortcuts, keyboard focus, and UI disclosure passed")
 
 // Drive the production coordinator with deferred context replies.
 const methods = [...qml.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}/gm)].map(m => m[0]).join('\n')
