@@ -127,6 +127,9 @@ pkgs.stdenvNoCC.mkDerivation {
     substituteInPlace "$out/share/seele-shell/TextWorkbenchPanel.qml" --replace-fail '"../shared' '"shared'
     install -m644 ${./PortsPanel.qml} "$out/share/seele-shell/PortsPanel.qml"
     substituteInPlace "$out/share/seele-shell/PortsPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./ThemeStore.qml} "$out/share/seele-shell/ThemeStore.qml"
+    install -m644 ${./ThemePanel.qml} "$out/share/seele-shell/ThemePanel.qml"
+    substituteInPlace "$out/share/seele-shell/ThemePanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./MicTestStore.qml} "$out/share/seele-shell/MicTestStore.qml"
     install -m644 ${./MicTestCard.qml} "$out/share/seele-shell/MicTestCard.qml"
     install -m644 ${./mic-test.js} "$out/share/seele-shell/mic-test.js"
@@ -306,6 +309,9 @@ pkgs.stdenvNoCC.mkDerivation {
     # rather than through PATH, so the two stay in the same store directory and
     # only the worker is exposed as a command.
     makeWrapper ${tools}/bin/seele-ports "$out/bin/seele-ports"
+    # The theme panel runs the same helper the launcher command runs, found
+    # beside the shell's own tools rather than through the session's PATH.
+    makeWrapper ${configTools}/bin/seele-theme "$out/bin/seele-theme"
     makeWrapper ${tools}/bin/seele-uri-worker "$out/bin/seele-uri-worker" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.grim ]}" \
       --set TESSDATA_PREFIX "${tools.tesseract}/share/tessdata" \
@@ -351,7 +357,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml ThemeStore.qml ThemePanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -385,7 +391,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${tests}/tst_calculator.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
     qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLookMedia.qml"
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLook.qml" "$out/share/seele-shell/ResourcesState.qml" "$out/share/seele-shell/ResourcesStore.qml" "$out/share/seele-shell/ResourcesPanel.qml" "$out/share/seele-shell/NetworkActivityStore.qml" "$out/share/seele-shell/NetworkActivityPanel.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLook.qml" "$out/share/seele-shell/ResourcesState.qml" "$out/share/seele-shell/ResourcesStore.qml" "$out/share/seele-shell/ResourcesPanel.qml" "$out/share/seele-shell/NetworkActivityStore.qml" "$out/share/seele-shell/NetworkActivityPanel.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/ThemeStore.qml" "$out/share/seele-shell/ThemePanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -403,7 +409,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -429,6 +435,8 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/resources.sh "$out/share/seele-shell" ${tests}/tst_resources.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml ${tests}/tst_resources_lifecycle.qml
     node ${tests}/ports.js "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ports-panel.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    node ${tests}/themes.js "$out/share/seele-shell/ThemeStore.qml" "$out/share/seele-shell/ThemePanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/themes-panel.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/mic-test.js "$out/share/seele-shell/mic-test.js" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ai-prompt.js "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
     node ${tests}/focus.js "$out/share/seele-shell/focus.js"

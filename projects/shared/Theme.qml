@@ -239,6 +239,10 @@ ShellRoot {
   // The calculator keeps its tape within one compact workbench.
   readonly property int calculatorWidth: 480
   readonly property int calculatorMaximumHeight: 620
+  // The whole theme picker stays inside this bound, and its list inside what
+  // the search and heading leave: tall enough that the applied preset and the
+  // first of each mode's presets are visible together.
+  readonly property int themesMaximumHeight: 540
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
   // Keeps the UTC timeline and a few pinned zones visible without taking an output.
