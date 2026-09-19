@@ -48,20 +48,23 @@ configured application or touches the user's home.
 
 ## Coordinated themes
 
-`seele-theme list | current | set <id> | reset | init` reads the version-1
+`seele-theme list | current | set <id> | reset | init` reads the version-2
 Home Manager catalog at `$XDG_CONFIG_HOME/seele-theme/catalog.json`. It accepts
-only the four curated Catppuccin flavor IDs, complete six-digit RGB palettes,
-and 16 terminal colors. The catalog pins desktop command paths; themes contain
+safe catalog IDs, an explicit light/dark mode, exactly 16 six-digit RGB Base16
+slots (`base00`–`base0F`), and a bounded generated Vicinae asset. The catalog pins desktop command paths; themes contain
 no executable hooks. Listing is read-only and starts no desktop command.
 
 The selected ID and the complete shell palette are stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
-contain Ghostty, Fish, tmux, GTK and Hyprland includes. A directory lock
+contain Ghostty, Fish, tmux, GTK and Hyprland includes and a copy of the
+Stylix-generated Vicinae TOML. Selection data includes the full Base16 palette
+for Neovim and its projection into Seele’s shared color roles. A directory lock
 serializes activation and switching; a complete generation is selected with an
 atomic `current` symlink replacement before atomically publishing the shell
 palette. A publication failure restores the old include target. A subsequent
 `init` repairs an interrupted publication from the durable selection, refreshes
-it from the current catalog and preserves the selected ID. Invalid saved state
+it from the current catalog and preserves the selected ID, including migration
+from a version-1 saved selection. Invalid saved state
 fails visibly; explicit `reset` replaces it with the declarative default.
 
 Application reloads run after publication while still holding the lock. They
@@ -70,7 +73,9 @@ and report affected app names in the JSON `pending` array if they fail. A reload
 failure leaves the chosen theme saved. The current default tmux server is
 recolored if it exists, Ghostty's active desktop service uses systemd Reload,
 Hyprland receives one Lua color update, and the desktop color preference and
-Vicinae theme follow the selected flavor. GTK apps may need reopening, Fish
+Vicinae theme follow the selected mode and palette. Vicinae uses the stable
+`seele-current` theme ID; its same-ID reload reads the newly published asset,
+and Home Manager points both light and dark preferences at that ID. GTK apps may need reopening, Fish
 updates on its next prompt, and non-service Ghostty instances need their own
 Reload Configuration action. No wallpaper, font, application content, managed
 config, or user account data is modified.
@@ -78,7 +83,8 @@ config, or user account data is modified.
 Run `python3 projects/config-tools/tests/themes.py target/debug/seele-theme`
 after building this crate. The package runs the same fixture against the
 installed executable. It covers first use, read-only listing, preservation,
-concurrent switching/activation, invalid palettes, rollback, symlink boundaries
+concurrent switching/activation, invalid palettes, missing generated assets,
+legacy state migration, rollback, symlink boundaries
 and exact reload arguments against fake desktop tools. The picker behavior is
 covered by `tests/vicinae-themes.cjs`; parent-side integration is documented in
 Seele's `docs/theme-switching.md`.
