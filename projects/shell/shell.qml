@@ -75,6 +75,12 @@ Shared.Theme {
   readonly property bool trayExpanded: trayPinned
   property int volumeDrag: -1
   property int microphoneDrag: -1
+  // The two master levels each own a drag latch. The application group needs
+  // one more, and it carries the stream it belongs to, because the rows below
+  // it are a list rather than a fixed pair: a level held by the pointer has to
+  // be shown on that row and on no other.
+  property string streamDragId: ""
+  property int streamDragValue: -1
   readonly property int outputVolumeMaximum: 150
   // Every level track runs to 100%, so a full bar means full volume on the
   // output as well as the microphone. Output gain goes further than that, but a
@@ -82,6 +88,10 @@ Shared.Theme {
   // Dragging maps across the same 100; the boost above it belongs to the wheel
   // and the volume keys, which clamp at `outputVolumeMaximum` instead.
   readonly property int audioTrackMaximum: 100
+  // One notch of a wheel, and of the headphone roller, is five percentage
+  // points. Every level in the shell steps by the same amount, so the token
+  // lives here rather than in each surface that turns.
+  readonly property int audioWheelStep: 5
   property string cameraPreviewDevice: ""
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
@@ -372,6 +382,7 @@ Shared.Theme {
         }
         if (parsed.volume !== undefined && root.volumeDrag >= 0 && Number(parsed.volume) === root.volumeDrag) root.volumeDrag = -1
         if (parsed.microphoneVolume !== undefined && root.microphoneDrag >= 0 && Number(parsed.microphoneVolume) === root.microphoneDrag) root.microphoneDrag = -1
+        if (parsed.audioStreams !== undefined && root.streamDragValue >= 0) root.releaseStreamDrag(parsed.audioStreams)
         if (parsed.bluetoothScanning !== undefined) root.reconcileBluetoothScanIntent(!!parsed.bluetoothScanning)
         if (parsed.bluetoothReceiver !== undefined) root.reconcileBluetoothReceiverIntent(!!parsed.bluetoothReceiver)
       }
@@ -1174,6 +1185,92 @@ Shared.Theme {
     return result
   }
 
+  // The applications the Audio panel offers a level for. Which streams belong
+  // in that group, what each one is called and how many of them there can be
+  // are decided by the status service; the panel only draws what it published.
+  function applicationStreams() {
+    return root.systemData.audioStreams || []
+  }
+
+  // A dragged level is shown from the pointer until the graph agrees with it,
+  // and only for the row being dragged: one slider must not carry the value it
+  // is being given across the other rows in the group.
+  function streamVolume(stream) {
+    if (!stream) return 0
+    if (root.streamDragId === String(stream.id) && root.streamDragValue >= 0) return root.streamDragValue
+    return Math.max(0, Math.round(Number(stream.volume) || 0))
+  }
+
+  function streamLevel(id, value) {
+    root.streamDragId = String(id)
+    root.streamDragValue = Math.max(0, Math.min(root.audioTrackMaximum, Math.round(Number(value) || 0)))
+    return root.streamDragValue
+  }
+
+  function dragStreamVolume(id, value) {
+    root.streamLevel(id, value)
+    if (!streamDragTimer.running) streamDragTimer.restart()
+  }
+
+  function commitStreamVolume(id, value) {
+    var level = root.streamLevel(id, value)
+    streamDragTimer.stop()
+    if (!root.runControl("stream-volume", root.streamDragId, String(level))) streamDragTimer.restart()
+  }
+
+  function toggleStreamMute(stream) {
+    if (!stream) return
+    var id = String(stream.id)
+    if (!root.runControl("stream-volume", id, "mute")) return
+    var streams = root.applicationStreams()
+    var updated = []
+    for (var i = 0; i < streams.length; i++) {
+      var entry = {}
+      for (var key in streams[i]) entry[key] = streams[i][key]
+      if (String(entry.id) === id) entry.muted = !entry.muted
+      updated.push(entry)
+    }
+    root.patchSystemData({ audioStreams: updated })
+  }
+
+  // The wheel steps an application by the same notch the master levels take,
+  // clamped to the track rather than to the output's boost: the amplification
+  // above full belongs to the output as a whole, and an application amplified
+  // on top of an amplified output clips instead of getting louder.
+  function adjustStreamFromWheel(wheel, stream) {
+    var steps = root.audioWheelSteps(wheel)
+    if (steps === 0 || !stream) return
+    root.commitStreamVolume(stream.id, root.streamVolume(stream) + steps * root.audioWheelStep)
+  }
+
+  // The latch a dragged level holds is released by the graph agreeing with it,
+  // the way the master levels release theirs. A stream that leaves the graph
+  // mid-drag releases it too: a tab closed under the pointer must not leave the
+  // panel showing a level that belongs to nothing.
+  function releaseStreamDrag(streams) {
+    for (var i = 0; i < streams.length; i++) {
+      if (String(streams[i].id) !== root.streamDragId) continue
+      if (Number(streams[i].volume) !== root.streamDragValue) return
+      break
+    }
+    root.streamDragId = ""
+    root.streamDragValue = -1
+  }
+
+  function releaseFailedStreamDrag(id, value) {
+    if (root.streamDragId !== String(id) || String(root.streamDragValue) !== String(value)) return
+    root.streamDragId = ""
+    root.streamDragValue = -1
+  }
+
+  // An application names its own icon only sometimes, so the row asks for the
+  // themed icon and takes an empty answer for one, rather than drawing the
+  // missing-texture placeholder Quickshell would otherwise hand back.
+  function streamIcon(stream) {
+    var icon = stream && stream.icon ? String(stream.icon) : ""
+    return icon === "" ? "" : Quickshell.iconPath(icon, true)
+  }
+
   function activeAgents() {
     return agentProjection.active
   }
@@ -1365,7 +1462,7 @@ Shared.Theme {
     var reported = Number(microphone ? root.systemData.microphoneVolume : root.systemData.volume)
     var current = dragged >= 0 ? dragged : isNaN(reported) ? 0 : reported
     var maximum = microphone ? 100 : root.outputVolumeMaximum
-    var adjusted = Math.max(0, Math.min(maximum, Math.round(current + steps * 5)))
+    var adjusted = Math.max(0, Math.min(maximum, Math.round(current + steps * root.audioWheelStep)))
     if (microphone) {
       root.microphoneDrag = adjusted
       if (!microphoneDragTimer.running) microphoneDragTimer.start()
@@ -1495,13 +1592,16 @@ Shared.Theme {
         root.failedControlExtra = root.pendingControlExtra
         if (root.pendingControlAction === "volume" && String(root.volumeDrag) === root.pendingControlValue) root.volumeDrag = -1
         if (root.pendingControlAction === "microphone" && String(root.microphoneDrag) === root.pendingControlValue) root.microphoneDrag = -1
+        // A refused write leaves nothing for the graph to agree with, so the
+        // row goes back to the level the stream is actually at.
+        if (root.pendingControlAction === "stream-volume") root.releaseFailedStreamDrag(root.pendingControlValue, root.pendingControlExtra)
       }
       root.pendingControlAction = ""
       root.pendingControlValue = ""
       root.pendingControlExtra = ""
       controlFeedbackTimer.restart()
       var group = ["notifications", "dnd"].indexOf(action) >= 0 ? "notifications"
-        : ["volume", "microphone", "audio-device", "audio-outputs"].indexOf(action) >= 0 ? "audio"
+        : ["volume", "microphone", "audio-device", "audio-outputs", "stream-volume"].indexOf(action) >= 0 ? "audio"
         : ["wifi", "proton-vpn"].indexOf(action) >= 0 ? "network" : "aux"
       root.refreshStatus(group)
     }
@@ -2285,7 +2385,7 @@ Shared.Theme {
         anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
         Text {
           anchors.verticalCenter: parent.verticalCenter
-          width: parent.width - 46
+          width: parent.width - root.levelValueWidth
           text: audioLevelRow.microphone
             ? (audioLevelRow.muted ? "󰍭  Microphone muted" : root.systemData.microphoneActive ? "󰍬  Microphone in use" : "󰍬  Microphone")
             : (audioLevelRow.muted ? "󰝟  Output muted" : "󰕾  Output")
@@ -2296,7 +2396,7 @@ Shared.Theme {
         }
         Text {
           anchors.verticalCenter: parent.verticalCenter
-          width: 46
+          width: root.levelValueWidth
           text: audioLevelRow.shown + "%"
           color: root.subtext
           font.family: root.fontFamily
@@ -2485,6 +2585,170 @@ Shared.Theme {
         text: controlLevel.microphone
           ? (controlLevel.muted ? "Unmute microphone" : "Mute microphone")
           : (controlLevel.muted ? "Unmute output" : "Mute output")
+      }
+    }
+  }
+
+  // One application's own level in the Audio panel. It is the master row's
+  // anatomy a step down the ramp — a track that leads with a mark and a name
+  // and ends with a percentage, with the mute action beside it — because the
+  // two levels above it in the same panel are already that shape, and a
+  // per-application control that invented its own would read as a visitor.
+  component ApplicationLevelRow: Row {
+    id: applicationLevelRow
+
+    property var stream: ({})
+    readonly property int shown: root.streamVolume(applicationLevelRow.stream)
+    readonly property string label: String(applicationLevelRow.stream.name || "")
+    readonly property string iconSource: root.streamIcon(applicationLevelRow.stream)
+    readonly property bool muted: !!applicationLevelRow.stream.muted
+    // A stream that has stopped keeps its row, so it says so by standing down
+    // rather than by leaving the group under whatever is pointing at it.
+    readonly property bool playing: !!applicationLevelRow.stream.playing
+
+    spacing: root.spaceMedium
+
+    Rectangle {
+      id: applicationTrack
+
+      width: applicationLevelRow.width - root.rowHeight - root.spaceMedium
+      height: root.rowHeight
+      radius: root.radius
+      color: root.wellColor
+      clip: true
+
+      Rectangle {
+        width: parent.width * root.audioFillRatio(applicationLevelRow.shown)
+        height: parent.height
+        radius: parent.radius
+        color: applicationLevelRow.muted ? root.fillDanger : root.fillColor
+        opacity: applicationLevelRow.playing ? 1 : root.disabledOpacity
+      }
+
+      // The pointer is reported by the surface itself. The wash cannot come
+      // from the drag area's own hover, because that area is the one thing in
+      // the row the pointer is most often on and it would then be the one
+      // thing that never lights.
+      HoverHandler { id: applicationTrackHover }
+      HoverWash { hovered: applicationTrackHover.hovered }
+
+      Row {
+        anchors.fill: parent
+        anchors.leftMargin: root.cardPadding
+        anchors.rightMargin: root.cardPadding
+        spacing: root.spaceSmall
+
+        Item {
+          anchors.verticalCenter: parent.verticalCenter
+          width: root.rowIconSize
+          height: root.rowIconSize
+
+          IconImage {
+            anchors.fill: parent
+            visible: applicationLevelRow.iconSource !== ""
+            source: applicationLevelRow.iconSource
+            asynchronous: true
+            mipmap: true
+          }
+
+          // An application that names no icon still gets a mark, because the
+          // column it leads has to stay a column.
+          Text {
+            anchors.centerIn: parent
+            visible: applicationLevelRow.iconSource === ""
+            text: "󰝚"
+            color: root.subtext
+            font.family: root.fontFamily
+            font.pixelSize: root.textStrong
+          }
+        }
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          width: parent.width - root.rowIconSize - applicationLevelValue.width - root.spaceSmall * 2
+          text: applicationLevelRow.label
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.text
+          font.family: root.fontFamily
+          font.pixelSize: root.textBody
+          font.weight: root.weightMedium
+        }
+
+        // The numeral column is pinned so the levels below one another stay
+        // comparable: a right edge that moves with the number makes two bars
+        // stop being two readings of the same thing.
+        Text {
+          id: applicationLevelValue
+
+          anchors.verticalCenter: parent.verticalCenter
+          width: root.levelValueWidth
+          text: applicationLevelRow.shown + "%"
+          color: root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textLabel
+          horizontalAlignment: Text.AlignRight
+        }
+      }
+
+      MouseArea {
+        id: applicationLevelMouse
+
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
+        onPressed: function(mouse) { root.dragStreamVolume(applicationLevelRow.stream.id, valueAt(mouse.x)) }
+        onPositionChanged: function(mouse) {
+          if (pressed) root.dragStreamVolume(applicationLevelRow.stream.id, valueAt(mouse.x))
+        }
+        onReleased: function(mouse) { root.commitStreamVolume(applicationLevelRow.stream.id, valueAt(mouse.x)) }
+        onWheel: function(wheel) { root.adjustStreamFromWheel(wheel, applicationLevelRow.stream) }
+      }
+
+      // Which window of an application is the loud one is what the track title
+      // answers, and it is the one thing here that rewrites itself every few
+      // minutes. It belongs on the pointer rather than on the row.
+      HoverTip {
+        mouse: applicationLevelMouse
+        inOverlay: true
+        text: applicationLevelRow.stream.detail ? String(applicationLevelRow.stream.detail) : ""
+      }
+    }
+
+    Rectangle {
+      id: applicationMute
+
+      width: root.rowHeight
+      height: root.rowHeight
+      radius: root.radius
+      color: applicationMuteMouse.pressed ? root.pressColor : applicationLevelRow.muted ? root.dangerColor : root.cardColor
+      Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverHandler { id: applicationMuteHover }
+      HoverWash { hovered: applicationMuteHover.hovered && !applicationMuteMouse.pressed }
+
+      Text {
+        anchors.centerIn: parent
+        text: applicationLevelRow.muted ? "󰝟" : "󰕾"
+        color: applicationLevelRow.muted ? root.red : root.text
+        font.family: root.fontFamily
+        font.pixelSize: root.textIcon
+      }
+
+      MouseArea {
+        id: applicationMuteMouse
+
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.toggleStreamMute(applicationLevelRow.stream)
+      }
+
+      HoverTip {
+        mouse: applicationMuteMouse
+        inOverlay: true
+        text: (applicationLevelRow.muted ? "Unmute " : "Mute ") + applicationLevelRow.label
       }
     }
   }
@@ -4222,6 +4486,15 @@ Shared.Theme {
     onTriggered: {
       if (root.microphoneDrag < 0) return
       if (!root.runControl("microphone", String(root.microphoneDrag))) restart()
+    }
+  }
+
+  Timer {
+    id: streamDragTimer
+    interval: 32
+    onTriggered: {
+      if (root.streamDragValue < 0 || root.streamDragId === "") return
+      if (!root.runControl("stream-volume", root.streamDragId, String(root.streamDragValue))) restart()
     }
   }
 
@@ -7972,6 +8245,13 @@ Shared.Theme {
       // after the last row is not drawn, so it is not reserved either.
       readonly property int outputHeight: Math.max(0, Math.min(4, root.audioDevices("output").length) * 32 - root.spaceTight)
       readonly property int inputHeight: Math.max(0, Math.min(4, root.audioDevices("input").length) * 32 - root.spaceTight)
+      // The applications are measured the same way the device lists are, from
+      // the row they actually draw rather than from a counted constant, and
+      // bounded to four so a machine with many of them scrolls instead of
+      // growing the panel past its own output.
+      readonly property var streams: root.applicationStreams()
+      readonly property int streamHeight: Math.max(0, Math.min(4, audioControlsWindow.streams.length) * (root.rowHeight + root.spaceTight) - root.spaceTight)
+      readonly property int streamsPlaying: audioControlsWindow.streams.filter(function(stream) { return !!stream.playing }).length
       required property var modelData
       screen: modelData
       visible: root.controlPanel === "audio" && root.pinnedScreen(root.overlayScreen, modelData)
@@ -8092,6 +8372,40 @@ Shared.Theme {
             }
           }
           MicTestCard { theme: root; store: micTest; width: parent.width }
+
+          // The applications come last, under the devices, because this is the
+          // one group on the panel that changes by itself: a row arriving or
+          // leaving here moves nothing above it. A quiet desktop has no
+          // applications playing and the group is simply not there — a card
+          // saying so would be a permanent hole where the normal state is
+          // nothing at all.
+          SectionRule {
+            width: parent.width
+            visible: audioControlsWindow.streams.length > 0
+            label: "APPLICATIONS"
+            detail: root.failedControlAction === "stream-volume"
+              ? "Could not change that application"
+              : audioControlsWindow.streamsPlaying > 0 ? audioControlsWindow.streamsPlaying + " playing" : "Idle"
+            detailColor: root.failedControlAction === "stream-volume" ? root.red : root.overlay
+          }
+          DeviceListCard {
+            width: parent.width
+            listHeight: audioControlsWindow.streamHeight
+            visible: audioControlsWindow.streams.length > 0
+
+            SeeleListView {
+              anchors.fill: parent
+              anchors.margins: root.cardPadding
+              spacing: root.spaceTight
+              clip: true
+              model: audioControlsWindow.streams
+              delegate: ApplicationLevelRow {
+                required property var modelData
+                width: ListView.view.width
+                stream: modelData
+              }
+            }
+          }
         }
       }
     }

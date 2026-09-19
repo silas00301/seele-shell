@@ -8,14 +8,16 @@ const source = fs.readFileSync(process.argv[2], "utf8");
 const start = source.indexOf("  function parseSystemData(output) {");
 const end = source.indexOf("  function reconcileBluetoothScanIntent", start);
 assert(start >= 0 && end > start);
-let osds = 0, scans = 0, receivers = 0;
+let osds = 0, scans = 0, receivers = 0, streamReleases = 0;
 const root = {
   statusInitialized: false, volumeDrag: 75, microphoneDrag: 30,
+  streamDragId: "", streamDragValue: -1,
   systemData: { volume: 50, microphoneVolume: 20, headphones: { connected: false }, notifications: { items: [] }, dnd: false },
   currentScreen: () => "fixture-output",
   showTimedOsd: () => osds++,
   reconcileBluetoothScanIntent: () => scans++,
   reconcileBluetoothReceiverIntent: () => receivers++,
+  releaseStreamDrag: () => streamReleases++,
 };
 root.systemData.apply = patch => {
   Object.assign(root.systemData, patch);
@@ -43,6 +45,15 @@ update({ microphoneVolume: 30, bluetoothScanning: false, bluetoothReceiver: fals
 assert.equal(root.microphoneDrag, -1);
 assert.equal(scans, 1);
 assert.equal(receivers, 1);
+// An application mixer frame only reaches the drag latch while one is held, so
+// the ordinary case of streams arriving costs the panel nothing.
+update({ audioStreams: [{ id: 7, volume: 40 }] });
+assert.equal(streamReleases, 0, "a stream update with no drag in flight touches no latch");
+root.streamDragId = "7";
+root.streamDragValue = 55;
+update({ audioStreams: [{ id: 7, volume: 55 }] });
+assert.equal(streamReleases, 1);
+root.streamDragValue = -1;
 update({ headphones: { connected: false } });
 assert.equal(osds, 1);
 assert.equal(root.systemData.notifications.items[0].id, 2, "device updates preserve native notifications");

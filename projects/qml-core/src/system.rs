@@ -30,7 +30,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                     value.as_str().is_some_and(|text| text.len() <= 4096)
                 }
                 "networkAddresses" | "bluetoothDevices" | "cameraDevices" | "audioDevices"
-                | "batteries" | "trayHidden" => {
+                | "audioStreams" | "batteries" | "trayHidden" => {
                     value.as_array().is_some_and(|items| items.len() <= 16384)
                 }
                 "tailscale" | "protonVpn" | "sshServer" | "headphones" | "barModules"
@@ -58,6 +58,18 @@ mod tests {
             )
             .unwrap(),
             json!({"volume":12,"connection":"Wi-Fi","headphones":{"connected":true}})
+        );
+        assert_eq!(
+            call(
+                "patch",
+                &[json!({"audioStreams":[{"id":7,"name":"Zen Browser","volume":50}]})]
+            )
+            .unwrap(),
+            json!({"audioStreams":[{"id":7,"name":"Zen Browser","volume":50}]})
+        );
+        assert_eq!(
+            call("patch", &[json!({"audioStreams":{"id":7}})]).unwrap(),
+            json!({})
         );
     }
 }

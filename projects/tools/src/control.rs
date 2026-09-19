@@ -718,7 +718,11 @@ pub(crate) fn auxiliary_status() -> Value {
         "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or("")})
 }
 
-pub(crate) fn graph_status(dump: &Value) -> Value {
+// The stream gate belongs to the caller, because which applications belong in
+// the mixer depends on what that caller has already watched happen. The
+// long-lived monitor keeps one across every graph update; the one-shot CLI has
+// no history to keep, so a fresh gate there reports what is playing right now.
+pub(crate) fn graph_status(dump: &Value, gate: &mut crate::audio::StreamGate) -> Value {
     let array = dump.as_array().map(Vec::as_slice).unwrap_or_default();
     let microphone_active = array.iter().any(|object| {
         object
@@ -746,7 +750,8 @@ pub(crate) fn graph_status(dump: &Value) -> Value {
             && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
     });
     json!({"microphoneActive":microphone_active,"cameraActive":camera_active,
-        "screenRecording":screen_recording,"audioDevices":crate::audio::devices(dump)})
+        "screenRecording":screen_recording,"audioDevices":crate::audio::devices(dump),
+        "audioStreams":gate.admit(crate::audio::streams(dump))})
 }
 
 pub(crate) fn merge_status(parts: impl IntoIterator<Item = Value>) -> Value {
@@ -764,11 +769,10 @@ fn status_value() -> Value {
     let audio = thread::spawn(volumes);
     let auxiliary = thread::spawn(auxiliary_status);
     let graph = thread::spawn(|| {
-        graph_status(&json_output(
-            "pw-dump",
-            std::iter::empty::<&str>(),
-            json!([]),
-        ))
+        graph_status(
+            &json_output("pw-dump", std::iter::empty::<&str>(), json!([])),
+            &mut crate::audio::StreamGate::default(),
+        )
     });
     let network = network_status();
     let bluetooth = bluetooth_status(&bluetooth_state());
@@ -1073,6 +1077,25 @@ pub fn run(arguments: &[String]) -> Result {
                     )?;
                 }
                 _ => return Err("invalid audio value".into()),
+            }
+        }
+        // One application's own level, on the node the graph published. The
+        // ceiling is full volume rather than the output's 150%: the boost
+        // belongs to the output as a whole, and an application amplified on top
+        // of an amplified output clips instead of getting louder.
+        "stream-volume" => {
+            arg(1).parse::<u64>().map_err(|_| "stream id required")?;
+            match arg(2) {
+                "mute" => {
+                    require_status("wpctl", ["set-mute", arg(1), "toggle"])?;
+                }
+                value if value.parse::<u8>().is_ok_and(|value| value <= 100) => {
+                    require_status(
+                        "wpctl",
+                        ["set-volume", "-l", "1.0", arg(1), &format!("{value}%")],
+                    )?;
+                }
+                _ => return Err("invalid application volume".into()),
             }
         }
         "audio-outputs" => {
