@@ -32,6 +32,12 @@ reach it from the launcher's root search.
   working-hour overlap, and copy the exact time summary. Also available under
   Panels in Seele Controls; no calendars or accounts are connected.
 
+- **Seele Themes** (`themes.tsx`): search four curated palettes, preview their
+  swatches and apply one. The current selection stays marked and duplicate
+  applies coalesce. Native `seele-theme` owns publication and reloads; the picker
+  names any apps that need attention. `tests/vicinae-themes.cjs` exercises the
+  actual component's previews, selection, failure and retry paths.
+
 - **Seele Caffeinate**: keep the machine awake, its displays on and its session
   unlocked until a selected task ends, a chosen duration passes, or the session
   is stopped. The searchable list shows the current session first, then the
