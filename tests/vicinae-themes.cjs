@@ -12,7 +12,7 @@ let index = 0,
 const theme = {
   id: "catppuccin-mocha",
   name: "Catppuccin Mocha",
-  flavor: "mocha",
+  mode: "dark",
   base: "#1e1e2e",
   text: "#cdd6f4",
   accent: "#b4befe",
