@@ -192,6 +192,9 @@ ShellRoot {
   // The port inspector scrolls inside this bound, tall enough that an open
   // listener shows its address, its owners and a confirmation together.
   readonly property int portsMaximumHeight: 520
+  // The theme picker scrolls inside this bound, tall enough that the applied
+  // preset and the first of each mode's presets are visible together.
+  readonly property int themesMaximumHeight: 420
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
 
