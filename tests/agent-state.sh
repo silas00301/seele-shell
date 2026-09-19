@@ -12,7 +12,19 @@ set -euo pipefail
 
 case $1 in
   usage)
-    printf '[]\n'
+    jq -nc '[
+      {
+        provider: "codex",
+        source: "web",
+        usage: {
+          loginMethod: "ChatGPT Plus",
+          primary: {usedPercent: 25, resetsAt: "2026-08-29T12:00:00Z"}
+        },
+        credits: {remaining: 10}
+      },
+      {provider: "claude", source: "web", error: "provider unavailable"}
+    ]'
+    exit 1
     ;;
   cost)
     [[ " $* " == *" --days 365 "* ]]
@@ -64,7 +76,9 @@ SEELE_SHELL_TODAY="2026-08-29" \
   "$agent_state" >"$work/result.json"
 
 jq -e '
-  .local.periods.day.totalTokens == 90
+  (.subscriptions | length) == 1
+  and any(.subscriptions[]; .id == "codex" and .limits[0].usedPercent == 25)
+  and .local.periods.day.totalTokens == 90
   and .local.periods.day.totalCost == 9
   and .local.periods.week.totalTokens == 120
   and .local.periods.week.totalCost == 17

@@ -59,6 +59,26 @@ where
         16 * 1024 * 1024,
     )
 }
+
+/// Some batch commands return useful partial JSON with a failure status when
+/// one item failed. The caller must validate the output before using it.
+pub fn partial_output<I, S>(program: &str, arguments: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let result = capture(
+        Command::new(program).args(arguments),
+        b"",
+        Limits {
+            timeout: Duration::from_secs(20),
+            output: 16 * 1024 * 1024,
+        },
+        &shutdown_signal(),
+    )
+    .ok()?;
+    Some(String::from_utf8_lossy(&result.stdout).into_owned())
+}
 pub fn status<I, S>(program: &str, arguments: I) -> bool
 where
     I: IntoIterator<Item = S>,

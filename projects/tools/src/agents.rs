@@ -1,5 +1,6 @@
 use crate::command::{
-    atomic_write, epoch, exec, home, json_output, output, process_alive, state_home, timestamp,
+    atomic_write, epoch, exec, home, json_output, output, partial_output, process_alive,
+    state_home, timestamp,
 };
 use crate::Result;
 use serde::{Deserialize, Serialize};
@@ -413,12 +414,16 @@ fn collect(kind: &str) -> Vec<Value> {
         if kind == "cost" {
             args.extend(["--days", "365"]);
         }
-        let value = output(&binary, args)
+        let value = partial_output(&binary, args)
             .and_then(|text| serde_json::from_str::<Value>(&text).ok())
             .unwrap_or_else(|| json!([]));
         match value {
-            Value::Array(values) => records.extend(values.into_iter().filter(Value::is_object)),
-            value if value.is_object() => records.push(value),
+            Value::Array(values) => records.extend(
+                values
+                    .into_iter()
+                    .filter(|value| value.is_object() && value.get("error").is_none()),
+            ),
+            value if value.is_object() && value.get("error").is_none() => records.push(value),
             _ => {}
         }
     }
