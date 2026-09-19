@@ -19,20 +19,67 @@ use std::{
 pub struct Theme {
     pub id: String,
     pub name: String,
-    pub flavor: String,
-    pub base: String,
-    pub mantle: String,
-    pub crust: String,
-    pub surface: String,
-    pub overlay: String,
-    pub text: String,
-    pub subtext: String,
-    pub accent: String,
-    pub red: String,
-    pub green: String,
-    pub yellow: String,
-    pub terminal: Vec<String>,
+    pub mode: String,
+    pub palette: BTreeMap<String, String>,
+    pub vicinae_theme: PathBuf,
 }
+
+const BASE16_KEYS: [&str; 16] = [
+    "base00", "base01", "base02", "base03", "base04", "base05", "base06", "base07", "base08",
+    "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
+];
+
+// One projection bridges Base16's semantic slots to existing Seele/app roles.
+#[derive(Serialize)]
+struct Colors<'a> {
+    base: &'a str,
+    mantle: &'a str,
+    crust: &'a str,
+    surface: &'a str,
+    overlay: &'a str,
+    text: &'a str,
+    subtext: &'a str,
+    accent: &'a str,
+    red: &'a str,
+    green: &'a str,
+    yellow: &'a str,
+    terminal: [&'a str; 16],
+}
+impl Theme {
+    fn colors(&self) -> Colors<'_> {
+        let p = &self.palette;
+        Colors {
+            base: &p["base00"],
+            mantle: &p["base01"],
+            crust: &p["base00"],
+            surface: &p["base02"],
+            overlay: &p["base03"],
+            text: &p["base05"],
+            subtext: &p["base04"],
+            accent: &p["base0D"],
+            red: &p["base08"],
+            green: &p["base0B"],
+            yellow: &p["base0A"],
+            terminal: [
+                "base00", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base05",
+                "base03", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base07",
+            ]
+            .map(|key| p[key].as_str()),
+        }
+    }
+    fn display(&self) -> Result<serde_json::Value> {
+        let mut value = serde_json::to_value(self)?;
+        value
+            .as_object_mut()
+            .ok_or("Invalid theme")?
+            .remove("vicinaeTheme");
+        if let serde_json::Value::Object(colors) = serde_json::to_value(self.colors())? {
+            value.as_object_mut().ok_or("Invalid theme")?.extend(colors);
+        }
+        Ok(value)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Catalog {
@@ -48,15 +95,13 @@ fn valid_color(s: &str) -> bool {
 }
 impl Catalog {
     fn validate(&self) -> Result {
-        if self.version != 1 || self.themes.is_empty() || self.themes.len() > 32 {
+        if self.version != 2 || self.themes.is_empty() || self.themes.len() > 32 {
             return Err("Invalid theme catalog".into());
         }
         let mut ids = std::collections::BTreeSet::new();
         for t in &self.themes {
-            if !matches!(
-                t.flavor.as_str(),
-                "mocha" | "macchiato" | "frappe" | "latte"
-            ) || t.id != format!("catppuccin-{}", t.flavor)
+            if !matches!(t.mode.as_str(), "light" | "dark")
+                || t.id.is_empty()
                 || t.id.len() > 64
                 || !t
                     .id
@@ -66,14 +111,11 @@ impl Catalog {
                 || t.name.is_empty()
                 || t.name.len() > 80
                 || t.name.chars().any(char::is_control)
-                || t.terminal.len() != 16
-                || [
-                    &t.base, &t.mantle, &t.crust, &t.surface, &t.overlay, &t.text, &t.subtext,
-                    &t.accent, &t.red, &t.green, &t.yellow,
-                ]
-                .into_iter()
-                .chain(t.terminal.iter())
-                .any(|c| !valid_color(c))
+                || t.palette.len() != BASE16_KEYS.len()
+                || BASE16_KEYS
+                    .iter()
+                    .any(|key| !t.palette.get(*key).is_some_and(|c| valid_color(c)))
+                || !t.vicinae_theme.is_absolute()
             {
                 return Err("Invalid theme palette".into());
             }
@@ -123,38 +165,39 @@ fn selected(state: &Path, catalog: &Catalog) -> Result<String> {
     }
 }
 fn files(t: &Theme) -> BTreeMap<&'static str, String> {
+    let c = t.colors();
     let mut files = BTreeMap::new();
-    let mut ghostty = format!("background = {}\nforeground = {}\ncursor-color = {}\nselection-background = {}\nselection-foreground = {}\n", t.base, t.text, t.accent, t.surface, t.text);
-    for (index, color) in t.terminal.iter().enumerate() {
+    let mut ghostty = format!("background = {}\nforeground = {}\ncursor-color = {}\nselection-background = {}\nselection-foreground = {}\n", c.base, c.text, c.accent, c.surface, c.text);
+    for (index, color) in c.terminal.iter().enumerate() {
         ghostty.push_str(&format!("palette = {index}={color}\n"));
     }
     files.insert("ghostty", ghostty);
     files.insert("fish.fish", format!("set -g fish_color_normal {}\nset -g fish_color_command {}\nset -g fish_color_param {}\nset -g fish_color_quote {}\nset -g fish_color_error {}\nset -g fish_color_comment {}\nset -g fish_color_operator {}\nset -g fish_color_escape {}\nset -g fish_color_autosuggestion {}\nset -g fish_color_search_match --background={}\nset -g fish_pager_color_prefix {}\nset -g fish_pager_color_completion {}\nset -g fish_pager_color_description {}\nset -g fish_pager_color_selected_background --background={}\n",
-        &t.text[1..], &t.accent[1..], &t.text[1..], &t.green[1..], &t.red[1..], &t.overlay[1..], &t.accent[1..], &t.yellow[1..], &t.overlay[1..], &t.surface[1..], &t.accent[1..], &t.text[1..], &t.subtext[1..], &t.surface[1..]));
+        &c.text[1..], &c.accent[1..], &c.text[1..], &c.green[1..], &c.red[1..], &c.overlay[1..], &c.accent[1..], &c.yellow[1..], &c.overlay[1..], &c.surface[1..], &c.accent[1..], &c.text[1..], &c.subtext[1..], &c.surface[1..]));
     // Keep the existing tmux layout and plugin-provided text; recolor their
     // semantic palette variables as well as the outer status/window surfaces.
-    let mut tmux = format!("set -g status-style 'fg={},bg={}'\nset -g pane-border-style 'fg={}'\nset -g pane-active-border-style 'fg={}'\nset -g message-style 'fg={},bg={}'\nset -g mode-style 'fg={},bg={}'\n", t.text, t.base, t.surface, t.accent, t.text, t.surface, t.base, t.accent);
+    let mut tmux = format!("set -g status-style 'fg={},bg={}'\nset -g pane-border-style 'fg={}'\nset -g pane-active-border-style 'fg={}'\nset -g message-style 'fg={},bg={}'\nset -g mode-style 'fg={},bg={}'\n", c.text, c.base, c.surface, c.accent, c.text, c.surface, c.base, c.accent);
     for (key, color) in [
-        ("bg", &t.base),
-        ("fg", &t.text),
-        ("surface_0", &t.surface),
-        ("surface_1", &t.surface),
-        ("surface_2", &t.overlay),
-        ("overlay_0", &t.overlay),
-        ("overlay_1", &t.overlay),
-        ("overlay_2", &t.subtext),
-        ("red", &t.red),
-        ("green", &t.green),
-        ("yellow", &t.yellow),
-        ("blue", &t.terminal[4]),
-        ("mauve", &t.terminal[5]),
-        ("lavender", &t.accent),
+        ("bg", &c.base),
+        ("fg", &c.text),
+        ("surface_0", &c.surface),
+        ("surface_1", &c.surface),
+        ("surface_2", &c.overlay),
+        ("overlay_0", &c.overlay),
+        ("overlay_1", &c.overlay),
+        ("overlay_2", &c.subtext),
+        ("red", &c.red),
+        ("green", &c.green),
+        ("yellow", &c.yellow),
+        ("blue", &c.terminal[4]),
+        ("mauve", &c.terminal[5]),
+        ("lavender", &c.accent),
     ] {
         tmux.push_str(&format!("set -g @thm_{key} '{color}'\n"));
     }
     files.insert("tmux.conf", tmux);
-    files.insert("gtk.css", format!("@define-color theme_bg_color {};\n@define-color theme_fg_color {};\n@define-color theme_base_color {};\n@define-color theme_text_color {};\n@define-color theme_selected_bg_color {};\n@define-color theme_selected_fg_color {};\n@define-color accent_color {};\n@define-color accent_bg_color {};\n@define-color accent_fg_color {};\n@define-color window_bg_color {};\n@define-color window_fg_color {};\n@define-color view_bg_color {};\n@define-color view_fg_color {};\n@define-color headerbar_bg_color {};\n@define-color headerbar_fg_color {};\n@define-color card_bg_color {};\n@define-color popover_bg_color {};\n@define-color popover_fg_color {};\n", t.base, t.text, t.mantle, t.text, t.accent, t.base, t.accent, t.accent, t.base, t.base, t.text, t.mantle, t.text, t.mantle, t.text, t.surface, t.mantle, t.text));
-    files.insert("hyprland.lua", format!("hl.config({{general = {{col = {{active_border = 'rgba({}ff)', inactive_border = 'rgba({}ff)'}}}}}})\n", &t.accent[1..], &t.surface[1..]));
+    files.insert("gtk.css", format!("@define-color theme_bg_color {};\n@define-color theme_fg_color {};\n@define-color theme_base_color {};\n@define-color theme_text_color {};\n@define-color theme_selected_bg_color {};\n@define-color theme_selected_fg_color {};\n@define-color accent_color {};\n@define-color accent_bg_color {};\n@define-color accent_fg_color {};\n@define-color window_bg_color {};\n@define-color window_fg_color {};\n@define-color view_bg_color {};\n@define-color view_fg_color {};\n@define-color headerbar_bg_color {};\n@define-color headerbar_fg_color {};\n@define-color card_bg_color {};\n@define-color popover_bg_color {};\n@define-color popover_fg_color {};\n", c.base, c.text, c.mantle, c.text, c.accent, c.base, c.accent, c.accent, c.base, c.base, c.text, c.mantle, c.text, c.mantle, c.text, c.surface, c.mantle, c.text));
+    files.insert("hyprland.lua", format!("hl.config({{general = {{col = {{active_border = 'rgba({}ff)', inactive_border = 'rgba({}ff)'}}}}}})\n", &c.accent[1..], &c.surface[1..]));
     files
 }
 fn tool(catalog: &Catalog, name: &str, args: &[&str]) -> bool {
@@ -221,7 +264,7 @@ fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
                 "set",
                 "org.gnome.desktop.interface",
                 "color-scheme",
-                if t.flavor == "latte" {
+                if t.mode == "light" {
                     "prefer-light"
                 } else {
                     "prefer-dark"
@@ -230,11 +273,7 @@ fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
         ) {
             pending.push("Desktop color preference");
         }
-        if !tool(
-            catalog,
-            "vicinae",
-            &[&format!("vicinae://theme/set/{}", t.id)],
-        ) {
+        if !tool(catalog, "vicinae", &["vicinae://theme/set/seele-current"]) {
             pending.push("Vicinae");
         }
     }
@@ -260,7 +299,14 @@ fn apply(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serde_
     for (name, content) in files(theme) {
         atomic_write(&generation.path().join(name), content.as_bytes())?;
     }
-    let mut selection = serde_json::to_value(theme)?;
+    // Only data generated by Stylix enters the launcher theme; never execute it.
+    let launcher = read_bounded(&theme.vicinae_theme, 65536, false)?;
+    if launcher.is_empty() || std::str::from_utf8(&launcher).is_err() {
+        return Err("Invalid generated launcher theme".into());
+    }
+    atomic_write(&generation.path().join("vicinae.toml"), &launcher)?;
+    let mut selection = theme.display()?;
+    selection["version"] = 2.into();
     selection["fontFamily"] = catalog.font_family.clone().into();
     selection["wallpaper"] = catalog.wallpaper.clone().into();
     let current = state.join("current");
@@ -325,7 +371,7 @@ pub fn main() -> Result {
         .as_slice()
     {
         ["list"] => {
-            serde_json::json!({"current": selected(&state, &catalog)?, "themes": catalog.themes})
+            serde_json::json!({"current": selected(&state, &catalog)?, "themes": catalog.themes.iter().map(Theme::display).collect::<Result<Vec<_>>>()?})
         }
         ["current"] => serde_json::json!({"id": selected(&state, &catalog)?}),
         ["set", id] => apply(&catalog, &state, id, true)?,

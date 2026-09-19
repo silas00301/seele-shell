@@ -32,7 +32,7 @@ reach it from the launcher's root search.
   working-hour overlap, and copy the exact time summary. Also available under
   Panels in Seele Controls; no calendars or accounts are connected.
 
-- **Seele Themes** (`themes.tsx`): search four curated palettes, preview their
+- **Seele Themes** (`themes.tsx`): search the curated palette catalog, preview their
   swatches and apply one. The current selection stays marked and duplicate
   applies coalesce. Native `seele-theme` owns publication and reloads; the picker
   names any apps that need attention. `tests/vicinae-themes.cjs` exercises the

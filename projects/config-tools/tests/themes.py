@@ -18,12 +18,12 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     catalog_file = config / "seele-theme/catalog.json"
     catalog_file.parent.mkdir(parents=True)
     env = {"PATH": os.environ.get("PATH", ""), "HOME": str(root), "XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state_home)}
-    theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", flavor="mocha",
-                 base="#1e1e2e", mantle="#181825", crust="#11111b", surface="#313244", overlay="#6c7086",
-                 text="#cdd6f4", subtext="#a6adc8", accent="#b4befe", red="#f38ba8", green="#a6e3a1", yellow="#f9e2af",
-                 terminal=["#123456"] * 16)
-    light = dict(theme, id="catppuccin-latte", name="Catppuccin Latte", flavor="latte", base="#eff1f5", accent="#7287fd")
-    catalog = dict(version=1, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={})
+    launcher = root / "stylix-vicinae.toml"
+    launcher.write_text('[meta]\nname = "Stylix fixture"\nvariant = "light"\n[colors.core]\nbackground = "#eff1f5"\n')
+    palette = {f"base{i:02X}": f"#{i * 4096:06x}" for i in range(16)}
+    theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=palette, vicinaeTheme=str(launcher))
+    light = dict(theme, id="flexoki-light", name="Flexoki Light", mode="light", palette=dict(palette, base00="#eff1f5", base0D="#7287fd"))
+    catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={})
     def save(value=catalog):
         catalog_file.write_text(json.dumps(value))
     def call(*args, ok=True, environment=env):
@@ -45,13 +45,16 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     # Publication must reach every include without writing app-owned settings.
     call("set", light["id"])
     selection = json.loads((state / "selection.json").read_text())
-    assert selection["base"] == light["base"] and selection["fontFamily"] == catalog["fontFamily"]
-    assert light["base"] in (state / "current/ghostty").read_text()
-    assert light["accent"][1:] in (state / "current/fish.fish").read_text()
-    assert light["accent"][1:] in (state / "current/hyprland.lua").read_text()
-    assert light["base"] in (state / "current/tmux.conf").read_text()
-    assert light["base"] in (state / "current/gtk.css").read_text()
+    assert selection["base"] == light["palette"]["base00"] and selection["fontFamily"] == catalog["fontFamily"]
+    assert light["palette"]["base00"] in (state / "current/ghostty").read_text()
+    assert light["palette"]["base0D"][1:] in (state / "current/fish.fish").read_text()
+    assert light["palette"]["base0D"][1:] in (state / "current/hyprland.lua").read_text()
+    assert light["palette"]["base00"] in (state / "current/tmux.conf").read_text()
+    assert light["palette"]["base00"] in (state / "current/gtk.css").read_text()
     assert unrelated.read_text() == "font-size = 13\n"
+    assert (state / "current/vicinae.toml").read_bytes() == launcher.read_bytes()
+    assert selection["palette"] == light["palette"] and selection["mode"] == "light" and selection["version"] == 2
+    assert "vicinaeTheme" not in selection and "flavor" not in selection
     call("init")
     assert call("current")["id"] == light["id"], "Activation must preserve selection"
     assert len(list(state.glob(".theme-*"))) == 1
@@ -67,9 +70,24 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     before = (state / "selection.json").read_bytes()
     old_link = (state / "current").readlink()
     invalid = copy.deepcopy(catalog)
-    invalid["themes"][0]["accent"] = "#fff; exec hostile"
+    invalid["themes"][0]["palette"]["base0D"] = "#fff; exec hostile"
     save(invalid)
     call("set", theme["id"], ok=False)
+    assert (state / "selection.json").read_bytes() == before
+    assert (state / "current").readlink() == old_link
+    save()
+    # Missing/extra slots, invalid modes and unreadable generated assets fail
+    # before publication, including for non-Catppuccin theme IDs.
+    for key in ("base00", "base0F"):
+        invalid = copy.deepcopy(catalog)
+        del invalid["themes"][1]["palette"][key]
+        save(invalid); call("set", light["id"], ok=False)
+    invalid = copy.deepcopy(catalog); invalid["themes"][1]["palette"]["base10"] = "#123456"
+    save(invalid); call("list", ok=False)
+    invalid = copy.deepcopy(catalog); invalid["themes"][1]["mode"] = "invalid"
+    save(invalid); call("list", ok=False)
+    invalid = copy.deepcopy(catalog); invalid["themes"][1]["vicinaeTheme"] = str(root / "missing")
+    save(invalid); call("set", light["id"], ok=False)
     assert (state / "selection.json").read_bytes() == before
     assert (state / "current").readlink() == old_link
     save()
@@ -94,6 +112,11 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     call("reset")
     assert unrelated.read_text() == "font-size = 13\n"
     assert call("current")["id"] == theme["id"]
+    # A v1 saved selection is migrated by ID rather than reset to the default.
+    (state / "selection.json").write_text(json.dumps({"id": theme["id"], "flavor": "mocha"}))
+    call("init")
+    assert json.loads((state / "selection.json").read_text())["version"] == 2
+    assert call("current")["id"] == theme["id"]
     # Bounded reload failures keep the new selection and name affected apps.
     log = root / "calls.jsonl"
     stub = root / "desktop tool"
@@ -107,7 +130,7 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     assert ["--user", "reload", "app-com.mitchellh.ghostty.service"] in calls
     assert ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"] in calls
-    assert ["vicinae://theme/set/catppuccin-latte"] in calls
+    assert ["vicinae://theme/set/seele-current"] in calls
     assert ["source-file", str(state / "current/tmux.conf")] in calls
     assert call("current")["id"] == light["id"]
 print("Theme publication, persistence, concurrency, rollback, validation and reload fixtures passed")
