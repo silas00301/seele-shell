@@ -23,6 +23,10 @@ let
   fontConfig = pkgs.makeFontsConf {
     fontDirectories = [ pkgs.maple-mono.NF-CN ];
   };
+  configTools = import ../../packages/core/native.nix {
+    inherit pkgs;
+    name = "config-tools";
+  };
   generationSwitch = import ../../packages/core/native.nix {
     inherit pkgs;
     name = "repo-tools";
@@ -173,6 +177,7 @@ pkgs.stdenvNoCC.mkDerivation {
     substituteInPlace vicinae/runtime.ts \
       --replace-fail '@SEELE_SHELLCTL@' "$out/bin/seele-shellctl" \
       --replace-fail '@SEELE_CONTROL@' "$out/bin/seele-control" \
+      --replace-fail '@SEELE_THEME@' '${configTools}/bin/seele-theme' \
       --replace-fail '@HYPRCTL@' '${pkgs.hyprland}/bin/hyprctl' \
       --replace-fail '@WTYPE@' '${pkgs.wtype}/bin/wtype' \
       --replace-fail '@NVD@' '${pkgs.nvd}/bin/nvd' \
@@ -187,6 +192,9 @@ pkgs.stdenvNoCC.mkDerivation {
     esbuild vicinae/keybindings-fixture.tsx --bundle --platform=node --format=cjs \
       --external:./runtime --external:react --external:@raycast/api --outfile=keybindings.cjs
     node ${tests}/vicinae-keybindings.cjs "$PWD/keybindings.cjs"
+    esbuild vicinae/themes.tsx --bundle --platform=node --format=cjs \
+      --external:@raycast/api --external:react --external:./runtime --outfile=themes.cjs
+    node ${tests}/vicinae-themes.cjs "$PWD/themes.cjs"
     esbuild vicinae/caffeinate.tsx --bundle --platform=node --format=cjs \
       --external:./runtime --external:react --external:@raycast/api --outfile=caffeinate.cjs
     node ${tests}/vicinae-caffeinate.cjs "$PWD/caffeinate.cjs"

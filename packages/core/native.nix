@@ -64,6 +64,7 @@ let
       python3 projects/config-tools/tests/materialize.py "$out/bin/seele-portable-config"
       python3 projects/config-tools/tests/catalog.py "$out/bin/seele-portable-apps"
       python3 projects/config-tools/tests/project_text.py "$out/bin/seele-project-text"
+      python3 projects/config-tools/tests/themes.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';

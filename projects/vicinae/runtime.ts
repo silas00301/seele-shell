@@ -7,6 +7,7 @@ const execute = promisify(execFile);
 export const binaries = {
   shell: "@SEELE_SHELLCTL@",
   control: "@SEELE_CONTROL@",
+  theme: "@SEELE_THEME@",
   hyprctl: "@HYPRCTL@",
   wtype: "@WTYPE@",
   nvd: "@NVD@",
