@@ -351,6 +351,20 @@
         "performance",
         "monitor"
       ]
+    },
+    {
+      "name": "themes",
+      "title": "Seele Themes",
+      "description": "Preview and apply a coordinated desktop and application theme",
+      "mode": "view",
+      "keywords": [
+        "theme",
+        "style",
+        "appearance",
+        "colors",
+        "light",
+        "dark"
+      ]
     }
   ]
 }
