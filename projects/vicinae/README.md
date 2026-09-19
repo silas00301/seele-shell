@@ -7,6 +7,20 @@ reach it from the launcher's root search.
 
 ## Commands
 
+- **Seele Themes** (`themes.tsx`): search the curated palette catalog, preview a
+  preset and apply it. The applied theme leads its own section and carries a
+  `Current` tag; everything else is grouped into Dark and Light, and each row is
+  searchable by the words its ID is made of. A row's preview names its palette
+  roles — background, surface and foreground as values, the four self-evident
+  colours as tags drawn in themselves — beside what a switch reaches at once and
+  what needs a nudge. Applying reports itself in a toast that resolves to the
+  theme's name, naming anything the helper could not reload rather than calling a
+  saved switch a failure; duplicate applies coalesce. Native `seele-theme` owns
+  publication and reloads. The shell's own Themes panel is the same catalog
+  without the launcher. `tests/vicinae-themes.cjs` renders the actual component
+  and covers its sections, previews, shared shortcuts, selection, reload
+  reporting and retry paths.
+
 - **Seele Caffeinate**: keep the machine awake, its displays on and its session
   unlocked until a selected task ends, a chosen duration passes, or the session
   is stopped. The searchable list shows the current session first, then the

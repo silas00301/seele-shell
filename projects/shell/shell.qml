@@ -1745,6 +1745,10 @@ Shared.Theme {
     id: portsStore
     panelOpen: root.controlPanel === "ports"
   }
+  ThemeStore {
+    id: themeStore
+    panelOpen: root.controlPanel === "themes"
+  }
 
   IpcHandler {
     target: "seele-shell"
@@ -2668,7 +2672,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 4 + gap * 3
+    height: devicesY + smallTileHeight * 5 + gap * 4
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -2702,6 +2706,17 @@ Shared.Theme {
       detail: portsStore.total ? portsStore.total + " local TCP listeners" : "Find what is listening on this machine"
       glyph: Text { text: "󰛳"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("ports", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 4 + controlGrid.gap * 4
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Themes"
+      detail: themeStore.currentName !== "" ? themeStore.currentName : "Recolour the desktop, terminal and editor"
+      glyph: Text { text: "󰏘"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("themes", controlGrid.screenName)
     }
 
     Rectangle {
@@ -7786,6 +7801,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰛳"; title: "Ports"; detail: portsPanel.hint }
           PortsPanel { id: portsPanel; theme: root; store: portsStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Themes ---------------------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: themesWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "themes" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: themesContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-themes"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { themesPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: themesContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰏘"; title: "Themes"; detail: themesPanel.hint }
+          ThemePanel { id: themesPanel; theme: root; store: themeStore; width: parent.width }
         }
       }
     }

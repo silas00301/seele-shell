@@ -20,6 +20,7 @@ mod pi;
 mod ports;
 mod presentation;
 mod system;
+mod themes;
 mod time;
 mod transfers;
 mod uri_picker;
@@ -59,6 +60,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "system" => system::call(function, arguments),
         "presentation" => presentation::call(function, arguments),
         "ports" => ports::call(function, arguments),
+        "themes" => themes::call(function, arguments),
         "notes" => notes::call(function, arguments),
         "ai_activity" => ai_activity::call(function, arguments),
         "network" => network::call(function, arguments),

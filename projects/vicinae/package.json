@@ -243,6 +243,20 @@
       "title": "Seele Caffeinate",
       "description": "Keep the session awake until a task ends, a time passes, or you stop it",
       "mode": "view"
+    },
+    {
+      "name": "themes",
+      "title": "Seele Themes",
+      "description": "Preview and apply a coordinated desktop and application theme",
+      "mode": "view",
+      "keywords": [
+        "theme",
+        "style",
+        "appearance",
+        "colors",
+        "light",
+        "dark"
+      ]
     }
   ]
 }
