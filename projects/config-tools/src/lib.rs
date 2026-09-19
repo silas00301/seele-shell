@@ -7,3 +7,5 @@ pub type Result<T = ()> = seele_runtime::Result<T>;
 pub mod inputs;
 
 pub mod launch;
+
+pub mod themes;
