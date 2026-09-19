@@ -1965,6 +1965,10 @@ Shared.Theme {
     id: portsStore
     panelOpen: root.controlPanel === "ports"
   }
+  ThemeStore {
+    id: themeStore
+    panelOpen: root.controlPanel === "themes"
+  }
 
   IpcHandler {
     target: "seele-shell"
@@ -3058,7 +3062,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 8 + gap * 7
+    height: devicesY + smallTileHeight * 9 + gap * 8
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -3133,6 +3137,17 @@ Shared.Theme {
       detail: "Live CPU, memory and processes"
       glyph: Text { text: "󰍛"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("resources", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 8 + controlGrid.gap * 8
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Themes"
+      detail: themeStore.currentName !== "" ? themeStore.currentName : "Recolor the desktop, terminal and editor"
+      glyph: Text { text: "󰔎"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("themes", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8716,6 +8731,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰍛"; title: "Resources"; detail: resourcesPanel.hint }
           ResourcesPanel { id: resourcesPanel; theme: root; store: resourcesStore; width: parent.width; maximumHeight: Math.min(root.resourcesMaximumHeight, resourcesWindow.modelData.height - root.barHeight - root.panelGap - root.panelMargin * 2 - root.panelHeaderHeight - root.panelSpacing - root.panelMargin) }
+        }
+      }
+    }
+  }
+
+  // Themes ---------------------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: themesWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "themes" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: themesContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-themes"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { themesPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: themesContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { id: themesHeader; width: parent.width; glyph: "󰔎"; title: "Themes"; detail: themesPanel.hint }
+          ThemePanel { id: themesPanel; theme: root; store: themeStore; width: parent.width; maximumHeight: Math.min(root.themesMaximumHeight, themesWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2 - themesHeader.height - root.panelSpacing) }
         }
       }
     }
