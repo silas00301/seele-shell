@@ -85,6 +85,15 @@ after building this crate. The package runs the same fixture against the
 installed executable. It covers first use, read-only listing, preservation,
 concurrent switching/activation, invalid palettes, missing generated assets,
 legacy state migration, rollback, symlink boundaries
-and exact reload arguments against fake desktop tools. The picker behavior is
-covered by `tests/vicinae-themes.cjs`; parent-side integration is documented in
-Seele's `docs/theme-switching.md`.
+and exact reload arguments against fake desktop tools.
+
+Two surfaces call this helper and neither owns anything it owns: the Vicinae
+**Seele Themes** command and the shell's Themes panel (`ThemeStore.qml`,
+`ThemePanel.qml`, with grouping, search and wording in `qml-core`'s
+`themes.rs`). Both list only what they are showing and apply one theme at a
+time. The shell panel does not treat its own `set` reply as the answer to which
+theme is applied: it watches the published `selection.json` for that, so a
+switch made from the launcher, from `seele-theme` directly or during activation
+marks the same row. Their behavior is covered by `tests/vicinae-themes.cjs` and
+`tests/themes.js`; parent-side integration is documented in Seele's
+`docs/theme-switching.md`.
