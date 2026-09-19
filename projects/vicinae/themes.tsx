@@ -13,7 +13,7 @@ import { binaries, run, useQuery } from "./runtime";
 type Theme = {
   id: string;
   name: string;
-  flavor: string;
+  mode: "light" | "dark";
   base: string;
   text: string;
   accent: string;
@@ -81,7 +81,7 @@ export default function Command() {
           accessories={[
             {
               tag: {
-                value: theme.flavor === "latte" ? "Light" : "Dark",
+                value: theme.mode === "light" ? "Light" : "Dark",
                 color: Color.SecondaryText,
               },
             },
@@ -107,9 +107,9 @@ export default function Command() {
                       theme.red,
                       theme.green,
                       theme.yellow,
-                    ].map((color) => (
+                    ].map((color, index) => (
                       <List.Item.Detail.Metadata.TagList.Item
-                        key={color}
+                        key={index}
                         text={color}
                         color={color}
                       />
