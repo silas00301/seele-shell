@@ -100,6 +100,14 @@ ShellRoot {
   // glyph, so it stands above the row ramp. Every tile in the grid takes it,
   // because a grid whose tiles disagree on height reads as a mistake.
   readonly property int controlTileHeight: 55
+  // The square an application's own themed icon is drawn in where it leads a
+  // row's title. It is sized against that title rather than against the row,
+  // because it is standing in for the glyph that would otherwise be there.
+  readonly property int rowIconSize: 16
+  // The column a level's percentage is pinned to. Every track in a stack of
+  // them takes it, because a right edge that moves with the number stops two
+  // bars from being two readings of the same thing.
+  readonly property int levelValueWidth: 46
   // A notification card is as tall as what it holds, but never shorter than
   // this: one line of summary over one line of body, beside the app icon. An
   // empty list is measured against it too, so "nothing here" costs one card.

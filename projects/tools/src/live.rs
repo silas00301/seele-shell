@@ -210,6 +210,11 @@ fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
             });
         }
         let mut graph = Graph::default();
+        // One gate per connection, beside the registry it reads. A monitor that
+        // reconnected has watched nothing since, so the mixer starts again from
+        // whatever is playing rather than from a list of nodes it can no longer
+        // reconcile against the graph.
+        let mut gate = crate::audio::StreamGate::default();
         let mut volume_key = Value::Null;
         let mut pending = Vec::new();
         let mut closed = false;
@@ -236,7 +241,7 @@ fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
                         return;
                     }
                     let key = graph.volume_key();
-                    let patch = control::graph_status(graph.snapshot());
+                    let patch = control::graph_status(graph.snapshot(), &mut gate);
                     let _guard = audio.lock().unwrap();
                     let patch = if key != volume_key {
                         volume_key = key;
@@ -258,7 +263,7 @@ fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
         {
             let _guard = audio.lock().unwrap();
             let reset = control::merge_status([
-                control::graph_status(&json!([])),
+                control::graph_status(&json!([]), &mut gate),
                 json!({"volume":0,"muted":false,"microphoneVolume":0,"microphoneMuted":false}),
             ]);
             if sender.send(Event::Patch(reset)).is_err() {
