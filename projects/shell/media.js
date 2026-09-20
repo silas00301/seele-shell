@@ -64,6 +64,7 @@ function subtitle(player) { return Bridge.call("media.subtitle", [snapshot(playe
 function label(player) { return Bridge.call("media.label", [snapshot(player, "track")]) }
 function playerName(player) { return Bridge.call("media.playerName", [snapshot(player, "identity")]) }
 function lengthSeconds(player) { return Bridge.call("media.lengthSeconds", [snapshot(player, "timing")]) }
+function timeLabel(seconds) { return Bridge.call("media.timeLabel", [Bridge.number(seconds)]) }
 function liveStream(player) { return Bridge.call("media.liveStream", [snapshot(player, "timing")]) }
 function timelineAvailable(player) { return Bridge.call("media.timelineAvailable", [snapshot(player, "timing")]) }
 function titleKey(player) { return Bridge.call("media.titleKey", [snapshot(player, "track")]) }
