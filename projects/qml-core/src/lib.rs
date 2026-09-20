@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 mod ai_activity;
 mod ai_prompt;
 mod caffeinate;
+mod color_picker;
 mod focus;
 mod github;
 mod health;
@@ -64,6 +65,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "network" => network::call(function, arguments),
         "ai_prompt" => ai_prompt::call(function, arguments),
         "uri_picker" => uri_picker::call(function, arguments),
+        "color_picker" => color_picker::call(function, arguments),
         "focus" => focus::call(function, arguments),
         "caffeinate" => caffeinate::call(function, arguments),
         "time" => time::call(function, arguments),

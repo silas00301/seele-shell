@@ -14,6 +14,7 @@ Commands:
   transfers                 Open personal Transfers
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
+  color                     Freeze all screens and sample a colour
   control <panel>           Toggle a control panel
   bluetooth-pairing <token> Show the matching private Bluetooth request
   bluetooth-pairing-dismiss Withdraw the Bluetooth pairing request
@@ -84,6 +85,7 @@ pub fn run(arguments: &[String]) -> Result {
         "transfers" => call("openTransfers", &[]),
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),
+        "color" => call("toggleColor", &[]),
         "control" => call(
             "toggleControl",
             &[rest.first().cloned().unwrap_or_else(|| "system".into())],
