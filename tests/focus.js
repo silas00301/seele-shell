@@ -36,12 +36,11 @@ assert.equal(focus.update(restored, "tick", 61000).status, "done", "retained dea
 assert.equal(focus.update(restored, "pause", 61000).status, "done", "pausing expired timer still completes");
 console.log("Focus timer lifecycle checks passed");
 
-const shell = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "shell.qml"), "utf8");
-const start = shell.indexOf("          id: focusContent");
-const handler = shell.slice(start).match(/Keys.onPressed: event => \{([^]*?)\n          }/);
+const panel = fs.readFileSync(require("node:path").join(require("node:path").dirname(process.argv[2]), "FocusPanel.qml"), "utf8");
+const handler = panel.match(/Keys.onPressed: event => \{([^]*?)\n  }/);
 assert(handler, "production focus key handler exists");
 const calls = [];
-const context = vm.createContext({Qt:{Key_1:1,Key_2:2,Key_3:3,Key_Delete:4,Key_Space:5,ControlModifier:1,AltModifier:2,MetaModifier:4},focusTimer:{timerState:{status:"running"},command:(...args)=>calls.push(args)}});
+const context = vm.createContext({Qt:{Key_1:1,Key_2:2,Key_3:3,Key_Delete:4,Key_Space:5,Key_Plus:6,ControlModifier:1,AltModifier:2,MetaModifier:4},customMinutes:{activeFocus:false},panel:{timer:{timerState:{status:"running"},command:(...args)=>calls.push(args)}}});
 vm.runInContext("function key(event) {" + handler[1] + "}", context);
 context.key({key:1,modifiers:0,isAutoRepeat:true,accepted:false});
 context.key({key:1,modifiers:1,isAutoRepeat:false,accepted:false});
@@ -52,3 +51,48 @@ assert.equal(calls.length, 1);
 assert.equal(calls[0][0], "pause");
 assert.equal(press.accepted, true);
 console.log("Focus keyboard guard checks passed");
+
+context.customMinutes.activeFocus = true;
+for (const key of [1, 2, 3, 4, 5, 6]) context.key({key, modifiers:0, isAutoRepeat:false});
+assert.equal(calls.length, 1, "editing custom minutes cannot invoke panel shortcuts");
+context.customMinutes.activeFocus = false;
+context.key({key:6, modifiers:0, isAutoRepeat:false});
+assert.equal(calls.at(-1)[0], "extend");
+for (const input of ["", "0", "241", "1.5", "-1", "1e2", "Infinity", "12m", "9999999999999999"]) {
+  assert.equal(focus.customInput(input).valid, false, input);
+  assert.equal(focus.update(state, "custom", 14000000, input), state);
+}
+for (const input of ["1", "37", "240", " 45 "]) {
+  assert.equal(focus.customInput(input).valid, true, input);
+  assert.equal(focus.update(state, "custom", 14000000, input).duration, Number(input) * 60);
+}
+state = focus.update(null, "custom", 1000, "37");
+state = focus.update(state, "extend", 2101);
+assert.equal(state.duration, 42 * 60);
+assert.equal(state.deadline, 2521000, "extension adds to absolute deadline, not the last rounded tick");
+assert.equal(state.remaining, 2519);
+state = focus.update(state, "pause", 2201);
+state = focus.update(state, "extend", 9999999);
+assert.equal(state.status, "paused");
+assert.equal(state.deadline, 0);
+assert.equal(state.remaining, 2819);
+assert.equal(focus.update(state, "resume", 10000000).deadline, 12819000);
+state = focus.update(null, "custom", 0, "235");
+assert.equal(focus.canExtend(state), true);
+state = focus.update(state, "extend", 0);
+assert.equal(state.duration, 14400);
+assert.equal(focus.canExtend(state), false);
+assert.equal(focus.update(state, "extend", 0), state);
+for (const minutes of [236, 239, 240]) {
+  state = focus.update(null, "start", 0, minutes);
+  assert.equal(focus.canExtend(state), false);
+  assert.equal(focus.update(state, "extend", 0), state);
+}
+state = focus.update(null, "custom", 0, "1");
+state = focus.update(state, "extend", 60000);
+assert.equal(state.status, "done", "extension at expired deadline completes instead of reviving timer");
+assert.equal(focus.update(state, "extend", 60001), state);
+state = focus.initial();
+assert.equal(focus.canExtend(state), false);
+assert.equal(focus.update(state, "extend", 0), state);
+console.log("Custom focus validation and extension checks passed");

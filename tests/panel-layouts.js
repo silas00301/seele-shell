@@ -12,7 +12,7 @@ function block(start, end) {
   if (first < 0 || last < first) throw Error(`Missing production fragment: ${start}`);
   return shell.slice(first, last);
 }
-const focus = block('        Column {\n          id: focusContent', '\n      }\n    }\n  }\n\n  // Calendar');
+const focus = block('        FocusPanel {\n          id: focusContent', '\n      }\n    }\n  }\n\n  // Calendar');
 const clock = block('                Item {\n                  id: zoneTimeLabels', '\n                Shared.ActionButton');
 const addresses = block('              SectionRule {\n                width: parent.width\n                label: "IP ADDRESSES"', '\n              Text {\n                width: parent.width\n                visible: networkWindow.addresses.length');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-panel-tests-'));
@@ -26,7 +26,9 @@ try {
     .replace(/import Quickshell.*\n/g, '').replace('ShellRoot {', 'Item {')
     .replace(/Quickshell.env\("SEELE_SHELL_WALLPAPER"\) \|\| /, '');
   fs.writeFileSync(themePath, theme + '}\n');
-  fs.copyFileSync(path.join(source, 'focus.js'), path.join(work, 'focus.js'));
+  for (const file of ['focus.js', 'FocusPanel.qml']) {
+    fs.writeFileSync(path.join(work, file), fs.readFileSync(path.join(source, file), 'utf8').replaceAll('../shared', 'shared'));
+  }
   fs.writeFileSync(path.join(work, 'tst_panels.qml'), `
 import QtQuick
 import QtQuick.Layouts
@@ -66,9 +68,11 @@ TestCase {
     id: focusTimer
     property var timerState: Focus.initial()
     readonly property string label: Focus.label(timerState.remaining)
+    readonly property bool canExtend: Focus.canExtend(timerState)
+    readonly property string extensionHint: Focus.extensionHint(timerState)
     function command(action, minutes) { timerState = Focus.update(timerState, action, Date.now(), minutes) }
   }
-  Item { id: focusHost; width: 350; height: 350; ${focus} }
+  Item { id: focusHost; width: 350; height: focusContent.implicitHeight + root.panelMargin * 2; ${focus} }
   Item {
     id: timezoneRow
     y: 380; width: 100; height: root.notificationRowHeight
