@@ -104,6 +104,13 @@ const panels: Entry[] = [
     keywords: ["date", "month", "week"],
   },
   {
+    title: "Calculator",
+    subtitle: "Arithmetic, unit conversions and a private tape",
+    icon: Icon.Calculator,
+    args: ["calculator"],
+    keywords: ["math", "convert", "units", "tape"],
+  },
+  {
     title: "World Clock",
     subtitle: "Search timezones and manage pinned clocks",
     icon: Icon.Clock,

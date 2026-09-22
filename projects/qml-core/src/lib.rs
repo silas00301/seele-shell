@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 mod ai_activity;
 mod ai_prompt;
 mod caffeinate;
+mod calculator;
 mod color_picker;
 mod focus;
 mod github;
@@ -68,6 +69,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "color_picker" => color_picker::call(function, arguments),
         "focus" => focus::call(function, arguments),
         "caffeinate" => caffeinate::call(function, arguments),
+        "calculator" => calculator::call(function, arguments),
         "time" => time::call(function, arguments),
         // Dispatch entries are added with each independently migrated policy.
         "fixture" if function == "echo" => Ok(arguments.first().cloned().unwrap_or(Value::Null)),

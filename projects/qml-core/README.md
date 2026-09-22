@@ -104,3 +104,9 @@ full snapshots to 2 microseconds with the resident state; 1,000 entries fell fro
 6.39 milliseconds to 4.2 microseconds. These measurements include Rust JSON
 input/output and exclude Qt conversion and rendering. They are not whole-shell
 performance claims.
+
+The calculator's bounded Pratt parser and dimension-checked conversion policy
+also live here. Preview and commit share one evaluation path; commit projects a
+maximum of 32 tape entries and the last finite answer. `CalculatorPanel.qml`
+retains that state only while its Loader is alive. See
+[`CALCULATOR.md`](../shell/CALCULATOR.md) for grammar, precision and privacy.
