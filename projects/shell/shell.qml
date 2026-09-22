@@ -1914,6 +1914,10 @@ Shared.Theme {
     id: networkActivityStore
     panelOpen: root.controlPanel === "network-activity"
   }
+  ResourcesStore {
+    id: resourcesStore
+    panelOpen: root.controlPanel === "resources"
+  }
   PortsStore {
     id: portsStore
     panelOpen: root.controlPanel === "ports"
@@ -3010,7 +3014,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 7 + gap * 6
+    height: devicesY + smallTileHeight * 8 + gap * 7
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -3075,6 +3079,16 @@ Shared.Theme {
       detail: "Format, encode and clean text locally"
       glyph: Text { text: "󰦨"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("text-workbench", controlGrid.screenName)
+    }
+
+    ControlTile {
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 7 + controlGrid.gap * 7
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Resources"
+      detail: "Live CPU, memory and processes"
+      glyph: Text { text: "󰍛"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("resources", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8609,6 +8623,37 @@ Shared.Theme {
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // Live CPU and memory --------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: resourcesWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "resources" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.resourcesWidth
+      implicitHeight: resourcesContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-resources"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { resourcesPanel.focusSearch() })
+      PanelSurface {
+        Column {
+          id: resourcesContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰍛"; title: "Resources"; detail: resourcesPanel.hint }
+          ResourcesPanel { id: resourcesPanel; theme: root; store: resourcesStore; width: parent.width; maximumHeight: Math.min(root.resourcesMaximumHeight, resourcesWindow.modelData.height - root.barHeight - root.panelGap - root.panelMargin * 2 - root.panelHeaderHeight - root.panelSpacing - root.panelMargin) }
         }
       }
     }
