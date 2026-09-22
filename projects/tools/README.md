@@ -383,6 +383,28 @@ Working-hour strips use a per-minute prefix table and cache the day, duration
 and complete pin set, invalidating with timezone data or local-zone changes.
 The selected instant and copied summary are always recomputed.
 
+## Network activity
+
+`seele-network-activity` is a JSON-lines worker owned by one open Network
+activity panel. It samples `/sys/class/net` once per second and exits on stdin
+EOF. It reads only interface names, ifindex, sysfs directory inode, operstate,
+and receive/send byte counters. It opens no network sockets, reads no addresses
+or packets, and persists nothing. `SEELE_NETWORK_ACTIVITY_SYSFS` selects a
+synthetic sysfs directory for fixtures.
+
+Each version-1 snapshot carries `rows`, `elapsed`, `limited`, and `error`.
+Rows have a stable identity, connection state, nullable rates, formatted labels
+and session totals, and at most 60 nullable samples per direction. Both traces
+use one power-of-two scale. The first sample is unknown, never a manufactured
+zero. Long elapsed gaps, missing readings, decreasing counters, rename,
+disappearance, and ifindex reuse are handled without inventing traffic.
+
+`{"op":"reset"}` resets totals, baselines and histories and emits immediately.
+Closing destroys the worker; reopening creates a new observation session.
+Generation-bound QML callbacks reject late data or exit from a discarded
+worker, and a disappeared selection stays explicit until the user chooses.
+The worker reads local kernel counters only and keeps nothing on disk.
+
 Validation: `tests/meeting-planner.py` drives the real resident binary through
 US/EU spring gaps and autumn folds, Lord Howe's half-hour transition,
 Kathmandu's quarter-hour offset, midnight, leap days, full-duration working-hour

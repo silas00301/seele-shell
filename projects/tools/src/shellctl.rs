@@ -12,6 +12,7 @@ Commands:
   prompt                    Toggle the quick AI prompt
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
+  network-activity          Open live per-interface traffic
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
   color                     Freeze all screens and sample a colour
@@ -85,6 +86,7 @@ pub fn run(arguments: &[String]) -> Result {
         "prompt" => call("togglePrompt", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
+        "network-activity" => call("toggleControl", &["network-activity".into()]),
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),
         "color" => call("toggleColor", &[]),

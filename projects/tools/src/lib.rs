@@ -14,6 +14,7 @@ mod launch;
 mod live;
 mod mic_sync;
 mod mic_test;
+mod network_activity;
 mod notes;
 mod nothing;
 mod pipewire;
@@ -42,6 +43,7 @@ pub enum Tool {
     ShellControl,
     Clock,
     NotesStore,
+    NetworkActivity,
     NotesRun,
     YubikeyWatch,
     Lock,
@@ -68,6 +70,11 @@ const TOOLS: &[(&str, &str, Tool)] = &[
     ("os-session", "seele-os-session", Tool::OsSession),
     ("shellctl", "seele-shellctl", Tool::ShellControl),
     ("clock", "seele-clock", Tool::Clock),
+    (
+        "network-activity",
+        "seele-network-activity",
+        Tool::NetworkActivity,
+    ),
     ("notes", "seele-notes-store", Tool::NotesStore),
     ("notes-run", "seele-notes-run", Tool::NotesRun),
     ("yubikey-watch", "seele-yubikey-watch", Tool::YubikeyWatch),
@@ -93,6 +100,7 @@ impl Tool {
             Self::OsSession => session::run(&arguments),
             Self::ShellControl => shellctl::run(&arguments),
             Self::Clock => clock::run(&arguments),
+            Self::NetworkActivity => network_activity::run(&arguments),
             Self::NotesStore => notes::run(&arguments),
             Self::NotesRun => launch::notes(&arguments),
             Self::YubikeyWatch => bluetooth::watch_yubikey(),
