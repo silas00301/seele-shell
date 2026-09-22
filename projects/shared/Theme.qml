@@ -215,6 +215,11 @@ ShellRoot {
   // Resource charts and the process list share one output-bounded viewport.
   readonly property int resourcesWidth: 480
   readonly property int resourcesMaximumHeight: 720
+  // Quick Look keeps media large enough to inspect while staying within the
+  // focused output. Its transport shares one readable maximum measure.
+  readonly property int quickLookWidth: 1100
+  readonly property int quickLookHeight: 760
+  readonly property int quickLookTimelineWidth: 420
   // The colour picker's lens magnifies this many captured pixels across: few
   // enough that each one is still a square the eye can aim at, many enough to
   // show which side of a one-pixel border the point is on. Its size is built
