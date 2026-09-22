@@ -3,7 +3,10 @@ use crate::value::{array, number, string, text, truthy, utf16_len};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::LazyLock};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::LazyLock,
+};
 
 static TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)&(?:nbsp|#160);").unwrap());
@@ -68,6 +71,26 @@ fn group_key(entry: &Value) -> String {
         format!("app:{app}")
     } else {
         format!("id:{}", string(entry.get("id")))
+    }
+}
+// Only stable application identities can be quieted. Anonymous senders retain
+// their per-notification grouping but must never silence a reused numeric ID.
+const MAX_QUIET_APPS: usize = 256;
+const MAX_APP_KEY_BYTES: usize = 512;
+fn valid_app_key(key: &str) -> bool {
+    key.len() <= MAX_APP_KEY_BYTES
+        && ["desktop:", "app:"].iter().any(|prefix| {
+            key.strip_prefix(prefix)
+                .is_some_and(|name| !name.trim().is_empty())
+        })
+        && !key.chars().any(char::is_control)
+}
+fn app_key(entry: &Value) -> String {
+    let key = group_key(entry);
+    if valid_app_key(&key) {
+        key
+    } else {
+        String::new()
     }
 }
 fn stacked_rows(entries: &[Value], expanded: &Value) -> Value {
@@ -191,6 +214,8 @@ pub(crate) struct State {
     current: Vec<Record>,
     history: Vec<Value>,
     dnd: bool,
+    #[serde(default)]
+    quiet_apps: BTreeSet<String>,
     dnd_until: f64,
     dnd_minutes: f64,
     paused: bool,
@@ -273,11 +298,11 @@ impl State {
             .filter(|r| !truthy(r.entry.get("transient")))
             .map(|r| &r.entry)
             .collect();
-        json!({"count":items.len(),"items":items,"popups":self.current.iter().filter(|r|r.popup).map(|r|&r.entry).collect::<Vec<_>>(),"history":self.history,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes})
+        json!({"count":items.len(),"items":items,"popups":self.current.iter().filter(|r|r.popup).map(|r|&r.entry).collect::<Vec<_>>(),"history":self.history,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"quietApps":self.quiet_apps})
     }
     fn save(&self) -> Value {
         let metadata: serde_json::Map<_, _> = self.current.iter().map(|record| (string(record.entry.get("id")), json!({"time":record.entry["time"],"pinned":record.entry["pinned"],"popup":record.popup&&permanent(&record.entry)}))).collect();
-        json!({"history":self.history,"dnd":self.dnd,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"metadata":metadata})
+        json!({"history":self.history,"dnd":self.dnd,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"metadata":metadata,"quietApps":self.quiet_apps})
     }
     fn advance(&mut self, timestamp: f64, effects: &mut Vec<Value>) {
         let mut changed = false;
@@ -349,6 +374,13 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
         "restore" => {
             let saved = args.first().unwrap_or(&Value::Null);
             if truthy(Some(saved)) {
+                state.quiet_apps = array(saved.get("quietApps"))
+                    .iter()
+                    .take(MAX_QUIET_APPS)
+                    .filter_map(Value::as_str)
+                    .filter(|key| valid_app_key(key))
+                    .map(str::to_owned)
+                    .collect();
                 state.history.clear();
                 let mut bytes = state
                     .current
@@ -430,7 +462,8 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                 };
                 record.entry = entry;
                 if fresh {
-                    record.popup = !state.dnd;
+                    record.popup =
+                        !state.dnd && !state.quiet_apps.contains(&group_key(&record.entry));
                     record.remaining = popup_duration(&record.entry);
                     record.clock = time;
                     if record.popup {
@@ -463,10 +496,15 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     entry["pinned"] = json!(truthy(saved.get("pinned")));
                 }
                 let popup = !state.dnd
-                    && (!generation
-                        || restored
+                    && if generation {
+                        // Reload restores an existing permanent toast, not a new
+                        // arrival. Silencing its app must not discard that toast.
+                        restored
                             .as_ref()
-                            .is_some_and(|saved| truthy(saved.get("popup"))));
+                            .is_some_and(|saved| truthy(saved.get("popup")))
+                    } else {
+                        !state.quiet_apps.contains(&group_key(&entry))
+                    };
                 if popup {
                     effects.push(json!({"operation":"arrived","entry":entry,"fresh":true}));
                 }
@@ -527,6 +565,34 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     }
                 }
             }
+        }
+        "setAppQuiet" => {
+            let key = text(args.first());
+            let quiet = truthy(args.get(1));
+            // Admission comes from an actual inbox/history group, not arbitrary
+            // caller strings. Removal remains possible after that group is gone.
+            let known = state.current.iter().any(|r| app_key(&r.entry) == key)
+                || state.history.iter().any(|entry| app_key(entry) == key);
+            let accepted = valid_app_key(&key)
+                && (!quiet || known)
+                && (!quiet
+                    || state.quiet_apps.contains(&key)
+                    || state.quiet_apps.len() < MAX_QUIET_APPS);
+            result = json!(accepted);
+            if accepted {
+                if quiet {
+                    state.quiet_apps.insert(key);
+                } else {
+                    state.quiet_apps.remove(&key);
+                }
+                // Existing toasts and sender lifetimes stay untouched. Turning
+                // silence off never replays messages received while quiet.
+                effects.push(json!({"operation":"publish"}));
+            }
+        }
+        "resumeApps" => {
+            state.quiet_apps.clear();
+            effects.push(json!({"operation":"publish"}));
         }
         "setDnd" => {
             state.dnd_until = 0.0;
@@ -628,6 +694,11 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         ),
         "verificationCode" => json!(verification_code(first)),
         "groupKey" => json!(group_key(first)),
+        "appQuiet" => {
+            let key = app_key(first);
+            let quiet = array(args.get(1)).iter().any(|v| v.as_str() == Some(&key));
+            json!({"key":key,"quiet":quiet,"available":!key.is_empty() && (quiet || array(args.get(1)).len() < MAX_QUIET_APPS)})
+        }
         "stackedRows" => stacked_rows(array(args.first()), args.get(1).unwrap_or(&Value::Null)),
         "localImage" => json!(local_image(args.first())),
         "imageRoles" => {
@@ -652,6 +723,47 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn application_silence_is_bounded_and_resumes_at_capacity() {
+        let mut state = new_state(1000.0).unwrap();
+        let keys: Vec<_> = (0..MAX_QUIET_APPS + 10)
+            .map(|n| format!("app:{n}"))
+            .collect();
+        state_call(&mut state, "restore", &[json!({"quietApps":keys})]).unwrap();
+        assert_eq!(state.quiet_apps.len(), MAX_QUIET_APPS);
+        let entry = json!({"id":1,"app_name":"new","summary":"hello","timeout":-1,"urgency":1});
+        state_call(
+            &mut state,
+            "receive",
+            &[entry.clone(), json!(1000), json!(false)],
+        )
+        .unwrap();
+        assert_eq!(
+            state_call(&mut state, "setAppQuiet", &[json!("app:new"), json!(true)]).unwrap()["result"],
+            false
+        );
+        assert_eq!(
+            call("appQuiet", &[entry, json!(state.quiet_apps)]).unwrap()["available"],
+            false
+        );
+        assert_eq!(
+            state_call(&mut state, "setAppQuiet", &[json!("app:0"), json!(false)]).unwrap()["result"],
+            true
+        );
+        assert_eq!(
+            state_call(&mut state, "setAppQuiet", &[json!("app:new"), json!(true)]).unwrap()["result"],
+            true
+        );
+        state_call(&mut state, "restore", &[json!({"quietApps":["id:1","app:","app:\ninvalid",format!("app:{}","x".repeat(513)),"desktop:valid"]})]).unwrap();
+        assert_eq!(
+            state.quiet_apps,
+            BTreeSet::from(["desktop:valid".to_owned()])
+        );
+        // Legacy in-memory snapshots without this optional field remain valid.
+        state_call(&mut state, "restore", &[json!({"history":[],"dnd":true})]).unwrap();
+        assert!(state.quiet_apps.is_empty());
+        assert!(state.dnd);
+    }
     #[test]
     fn opaque_state_drop_releases_owned_data() {
         let marker = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

@@ -3249,10 +3249,12 @@ Shared.Theme {
     // that group on a click, and its dismiss takes the whole group with it.
     property bool stacked: false
     property bool collapsible: false
+    property bool groupLead: false
     property int count: 1
     property int depth: 0
     signal toggled()
 
+    readonly property var appQuiet: Notifications.appQuiet(entry, root.systemData.notifications.quietApps || [])
     readonly property bool actionable: !notificationCard.stacked && !notificationCard.history && root.notificationActionable(entry)
     readonly property var offeredActions: notificationCard.history ? [] : Notifications.actions(entry)
     readonly property string verificationCode: Notifications.verificationCode(entry)
@@ -3488,6 +3490,20 @@ Shared.Theme {
             font.pixelSize: root.textCaption
           }
 
+          Shared.GlyphButton {
+            theme: root
+            visible: !notificationCard.popup && notificationCard.groupLead && notificationCard.appQuiet.key !== ""
+            enabled: notificationCard.appQuiet.available
+            width: visible ? root.chipHeight - root.spaceMedium : 0
+            height: parent.height
+            selected: notificationCard.appQuiet.quiet
+            glyph: selected ? "󰂛" : "󰂚"
+            text: !enabled ? "Application silence limit reached"
+              : selected ? "Resume toasts from " + (notificationCard.entry.app_name || "this app")
+              : "Silence future toasts from " + (notificationCard.entry.app_name || "this app") + " for this session"
+            onClicked: notificationStore.controller.setAppQuiet(notificationCard.appQuiet.key, !notificationCard.appQuiet.quiet)
+          }
+
           IconButton {
             visible: notificationCard.collapsible
             width: visible ? root.chipHeight - root.spaceMedium : 0
@@ -3704,6 +3720,7 @@ Shared.Theme {
         NotificationCard {
           width: parent.width
           entry: notificationGroup.modelData.items[0]
+          groupLead: true
           group: notificationGroup.modelData.group
           history: notificationList.history
           popup: notificationList.popup
@@ -9813,6 +9830,7 @@ Shared.Theme {
       // there is a count to report and a counted constant would not follow it.
       readonly property int chromeHeight: root.panelMargin * 2 + notificationHeader.height
         + root.panelSpacing + notificationViews.height + root.panelSpacing
+      readonly property int quietAppCount: (root.systemData.notifications.quietApps || []).length
       property bool quietMenuOpen: false
       // Every way silence can be set, in one menu, so the header carries one
       // control instead of a switch beside a well. A length starts a period
@@ -9826,6 +9844,8 @@ Shared.Theme {
           { minutes: 0, label: "Until I turn it off" }
         ]
         if (root.systemData.dnd) choices.push({ minutes: -1, label: "Turn off" })
+        var count = (root.systemData.notifications.quietApps || []).length
+        if (count > 0) choices.push({ minutes: -2, label: "Resume " + count + (count === 1 ? " quiet app" : " quiet apps") })
         return choices
       }
       // The menu is as wide as the longest choice it offers, measured rather
@@ -9882,10 +9902,11 @@ Shared.Theme {
 
       // Silence is set from one menu, so every way of setting it is one call:
       // a length starts a period from now, zero holds the shell quiet with no
-      // end, and anything else is the way out.
+      // end, -1 ends global DND, and -2 resumes the separate app choices.
       function chooseQuiet(minutes) {
         quietMenuOpen = false
-        if (minutes > 0) notificationStore.controller.snooze(minutes, Date.now() / 1000)
+        if (minutes === -2) notificationStore.controller.resumeApps()
+        else if (minutes > 0) notificationStore.controller.snooze(minutes, Date.now() / 1000)
         else notificationStore.controller.setDnd(minutes === 0)
       }
 
@@ -9903,6 +9924,8 @@ Shared.Theme {
         remeasure()
       }
       onQuietMenuOpenChanged: remeasure()
+      onChromeHeightChanged: remeasure()
+      onQuietMenuHeightChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
       // height is stored rather than bound, so it only follows the list if the
       // list says it changed.
@@ -9944,10 +9967,14 @@ Shared.Theme {
             title: "Notifications"
             // The panel is an inbox, so the count says how much is still
             // waiting rather than repeating the word above it.
-            detail: notificationWindow.entries.length === 0 ? ""
-              : root.notificationHistoryOpen
-                ? notificationWindow.entries.length + " in the past 24 hours"
-                : notificationWindow.entries.length + " waiting"
+            detail: {
+              var parts = []
+              if (notificationWindow.entries.length > 0) parts.push(notificationWindow.entries.length
+                + (root.notificationHistoryOpen ? " in the past 24 hours" : " waiting"))
+              if (notificationWindow.quietAppCount > 0) parts.push(notificationWindow.quietAppCount
+                + (notificationWindow.quietAppCount === 1 ? " quiet app" : " quiet apps"))
+              return parts.join(" · ")
+            }
 
             // Silence is a header control again, and one control: the mark says
             // whether the shell is quiet, the time beside it says how much of
