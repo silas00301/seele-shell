@@ -8388,7 +8388,7 @@ Shared.Theme {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-transfers"
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-      onVisibleChanged: if (visible) Qt.callLater(function() { transfersContent.forceActiveFocus() })
+      onVisibleChanged: if (visible) Qt.callLater(function() { transfersPanel.forceActiveFocus() })
       PanelSurface {
         Column {
           id: transfersContent
@@ -8396,7 +8396,7 @@ Shared.Theme {
           spacing: root.panelSpacing
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰇚"; title: "Transfers"; detail: "Personal devices · original files" }
-          TransfersPanel { theme: root; store: transfersStore; width: parent.width }
+          TransfersPanel { theme: root; store: transfersStore; id: transfersPanel; width: parent.width }
         }
       }
     }
