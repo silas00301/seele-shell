@@ -16,6 +16,7 @@ Commands:
   uris                      Freeze all screens and pick a visible URI
   color                     Freeze all screens and sample a colour
   calculator                Toggle the private calculator workbench
+  color-lab                 Open the colour contrast and palette workbench
   control <panel>           Toggle a control panel
   bluetooth-pairing <token> Show the matching private Bluetooth request
   bluetooth-pairing-dismiss Withdraw the Bluetooth pairing request
@@ -88,6 +89,7 @@ pub fn run(arguments: &[String]) -> Result {
         "uris" => call("toggleUris", &[]),
         "color" => call("toggleColor", &[]),
         "calculator" => call("toggleControl", &["calculator".into()]),
+        "color-lab" => call("toggleControl", &["color-lab".into()]),
         "control" => call(
             "toggleControl",
             &[rest.first().cloned().unwrap_or_else(|| "system".into())],

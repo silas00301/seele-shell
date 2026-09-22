@@ -27,6 +27,13 @@ type Entry = {
 
 const panels: Entry[] = [
   {
+    title: "Colour Lab",
+    subtitle: "Contrast, typography and tonal palettes",
+    icon: Icon.Eye,
+    args: ["color-lab"],
+    keywords: ["color", "colour", "contrast", "palette", "wcag"],
+  },
+  {
     title: "Control Center",
     subtitle: "Network, Bluetooth, camera, sound, and now playing",
     icon: Icon.Gauge,

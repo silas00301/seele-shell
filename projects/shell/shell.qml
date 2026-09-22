@@ -3004,7 +3004,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 5 + gap * 4
+    height: devicesY + smallTileHeight * 6 + gap * 5
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -3048,6 +3048,17 @@ Shared.Theme {
       detail: "Calculate, convert and keep a private tape"
       glyph: Text { text: "󰃬"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("calculator", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 5 + controlGrid.gap * 5
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Colour Lab"
+      detail: "Contrast, typography and tonal palettes"
+      glyph: Text { text: "󰏘"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("color-lab", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8369,6 +8380,60 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰅶"; title: "Caffeinate"; detail: "Idle lock, display and sleep held off" }
           CaffeinatePanel { theme: root; store: caffeinateStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Local colour and contrast workbench ---------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: colorLabWindow
+      required property var modelData
+      property string copying: ""
+      screen: modelData
+      visible: root.controlPanel === "color-lab" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.colorLabWidth, modelData.width - root.panelMargin * 2)
+      implicitHeight: Math.min(colorLabPanel.implicitHeight + root.panelMargin * 2, modelData.height - root.barHeight - root.panelGap - root.panelMargin)
+      exclusionMode: ExclusionMode.Ignore
+      color: root.clearColor
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-color-lab"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { colorLabPanel.focusInput() })
+      PanelSurface {
+        Shared.SeeleFlickable {
+          theme: root
+          anchors { fill: parent; margins: root.panelMargin }
+          contentHeight: colorLabPanel.implicitHeight
+          clip: true
+          ColorLabPanel {
+            id: colorLabPanel
+            theme: root
+            width: parent.width
+            sampledColor: colorPicker.entry ? colorPicker.entry.hex : ""
+            onDismissed: root.closeOverlays()
+            onCopyRequested: payload => {
+              if (colorLabClipboard.running) return
+              colorLabWindow.copying = payload
+              notice = "Copying…"
+              colorLabClipboard.running = true
+            }
+          }
+        }
+      }
+      Process {
+        id: colorLabClipboard
+        command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+        stdinEnabled: true
+        onStarted: { write(colorLabWindow.copying); stdinEnabled = false }
+        onExited: (exitCode, exitStatus) => {
+          colorLabPanel.notice = exitCode === 0 && exitStatus === 0 ? "Copied" : "Could not copy · try again"
+          stdinEnabled = true
+          colorLabWindow.copying = ""
         }
       }
     }

@@ -6,6 +6,7 @@ import QtQuick.Controls
 TextField {
   id: field
   required property var theme
+  property color borderColor: field.activeFocus ? field.theme.accent : field.theme.cardBorder
   implicitHeight: theme.controlHeight
   color: theme.text
   placeholderTextColor: theme.overlay
@@ -20,7 +21,7 @@ TextField {
     radius: field.theme.radius
     color: field.theme.wellColor
     border.width: field.theme.hairline
-    border.color: field.activeFocus ? field.theme.accent : field.theme.cardBorder
+    border.color: field.borderColor
     antialiasing: true
     Behavior on border.color { ColorAnimation { duration: field.theme.durationFast } }
   }
