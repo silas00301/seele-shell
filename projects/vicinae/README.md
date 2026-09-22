@@ -52,7 +52,12 @@ reach it from the launcher's root search.
   order, with an application icon, the focused window tagged, and a workspace
   filter in the search bar. Enter focuses the window, Ctrl+Enter focuses its
   workspace, Ctrl+W closes it, and Ctrl+Shift+W force quits after a destructive
-  confirmation. Ctrl+R refreshes; an open view also polls every three seconds
+  confirmation. **Move to Workspace** offers other ordinary live workspaces and
+  exact numbered or named workspace rules, including configured empty destinations.
+  The submenu excludes the current workspace and special workspaces such as the
+  scratchpad. Moving keeps the launcher open and does not follow the window;
+  moving the active window away lets Hyprland choose its replacement on the
+  current workspace. Ctrl+R refreshes; an open view also polls every three seconds
   without flashing its loading indicator.
 - **Seele Audio Devices** (`audio.tsx`): outputs and microphones, including
   available output profiles on inactive cards. A fresh snapshot resolves the
@@ -112,6 +117,18 @@ cleanup. Hyprland dispatch uses Lua with validated numeric workspace IDs and
 window addresses, and rejects Lua errors even when Hyprland exits successfully.
 Failures show a toast without exposing subprocess output.
 
+`vicinae-window-move` takes the native window identity and destination from the
+snapshot. Window identity includes the owning process's Linux start time. Rust
+refreshes both before dispatch, rejects a closed, recycled,
+reclassified, or already-moved window and a removed/renamed destination, then
+verifies the resulting window location, active workspace, and unrelated focused
+window. Initial window titles are hashed before entering the action arguments.
+A missing workspace-rule query falls back to live destinations and keeps window
+search usable. The exact Lua call is `hl.dsp.window.move` with `follow = false`,
+verified against [Hyprland v0.55.4's dispatcher binding](https://github.com/hyprwm/Hyprland/blob/v0.55.4/src/config/lua/bindings/LuaBindingsDispatchers.cpp),
+the version pinned by the parent flake. This does not create arbitrary numeric
+workspaces or interpret relative/range workspace selectors.
+
 `ui.tsx` holds the shared presentation: the refresh action, the one shape every
 unavailable source uses, level accessories, and the icon expressions for
 applications, audio devices, and batteries. These are scalar expressions over
@@ -145,7 +162,11 @@ The package bundles every command declared in `package.json` and runs
 `tests/vicinae.cjs` against the shared Rust projection and the host's focus
 adapter. Native `tools/tests/vicinae.rs` runs the actual control binary against
 private fake Hyprctl/nvd commands, covering immutable diff argv, projection,
-invalid input and zero-exit Lua errors without contacting the desktop.
+invalid input and zero-exit Lua errors without contacting the desktop. The same
+fixture checks live/configured/named move targets, excluded special workspaces,
+stale window and destination identities, no-op dispatch, focus/workspace drift,
+and workspace-rule query failure. All window moves go to a private fake
+compositor.
 `tests/vicinae-views.cjs` renders the actual Seele Controls, windows, audio and
 keybinding components against mocked host APIs: which rows a given status
 produces, how state reads as tags and icons, the workspace filter and its

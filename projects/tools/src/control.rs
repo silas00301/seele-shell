@@ -981,6 +981,7 @@ pub fn run(arguments: &[String]) -> Result {
         | "vicinae-generations"
         | "vicinae-generation-check"
         | "vicinae-generation-diff"
+        | "vicinae-window-move"
         | "vicinae-focus"
         | "vicinae-caffeinate"
         | "vicinae-audio" => return crate::vicinae::run(arguments),
