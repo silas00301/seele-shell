@@ -306,6 +306,22 @@
         "rgb",
         "hsl"
       ]
+    },
+    {
+      "name": "text-workbench",
+      "title": "Seele Text Workbench",
+      "description": "Format JSON, encode URLs and Base64, and clean lines privately",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "text",
+        "clipboard",
+        "json",
+        "base64",
+        "url",
+        "deduplicate",
+        "format"
+      ]
     }
   ]
 }
