@@ -194,6 +194,9 @@ pkgs.stdenvNoCC.mkDerivation {
     esbuild vicinae/caffeinate.tsx --bundle --platform=node --format=cjs \
       --external:./runtime --external:react --external:@raycast/api --outfile=caffeinate.cjs
     node ${tests}/vicinae-caffeinate.cjs "$PWD/caffeinate.cjs"
+    esbuild vicinae/clean-link.tsx --bundle --platform=node --format=cjs \
+      --external:@raycast/api --external:react --external:./runtime --outfile=clean-link.cjs
+    node ${tests}/vicinae-clean-link.cjs "$PWD/clean-link.cjs"
     esbuild vicinae/runtime.ts --bundle --platform=node --format=cjs --external:@raycast/api --external:react --outfile=runtime.cjs
     esbuild vicinae/status.ts --bundle --platform=node --format=cjs --external:./runtime --external:react --outfile=status.cjs
     esbuild vicinae/generations.tsx --bundle --platform=node --format=cjs \

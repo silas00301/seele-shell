@@ -4,6 +4,7 @@ mod audio;
 mod audio_route;
 mod bluetooth;
 mod caffeinate;
+mod clean_link;
 mod clock;
 mod command;
 mod control;
