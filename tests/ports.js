@@ -46,7 +46,7 @@ const state = vm.createContext({
   Bridge: nativeBridge(),
   rows,
   snapshot: {version: 1, rows: [], total: 0, limited: false, query: {}},
-  panelOpen: false, query: '', plan: null, outcome: null, expanded: '',
+  panelOpen: false, query: '', bindingScope: 'all', reviewValid: false, plan: null, outcome: null, expanded: '',
   error: '', actionError: '', schemes: {}, queue: [], pending: '', copied: '',
   worker: {running: true, write(text) { sent.push(JSON.parse(text)) }},
   guard: {restart() {}, stop() {}},
@@ -97,8 +97,10 @@ assert.equal(wildcard.binding, '0.0.0.0:8080');
 state.setScheme(plain.id, 'https');
 assert.equal(state.url(plain), 'https://127.0.0.1:3000', 'the scheme is the reader\'s to change');
 state.setScheme(plain.id, 'http');
+state.query = 'https://localhost:3000';
 state.accept(snapshot([plain], {query: {text: 'https://localhost:3000', scheme: 'https', explicitScheme: true}}));
 assert.equal(state.scheme('4:99999'), 'https', 'a typed scheme is preserved as the proposal');
+state.query = '';
 state.accept(snapshot([plain]));
 assert.equal(state.scheme('4:99999'), 'http', 'a bare port is never read as proof of a scheme');
 
@@ -123,6 +125,7 @@ const reviewValue = {
   disclosure: ['Only process 101 (node) is asked to stop.'], canForce: false,
 };
 sent.length = 0;
+state.reviewValid = true;
 state.accept(reviewValue);
 assert.ok(state.plan, 'the described target becomes the confirmation');
 state.dismiss();
@@ -131,9 +134,11 @@ assert.deepEqual(sent, [], 'cancelling a confirmation sends no stop request');
 
 // A plan that arrives for a row the reader folded away is not a confirmation.
 state.expanded = '';
+state.reviewValid = true;
 state.accept(reviewValue);
 assert.equal(state.plan, null, 'a plan for a folded row is discarded');
 state.expand(plain.id);
+state.reviewValid = true;
 state.accept(reviewValue);
 assert.ok(state.plan);
 
@@ -146,6 +151,7 @@ assert.deepEqual(sent, [], 'a stale confirmation sends nothing');
 assert.match(state.actionError, /changed|no longer/i);
 
 // A vanished listener takes its confirmation with it.
+state.reviewValid = true;
 state.accept(reviewValue);
 state.accept(snapshot([]));
 assert.equal(state.plan, null, 'a confirmation for a gone listener is withdrawn');
@@ -153,6 +159,7 @@ assert.equal(state.plan, null, 'a confirmation for a gone listener is withdrawn'
 // The ordinary path: confirm exactly what was described.
 state.accept(snapshot([plain]));
 state.expand(plain.id);
+state.reviewValid = true;
 state.accept(reviewValue);
 sent.length = 0;
 assert.equal(state.confirm(), true);
@@ -201,6 +208,39 @@ state.send({op: 'refresh'});
 assert.equal(sent.filter(m => m.op === 'refresh').length, 1, 'a repeated request collapses');
 
 console.log('Ports addresses, confirmation, staleness, escalation and bounded requests passed');
+
+// Changing scope clears review immediately, even before its delayed reply.
+state.pending = '';
+state.queue = [];
+state.query = 'https://localhost:3000';
+state.bindingScope = 'all';
+state.accept(snapshot([plain], {query: {text: state.query, scope: 'all', scheme: 'https', explicitScheme: true}}));
+state.expanded = plain.id;
+state.reviewValid = true;
+state.accept(reviewValue);
+state.bindingScope = 'network';
+state.filtersChanged();
+assert.equal(state.plan, null);
+assert.equal(state.expanded, '');
+assert.equal(rows.count, 0);
+assert.equal(state.find(plain.id), null);
+state.expanded = plain.id; // A late reply still cannot revive the review.
+state.accept(reviewValue);
+assert.equal(state.plan, null);
+sent.length = 0;
+assert.equal(state.confirm(), false);
+assert.deepEqual(sent, []);
+state.accept(snapshot([plain], {query: {text: state.query, scope: 'all'}}));
+assert.equal(rows.count, 0, 'an old query reply cannot restore a hidden row');
+state.accept(snapshot([wildcard], {query: {text: state.query, scope: 'network', scheme: 'https', explicitScheme: true}}));
+assert.equal(rows.count, 1);
+assert.equal(state.scheme(wildcard.id), 'https', 'switching scope preserves the explicit URL scheme');
+state.resetFilters();
+assert.equal(state.query, '');
+assert.equal(state.bindingScope, 'all');
+assert.match(source, /onBindingScopeChanged: filtersChanged\(\)/);
+assert.match(source, /op: "query", text: store.query, scope: store.bindingScope/);
+console.log('Ports composed filters, reset, late snapshots and late confirmations passed');
 
 // --- production wiring ------------------------------------------------------
 assert.match(source, /command: \["seele-ports"\]/, 'the store speaks to the native worker');
