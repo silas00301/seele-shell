@@ -115,6 +115,12 @@ pub fn scan(image: &Image, output: &str, cancel: &AtomicBool) -> Result<Vec<Link
                             y0: f64::from(top) / image.height as f64,
                             w: f64::from(right - left) / image.width as f64,
                             h: f64::from(bottom - top) / image.height as f64,
+                            regions: vec![super::links::Region {
+                                x0: f64::from(left) / image.width as f64,
+                                y0: f64::from(top) / image.height as f64,
+                                w: f64::from(right - left) / image.width as f64,
+                                h: f64::from(bottom - top) / image.height as f64,
+                            }],
                             number: 0,
                         });
                     }
