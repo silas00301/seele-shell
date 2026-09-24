@@ -13,6 +13,14 @@ Scope {
   property string error: ""
   property string actionError: ""
   property string expanded: ""
+  property string query: ""
+  property string direction: "all"
+  property string status: "all"
+  property var history: ({ indices: [], active: 0, matched: 0, total: 0 })
+  readonly property bool filtering: query.trim() !== "" || direction !== "all" || status !== "all"
+  onQueryChanged: refreshRows()
+  onDirectionChanged: refreshRows()
+  onStatusChanged: refreshRows()
   property string lastFocus: ""
   property int lastFocusRevision: 0
   property bool panelOpen: false
@@ -33,14 +41,25 @@ Scope {
     selection = value.selection || []
     capabilities = value.capabilities || ({})
     error = value.error || ""
-    Models.reconcile(rows, groups, "entry", function(item) { return item.id })
     if (value.focus && (value.focus !== lastFocus || Number(value.focusRevision || 0) !== lastFocusRevision)) {
       lastFocus = value.focus
       lastFocusRevision = Number(value.focusRevision || 0)
+      resetFilters()
       expanded = value.focus
       revealRequested()
     }
+    refreshRows()
     if (panelOpen && !busy) markSeen()
+  }
+  function refreshRows() {
+    history = Bridge.call("transfers.history", [groups, query, direction, status])
+    Models.reconcile(rows, history.indices.map(function(index) { return groups[index] }), "entry", function(item) { return item.id })
+  }
+  function resetFilters() {
+    query = ""
+    direction = "all"
+    status = "all"
+    refreshRows()
   }
   function markSeen() {
     var ids = []

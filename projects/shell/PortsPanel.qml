@@ -51,35 +51,6 @@ FocusScope {
     font.pixelSize: panel.theme.textCaption
     wrapMode: Text.Wrap
   }
-  component Choice: Button {
-    id: choice
-    property bool selected: false
-    height: parent ? parent.height : panel.theme.chipHeight
-    width: parent ? parent.width / 2 : 0
-    hoverEnabled: true
-    focusPolicy: Qt.StrongFocus
-    Keys.onPressed: event => {
-      if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
-      if (!event.isAutoRepeat && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) choice.clicked()
-      event.accepted = true
-    }
-    contentItem: Label {
-      text: choice.text
-      font.family: panel.theme.fontFamily
-      font.pixelSize: panel.theme.textLabel
-      font.weight: choice.selected ? panel.theme.weightStrong : panel.theme.weightMedium
-      color: choice.selected ? panel.theme.text : panel.theme.subtext
-      horizontalAlignment: Text.AlignHCenter
-      verticalAlignment: Text.AlignVCenter
-    }
-    background: Shared.Segment {
-      theme: panel.theme
-      selected: choice.selected
-      hovered: choice.hovered || choice.activeFocus
-      pressed: choice.pressed
-    }
-  }
-
   Column {
     id: content
     width: parent.width
@@ -267,8 +238,8 @@ FocusScope {
               Shared.SegmentWell {
                 theme: panel.theme
                 width: panel.theme.controlHeight * 3
-                Choice { text: "http"; selected: panel.store.scheme(row.entry.id) === "http"; onClicked: panel.store.setScheme(row.entry.id, "http") }
-                Choice { text: "https"; selected: panel.store.scheme(row.entry.id) === "https"; onClicked: panel.store.setScheme(row.entry.id, "https") }
+                Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; text: "http"; selected: panel.store.scheme(row.entry.id) === "http"; onClicked: panel.store.setScheme(row.entry.id, "http") }
+                Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; text: "https"; selected: panel.store.scheme(row.entry.id) === "https"; onClicked: panel.store.setScheme(row.entry.id, "https") }
               }
               Text {
                 anchors.verticalCenter: parent.verticalCenter

@@ -78,6 +78,19 @@ Transfers action that focuses the group. Successful outgoing sends remain
 quiet. Opening the panel marks incoming groups seen; the bar stays only for
 active jobs, unseen incoming files and unresolved failures.
 
+## Searching history
+
+The panel searches filenames and device labels case-insensitively and combines
+that query with received/sent and completed/failed/cancelled filters. Active
+transfers always precede matching history so their progress and Cancel stay
+reachable. The count reports matching historical groups out of retained history;
+matching any filename preserves the whole group and its original file actions.
+No file contents or paths are searched, and filters create no persistent state.
+Ctrl+F focuses search; Tab reaches the direction and outcome choices; Space or
+Enter selects one. Escape in search or Reset filters clears all filters. Explicit
+notification focus also clears filters before revealing its group. Ordinary
+progress snapshots preserve the query, filters and expanded group.
+
 ## Taildrop boundaries
 
 The upstream Linux LocalAPI currently does **not** expose a sender identity in
@@ -99,6 +112,7 @@ and [CLI send implementation](https://github.com/tailscale/tailscale/blob/main/c
 cargo build --locked --manifest-path projects/integrations/Cargo.toml
 PYTHONDONTWRITEBYTECODE=1 python3 projects/integrations/tests/transfers.py target/debug/seele-transfers
 node tests/transfers.js projects/shell/TransfersStore.qml projects/shell/TransfersPanel.qml projects/shell/shell.qml
+bash tests/transfers-panel.sh projects/shell/TransfersPanel.qml projects/shared tests/tst_transferspanel.qml "$QT_QML_IMPORT_PATH"
 ```
 
 The development-only Python suite drives the real Rust binary through its Unix
