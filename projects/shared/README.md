@@ -15,3 +15,9 @@ replace Qt checks: `tests/palette.js` fixes the original fallback/property
 contract, and `tests/tst_palette.qml` compares actual Qt-rendered default and
 updated color swatches, including their alpha values. Layout, derived material
 colors and motion tokens remain owned by the existing scenes.
+
+`HistoryChart.qml` renders bounded native histories without owning samples or
+policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`
+(default 60), and `maximum` (default 100). Samples occupy a fixed right-aligned
+window. Missing/non-finite values break strokes; finite values clamp to the
+scale. CPU/memory and network inspection share this component.
