@@ -288,6 +288,7 @@
                     ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     tests/tst_centeredglyph.qml
                   bash tests/plain-labels.sh projects/shared tests/tst_plainlabels.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  node tests/ports-panel.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   QT_QPA_PLATFORM=offscreen qmltestrunner \
                     -import ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     -input tests/tst_cardhover.qml

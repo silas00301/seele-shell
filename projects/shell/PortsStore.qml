@@ -16,6 +16,9 @@ Scope {
   property var snapshot: ({ version: 1, rows: [], total: 0, limited: false, query: ({}) })
   property bool panelOpen: false
   property string query: ""
+  property string bindingScope: "all"
+  property bool reviewValid: false
+  readonly property bool filtered: query.trim() !== "" || bindingScope !== "all"
   // A reviewed stop, exactly as the worker described it. It is replaced only
   // by another plan and cleared by anything that could have changed it.
   property var plan: null
@@ -40,6 +43,9 @@ Scope {
       // A snapshot answers the requests that have no reply of their own; a
       // typed reply always precedes the snapshot that follows it.
       if (pending === "query" || pending === "refresh" || pending === "panel") finish()
+      // Older query replies may complete after another filter was chosen.
+      var view = value.query || ({})
+      if ((view.scope || "all") !== bindingScope || (view.text || "") !== query.trim()) return
       snapshot = value
       error = ""
       Models.reconcile(rows, value.rows || [], "entry", function (item) { return item.id })
@@ -70,7 +76,7 @@ Scope {
     if (!value.ok) { actionError = failure(value.error); plan = null; return }
     // A plan that arrived for a row the reader has since folded away is not a
     // confirmation anyone is looking at.
-    if (value.id !== expanded) { plan = null; return }
+    if (!reviewValid || value.id !== expanded) { plan = null; return }
     actionError = ""
     outcome = null
     plan = value
@@ -155,6 +161,7 @@ Scope {
     plan = null
     outcome = mode === "force" ? outcome : null
     actionError = ""
+    reviewValid = true
     send({ op: "plan", id: id, mode: mode })
     return true
   }
@@ -174,6 +181,7 @@ Scope {
     return true
   }
   function dismiss() {
+    reviewValid = false
     plan = null
   }
   function expand(id) {
@@ -183,11 +191,26 @@ Scope {
     actionError = ""
   }
 
-  onQueryChanged: search.restart()
+  function filtersChanged() {
+    dismiss()
+    expanded = ""
+    outcome = null
+    actionError = ""
+    // A hidden row cannot remain an action target while the worker catches up.
+    snapshot = Object.assign({}, snapshot, { rows: [] })
+    Models.reconcile(rows, [], "entry", function (item) { return item.id })
+    search.restart()
+  }
+  function resetFilters() {
+    query = ""
+    bindingScope = "all"
+  }
+  onQueryChanged: filtersChanged()
+  onBindingScopeChanged: filtersChanged()
   onPanelOpenChanged: {
     if (!panelOpen) {
       expanded = ""
-      plan = null
+      dismiss()
       outcome = null
       actionError = ""
       schemes = ({})
@@ -198,7 +221,7 @@ Scope {
   Timer {
     id: search
     interval: 120
-    onTriggered: store.send({ op: "query", text: store.query })
+    onTriggered: store.send({ op: "query", text: store.query, scope: store.bindingScope })
   }
 
   Process {
@@ -223,6 +246,7 @@ Scope {
     interval: 2000
     onTriggered: {
       worker.running = true
+      store.send({ op: "query", text: store.query, scope: store.bindingScope })
       if (store.panelOpen) store.send({ op: "panel", open: true })
     }
   }

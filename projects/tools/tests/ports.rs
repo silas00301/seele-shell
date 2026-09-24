@@ -539,6 +539,58 @@ fn a_query_finds_a_listener_by_port_address_process_service_and_project() {
 }
 
 #[test]
+fn binding_scope_composes_with_search_without_changing_identity_or_scheme() {
+    let mut fixture = Fixture::new();
+    machine(&mut fixture);
+    let mut recorder = Recorder::default();
+    let log = recorder.log();
+    let mut worker = Worker::new(fixture.roots(), &mut recorder, 1000);
+    let original = open(&mut worker);
+    for (scope, text, expected) in [
+        ("loopback", "", vec![3000, 9000]),
+        ("network", "", vec![4000, 5432, 8080]),
+        ("loopback", "seele", vec![3000]),
+        ("network", "seele", vec![8080]),
+        ("network", "dev.service", vec![8080]),
+        ("loopback", "https://localhost:8080", vec![]),
+        ("network", "https://localhost:8080", vec![8080]),
+        ("all", "https://localhost:8080", vec![8080]),
+        ("all", "", vec![3000, 4000, 5432, 8080, 9000]),
+    ] {
+        let replies = send(
+            &mut worker,
+            json!({"op": "query", "text": text, "scope": scope}),
+        );
+        let snapshot = replies.last().unwrap();
+        assert_eq!(snapshot["query"]["scope"], scope);
+        assert_eq!(snapshot["total"], 5);
+        assert_eq!(
+            rows(snapshot)
+                .iter()
+                .map(|r| r["port"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        for filtered in rows(snapshot) {
+            assert_eq!(
+                filtered["token"],
+                row(&original, filtered["port"].as_u64().unwrap())["token"]
+            );
+        }
+        if text.starts_with("https:") {
+            assert_eq!(snapshot["query"]["scheme"], "https");
+            assert_eq!(snapshot["query"]["explicitScheme"], true);
+        }
+        // An unreadable process stays unknown even under the Network filter.
+        if expected.contains(&5432) {
+            assert_eq!(row(snapshot, 5432)["target"]["kind"], "none");
+        }
+    }
+    let log = log.borrow();
+    assert!(log.units.is_empty() && log.signals.is_empty() && log.elevations.is_empty());
+}
+
+#[test]
 fn stopping_a_user_service_uses_the_user_manager_and_needs_no_authentication() {
     let mut fixture = Fixture::new();
     machine(&mut fixture);
