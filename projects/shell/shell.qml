@@ -568,10 +568,7 @@ Shared.Theme {
   }
 
   function formatMediaTime(seconds) {
-    seconds = Math.max(0, Math.floor(Number(seconds) || 0))
-    var minutes = Math.floor(seconds / 60)
-    var remainder = seconds % 60
-    return minutes + ":" + (remainder < 10 ? "0" : "") + remainder
+    return Media.timeLabel(seconds)
   }
 
   function seekMediaKey(player, event) {
@@ -2072,6 +2069,10 @@ Shared.Theme {
   component MeterBar: Shared.MeterBar { theme: root }
 
   component CardEdge: Shared.CardEdge { theme: root }
+
+  component FocusRing: Shared.FocusRing { theme: root }
+
+  component EmptyState: Shared.EmptyState { theme: root }
 
   component SegmentWell: Shared.SegmentWell { theme: root }
 
@@ -3864,21 +3865,29 @@ Shared.Theme {
     }
   }
 
+  // A transport control. The one the block is aimed at -- play and pause -- is
+  // filled in the accent and takes the row height, while the four around it
+  // rest on nothing at the control height, so the set reads as one action with
+  // its neighbours rather than as five glyphs of equal claim. The pointer is
+  // reported by a wash laid over whatever the button already put down, so the
+  // shuffle or repeat that is on is still the one that lights under it, and the
+  // keyboard gets the shared ring, because a button that can be tabbed to and
+  // shows nothing for it cannot be used from the keyboard at all.
   component MediaButton: Rectangle {
     id: mediaButton
 
     property string icon: ""
     property bool primary: false
-    property bool flat: false
     property bool active: false
     property string hint: ""
     signal activated()
 
-    width: mediaButton.flat ? (mediaButton.primary ? 38 : 34) : mediaButton.primary ? 34 : 28
-    height: mediaButton.flat ? 32 : 28
+    width: mediaButton.primary ? root.rowHeight : root.controlHeight
+    height: mediaButton.width
     radius: root.radius
-    opacity: mediaButton.enabled ? 1 : 0.35
+    opacity: mediaButton.enabled ? 1 : root.disabledOpacity
     activeFocusOnTab: enabled
+    antialiasing: true
     Keys.onPressed: event => {
       if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
       if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
@@ -3887,24 +3896,23 @@ Shared.Theme {
       }
     }
     color: mediaButtonMouse.pressed ? root.pressColor
-      : mediaButtonMouse.containsMouse
-        ? mediaButton.flat
-          ? root.hoverColor
-          : root.hoveredColor(mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor)
-        : mediaButton.flat ? root.clearColor : mediaButton.primary ? root.alpha(root.accent, 0.22) : root.cardColor
+      : mediaButton.primary ? root.alpha(root.accent, 0.22)
+      : mediaButton.active ? root.activeTint
+      : root.clearColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-    Text {
-      anchors.centerIn: parent
+    HoverWash { hovered: mediaButtonMouse.containsMouse }
+
+    CenteredGlyph {
+      anchors.fill: parent
       text: mediaButton.icon
       color: mediaButton.active ? root.accent : root.text
       font.family: root.fontFamily
-      font.pixelSize: mediaButton.flat
-        ? (mediaButton.primary ? root.textDisplay : root.textTitle)
-        : mediaButton.primary ? root.textSubhead : root.textLead
+      font.pixelSize: mediaButton.primary ? root.textDisplay : root.textTitle
     }
 
-    HoverHandler { id: mediaButtonHover }
+    FocusRing { shown: mediaButton.activeFocus }
+
     MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
     HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
@@ -4006,9 +4014,12 @@ Shared.Theme {
         anchors.right: playerLevelReadout.left
         anchors.rightMargin: root.spaceMedium
         anchors.verticalCenter: parent.verticalCenter
-        text: playerLevel.glyph + "  " + (playerLevel.supported
-          ? root.mediaPlayerName(playerLevel.player)
-          : playerLevel.player ? "Volume unavailable" : "Nothing playing")
+        // The track names the player it belongs to, because this is that
+        // player's own level rather than the output the shell mixes. Why a
+        // player offers no level is the group's rule to state, not a second
+        // sentence in the track.
+        text: playerLevel.glyph + "  " + root.mediaPlayerName(playerLevel.player)
+        textFormat: Text.PlainText
         elide: Text.ElideRight
         color: playerLevel.supported ? root.text : root.subtext
         font.family: root.fontFamily
@@ -4091,50 +4102,48 @@ Shared.Theme {
       ? mediaTimeline.draggedPosition
       : Math.max(0, Math.min(mediaTimeline.length, mediaTimeline.reportedPosition))
 
+    readonly property real ratio: mediaTimeline.length > 0
+      ? mediaTimeline.shownPosition / mediaTimeline.length
+      : 0
+
     visible: available
+    // A player that reports no position has no timeline to reserve room for,
+    // so the transport above it takes that room rather than floating over a
+    // band nothing draws in.
+    height: mediaTimeline.visible ? mediaTimeline.implicitHeight : 0
     activeFocusOnTab: available && !live
     Keys.onPressed: event => root.seekMediaKey(player, event)
-    spacing: 3
+    spacing: root.spaceTight
 
-    Rectangle {
+    Item {
       width: parent.width
-      height: 16
-      color: "transparent"
+      height: root.trackTarget
 
-      Rectangle {
+      // The position is a filled track like every other one in the shell, so
+      // it is the shared meter rather than a second copy of its gradient. Only
+      // its hairline is the timeline's own, because the keyboard has to be
+      // able to say it is here.
+      MeterBar {
         visible: !mediaTimeline.live
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        height: 5
-        radius: height / 2
-        color: root.wellColor
-        border.width: 1
+        ratio: mediaTimeline.ratio
         border.color: mediaTimeline.activeFocus ? root.accent : root.alpha(root.text, 0.05)
-        antialiasing: true
-
-        Rectangle {
-          width: parent.width * (mediaTimeline.length > 0 ? mediaTimeline.shownPosition / mediaTimeline.length : 0)
-          height: parent.height
-          radius: parent.radius
-          antialiasing: true
-
-          gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: root.alpha(root.accent, 0.62) }
-            GradientStop { position: 1.0; color: root.accent }
-          }
-        }
       }
 
+      // The head appears under the pointer as well as under the drag, because
+      // a track that only grows a handle once it has already been grabbed
+      // never says it could be.
       Rectangle {
-        visible: !mediaTimeline.live && mediaTimeline.draggedPosition >= 0
-        x: Math.max(0, Math.min(parent.width - width, parent.width * (mediaTimeline.length > 0 ? mediaTimeline.shownPosition / mediaTimeline.length : 0) - width / 2))
+        visible: !mediaTimeline.live && (timelineMouse.containsMouse || mediaTimeline.draggedPosition >= 0)
+        x: Math.max(0, Math.min(parent.width - width, parent.width * mediaTimeline.ratio - width / 2))
         anchors.verticalCenter: parent.verticalCenter
-        width: 10
-        height: 10
+        width: root.trackHead
+        height: root.trackHead
         radius: width / 2
         color: timelineMouse.pressed ? root.text : root.accent
+        antialiasing: true
       }
 
       MouseArea {
@@ -4174,26 +4183,26 @@ Shared.Theme {
         font.letterSpacing: root.trackingLabel
       }
 
+      // A live stream has no position to draw, so the rule it gets is broken
+      // around the word rather than filled from either end.
       Rectangle {
         visible: mediaTimeline.live
         anchors.left: parent.left
         anchors.right: liveTimelineLabel.left
-        anchors.rightMargin: 8
+        anchors.rightMargin: root.spaceMedium
         anchors.verticalCenter: parent.verticalCenter
-        height: 5
-        radius: height / 2
-        color: root.alpha(root.text, 0.24)
+        height: 1
+        color: root.separatorColor
       }
 
       Rectangle {
         visible: mediaTimeline.live
         anchors.left: liveTimelineLabel.right
-        anchors.leftMargin: 8
+        anchors.leftMargin: root.spaceMedium
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        height: 5
-        radius: height / 2
-        color: root.alpha(root.text, 0.24)
+        height: 1
+        color: root.separatorColor
       }
     }
 
@@ -4212,31 +4221,45 @@ Shared.Theme {
     }
   }
 
-  // The media block — art, title, transport, timeline — as one object. The
-  // Control Center module and the Now Playing panel it opens used to arrange
-  // the same parts differently: different art size and corner, a different type
-  // ramp, a filled transport against a flat one, and a timeline that ran the
-  // full width under the art here and beside it there. They draw this instead,
-  // so the module and the panel are the same presentation at the same size.
-  component MediaPlayerPicker: ComboBox {
-    id: mediaPlayerPicker
+  // The dropdown this shell draws. A choice that is not worth a well of its
+  // own -- which of the running players the panel follows, which rate it plays
+  // at -- sits on the well material behind the same fold arrow a section rule
+  // uses and opens its list on the floating material. Everything that is not
+  // the choice itself lives here, because the media panel drew one of these
+  // and then wanted a second, and two hand-built combo boxes drift apart on
+  // corner, chevron, popup width and row fill before the second one is
+  // finished. A caller supplies the model, what the closed box reads, which
+  // row is lit, and how a row is worded.
+  component PanelPicker: ComboBox {
+    id: panelPicker
 
-    property var player: null
+    // How a row is worded: its own line, and the quieter one under it, which
+    // is empty for a choice that needs only one.
+    property var label: function(choice) { return String(choice) }
+    property var caption: function(choice) { return "" }
+    // Which row the list lights. A predicate rather than a value, because a
+    // player is matched by identity and a rate within a tolerance, and a
+    // player running a rate it was given elsewhere matches no row at all.
+    property var chosen: function(choice) { return false }
+    // The list is not bound to the closed box: a player's name over its track
+    // needs more room than the panel header can spare, and a rate needs much
+    // less than a list is readable at.
+    property int popupWidth: Math.max(panelPicker.width, root.controlHeight * 3)
 
-    implicitWidth: 148
     implicitHeight: root.chipHeight
-    displayText: root.mediaPlayerName(mediaPlayerPicker.player)
+    leftPadding: root.spaceMedium
+    rightPadding: root.chipHeight
     currentIndex: {
-      for (var i = 0; i < mediaPlayerPicker.model.length; i++) {
-        if (mediaPlayerPicker.model[i] === mediaPlayerPicker.player) return i
+      var choices = panelPicker.model || []
+      for (var i = 0; i < choices.length; i++) {
+        if (panelPicker.chosen(choices[i])) return i
       }
       return -1
     }
-    leftPadding: root.spaceMedium
-    rightPadding: root.chipHeight
 
     contentItem: Text {
-      text: mediaPlayerPicker.displayText
+      text: panelPicker.displayText
+      textFormat: Text.PlainText
       color: root.text
       elide: Text.ElideRight
       verticalAlignment: Text.AlignVCenter
@@ -4246,10 +4269,10 @@ Shared.Theme {
     }
 
     indicator: CenteredGlyph {
-      x: mediaPlayerPicker.width - width
+      x: panelPicker.width - width
       width: root.chipHeight
-      height: mediaPlayerPicker.height
-      text: mediaPlayerPicker.popup.visible ? "󰅀" : "󰅂"
+      height: panelPicker.height
+      text: panelPicker.popup.visible ? "󰅃" : "󰅀"
       color: root.subtext
       font.family: root.fontFamily
       font.pixelSize: root.textIcon
@@ -4257,26 +4280,32 @@ Shared.Theme {
 
     background: Rectangle {
       radius: root.radius
-      color: mediaPlayerPicker.pressed ? root.pressColor
-        : mediaPlayerPicker.hovered ? root.hoveredColor(root.wellColor)
-        : root.wellColor
+      color: panelPicker.pressed ? root.pressColor : root.wellColor
       border.width: 1
-      border.color: mediaPlayerPicker.popup.visible ? root.alpha(root.accent, 0.55) : root.cardBorder
+      border.color: panelPicker.popup.visible ? root.alpha(root.accent, 0.55) : root.cardBorder
+      antialiasing: true
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+      HoverWash { hovered: panelPicker.hovered }
+
+      // The open list already outlines the box in accent, so the ring is for
+      // the closed box the keyboard has reached and nothing else would show.
+      FocusRing { shown: panelPicker.visualFocus && !panelPicker.popup.visible }
     }
 
     delegate: ItemDelegate {
-      id: mediaPlayerChoice
+      id: panelChoice
 
       required property int index
       required property var modelData
+      readonly property bool current: panelPicker.chosen(panelChoice.modelData)
 
-      width: mediaPlayerPicker.popup.width - mediaPlayerPicker.popup.leftPadding - mediaPlayerPicker.popup.rightPadding
+      width: panelPicker.popup.width - panelPicker.popup.leftPadding - panelPicker.popup.rightPadding
       height: root.controlHeight
       leftPadding: root.spaceMedium
       rightPadding: root.spaceMedium
-      highlighted: mediaPlayerPicker.highlightedIndex === index
+      highlighted: panelPicker.highlightedIndex === panelChoice.index
 
       contentItem: Column {
         anchors.verticalCenter: parent.verticalCenter
@@ -4284,16 +4313,19 @@ Shared.Theme {
 
         Text {
           width: parent.width
-          text: root.mediaPlayerName(mediaPlayerChoice.modelData)
-          color: mediaPlayerChoice.modelData === mediaPlayerPicker.player ? root.accent : root.text
+          text: panelPicker.label(panelChoice.modelData)
+          textFormat: Text.PlainText
+          color: panelChoice.current ? root.accent : root.text
           elide: Text.ElideRight
           font.family: root.fontFamily
           font.pixelSize: root.textBody
           font.weight: root.weightStrong
         }
         Text {
+          visible: text !== ""
           width: parent.width
-          text: root.mediaTitle(mediaPlayerChoice.modelData) || root.mediaSubtitle(mediaPlayerChoice.modelData)
+          text: panelPicker.caption(panelChoice.modelData)
+          textFormat: Text.PlainText
           color: root.subtext
           elide: Text.ElideRight
           font.family: root.fontFamily
@@ -4303,19 +4335,22 @@ Shared.Theme {
 
       background: Rectangle {
         radius: root.radiusSmall
-        color: mediaPlayerChoice.pressed ? root.pressColor
-          : mediaPlayerChoice.modelData === mediaPlayerPicker.player ? root.selectedColor
-          : mediaPlayerChoice.hovered || mediaPlayerChoice.highlighted ? root.hoverColor
+        color: panelChoice.pressed ? root.pressColor
+          : panelChoice.current ? root.selectedColor
+          : panelChoice.highlighted ? root.hoverColor
           : root.clearColor
+        antialiasing: true
 
         Behavior on color { ColorAnimation { duration: root.durationFast } }
+
+        HoverWash { hovered: panelChoice.hovered }
       }
     }
 
     popup: Popup {
-      x: mediaPlayerPicker.width - width
-      y: mediaPlayerPicker.height + root.spaceTight
-      width: 220
+      x: panelPicker.width - width
+      y: panelPicker.height + root.spaceTight
+      width: panelPicker.popupWidth
       implicitHeight: Math.min(contentItem.implicitHeight + topPadding + bottomPadding, root.controlHeight * 5 + topPadding + bottomPadding)
       topPadding: root.spaceTight
       bottomPadding: root.spaceTight
@@ -4325,9 +4360,9 @@ Shared.Theme {
       contentItem: SeeleListView {
         implicitHeight: contentHeight
         clip: true
-        model: mediaPlayerPicker.popup.visible ? mediaPlayerPicker.delegateModel : null
-        currentIndex: mediaPlayerPicker.highlightedIndex
-        ScrollBar.vertical: SlimScrollBar { popupHovered: mediaPlayerPicker.popup.visible }
+        model: panelPicker.popup.visible ? panelPicker.delegateModel : null
+        currentIndex: panelPicker.highlightedIndex
+        ScrollBar.vertical: SlimScrollBar { popupHovered: panelPicker.popup.visible }
       }
 
       background: Rectangle {
@@ -4340,10 +4375,31 @@ Shared.Theme {
         SurfaceGrain { inset: 3 }
       }
     }
+  }
 
+  // Which of the running players every media surface follows. Its rows carry
+  // the track under the player's name, because two browsers are told apart by
+  // what they are playing rather than by their own names.
+  component MediaPlayerPicker: PanelPicker {
+    id: mediaPlayerPicker
+
+    property var player: null
+
+    implicitWidth: 148
+    popupWidth: 220
+    displayText: root.mediaPlayerName(mediaPlayerPicker.player)
+    label: function(choice) { return root.mediaPlayerName(choice) }
+    caption: function(choice) { return root.mediaTitle(choice) || root.mediaSubtitle(choice) }
+    chosen: function(choice) { return choice === mediaPlayerPicker.player }
     onActivated: function(index) { root.selectMediaPlayer(mediaPlayerPicker.model[index]) }
   }
 
+  // The media block — art, title, transport, timeline — as one object. The
+  // Control Center module and the Now Playing panel it opens used to arrange
+  // the same parts differently: different art size and corner, a different type
+  // ramp, a filled transport against a flat one, and a timeline that ran the
+  // full width under the art here and beside it there. They draw this instead,
+  // so the module and the panel are the same presentation at the same size.
   component MediaBody: Item {
     id: mediaBody
 
@@ -4357,8 +4413,27 @@ Shared.Theme {
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.left: parent.left
-      anchors.margins: 12
+      anchors.margins: root.spaceLarge
       width: height
+
+      // The well and its mark stay under the art rather than beside it, so a
+      // track whose cover is still loading -- and every track change is one --
+      // fades from the mark into the cover instead of flashing an empty square
+      // between two of them.
+      Rectangle {
+        anchors.fill: parent
+        radius: root.radius
+        color: root.wellColor
+        antialiasing: true
+
+        CenteredGlyph {
+          anchors.fill: parent
+          text: "󰎆"
+          color: mediaBody.player ? root.accent : root.overlay
+          font.family: root.fontFamily
+          font.pixelSize: root.textHero
+        }
+      }
 
       Image {
         id: mediaBodyArt
@@ -4379,71 +4454,67 @@ Shared.Theme {
         anchors.fill: parent
         source: mediaBodyArt
         radius: root.radius
-        visible: mediaBodyArt.status === Image.Ready
-      }
+        opacity: mediaBodyArt.status === Image.Ready ? 1 : 0
 
-      Rectangle {
-        anchors.fill: parent
-        visible: mediaBodyArt.status !== Image.Ready
-        radius: root.radius
-        color: root.wellColor
-
-        Text {
-          anchors.centerIn: parent
-          text: "󰎆"
-          color: mediaBody.player ? root.accent : root.overlay
-          font.family: root.fontFamily
-          font.pixelSize: Math.round(parent.height * 0.26)
-        }
+        Behavior on opacity { NumberAnimation { duration: root.durationNormal } }
       }
     }
 
     Item {
+      id: mediaBodyColumn
+
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.left: mediaBodyArtFrame.right
       anchors.right: parent.right
-      anchors.topMargin: 12
-      anchors.bottomMargin: 9
-      anchors.leftMargin: 12
-      anchors.rightMargin: 12
+      anchors.topMargin: root.spaceLarge
+      anchors.bottomMargin: root.spaceMedium
+      anchors.leftMargin: root.spaceLarge
+      anchors.rightMargin: root.spaceLarge
 
-      Text {
-        id: mediaBodyTitle
+      Column {
+        id: mediaBodyIdentity
 
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        text: mediaBody.player ? (root.mediaTitle(mediaBody.player) || "Unknown track") : "Nothing playing"
-        elide: Text.ElideRight
-        color: root.text
-        font.family: root.fontFamily
-        font.pixelSize: root.textStrong
-        font.weight: root.weightStrong
+        spacing: root.spaceTight / 2
+
+        Text {
+          width: parent.width
+          text: mediaBody.player ? (root.mediaTitle(mediaBody.player) || "Unknown track") : "Nothing playing"
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.text
+          font.family: root.fontFamily
+          font.pixelSize: root.textStrong
+          font.weight: root.weightStrong
+        }
+
+        Text {
+          visible: text !== ""
+          width: parent.width
+          text: mediaBody.player ? root.mediaSubtitle(mediaBody.player) : "Start a track to see it here"
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: root.subtext
+          font.family: root.fontFamily
+          font.pixelSize: root.textCaption
+        }
       }
 
-      Text {
-        visible: text !== ""
-        anchors.top: mediaBodyTitle.bottom
-        anchors.topMargin: 2
-        anchors.left: parent.left
-        anchors.right: parent.right
-        text: mediaBody.player ? root.mediaSubtitle(mediaBody.player) : "Start a track to see it here"
-        elide: Text.ElideRight
-        color: root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textCaption
-      }
-
+      // Transport over timeline, with the play button leading the four around
+      // it. The block is one object at one height in both the Control Center
+      // and the panel, so the two groups are anchored to the ends they belong
+      // to and take whatever the identity above them leaves.
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: 4
+        anchors.top: mediaBodyIdentity.bottom
+        anchors.bottom: mediaBodyTimeline.top
         spacing: root.spaceTight
 
         MediaButton {
-          flat: true
-          width: root.controlHeight
+          anchors.verticalCenter: parent.verticalCenter
           icon: "󰒟"
           hint: !mediaBody.player || !mediaBody.player.shuffleSupported ? "Shuffle unavailable" : mediaBody.player.shuffle ? "Shuffle on" : "Shuffle off"
           active: !!mediaBody.player && mediaBody.player.shuffleSupported && mediaBody.player.shuffle
@@ -4451,14 +4522,14 @@ Shared.Theme {
           onActivated: Media.toggleShuffle(mediaBody.player)
         }
         MediaButton {
-          flat: true
+          anchors.verticalCenter: parent.verticalCenter
           icon: "󰒮"
           hint: "Previous track"
           enabled: !!mediaBody.player && mediaBody.player.canGoPrevious
           onActivated: mediaBody.player.previous()
         }
         MediaButton {
-          flat: true
+          anchors.verticalCenter: parent.verticalCenter
           icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
           primary: true
           hint: mediaBody.player && mediaBody.player.isPlaying ? "Pause" : "Play"
@@ -4466,15 +4537,14 @@ Shared.Theme {
           onActivated: mediaBody.player.togglePlaying()
         }
         MediaButton {
-          flat: true
+          anchors.verticalCenter: parent.verticalCenter
           icon: "󰒭"
           hint: "Next track"
           enabled: !!mediaBody.player && mediaBody.player.canGoNext
           onActivated: mediaBody.player.next()
         }
         MediaButton {
-          flat: true
-          width: root.controlHeight
+          anchors.verticalCenter: parent.verticalCenter
           icon: mediaBody.player && mediaBody.player.loopState === MprisLoopState.Track ? "󰑘" : "󰑖"
           hint: Media.repeatLabel(mediaBody.player, MprisLoopState)
           active: !!mediaBody.player && mediaBody.player.loopSupported && mediaBody.player.loopState !== MprisLoopState.None
@@ -4484,6 +4554,8 @@ Shared.Theme {
       }
 
       MediaTimeline {
+        id: mediaBodyTimeline
+
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -4491,7 +4563,6 @@ Shared.Theme {
       }
     }
   }
-
 
   Timer {
     id: volumeDragTimer
@@ -8382,10 +8453,6 @@ Shared.Theme {
     PanelWindow {
       id: mediaWindow
 
-      function cyclePlaybackSpeed() {
-        return MediaSpeed.cycle(mediaWindow.player)
-      }
-
       required property var modelData
       readonly property var players: root.availableMediaPlayers()
       readonly property var player: root.nowPlayingPlayer()
@@ -8393,7 +8460,7 @@ Shared.Theme {
       visible: root.controlPanel === "media" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 400
+      implicitWidth: root.mediaPanelWidth
       implicitHeight: mediaContent.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -8424,121 +8491,95 @@ Shared.Theme {
             }
           }
 
-          MediaBody {
+          // Nothing is playing. One sentence says so, rather than a dead
+          // transport standing over two groups of controls with nothing to
+          // control and the same three words written under each of them.
+          EmptyState {
+            visible: !mediaWindow.player
             width: parent.width
             height: root.mediaBodyHeight
-            player: mediaWindow.player
+            glyph: "󰎆"
+            title: "Nothing playing"
+            detail: "Start a track in any player and it appears here."
+          }
+
+          // The block is a card here exactly as it is in the Control Center,
+          // so opening the module does not unframe what was clicked.
+          Rectangle {
+            visible: !!mediaWindow.player
+            width: parent.width
+            height: root.mediaBodyHeight
+            radius: root.radius
+            color: root.cardColor
+            antialiasing: true
+
+            CardEdge {}
+
+            MediaBody {
+              anchors.fill: parent
+              player: mediaWindow.player
+            }
           }
 
           // What the player is doing and how fast it is doing it are two
           // groups, so each opens with its own rule instead of restating its
           // name inside a card beside the control that already carries it.
           SectionRule {
+            visible: !!mediaWindow.player
             width: parent.width
             label: "VOLUME"
-            detail: !mediaWindow.player
-              ? ""
-              : playerVolumeLevel.supported
-                ? (playerVolumeLevel.writable ? "" : "Set by the player")
-                : "Not offered by this player"
+            detail: playerVolumeLevel.supported
+              ? (playerVolumeLevel.writable ? "" : "Set by the player")
+              : "Not offered by this player"
           }
 
           PlayerLevelRow {
             id: playerVolumeLevel
 
+            visible: !!mediaWindow.player
             width: parent.width
             player: mediaWindow.player
           }
 
+          // A rate is one of a short exclusive set, but not one worth a well:
+          // the well spent a whole row on five segments, and drew a single
+          // segment for a player whose one rate is not a choice at all. The
+          // set is a dropdown on the group's own rule instead, and the group
+          // withdraws unless there is something to choose between.
           SectionRule {
-            width: parent.width
-            // The rate the player is actually running at is worth stating even
-            // when it arrived from somewhere else and lights no preset here.
-            label: "SPEED"
-            detail: mediaWindow.player ? MediaSpeed.label(mediaWindow.player) : ""
-            detailColor: playbackSpeedWell.rates.length > 0 ? root.subtext : root.overlay
-          }
-
-          // The speeds worth offering are an exclusive choice, so they are one
-          // well with the running one lit rather than a button that has to be
-          // clicked through the set to find out what else is in it. The
-          // keyboard still steps through them, because the well is one control.
-          Item {
-            id: playbackSpeedWell
+            id: playbackSpeedRule
 
             readonly property var rates: MediaSpeed.rates(mediaWindow.player)
 
+            visible: playbackSpeedRule.rates.length > 1
             width: parent.width
-            height: root.controlHeight
-            activeFocusOnTab: playbackSpeedWell.rates.length > 0
+            label: "SPEED"
 
-            Keys.onPressed: event => {
-              if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space) return
-              event.accepted = true
-              if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-              mediaWindow.cyclePlaybackSpeed()
+            // A control labelled from its own state changes width as that
+            // state changes, and this one is anchored to the end of the rule,
+            // so the whole box would slide between one rate and the next. It
+            // takes the width of the widest rate it can be asked to show.
+            TextMetrics {
+              id: playbackSpeedMetrics
+
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+              font.weight: root.weightStrong
+              text: "0.75×"
             }
 
-            SegmentWell {
-              anchors.fill: parent
+            PanelPicker {
+              id: playbackSpeedPicker
 
-              Text {
-                visible: playbackSpeedWell.rates.length === 0
-                width: parent.width
-                height: parent.height
-                text: mediaWindow.player ? "This player has one speed" : "Nothing playing"
-                color: root.overlay
-                font.family: root.fontFamily
-                font.pixelSize: root.textLabel
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-              }
-
-              Repeater {
-                model: playbackSpeedWell.rates
-
-                Segment {
-                  id: speedPreset
-
-                  required property var modelData
-
-                  width: parent.width / Math.max(1, playbackSpeedWell.rates.length)
-                  selected: MediaSpeed.active(mediaWindow.player, speedPreset.modelData)
-                  hovered: speedPresetMouse.containsMouse
-                  pressed: speedPresetMouse.pressed
-
-                  Text {
-                    anchors.centerIn: parent
-                    text: speedPreset.modelData + "×"
-                    color: speedPreset.selected ? root.text : root.subtext
-                    font.family: root.fontFamily
-                    font.pixelSize: root.textLabel
-                    font.weight: speedPreset.selected ? root.weightStrong : root.weightMedium
-
-                    Behavior on color { ColorAnimation { duration: root.durationFast } }
-                  }
-
-                  MouseArea {
-                    id: speedPresetMouse
-
-                    anchors.fill: parent
-                    enabled: !speedPreset.selected
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: MediaSpeed.select(mediaWindow.player, speedPreset.modelData)
-                  }
-                }
-              }
-            }
-
-            Rectangle {
-              visible: playbackSpeedWell.activeFocus
-              anchors.fill: parent
-              radius: root.radius
-              color: "transparent"
-              border.width: 1
-              border.color: root.accent
-              antialiasing: true
+              model: playbackSpeedRule.rates
+              implicitWidth: playbackSpeedMetrics.advanceWidth + leftPadding + rightPadding
+              // The rate the player is actually running, which is worth
+              // reading even when it came from somewhere else and lights none
+              // of the presets in the list.
+              displayText: mediaWindow.player ? MediaSpeed.label(mediaWindow.player) : ""
+              label: function(rate) { return rate + "×" }
+              chosen: function(rate) { return MediaSpeed.active(mediaWindow.player, rate) }
+              onActivated: function(index) { MediaSpeed.select(mediaWindow.player, playbackSpeedRule.rates[index]) }
             }
           }
         }

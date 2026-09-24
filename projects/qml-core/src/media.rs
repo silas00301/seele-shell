@@ -74,6 +74,23 @@ fn length(player: &Value) -> f64 {
         0.0
     }
 }
+// A position or a duration on the timeline. Minutes and seconds carry a track,
+// but a recording, a set or a video runs past the hour, and counting that into
+// three-digit minutes stops reading as a time at all, so the hours go in front
+// of them and the minutes are padded behind it.
+fn time_label(seconds: f64) -> String {
+    let total = if seconds.is_finite() && seconds > 0.0 {
+        seconds.floor().min(u32::MAX as f64) as u64
+    } else {
+        0
+    };
+    let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{rest:02}")
+    } else {
+        format!("{minutes}:{rest:02}")
+    }
+}
 fn spotify(player: &Value) -> bool {
     ["identity", "desktopEntry", "dbusName"]
         .iter()
@@ -221,20 +238,6 @@ fn rate_for(player: &Value, requested: Option<f64>) -> Option<f64> {
         .filter(|value| rates(player).iter().any(|rate| same_rate(*rate, *value)))
         .filter(|value| !same_rate(*value, current))
 }
-fn next_rate(player: &Value) -> Option<f64> {
-    let choices = rates(player);
-    let current = number(player.get("rate"));
-    choices
-        .iter()
-        .copied()
-        .find(|rate| *rate > current + 0.000001)
-        .or_else(|| {
-            choices
-                .first()
-                .copied()
-                .filter(|rate| (*rate - current).abs() > 0.000001)
-        })
-}
 fn volume(player: &Value) -> Option<f64> {
     if !truthy(player.get("volumeSupported")) {
         return None;
@@ -333,6 +336,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             json!(result)
         }
         "lengthSeconds" => json!(length(player)),
+        "timeLabel" => json!(time_label(number(args.first()))),
         "liveStream" => json!(length(player) >= 31_536_000.0),
         "timelineAvailable" => json!(
             length(player) > 0.0
@@ -417,7 +421,6 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             "Repeat off"
         }),
         "rates" => json!(rates(player)),
-        "nextRate" => json!(next_rate(player)),
         // A preset the player is already running is lit rather than offered,
         // and a rate the player was given elsewhere lights none of them.
         "rateActive" => json!(rate_active(player, args.get(1).and_then(Value::as_f64))),

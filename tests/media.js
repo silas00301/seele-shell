@@ -185,3 +185,41 @@ assert(media.seekTarget(seekable,"invalid",false)===null,"unrelated key never mo
 const timingOnly={...seekable};Object.defineProperty(timingOnly,"trackArtist",{get(){throw new Error("timing copied track metadata")}});
 assert(media.timelineAvailable(timingOnly),"timeline query does not touch unrelated track fields");
 console.log("media bounded native keyboard seeking and narrow snapshot checks passed");
+
+// A timeline states minutes and seconds for a track and puts the hours in
+// front of them for anything longer, because a recording counted into
+// three-digit minutes stops reading as a time.
+assert(media.timeLabel(0)==="0:00");
+assert(media.timeLabel(5)==="0:05");
+assert(media.timeLabel(61)==="1:01");
+assert(media.timeLabel(954)==="15:54");
+assert(media.timeLabel(3599)==="59:59","the last minute before an hour keeps its minutes");
+assert(media.timeLabel(3600)==="1:00:00","an hour is stated as one");
+assert(media.timeLabel(3821)==="1:03:41","minutes are padded behind the hours");
+assert(media.timeLabel(86399)==="23:59:59");
+assert(media.timeLabel(90.9)==="1:30","a fractional position never rounds up past the second it is in");
+for(const invalid of [-1,NaN,Infinity,-Infinity,null,undefined]) assert(media.timeLabel(invalid)==="0:00","an absent or invalid time reads as the start");
+console.log("media timeline labels passed");
+
+// The Now Playing panel. Nothing playing is one empty state rather than a dead
+// transport standing over two groups of controls that have nothing to control,
+// and a group with nothing to offer withdraws rather than drawing a well whose
+// only content is a sentence about why it is empty.
+const panel = qml.slice(qml.indexOf("id: mediaContent"), qml.indexOf("// Audio controls"));
+assert(/EmptyState \{\n\s+visible: !mediaWindow\.player/.test(panel), "an idle panel is one empty state");
+assert((panel.match(/Nothing playing/g) || []).length === 1, "nothing playing is said once, not once per group");
+for (const [part, pattern] of [
+  ["the block", /Rectangle \{\n\s+visible: !!mediaWindow\.player/],
+  ["the volume rule", /SectionRule \{\n\s+visible: !!mediaWindow\.player/],
+  ["the level", /PlayerLevelRow \{[^]*?visible: !!mediaWindow\.player/],
+]) assert(pattern.test(panel), part + " is drawn only for a player that exists");
+assert(/visible: playbackSpeedRule\.rates\.length > 1/.test(panel),
+  "a set with one rate in it is not a choice, so the group withdraws");
+assert(!/SegmentWell/.test(panel), "the rates are a dropdown on the rule, not a well of their own");
+assert(/implicitWidth: root\.mediaPanelWidth/.test(qml), "the panel takes its width from the block");
+assert((qml.match(/^\s+MediaBody \{$/gm) || []).length === 2,
+  "the Control Center module and the panel draw the one block");
+assert(/FocusRing \{ shown: mediaButton\.activeFocus \}/.test(button),
+  "a transport button that can be tabbed to says where the keyboard is");
+assert(!/flat:/.test(button), "the transport has one material rather than a flat variant nothing asks for");
+console.log("Now Playing panel composition checks passed");
