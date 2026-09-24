@@ -252,6 +252,7 @@ pub struct Query {
     pub host: String,
     pub scheme: String,
     pub explicit_scheme: bool,
+    pub binding_scope: String,
 }
 
 /// Accept a port, an address, a `host:port` pair or a local URL. A scheme the
@@ -307,6 +308,11 @@ impl Query {
     }
 
     pub fn matches(&self, row: &Row) -> bool {
+        match self.binding_scope.as_str() {
+            "loopback" if row.listener.scope() != "loopback" => return false,
+            "network" if !matches!(row.listener.scope(), "wildcard" | "address") => return false,
+            _ => {}
+        }
         if self.empty() {
             return true;
         }
@@ -459,6 +465,35 @@ mod tests {
             owners,
             identified: false,
             user: "silash".into(),
+        }
+    }
+
+    #[test]
+    fn scope_uses_the_binding_including_mapped_ipv6_not_the_browser_destination() {
+        for (address, expected) in [
+            ("127.0.0.1", "loopback"),
+            ("127.42.0.3", "loopback"),
+            ("::1", "loopback"),
+            ("::ffff:127.0.0.1", "loopback"),
+            ("0.0.0.0", "network"),
+            ("::", "network"),
+            ("::ffff:0.0.0.0", "network"),
+            ("192.168.1.10", "network"),
+            ("fd00::5", "network"),
+        ] {
+            let mut candidate = row(vec![]);
+            candidate.listener = listener(address, 3000, 1000, 41);
+            for scope in ["all", "loopback", "network"] {
+                let query = Query {
+                    binding_scope: scope.into(),
+                    ..parse_query("3000")
+                };
+                assert_eq!(
+                    query.matches(&candidate),
+                    scope == "all" || scope == expected,
+                    "{address} in {scope}"
+                );
+            }
         }
     }
 

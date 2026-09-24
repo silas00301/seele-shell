@@ -16,7 +16,7 @@ FocusScope {
   readonly property string hint: "J / K moves · Enter unfolds · R refreshes · Escape closes"
   implicitHeight: content.implicitHeight
 
-  // What a binding reaches, said in words rather than in an address.
+  // The binding address, without inferring network reachability.
   function reach(entry) {
     return entry.scopeLabel + " · " + entry.binding
   }
@@ -81,6 +81,20 @@ FocusScope {
         event.accepted = true
       }
     }
+    Shared.SegmentWell {
+      theme: panel.theme
+      width: parent.width
+      Shared.SegmentChoice { theme: panel.theme; width: parent.width / 3; height: parent.height; objectName: "scopeAll"; text: "All"; selected: panel.store.bindingScope === "all"; onClicked: panel.store.bindingScope = "all" }
+      Shared.SegmentChoice { theme: panel.theme; width: parent.width / 3; height: parent.height; objectName: "scopeLoopback"; text: "Loopback"; selected: panel.store.bindingScope === "loopback"; onClicked: panel.store.bindingScope = "loopback" }
+      Shared.SegmentChoice { theme: panel.theme; width: parent.width / 3; height: parent.height; objectName: "scopeNetwork"; text: "Network"; selected: panel.store.bindingScope === "network"; onClicked: panel.store.bindingScope = "network" }
+    }
+    Caption {
+      text: panel.store.bindingScope === "loopback"
+        ? "Loopback bindings only, including IPv4 and IPv6."
+        : panel.store.bindingScope === "network"
+          ? "Wildcard and non-loopback addresses."
+          : "All TCP bind addresses."
+    }
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
@@ -119,14 +133,21 @@ FocusScope {
       theme: panel.theme
       width: parent.width
       visible: panel.store.model.count === 0
-      glyph: panel.store.query !== "" ? "󰍉" : "󰛳"
-      title: panel.store.query !== "" ? "No matching listener" : "Nothing is listening"
-      detail: panel.store.query !== ""
-        ? "Search a port, an address such as localhost:3000, a process, a service or a project."
+      glyph: panel.store.filtered ? "󰍉" : "󰛳"
+      title: panel.store.filtered ? "No matching listener" : "Nothing is listening"
+      detail: panel.store.filtered
+        ? "No TCP listener matches this search and binding filter."
         : "No local TCP port is open in this network namespace."
+      Shared.ActionButton {
+        theme: panel.theme
+        objectName: "resetFilters"
+        text: panel.store.filtered ? "Reset filters" : "Refresh"
+        onClicked: panel.store.filtered ? panel.store.resetFilters() : panel.store.refresh()
+      }
     }
     Shared.SeeleListView {
       id: listeners
+      objectName: "listeners"
       theme: panel.theme
       width: parent.width
       visible: panel.store.model.count > 0
@@ -135,6 +156,7 @@ FocusScope {
       spacing: panel.theme.spaceSmall
       model: panel.store.model
       currentIndex: count ? 0 : -1
+      onCountChanged: currentIndex = count ? Math.max(0, Math.min(currentIndex, count - 1)) : -1
       ScrollBar.vertical: Shared.SlimScrollBar { theme: panel.theme; popupHovered: panel.popupHovered }
       delegate: Rectangle {
         id: row

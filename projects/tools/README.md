@@ -193,6 +193,26 @@ or world-writable, so nothing in the environment can substitute the program that
 runs as root. `identify` is a separately authorized read that resolves owners and
 signals nothing.
 
+The `query` request accepts `text` and optional `scope` (`all`, `loopback`, or
+`network`; omitted/unrecognized values mean `all`). Snapshots echo the normalized
+scope beside the parsed query and preserve an explicit HTTP/HTTPS scheme.
+Loopback includes IPv4, IPv6 and IPv4-mapped IPv6 loopback addresses; Network
+includes wildcard and specific non-loopback bindings. These describe the bind
+address only, not firewall policy or reachability. Scope and text are an
+intersection; `total` still counts all discovered listeners. Missing owner
+metadata stays unknown in every view. Filtering changes no review token or
+native action/revalidation policy. The synthetic `tests/ports.rs` fixture
+covers scope/query intersections, unchanged action identity and unknown ownership;
+its model tests include mapped IPv6 loopback and both wildcard families.
+`tests/ports.js` exercises late replies and confirmation dismissal, while
+`tests/ports-panel.js` renders the production panel and checks pointer/keyboard
+filter selection, reset, and valid list selection after filtering. The shell
+package and development checks both run that Qt fixture.
+
+Changing either filter dismisses the current confirmation immediately, removes
+old rows until the matching snapshot arrives, and rejects late query/plan replies.
+The empty state resets both filters, while row scheme choices survive filtering.
+
 Nothing is written to disk. Closing the panel clears rows, selections,
 escalations and the identities an authentication paid for. `qml-core`'s `ports`
 functions own the proposed URL, the failure wording, the row summary and the

@@ -375,6 +375,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ports.js "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/ports-panel.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/mic-test.js "$out/share/seele-shell/mic-test.js" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ai-prompt.js "$out/share/seele-shell/ai-prompt.js" "$out/share/seele-shell/AiPrompt.qml"
     node ${tests}/focus.js "$out/share/seele-shell/focus.js"

@@ -92,7 +92,10 @@ impl<'a> Worker<'a> {
             roots,
             host,
             self_uid,
-            query: model::parse_query(""),
+            query: Query {
+                binding_scope: "all".into(),
+                ..model::parse_query("")
+            },
             selection: HashMap::new(),
             identities: Identities::new(),
             rows: Vec::new(),
@@ -148,6 +151,7 @@ impl<'a> Worker<'a> {
             "limited": limited,
             "query": {
                 "text": self.query.text,
+                "scope": self.query.binding_scope,
                 "port": self.query.port,
                 "host": self.query.host,
                 "scheme": self.query.scheme,
@@ -485,6 +489,12 @@ impl<'a> Worker<'a> {
             }
             "query" => {
                 self.query = model::parse_query(message["text"].as_str().unwrap_or(""));
+                self.query.binding_scope = match message["scope"].as_str() {
+                    Some("loopback") => "loopback",
+                    Some("network") => "network",
+                    _ => "all",
+                }
+                .to_owned();
             }
             "refresh" => self.rescan(),
             "select" => {
