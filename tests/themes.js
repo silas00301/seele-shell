@@ -29,34 +29,27 @@ function methods(text) {
   return out.join('\n');
 }
 
-const values = [];
-const rows = {
-  get count() { return values.length },
-  get(i) { return values[i] },
-  insert(i, v) { values.splice(i, 0, v) },
-  move(i, j) { values.splice(j, 0, values.splice(i, 1)[0]) },
-  setProperty(i, k, v) { values[i][k] = v },
-  remove(i, n) { values.splice(i, n === undefined ? 1 : n) },
-};
-
 const guards = [];
 const state = vm.createContext({
-  Models: require('./list-models.cjs')(),
   Bridge: nativeBridge(),
-  rows,
   catalog: {ok: false, current: '', themes: []},
-  panelOpen: false, query: '', selection: '', selectionName: '',
-  error: '', actionError: '', reloadPending: '', applying: '',
+  panelOpen: false, query: '', mode: 'all', columns: 4, highlighted: '',
+  selection: '', selectionName: '', error: '', actionError: '', reloadPending: '', applying: '',
   list: {running: false},
   set: {running: false, command: []},
   guard: {restart() { guards.push('restart') }, stop() { guards.push('stop') }},
   JSON,
 });
+// The store's bindings, evaluated the way Qt would on every read.
 Object.defineProperties(state, {
   themes: {get() { return state.catalog.themes || [] }},
   total: {get() { return state.themes.length }},
   current: {get() { return state.selection !== '' ? state.selection : state.catalog.current || '' }},
   busy: {get() { return state.applying !== '' || state.list.running }},
+  filtered: {get() { return state.query !== '' || state.mode !== 'all' }},
+  layout: {get() { return state.Bridge.call('themes.layout', [state.themes, state.current, state.query, state.mode, state.columns]) }},
+  focusedId: {get() { return state.Bridge.call('themes.focus', [state.layout, state.highlighted, state.current]) }},
+  preview: {get() { return state.Bridge.call('themes.find', [state.themes, state.focusedId]) }},
   store: {get() { return state }},
 });
 vm.runInContext(methods(source), state);
@@ -70,44 +63,66 @@ const palette = (seed) => {
 };
 const preset = (id, name, mode, seed) => ({id, name, mode, ...palette(seed)});
 const reply = {
-  current: 'nord',
+  current: 'catppuccin-mocha',
   themes: [
     preset('catppuccin-mocha', 'Catppuccin Mocha', 'dark', 10),
-    preset('nord', 'Nord', 'dark', 20),
-    preset('rose-pine-dawn', 'Rosé Pine Dawn', 'light', 30),
+    preset('catppuccin-latte', 'Catppuccin Latte', 'light', 20),
+    preset('rose-pine', 'Rosé Pine', 'dark', 30),
+    preset('rose-pine-dawn', 'Rosé Pine Dawn', 'light', 40),
+    preset('nord', 'Nord', 'dark', 50),
   ],
 };
-const listed = () => values.map(row => row.entry.id);
+// Each row as "Family: variant, variant", so a whole layout reads at once.
+const shape = () => state.layout.rows.map(row =>
+  `${row.family}: ${row.members.map(member => member.variant).join(', ')}`);
 
-// A catalog is read, grouped and marked; nothing is written and nothing runs.
+// A catalog is read and laid out; nothing is written and nothing runs.
 state.accept(reply);
 assert.equal(state.error, '');
-assert.deepEqual(listed(), ['nord', 'catppuccin-mocha', 'rose-pine-dawn'],
-  'the applied theme leads, then the catalog order inside each mode');
-assert.deepEqual(values.map(row => row.entry.section), ['CURRENT', 'DARK', 'LIGHT']);
-assert.equal(values[0].entry.current, true);
-// The header line is the native one the store binds, not a second sentence.
-const detail = () => state.Bridge.call('themes.detail',
-  [{themes: state.themes, current: state.current}, rows.count]);
-assert.equal(detail(), 'Nord · 3 presets');
-assert.match(source, /Bridge\.call\("themes\.detail"/);
+assert.deepEqual(shape(), ['Catppuccin: Mocha, Latte', 'Rosé Pine: Rosé Pine, Dawn', 'More: Nord']);
+assert.equal(state.layout.rows[0].members[0].current, true);
+assert.equal(state.focusedId, 'catppuccin-mocha', 'the preview opens on the applied theme');
+assert.equal(state.preview.name, 'Catppuccin Mocha');
+
+// Moving is native: the store only remembers where the reader went.
+state.step('right');
+assert.equal(state.focusedId, 'catppuccin-latte');
+state.step('down');
+assert.equal(state.focusedId, 'rose-pine-dawn', 'down keeps the column');
+state.step('down');
+assert.equal(state.focusedId, 'nord', 'a shorter row takes its last tile');
+state.step('down');
+assert.equal(state.focusedId, 'nord', 'the last row holds');
+state.highlight('rose-pine');
+assert.equal(state.preview.name, 'Rosé Pine', 'pointing at a tile previews it');
+
+// The mode and the search take tiles out; a highlight they hide falls back.
+state.mode = 'light';
+assert.deepEqual(shape(), ['Catppuccin: Latte', 'Rosé Pine: Dawn']);
+assert.equal(state.focusedId, 'catppuccin-latte', 'a hidden highlight falls back to the first tile shown');
+assert.equal(state.filtered, true);
+state.mode = 'all';
+state.query = 'nord';
+assert.deepEqual(shape(), ['More: Nord']);
+assert.equal(state.focusedId, 'nord');
+state.query = 'solarized';
+assert.deepEqual(shape(), []);
+assert.equal(state.focusedId, '', 'nothing shown previews nothing');
+assert.equal(state.preview, null);
+state.resetFilters();
+assert.equal(state.query, '');
+assert.equal(state.mode, 'all');
+assert.equal(state.filtered, false);
+assert.deepEqual(shape(), ['Catppuccin: Mocha, Latte', 'Rosé Pine: Rosé Pine, Dawn', 'More: Nord']);
 
 // The published selection wins over the reply, because it is what the desktop
-// is actually wearing: a theme applied from the launcher marks its row here.
+// is actually wearing: a theme applied from the launcher marks its tile here.
+state.highlighted = '';
 state.selection = 'rose-pine-dawn';
-state.publish();
-assert.deepEqual(listed(), ['rose-pine-dawn', 'catppuccin-mocha', 'nord']);
+assert.equal(state.focusedId, 'rose-pine-dawn');
+assert.equal(state.layout.rows[1].members[1].current, true);
+assert.equal(state.layout.rows[0].members[0].current, false);
 state.selection = '';
-state.publish();
-
-// A search filters the same rows without asking the helper anything.
-state.query = 'mocha';
-state.publish();
-assert.deepEqual(listed(), ['catppuccin-mocha']);
-assert.equal(detail(), 'Nord · 1 of 3', 'the header says how much of the catalog is left');
-assert.equal(values[0].entry.first, true, 'the first row left in a group keeps its heading');
-state.query = '';
-state.publish();
 
 // A malformed catalog keeps the one that was already read.
 const kept = state.catalog;
@@ -123,20 +138,21 @@ assert.equal(state.apply('not-a-theme'), false);
 assert.match(state.actionError, /no longer in the catalog/);
 assert.deepEqual([...state.set.command], [], 'a theme the catalog does not hold is never sent');
 assert.equal(state.apply(''), false);
-assert.equal(state.apply('catppuccin-mocha'), true);
-assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-mocha']);
+state.highlight('catppuccin-latte');
+assert.equal(state.applyFocused(), true, 'Enter applies what the preview shows');
+assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-latte']);
 assert.equal(state.set.running, true);
 assert.equal(state.actionError, '');
 assert.deepEqual(guards, ['restart']);
 assert.equal(state.apply('nord'), false, 'a second choice cannot overtake the one in flight');
-assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-mocha']);
+assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-latte']);
 
 // The reply says what could not be reloaded, never what is selected: that is
 // read back from the helper's own published selection.
-state.applied({id: 'catppuccin-mocha', pending: ['Ghostty', 'tmux']});
+state.applied({id: 'catppuccin-latte', pending: ['Ghostty', 'tmux']});
 assert.equal(state.reloadPending, 'Ghostty and tmux still show the previous palette.');
-assert.equal(state.current, 'nord', 'the request does not mark the row; the selection file does');
-state.applied({id: 'catppuccin-mocha', pending: []});
+assert.equal(state.current, 'catppuccin-mocha', 'the request does not mark the tile; the selection file does');
+state.applied({id: 'catppuccin-latte', pending: []});
 assert.equal(state.reloadPending, '');
 
 // Failure wording is the shared native map's, and says what happened to the
@@ -153,6 +169,9 @@ const commands = [...source.matchAll(/command = \[([^\]]*)\]|command: \[([^\]]*)
 assert.deepEqual(commands.sort(), ['"seele-theme", "list"', '"seele-theme", "set", id']);
 assert.doesNotMatch(source, /atomicWrite|writeFile|\.write\(/, 'the store publishes nothing itself');
 assert.match(source, /Bridge\.call\("themes\.selected"/, 'the published selection is parsed natively');
+for (const policy of ['layout', 'focus', 'find', 'step'])
+  assert.match(source, new RegExp(`Bridge\\.call\\("themes\\.${policy}"`), `${policy} is decided natively`);
+assert.doesNotMatch(source, /ListModel|Models\.reconcile/, 'the layout is read whole, not mirrored into a model');
 assert.match(source, /watchChanges: true/, 'the applied theme is watched rather than polled');
 assert.doesNotMatch(panel, /Process\s*\{/, 'the panel starts no process of its own');
 assert.doesNotMatch(panel, /#[0-9a-fA-F]{6}/, 'every colour the panel draws comes from a palette');
@@ -182,4 +201,4 @@ assert.ok(themesRow.row < gridRows, 'the grid is tall enough to show the Themes 
 assert.doesNotMatch(grid.slice(grid.indexOf('label: "Themes"') - 400, grid.indexOf('label: "Themes"') + 400),
   /\u{f03d8}/u, 'the palette mark belongs to Colour Lab; Themes carries its own');
 
-console.log('Theme catalog grouping, selection marking, single-flight applies, reload reporting and production wiring passed');
+console.log('Theme families, native movement and focus, filtering, selection marking, single-flight applies, reload reporting and production wiring passed');
