@@ -328,6 +328,9 @@ const [, , controlsPath, windowsPath, audioPath, keybindingsPath] =
   await action(item(root, "System Health"), "Open System Health").onAction();
   assert.deepEqual(lastCommand(), ["shellctl", ["control", "system-health"]]);
 
+  await action(item(root, "Calculator"), "Open Calculator").onAction();
+  assert.deepEqual(lastCommand(), ["shellctl", ["calculator"]]);
+
   // --- Windows and workspaces ---------------------------------------------
   reset();
   const client = (address, order, workspace) => ({
