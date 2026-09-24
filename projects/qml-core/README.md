@@ -27,6 +27,18 @@ limits do not change ordinary toast, pin, action, stack, replacement or timed
 DND behavior. Reload metadata is projected to known scalar fields before copying.
 Notification text, verification codes and history never reach disk.
 
+The notification panel can silence future toasts for one application from its
+stack's bell button, in Current or History. Existing toasts, notification actions,
+inbox entries and sender lifetimes are preserved; new and replaced messages still
+enter the inbox. The same application key as stacking is used (desktop entry,
+then application name); anonymous senders cannot be silenced. Critical messages
+follow the existing DND policy and are also suppressed. Explicit pinning still
+shows the selected notification. The selected bell resumes that app, and the
+header's silence menu can resume every quiet app even after its last entry has
+gone. Resuming never replays suppressed toasts and never changes global DND.
+These choices survive QML reloads in memory, disappear when the shell exits, and
+are bounded to 256 application keys of at most 512 bytes each.
+
 Health's Rust policy validates private metadata and typed actions, derives stale
 state, and groups priority rows. Its thin Qt wrapper uses `localeCompare` for
 actual Qt locale collation, retaining registration order for equal labels.
