@@ -172,9 +172,17 @@ ShellRoot {
   readonly property int durationNormal: 180
   // Disabled actions stay legible while clearly withdrawing interaction.
   readonly property real disabledOpacity: 0.45
+  // A track the pointer has to hit is drawn thin and targeted tall: the strip
+  // gives the meter inside it room to be grabbed without the meter itself
+  // growing into a slab, and the head that rides on it rounds on its own size.
+  readonly property int trackTarget: 16
+  readonly property int trackHead: 10
   // The media block is one object at one size, so its height is decided here
   // rather than by whichever surface happens to be holding it.
   readonly property int mediaBodyHeight: 148
+  // Wide enough for the block to set a title and an artist beside its art
+  // without eliding either, and to carry the transport under them unsqueezed.
+  readonly property int mediaPanelWidth: 400
   readonly property int notesWindowWidth: 960
   readonly property int notesWindowHeight: 680
   // Small enough to be tiled into a column beside something else, which is
