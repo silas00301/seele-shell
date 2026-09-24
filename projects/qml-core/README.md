@@ -60,6 +60,16 @@ nothing is being captured, clipping is reported from the worker's own sample
 measurement rather than from the bar, a lost microphone or test output is named
 instead of being replaced, and both test modes reach the same confirmation.
 
+Focus timers keep their one retained state and absolute deadline in native policy.
+Custom input accepts whole minutes from 1 through 240. The +5 action extends a
+running or paused session only when the whole extension fits the four-hour total;
+it preserves pause and completes an expired deadline before considering extension.
+Idle and completed timers cannot be revived by extension. `tests/focus.js` and
+native unit tests cover parsing, suspend, rounding and lifecycle bounds;
+`tests/focus-timer.sh` instantiates the production panel and retained store in
+Quickshell. `tests/focus-panel-offscreen.py` is an optional PySide6 render and
+keyboard fixture using the real Rust policy CLI with substituted host objects.
+
 The port inspector's proposed URL, refusal wording, row summary and bounded
 action queue are native. A destination is accepted only as the kernel's own
 rendering of an address, already bracketed when it is IPv6, and only `http` and

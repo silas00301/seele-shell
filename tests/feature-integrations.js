@@ -9,6 +9,7 @@ const shellPatterns = {
   'transfers history panel': /TransfersPanel \{ theme: root; store: transfersStore/,
   'registered health store': /IntegrationHealthStore\s*\{\s*id: integrationHealth/,
   'system health panel': /SystemHealthPanel\s*\{\s*id:\s*healthContent/,
+  'focus panel uses resident timer': /FocusPanel\s*\{\s*id: focusContent\s*theme: root\s*timer: focusTimer/,
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
   'quick AI prompt controller': /AiPrompt\s*\{\s*\n\s*id: aiPrompt/,
   'quick AI prompt IPC': /function togglePrompt\(\): void \{ root\.togglePrompt\(\) \}/,
@@ -89,6 +90,7 @@ const packagedSources = [
   'ColorPicker.qml',
   'color-picker.js',
   'FocusTimer.qml',
+  'FocusPanel.qml',
   'focus.js',
   'HomeAssistantStore.qml',
   'HomeAssistantPanel.qml',
@@ -109,6 +111,9 @@ for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
   assert.ok(reference.test(pkg), `${source} is not installed by the shell package`);
 }
+
+assert.ok(pkg.includes('substituteInPlace "$out/share/seele-shell/FocusPanel.qml"'),
+  'Focus panel shared imports use the installed layout');
 
 const focusedTests = [
   'health.js',
