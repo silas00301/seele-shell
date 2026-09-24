@@ -111,6 +111,8 @@ impl Ocr {
             unsafe { &*data.cast::<AtomicBool>() }.load(Ordering::Relaxed)
         }
         let mut words = Vec::new();
+        let mut text_bytes = 0;
+        let mut overflow = false;
         // Image validates dimensions and payload length, and callers create
         // strips wholly inside it. SetImage copies pixels into the engine.
         if y + height > image.height || height == 0 {
@@ -148,8 +150,18 @@ impl Ocr {
                 loop {
                     let text = TessResultIteratorGetUTF8Text(iter, 3); // word
                     if !text.is_null() {
+                        let raw = CStr::from_ptr(text);
+                        text_bytes += raw.to_bytes().len();
+                        if raw.to_bytes().len() > 8192
+                            || words.len() >= 8192
+                            || text_bytes > 512 * 1024
+                        {
+                            TessDeleteText(text);
+                            overflow = true;
+                            break;
+                        }
                         let mut word = Word {
-                            text: CStr::from_ptr(text).to_string_lossy().into_owned(),
+                            text: raw.to_string_lossy().into_owned(),
                             left: 0,
                             top: 0,
                             right: 0,
@@ -180,6 +192,9 @@ impl Ocr {
                 TessResultIteratorDelete(iter);
             }
             TessBaseAPIClear(self.0); // release pixels and text, retain the model
+        }
+        if overflow {
+            return Err("OCR text limit exceeded".into());
         }
         Ok(words)
     }

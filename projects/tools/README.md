@@ -265,6 +265,27 @@ The sample never reaches disk, and no state outlives the process: closing the
 panel terminates the worker, which ends the capture stream, the playback stream
 and the retained sample together.
 
+## Screen URI recognition
+
+`seele-uri-worker` retains one Tesseract engine per worker thread. OCR jobs add
+owned words to a bounded per-output page (32,768 words / 2 MiB text), then
+reconstruct links after all that output's strips finish. Failed strips divide
+independent runs. A strip is limited to 8,192 words / 512 KiB; a word and a link
+are each limited to 8,192 bytes. Reconstruction has at most eight continuation
+lines and 64 fragments per OCR token. Cancellation is checked between emitted
+batches. Each output publishes at most 1,024 highlight regions; an overflow is
+reported as a failed area instead of creating an unbounded QML overlay.
+Recognition state never survives a picker session.
+
+Link frames carry `regions: [{x0,y0,w,h}, …]` in normalized output coordinates.
+The legacy rectangle is the first region, which anchors the single numbered
+badge; continuation regions avoid highlighting intervening prose. Codes carry
+one region and preserve their exact decoded text. Validation uses the already
+locked `url` crate plus strict visual-input checks and an embedded ICANN TLD
+list. It never probes destinations or substitutes guessed OCR characters.
+Badge collision scoring uses a native spatial grid, so each candidate examines
+only nearby highlight and badge regions rather than rescanning the whole output.
+
 ## Validation
 
 Run `cargo test -p seele-tools` and `cargo clippy -p seele-tools --all-targets -- -D

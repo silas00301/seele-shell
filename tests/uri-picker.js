@@ -211,3 +211,20 @@ for (const [width, height] of [[1920, 1080], [1280, 720], [1080, 1920]]) {
   assert.ok(long.x + long.w <= width && long.y + long.h <= height)
 }
 console.log("Code captions prefer below and fit above codes at the output's bottom edge")
+
+// A badge must avoid continuation text, while one number still selects the
+// entire reconstructed destination through the production QML controller.
+const wrapped = {number:1, output:"DP-1", x0:0.2, y0:0.2, w:0.3, h:0.02,
+  regions:[{x0:0.2,y0:0.2,w:0.3,h:0.02},{x0:0.16,y0:0.225,w:0.3,h:0.02}],
+  uri:"https://example.org/docs/chapter?view=full&page=2", text:"https://example.org/docs/chapter?view=full&page=2", code:false}
+const badge = context.layout([wrapped], "DP-1", 1000, 1000, 32, 40, 4)[1]
+for (const r of wrapped.regions) {
+  assert.equal(context.overlap(badge,{x:r.x0*1000,y:r.y0*1000,w:r.w*1000,h:r.h*1000}),0)
+}
+state.open()
+state.accept({id:state.generation,event:"links",links:[wrapped]})
+state.accept({id:state.generation,event:"done",failedAreas:0})
+press(49, state.Qt.ControlModifier)
+assert.equal(state.clipboard.payload, wrapped.uri)
+assert.equal(state.active,false)
+console.log("URI multiline badge placement and exact full-link clipboard selection passed")

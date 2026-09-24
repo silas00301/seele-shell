@@ -290,9 +290,12 @@ in overlapping horizontal strips, interleaved across outputs. A Rust grayscale
 pass normalizes dark backgrounds and enlarges each strip by 1.5× with bilinear
 interpolation, improving small-text recognition without changing the displayed
 capture. Tesseract uses local adaptive thresholds to retain dim address-bar text
-beside bright icons and borders. Each strip owns
-only links whose center lies in its core region, preventing duplicate numbers
-at seams. Results stream into a retained QML ListModel. Idle workers block on
+beside bright icons and borders. Each strip owns words whose centers lie in its
+core region. The worker assembles them in output coordinates before extracting
+links, so wrapping across a strip boundary produces one complete destination.
+Near-identical seam words are deduplicated; repeated links elsewhere stay
+independently selectable. Failed strips remain barriers to reconstruction.
+Completed outputs and decoded codes stream into a retained QML ListModel. Idle workers block on
 channels and retain models, while image allocations are released after OCR.
 The same bounded worker pool runs ZBar on each whole output, so code detection
 does not depend on OCR strip boundaries. Decoded payloads retain punctuation
@@ -307,14 +310,25 @@ Recognition supports explicit hierarchical URIs (including custom handlers),
 `mailto:`, `tel:`, `sms:`, `magnet:`, `geo:`, `news:`, `urn:`, bare domains
 (opened as HTTPS), and email addresses. It preserves paths, queries, fragments
 and balanced punctuation, and joins tightly spaced OCR tokens around URI
-punctuation. It deliberately does not guess replacements for misread characters
-or reconstruct visibly truncated links. Bare domains and email hosts require
+punctuation. Adjacent aligned lines can form one link when URI structure makes
+the continuation clear, including split schemes, hostnames, paths, queries,
+fragments and percent escapes. Each line gets its own clickable highlight and
+the complete link gets one number. Prose, independent URLs, separate columns
+and blank-line gaps stop reconstruction. Ambiguous plain-word continuations
+are left separate; hyphens are never removed. It deliberately does not guess
+replacements for misread characters or reconstruct visibly truncated links.
+A malformed accepted continuation rejects the whole chain rather than opening
+its shorter prefix. Ports, IP addresses, DNS labels, escapes and Unicode
+invisible characters are validated without rewriting captured URI spelling. Bare domains and email hosts require
 a public TLD from the ICANN section of nixpkgs' public suffix list, embedded
 at build time. Code attributes such as `determinate.url` are ignored. Quoted
 assignment values keep their URI while surrounding quotes and semicolons are
 removed; ordinary sentence spacing after a period is preserved.
 As with any OCR, very small text,
-complex backgrounds and links wrapped across lines may not be recognized.
+complex backgrounds and ambiguous wrapping may not be recognized. OCR prose
+cleanup treats trailing sentence punctuation as punctuation; decoded code
+payloads preserve it exactly. Embedded links in Markdown and quoted assignment
+values use approximate character positions within Tesseract's word boxes.
 
 `tests/uri-picker.sh` runs real OCR against generated dark-screen fixtures on
 two simulated outputs, including 16px text with query punctuation and a link
@@ -323,7 +337,12 @@ separate dim address-bar fixture checks local contrast. The tests verify
 QR URI and Unicode text payloads, Code 128 barcodes alongside ordinary OCR,
 capture identity, file permissions, numbering, cancellation during capture and
 OCR, failure cleanup, and shutdown. `tests/uri-picker.js` covers numeric prefix
-selection, copy actions, and badge and caption placement at screen edges. For a local OCR timing sample,
+selection, copy actions, and badge and caption placement at screen edges.
+`tests/uri-multiline.sh` adds three-line and cross-strip wrapping, adjacent prose,
+independent links and malformed destinations through real Tesseract.
+`tests/uri-overlay.sh` renders the production delegate under Qt and checks each
+line's hover/click behavior, one shared number, and noninteractive gaps.
+For a local OCR timing sample,
 `seele-uri-worker --image /path/to/frame.ppm` emits the same JSON events,
 including `captureMs` and total `elapsedMs`; this excludes compositor and
 rendering latency and is not a desktop latency benchmark.

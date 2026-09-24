@@ -4,6 +4,7 @@ export OMP_THREAD_LIMIT=1 OMP_NUM_THREADS=1
 
 worker=$1
 font=$2
+bash "$(dirname "$0")/uri-multiline.sh" "$worker" "$font"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin" "$work/runtime"

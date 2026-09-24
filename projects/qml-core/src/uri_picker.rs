@@ -1,5 +1,7 @@
 use crate::value::{array, finite, string, text, truthy};
 use serde_json::{Value, json};
+const MAX_RENDER_REGIONS: usize = 1024;
+const GRID_SIDE: usize = 32;
 #[derive(Clone, Copy)]
 struct Box {
     x: f64,
@@ -31,6 +33,78 @@ impl Box {
     }
 }
 use std::ops::Sub;
+
+struct SpatialIndex {
+    width: f64,
+    height: f64,
+    boxes: Vec<Box>,
+    bins: Vec<Vec<usize>>,
+}
+impl SpatialIndex {
+    fn new(width: f64, height: f64) -> Self {
+        Self {
+            width,
+            height,
+            boxes: Vec::new(),
+            bins: vec![Vec::new(); GRID_SIDE * GRID_SIDE],
+        }
+    }
+    fn cells(&self, b: Box) -> Option<(usize, usize, usize, usize)> {
+        if self.width <= 0.0 || self.height <= 0.0 || b.w <= 0.0 || b.h <= 0.0 {
+            return None;
+        }
+        let left = b.x.clamp(0.0, self.width);
+        let top = b.y.clamp(0.0, self.height);
+        let right = (b.x + b.w).clamp(0.0, self.width);
+        let bottom = (b.y + b.h).clamp(0.0, self.height);
+        if right <= left || bottom <= top {
+            return None;
+        }
+        let start = |value: f64, extent: f64| {
+            ((value / extent * GRID_SIDE as f64).floor() as usize).min(GRID_SIDE - 1)
+        };
+        let end = |value: f64, extent: f64| {
+            ((value / extent * GRID_SIDE as f64).ceil() as usize)
+                .saturating_sub(1)
+                .min(GRID_SIDE - 1)
+        };
+        Some((
+            start(left, self.width),
+            end(right, self.width),
+            start(top, self.height),
+            end(bottom, self.height),
+        ))
+    }
+    fn insert(&mut self, b: Box) {
+        let index = self.boxes.len();
+        self.boxes.push(b);
+        if let Some((x0, x1, y0, y1)) = self.cells(b) {
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    self.bins[y * GRID_SIDE + x].push(index);
+                }
+            }
+        }
+    }
+    fn overlap(&self, candidate: Box) -> f64 {
+        let Some((x0, x1, y0, y1)) = self.cells(candidate) else {
+            return 0.0;
+        };
+        let mut candidates = Vec::new();
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                candidates.extend_from_slice(&self.bins[y * GRID_SIDE + x]);
+            }
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        candidates
+            .into_iter()
+            .map(|index| candidate.overlap(self.boxes[index]))
+            .sum()
+    }
+}
+
 pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
     let null = Value::Null;
     Ok(match function {
@@ -95,7 +169,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 .iter()
                 .filter(|link| link["output"].as_str() == Some(&output))
                 .collect();
-            if local.len() > 4096 {
+            if local.len() > MAX_RENDER_REGIONS {
                 return Err("Too many code overlays".into());
             }
             let boxes: Vec<_> = local
@@ -107,7 +181,31 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                     h: finite(link.get("h"), 0.0) * height,
                 })
                 .collect();
-            let mut placed = Vec::<Box>::new();
+            // Anchor each badge to its link's first line, but avoid every
+            // continuation highlight when scoring candidate placements.
+            let mut occupied = SpatialIndex::new(width, height);
+            let mut region_count = 0usize;
+            for (link, first) in local.iter().zip(&boxes) {
+                let regions = array(link.get("regions"));
+                let count = regions.len().max(1);
+                if count > 9 || region_count.saturating_add(count) > MAX_RENDER_REGIONS {
+                    return Err("Too many code overlay regions".into());
+                }
+                region_count += count;
+                if regions.is_empty() {
+                    occupied.insert(*first);
+                } else {
+                    for region in regions {
+                        occupied.insert(Box {
+                            x: finite(region.get("x0"), 0.0) * width,
+                            y: finite(region.get("y0"), 0.0) * height,
+                            w: finite(region.get("w"), 0.0) * width,
+                            h: finite(region.get("h"), 0.0) * height,
+                        });
+                    }
+                }
+            }
+            let mut placed = SpatialIndex::new(width, height);
             let mut result = serde_json::Map::new();
             for (link, b) in local.iter().zip(&boxes) {
                 let candidates = [
@@ -132,21 +230,90 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                     };
                     let cost = (x - candidate.x).abs()
                         + (y - candidate.y).abs()
-                        + boxes.iter().map(|b| candidate.overlap(*b)).sum::<f64>()
-                        + placed
-                            .iter()
-                            .map(|b| candidate.overlap(*b) * 10.0)
-                            .sum::<f64>();
+                        + occupied.overlap(candidate)
+                        + placed.overlap(candidate) * 10.0;
                     if cost < score {
                         best = candidate;
                         score = cost;
                     }
                 }
-                placed.push(best);
+                placed.insert(best);
                 result.insert(string(link.get("number")), best.json());
             }
             Value::Object(result)
         }
         _ => return Err(format!("Unknown URI picker function: {function}")),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spatial_index_only_scores_intersecting_bins() {
+        let mut index = SpatialIndex::new(1000.0, 1000.0);
+        index.insert(Box {
+            x: 10.0,
+            y: 10.0,
+            w: 30.0,
+            h: 30.0,
+        });
+        index.insert(Box {
+            x: 900.0,
+            y: 900.0,
+            w: 30.0,
+            h: 30.0,
+        });
+        assert_eq!(
+            index.overlap(Box {
+                x: 20.0,
+                y: 20.0,
+                w: 10.0,
+                h: 10.0
+            }),
+            100.0
+        );
+        assert_eq!(
+            index.overlap(Box {
+                x: 500.0,
+                y: 500.0,
+                w: 10.0,
+                h: 10.0
+            }),
+            0.0
+        );
+    }
+
+    #[test]
+    fn layout_rejects_more_regions_than_qml_may_render() {
+        let links = (0..=MAX_RENDER_REGIONS)
+            .map(|number| {
+                json!({
+                    "number": number + 1,
+                    "output": "DP-1",
+                    "x0": 0.1,
+                    "y0": 0.1,
+                    "w": 0.01,
+                    "h": 0.01,
+                    "regions": [{"x0":0.1,"y0":0.1,"w":0.01,"h":0.01}]
+                })
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            call(
+                "layout",
+                &[
+                    json!(links),
+                    json!("DP-1"),
+                    json!(1920),
+                    json!(1080),
+                    json!(32),
+                    json!(24),
+                    json!(4)
+                ]
+            )
+            .is_err()
+        );
+    }
 }
