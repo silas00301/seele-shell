@@ -231,6 +231,53 @@ functions own the proposed URL, the failure wording, the row summary and the
 bounded action queue, so an address is never assembled by string concatenation
 in QML.
 
+## Quick Look
+
+`seele-quicklook` is the resident worker behind the Quick Look panel. It links
+only `seele-runtime` and Poppler's command-line tools, so classifying a
+highlighted file carries none of this crate's D-Bus, audio or recognition code.
+
+It reads line-delimited JSON on stdin and answers in complete JSON lines:
+`open` with a list of absolute paths, `page` with an item index and a page
+number, and `cancel`. `open` answers one `items` event whose entries stay in the
+order the caller named them, so a path that cannot be described keeps its place
+rather than shifting the numbering a reader is walking through. Every failure is
+a stated `error` on its own item — a missing file, an unreadable folder, an
+encrypted document, a device — and never a silently dropped entry. A path that
+is not absolute, is longer than 4096 bytes, or holds a control character is
+refused before anything is opened.
+
+What a file *is* comes from its container magic first, then its extension, then
+what its opening bytes read as, so a renamed archive never reaches the text
+reader and a `.txt` that is really a PDF is previewed as the PDF it is. An
+`ftyp` brand separates audio from video inside the same container. Only text and
+Markdown are read into the reply, bounded to 128 KiB, 4000 lines and 2000
+characters per line; a folder lists at most 256 entries beside its true total.
+Everything else is described rather than copied, because Qt decodes pictures,
+sound and moving pictures from the path itself.
+
+Nothing here redacts content. Quick Look is a private reader for the one account
+that already owns the bytes, and hiding a credential from its owner would only
+make the preview lie about the file. What *is* removed is the class of
+characters that can forge a line of interface — C0/C1 controls apart from tab
+and newline, and the invisible and direction-changing code points — because a
+name and a line of text are drawn beside labels the shell wrote itself.
+
+Pages are the one thing rendered. `pdfinfo` supplies the count and `pdftoppm`
+draws one page at a time, scaled to 1800 pixels on its longest edge, into a
+`mkdtemp` 0700 directory below `XDG_RUNTIME_DIR` with an 0077 umask. Each
+invocation owns its own subdirectory and at most 32 rendered pages, so
+revisiting a page is instant and paging through a long document cannot fill the
+runtime directory. Those images are private runtime files, never screenshot
+library or thumbnail cache entries: supersession, `cancel`, stdin EOF, SIGTERM
+and SIGINT all remove them. A `page` request naming another generation is
+ignored rather than answered against the files the panel is now showing.
+
+`qml-core`'s `quicklook` functions own the header line, the size and duration
+wording, the `file://` URL each preview is drawn from, and where the keys move —
+files wrap, pages stop. Nothing about a file is assembled by string
+concatenation in QML.
+
 ## Microphone test
 
 `seele-mic-test` is resident for exactly as long as the Audio panel is open and
@@ -294,7 +341,9 @@ warnings`. `tests/ports.rs` exercises the port inspector against a synthetic
 and authentication calls instead of performing them; the panel's own store is
 covered by `tests/ports.js` at the workspace root. Focused external fixtures are
 `tests/mic-sync.sh`, `tests/mic-test.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
-`tests/agent-state.sh`, `tests/notes.py` and `tests/uri-picker.sh`. They use isolated fake desktop programs,
+`tests/agent-state.sh`, `tests/notes.py`, `tests/uri-picker.sh` and
+`tests/quicklook.sh`, which drives the raw Quick Look worker against synthetic
+files and fake Poppler tools. They use isolated fake desktop programs,
 private temporary vaults, a private PipeWire instance with synthetic audio, and
 synthetic images; no fixture opens the user's real microphone or outputs. Python/Node in these fixtures are
 development-only. Give temporary fixtures an ordinary private umask (077 or 022).

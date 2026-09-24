@@ -31,6 +31,11 @@ Shared.Theme {
     onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
   }
 
+  QuickLook {
+    id: quickLook
+    theme: root
+  }
+
   AiPrompt {
     id: aiPrompt
     theme: root
@@ -234,6 +239,7 @@ Shared.Theme {
     aiPrompt.close()
     uriPicker.close()
     colorPicker.close()
+    quickLook.close()
     cancelModuleDrag()
     agentsOpen = false
     controlPanel = ""
@@ -260,6 +266,14 @@ Shared.Theme {
     // from under the pointer aimed at it.
     if (colorPicker.active) colorPicker.close()
     else colorPicker.open()
+  }
+
+  function toggleQuickLook(paths) {
+    var requested = String(paths || "").split("\n").filter(function (path) { return path !== "" })
+    var shouldOpen = !quickLook.active && requested.length > 0
+    var screen = currentScreen()
+    closeOverlays()
+    if (shouldOpen) quickLook.open(screen, requested)
   }
 
   function togglePrompt() {
@@ -1953,6 +1967,7 @@ Shared.Theme {
     function togglePrompt(): void { root.togglePrompt() }
     function toggleUris(): void { root.toggleUris() }
     function toggleColor(): void { root.toggleColor() }
+    function previewFiles(paths: string): void { root.toggleQuickLook(paths) }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
     function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
@@ -8390,7 +8405,13 @@ Shared.Theme {
           spacing: root.panelSpacing
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰇚"; title: "Transfers"; detail: "Personal devices · original files" }
-          TransfersPanel { theme: root; store: transfersStore; id: transfersPanel; width: parent.width }
+          TransfersPanel {
+            theme: root
+            store: transfersStore
+            id: transfersPanel
+            width: parent.width
+            onPreviewRequested: path => root.toggleQuickLook(path)
+          }
         }
       }
     }

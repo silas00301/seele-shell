@@ -17,6 +17,7 @@ Commands:
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
   color                     Freeze all screens and sample a colour
+  quicklook <path>...       Preview highlighted files without opening them
   calculator                Toggle the private calculator workbench
   color-lab                 Open the colour contrast and palette workbench
   control <panel>           Toggle a control panel
@@ -92,6 +93,18 @@ pub fn run(arguments: &[String]) -> Result {
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),
         "color" => call("toggleColor", &[]),
+        "quicklook" => {
+            let base = env::current_dir().unwrap_or_default();
+            let paths: Vec<String> = rest
+                .iter()
+                .map(|path| base.join(path).to_string_lossy().into_owned())
+                .filter(|path| !path.contains('\n'))
+                .collect();
+            if paths.is_empty() {
+                return Err("quicklook needs at least one path".into());
+            }
+            call("previewFiles", &[paths.join("\n")])
+        }
         "calculator" => call("toggleControl", &["calculator".into()]),
         "color-lab" => call("toggleControl", &["color-lab".into()]),
         "control" => call(

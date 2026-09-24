@@ -22,6 +22,7 @@ mod notifications;
 mod pi;
 mod ports;
 mod presentation;
+mod quicklook;
 mod system;
 mod text_workbench;
 mod time;
@@ -69,6 +70,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "ai_prompt" => ai_prompt::call(function, arguments),
         "uri_picker" => uri_picker::call(function, arguments),
         "color_picker" => color_picker::call(function, arguments),
+        "quicklook" => quicklook::call(function, arguments),
         "color_lab" => color_lab::call(function, arguments),
         "focus" => focus::call(function, arguments),
         "caffeinate" => caffeinate::call(function, arguments),

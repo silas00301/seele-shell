@@ -8,6 +8,7 @@ Column {
   required property var store
   property string moveGroup: ""
   property int moveIndex: -1
+  signal previewRequested(string path)
   Keys.onPressed: event => {
     if (event.key === Qt.Key_F && (event.modifiers & Qt.ControlModifier)) {
       search.forceActiveFocus()
@@ -317,15 +318,16 @@ Column {
                     visible: card.entry.direction === "incoming" && fileRow.modelData.state === "completed"
                     spacing: panel.theme.spaceSmall
                     Repeater {
-                      model: ["open", "reveal", "move", "trash"]
+                      model: ["preview", "open", "reveal", "move", "trash"]
                       Shared.ActionButton {
                         required property string modelData
                         theme: panel.theme
-                        text: ({ open: "Open", reveal: "Reveal", move: "Move…", trash: "Move to Trash" })[modelData]
+                        text: ({ preview: "Quick Look", open: "Open", reveal: "Reveal", move: "Move…", trash: "Move to Trash" })[modelData]
                         danger: modelData === "trash"
-                        enabled: !panel.store.busy
+                        enabled: modelData === "preview" ? !!fileRow.modelData.path : !panel.store.busy
                         onClicked: {
-                          if (modelData === "move") { panel.moveGroup = card.entry.id; panel.moveIndex = fileRow.index; folder.open() }
+                          if (modelData === "preview") panel.previewRequested(String(fileRow.modelData.path || ""))
+                          else if (modelData === "move") { panel.moveGroup = card.entry.id; panel.moveIndex = fileRow.index; folder.open() }
                           else panel.store.enqueue({ op: modelData, id: card.entry.id, file: fileRow.index })
                         }
                       }
