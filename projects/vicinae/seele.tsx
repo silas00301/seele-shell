@@ -111,6 +111,13 @@ const panels: Entry[] = [
     keywords: ["math", "convert", "units", "tape"],
   },
   {
+    title: "Meeting Planner",
+    subtitle: "Find working-hour overlap across pinned world clocks",
+    icon: Icon.Clock,
+    args: ["control", "meeting"],
+    keywords: ["meeting", "schedule", "timezone", "overlap"],
+  },
+  {
     title: "World Clock",
     subtitle: "Search timezones and manage pinned clocks",
     icon: Icon.Clock,

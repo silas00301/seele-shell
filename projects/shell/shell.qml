@@ -106,6 +106,14 @@ Shared.Theme {
   property var notificationUnfolded: ({})
   property var clockData: ({ pinned: [], zones: [], local: {} })
   property string clockError: ""
+  property bool meetingPlanning: false
+  property var meetingData: ({})
+  property string meetingError: ""
+  property int meetingRequestId: 0
+  property bool meetingPending: false
+  property bool meetingInFlight: false
+  property int meetingSentId: 0
+  property var meetingSelection: ({})
   readonly property string calendarDay: Qt.formatDate(now, "yyyy-MM-dd")
   readonly property date calendarDate: new Date(calendarDay + "T12:00:00")
   property var activeTrayItem: null
@@ -279,6 +287,11 @@ Shared.Theme {
   }
 
   function toggleControl(panel, screen, anchorX) {
+    if (panel === "meeting") {
+      if (controlPanel !== "clock") toggleControl("clock", screen, anchorX)
+      setMeetingPlanning(true)
+      return
+    }
     var shouldOpen = controlPanel !== panel
     var nextAnchor = requestedOverlayAnchor(anchorX)
     closeOverlays()
@@ -1512,6 +1525,32 @@ Shared.Theme {
     return agentProjection.capacities
   }
 
+  function setMeetingPlanning(planning) {
+    meetingPlanning = planning
+    if (planning) requestMeeting(meetingData.date ? {date: meetingData.date, minute: meetingData.minute, duration: meetingData.duration} : {})
+  }
+
+  function requestMeeting(selection) {
+    meetingSelection = selection
+    meetingRequestId += 1
+    meetingPending = true
+    meetingError = ""
+    meetingDebounce.restart()
+  }
+
+  Timer {
+    id: meetingDebounce
+    interval: 40
+    onTriggered: {
+      if (root.meetingInFlight) return
+      if (clockProcess.running) {
+        root.meetingSentId = root.meetingRequestId
+        root.meetingInFlight = true
+        clockProcess.write(JSON.stringify({meeting: root.meetingSelection, requestId: root.meetingSentId}) + "\n")
+      } else clockProcess.running = true
+    }
+  }
+
   function refreshClock() {
     if (clockProcess.running) clockProcess.write("refresh\n")
     else clockProcess.running = true
@@ -1521,6 +1560,15 @@ Shared.Theme {
     try {
       var parsed = JSON.parse(String(output || ""))
       if (parsed && parsed.zones) { root.clockData = parsed; root.clockError = "" }
+      if (parsed && (parsed.meeting || parsed.meetingError) && parsed.requestId === root.meetingSentId) {
+        root.meetingInFlight = false
+        if (parsed.requestId !== root.meetingRequestId) meetingDebounce.restart()
+      }
+      if (parsed && (parsed.meeting || parsed.meetingError) && parsed.requestId === root.meetingRequestId) {
+        root.meetingPending = false
+        root.meetingError = parsed.meetingError || ""
+        if (parsed.meeting) root.meetingData = parsed.meeting
+      }
     } catch (error) {
       console.warn("seele-shell/clock", error)
     }
@@ -1564,12 +1612,13 @@ Shared.Theme {
   Process {
     id: clockProcess
     command: ["seele-clock", "watch"]
+    onStarted: if (root.meetingPlanning) root.requestMeeting(root.meetingSelection)
     stdinEnabled: true
     stdout: SplitParser {
       onRead: data => root.parseClockData(data)
     }
     stderr: StdioCollector { onStreamFinished: if (text.trim()) root.clockError = text.trim() }
-    onExited: { root.clockError = "World clocks are unavailable. Retrying…"; clockRestartTimer.restart() }
+    onExited: { root.meetingInFlight = false; root.clockError = "World clocks are unavailable. Retrying…"; clockRestartTimer.restart() }
   }
 
   Timer {
@@ -6648,9 +6697,12 @@ Shared.Theme {
       property bool copyPending: false
 
       function copyClockTimestamp(offset, label) {
-        var value = Time.clockTimestamp(root.now, offset)
+        copyClockText(Time.clockTimestamp(root.now, offset), label)
+      }
+
+      function copyClockText(value, label) {
         if (!value || copyPending || clockClipboard.running) return
-        copyStatus = "Copying timestamp…"
+        copyStatus = "Copying " + label + "…"
         copyPending = true
         clockClipboard.payload = value
         clockClipboard.label = label
@@ -6699,8 +6751,11 @@ Shared.Theme {
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: Math.min(root.clockWidth, modelData.width - root.panelGap * 2)
-      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap * 2,
-        root.panelMargin * 2 + clockHeader.height + localClockCard.height + timezoneSearch.height
+      implicitHeight: root.meetingPlanning
+        ? Math.min(modelData.height - root.barHeight - root.panelGap * 2,
+            root.panelMargin * 2 + clockHeader.height + clockMode.height + meetingPanel.implicitHeight + root.panelSpacing * 2)
+        : Math.min(modelData.height - root.barHeight - root.panelGap * 2,
+        root.panelMargin * 2 + clockMode.height + root.panelSpacing + clockHeader.height + localClockCard.height + timezoneSearch.height
         + clockStatus.height + timezoneHeading.height + root.panelSpacing * 5
         + root.clockRows * (root.notificationRowHeight + root.spaceTight))
       exclusionMode: ExclusionMode.Ignore
@@ -6710,8 +6765,8 @@ Shared.Theme {
       WlrLayershell.namespace: "seele-shell-clock"
       onVisibleChanged: if (visible) Qt.callLater(function() {
         if (!clockWindow.copyPending) clockWindow.copyStatus = ""
-        timezoneSearch.forceActiveFocus()
-        timezoneSearch.selectAll()
+        if (root.meetingPlanning) meetingPanel.forceActiveFocus()
+        else { timezoneSearch.forceActiveFocus(); timezoneSearch.selectAll() }
       })
 
       PanelSurface {
@@ -6724,11 +6779,69 @@ Shared.Theme {
             id: clockHeader
             width: parent.width
             glyph: "󰥔"
-            title: "World clock"
-            detail: clockWindow.copyStatus || "Enter copies zone · Ctrl+Enter local"
+            title: root.meetingPlanning ? "Meeting planner" : "World clock"
+            detail: clockWindow.copyStatus || (root.meetingPlanning ? meetingPanel.hint : "Enter copies zone · Ctrl+Enter local")
+          }
+          Shared.SegmentWell {
+            id: clockMode
+            theme: root
+            width: parent.width
+            Repeater {
+              model: ["Clocks", "Plan meeting"]
+              Button {
+                id: modeButton
+                required property string modelData
+                required property int index
+                width: parent.width / 2
+                height: parent.height
+                text: modelData
+                hoverEnabled: true
+                focusPolicy: Qt.StrongFocus
+                contentItem: Text {
+                  text: modeButton.text
+                  color: root.meetingPlanning === (modeButton.index === 1) ? root.accent : root.subtext
+                  font.family: root.fontFamily; font.pixelSize: root.textLabel
+                  horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+                background: Shared.Segment {
+                  theme: root
+                  selected: root.meetingPlanning === (modeButton.index === 1)
+                  hovered: modeButton.hovered; pressed: modeButton.down
+                  border.width: root.hairline
+                  border.color: modeButton.visualFocus ? root.accent : root.clearColor
+                }
+                Keys.onReturnPressed: clicked()
+                onClicked: {
+                  root.setMeetingPlanning(index === 1)
+                  if (root.meetingPlanning) meetingPanel.forceActiveFocus()
+                  else timezoneSearch.forceActiveFocus()
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+              }
+            }
+          }
+          MeetingPlanner {
+            id: meetingPanel
+            visible: root.meetingPlanning
+            width: parent.width
+            height: visible ? implicitHeight : 0
+            theme: root
+            plan: root.meetingData
+            error: root.clockError || root.meetingError
+            pending: root.meetingPending
+            copyPending: clockWindow.copyPending
+            popupHovered: clockSurface.hovered
+            maximumHeight: Math.min(root.meetingMaximumHeight,
+              clockWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2 - clockHeader.height - clockMode.height - root.panelSpacing * 2)
+            onRequested: selection => root.requestMeeting(selection)
+            onCopyRequested: summary => clockWindow.copyClockText(summary, "meeting times")
+            onManagePins: { root.setMeetingPlanning(false); timezoneSearch.forceActiveFocus() }
+            onCloseRequested: root.closeOverlays()
+            onVisibleChanged: if (visible) Qt.callLater(function() { meetingPanel.forceActiveFocus() })
           }
           Rectangle {
             id: localClockCard
+            visible: !root.meetingPlanning
             width: parent.width
             height: localClockContents.implicitHeight + root.cardPadding * 2
             radius: root.radius
@@ -6764,6 +6877,7 @@ Shared.Theme {
           }
           TextField {
             id: timezoneSearch
+            visible: !root.meetingPlanning
             width: parent.width
             height: root.controlHeight
             placeholderText: "Search city, country, zone, or UTC offset…"
@@ -6796,13 +6910,14 @@ Shared.Theme {
             id: clockStatus
             width: parent.width
             height: visible ? implicitHeight : 0
-            visible: root.clockError !== "" || root.clockData.zones.length === 0 || timezoneList.count === 0
+            visible: !root.meetingPlanning && (root.clockError !== "" || root.clockData.zones.length === 0 || timezoneList.count === 0)
             text: root.clockError || (root.clockData.zones.length === 0 ? "Loading timezones…" : "No matching timezones")
             color: root.clockError ? root.red : root.subtext
             font.family: root.fontFamily; font.pixelSize: root.textBody; wrapMode: Text.Wrap
           }
           SectionRule {
             id: timezoneHeading
+            visible: !root.meetingPlanning
             width: parent.width
             label: timezoneSearch.text.trim() ? "SEARCH RESULTS" : (root.clockData.pinned.length ? "PINNED FIRST · ALL TIMEZONES" : "TIMEZONES")
             detail: timezoneList.count > 0 ? String(timezoneList.count) : ""
@@ -6819,6 +6934,7 @@ Shared.Theme {
           }
           SeeleListView {
             id: timezoneList
+            visible: !root.meetingPlanning
             width: parent.width
             height: Math.max(0, parent.height - y)
             model: root.filteredTimezones(timezoneSearch.text)

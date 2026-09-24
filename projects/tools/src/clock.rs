@@ -1,3 +1,5 @@
+mod meeting;
+
 use crate::command::{atomic_write, state_home};
 use crate::Result;
 use serde::Serialize;
@@ -249,6 +251,7 @@ fn catalog_key(now: i64) -> CatalogKey {
             "zone1970.tab",
             "tzdata.zi",
             "Etc",
+            "/etc/localtime",
         ]
         .iter()
         .map(|name| {
@@ -270,17 +273,24 @@ fn catalog_key(now: i64) -> CatalogKey {
 struct Catalog {
     key: Option<CatalogKey>,
     zones: Vec<ZoneSource>,
+    meeting: Option<meeting::Cache>,
 }
 
 impl Catalog {
-    fn snapshot(&mut self, now: i64) -> Result<Value> {
+    fn load(&mut self, now: i64) -> Result {
         let key = catalog_key(now);
         if self.key.as_ref() != Some(&key) {
             let mut zones = sources()?;
             seasonal_aliases(&mut zones, now);
             self.zones = zones;
             self.key = Some(key);
+            self.meeting = None;
         }
+        Ok(())
+    }
+
+    fn snapshot(&mut self, now: i64) -> Result<Value> {
+        self.load(now)?;
         let previous_tz = env::var_os("TZ");
         let directory = zoneinfo();
         let zones: Vec<_> = self
@@ -379,6 +389,43 @@ fn write_pins(values: &[String]) -> Result {
     Ok(())
 }
 
+// Drain an oversized line without allocating it. The worker is resident and
+// a malformed client must not grow its memory or smuggle a suffix request.
+fn request_line(input: &mut impl BufRead) -> io::Result<Option<String>> {
+    let mut line = Vec::new();
+    let mut oversized = false;
+    loop {
+        let buffer = input.fill_buf()?;
+        if buffer.is_empty() {
+            return if line.is_empty() && !oversized {
+                Ok(None)
+            } else {
+                Ok(Some(if oversized {
+                    String::new()
+                } else {
+                    String::from_utf8_lossy(&line).into_owned()
+                }))
+            };
+        }
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let length = newline.map_or(buffer.len(), |index| index + 1);
+        if line.len() + length > 4096 {
+            oversized = true;
+        }
+        if !oversized {
+            line.extend_from_slice(&buffer[..length]);
+        }
+        input.consume(length);
+        if newline.is_some() {
+            return Ok(Some(if oversized {
+                String::new()
+            } else {
+                String::from_utf8_lossy(&line).into_owned()
+            }));
+        }
+    }
+}
+
 pub fn run(arguments: &[String]) -> Result {
     let command = arguments.first().map(String::as_str).unwrap_or("list");
     match command {
@@ -386,9 +433,27 @@ pub fn run(arguments: &[String]) -> Result {
         "watch" => {
             let mut catalog = Catalog::default();
             print_snapshot(&mut catalog)?;
-            for line in io::stdin().lock().lines() {
-                if line?.trim() == "refresh" {
+            let mut input = io::stdin().lock();
+            while let Some(line) = request_line(&mut input)? {
+                if line.trim() == "refresh" {
                     print_snapshot(&mut catalog)?;
+                } else if line.len() <= 4096 {
+                    let input: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+                    if let Some(request) = input.get("meeting") {
+                        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+                        let result = serde_json::from_value(request.clone())
+                            .map_err(Into::into)
+                            .and_then(|request| meeting::project(&mut catalog, request, now));
+                        let reply = match result {
+                            Ok(value) => json!({"meeting":value,"requestId":input["requestId"]}),
+                            Err(error) => {
+                                json!({"meetingError":error.to_string(),"requestId":input["requestId"]})
+                            }
+                        };
+                        let mut stdout = io::stdout().lock();
+                        writeln!(stdout, "{reply}")?;
+                        stdout.flush()?;
+                    }
                 }
             }
         }
@@ -424,6 +489,14 @@ mod tests {
         date.tm_hour = hour;
         date.tm_min = minute;
         unsafe { libc::timegm(&mut date) as i64 }
+    }
+
+    #[test]
+    fn watch_lines_are_bounded_and_recover_after_an_oversized_request() {
+        let mut input = io::Cursor::new(format!("{}\nrefresh\n", "x".repeat(100_000)));
+        assert_eq!(request_line(&mut input).unwrap(), Some(String::new()));
+        assert_eq!(request_line(&mut input).unwrap(), Some("refresh\n".into()));
+        assert!(request_line(&mut input).unwrap().is_none());
     }
 
     #[test]

@@ -27,6 +27,11 @@ reach it from the launcher's root search.
   preview before copying. Preview contents are inert code text, so clipboard
   Markdown cannot load a remote image.
 
+- **Seele Meeting Planner**: opens the world clock's planning mode directly.
+  Choose a UTC date/time, scrub local and pinned IANA zones together, compare
+  working-hour overlap, and copy the exact time summary. Also available under
+  Panels in Seele Controls; no calendars or accounts are connected.
+
 - **Seele Caffeinate**: keep the machine awake, its displays on and its session
   unlocked until a selected task ends, a chosen duration passes, or the session
   is stopped. The searchable list shows the current session first, then the

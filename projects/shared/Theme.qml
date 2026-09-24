@@ -221,6 +221,8 @@ ShellRoot {
   readonly property int calculatorMaximumHeight: 620
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
+  // Keeps the UTC timeline and a few pinned zones visible without taking an output.
+  readonly property int meetingMaximumHeight: 570
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)

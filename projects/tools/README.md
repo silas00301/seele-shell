@@ -338,3 +338,56 @@ limitation are documented in `projects/vicinae/README.md`. Run
 `cargo test -p seele-tools --test clean_link` for real executable stdin, bounds,
 privacy, deadline and cancellation fixtures, and `cargo test -p seele-tools
 --lib clean_link` for parsing policy.
+
+## World-clock meeting planner
+
+The clock's **Clocks / Plan meeting** selector shares the existing persistent
+pins. `seele-shellctl control meeting` and Vicinae's **Seele Meeting Planner**
+open the planning mode directly. The bar and live world clocks keep current
+time; a plan stays at the selected instant until **Now** is chosen. Nothing
+reads a calendar, creates an event, sends an invitation, or saves a meeting.
+
+The source date and timeline are explicitly **UTC**. Enter an ISO date, drag the
+timeline or use Left/Right for fifteen-minute steps, Page Up/Down for days, and
+N for Now. The selected meeting lasts 30, 60 or 90 minutes. Each local/pinned
+row shows the actual date, time and UTC offset at that instant, plus a strip of
+start times that fit the entire duration inside Monday–Friday 09:00–17:00 local
+time. The top strip is their intersection. These fixed working hours are a
+guide, not a claim about anyone's calendar or holidays. Manage pins returns to
+the existing tzdata-backed city search; no timezone catalog is duplicated.
+
+The UTC axis never guesses which occurrence of a repeated local time was meant
+and cannot accept a nonexistent local time. Row times, offsets and availability
+come from libc and the package's system IANA timezone database, including
+fractional offsets and half-hour DST transitions. **Copy times** / Ctrl+C emits
+both UTC endpoints, duration and the local date/time, IANA identity and offset
+for each participant; an end-date or offset transition is named explicitly.
+Copy waits for the newest validated projection and stays disabled for an
+unsubmitted date, a rejected request or a failed worker. Escape closes.
+
+`seele-clock watch` still emits its initial/current snapshots and accepts
+`refresh`. It additionally accepts one JSON line:
+
+```json
+{"requestId":42,"meeting":{"date":"2026-10-25","minute":90,"duration":60,"shift":0}}
+```
+
+It replies with `requestId` and either `meeting` or `meetingError`. Dates are
+strict Gregorian ISO dates from 1970 through 2100; minute is 0–1439 UTC;
+duration is one of 15, 30, 60, 90, 120 or 180; shift is -1, 0 or 1 UTC day.
+An empty/omitted date selects the current UTC minute. Invalid requests retain
+the last valid UI selection and do not terminate the worker. Oversized input
+lines are drained without retaining more than 4096 bytes. The shell coalesces
+scrubbing over 40 ms, permits one request in flight and discards stale replies.
+Working-hour strips use a per-minute prefix table and cache the day, duration
+and complete pin set, invalidating with timezone data or local-zone changes.
+The selected instant and copied summary are always recomputed.
+
+Validation: `tests/meeting-planner.py` drives the real resident binary through
+US/EU spring gaps and autumn folds, Lord Howe's half-hour transition,
+Kathmandu's quarter-hour offset, midnight, leap days, full-duration working-hour
+boundaries, rejected requests and pin changes. `tests/meeting-planner.js` runs
+the production QML coordinator's request/reply logic; `tst_meetingplanner.qml`
+uses the actual component for date entry, scrubbing, keyboard shortcuts, copy
+eligibility and bounded scrolling. The package installs/lints the component and
+runs all three alongside the existing `clock.sh` fixtures.
