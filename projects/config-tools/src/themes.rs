@@ -29,6 +29,83 @@ const BASE16_KEYS: [&str; 16] = [
     "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
 ];
 
+// Quiet text has to stay readable. Base16 names `base04` and `base03` for dim
+// foregrounds, but schemes disagree on how dim: Catppuccin's Base16 file puts
+// its surface colours there, which on the default theme would drop the shell's
+// secondary text from 7.4:1 to 2.5:1 and its labels from 3.4:1 to 1.8:1. A slot
+// is kept when it clears these floors (WCAG AA for body text, and for large text
+// and interface labels); otherwise the role is the text colour blended over the
+// background in Catppuccin's own proportions, which reproduce its `subtext0` and
+// `overlay0` exactly, and only lifted further when a scheme is lower in contrast
+// still.
+const TEXT_FLOOR: f64 = 7.0;
+const SUBTEXT_FLOOR: f64 = 4.5;
+const OVERLAY_FLOOR: f64 = 3.0;
+const SUBTEXT_SHARE: f64 = 0.777;
+const OVERLAY_SHARE: f64 = 0.444;
+
+fn channel(hex: &str, index: usize) -> f64 {
+    f64::from(u8::from_str_radix(&hex[index..index + 2], 16).unwrap_or(0))
+}
+/// WCAG relative luminance of a validated `#rrggbb`.
+fn luminance(hex: &str) -> f64 {
+    let linear = |index| {
+        let value = channel(hex, index) / 255.0;
+        if value <= 0.039_28 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(1) + 0.7152 * linear(3) + 0.0722 * linear(5)
+}
+fn contrast(first: &str, second: &str) -> f64 {
+    let (a, b) = (luminance(first), luminance(second));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+/// `share` of the way from `background` to `foreground`, channel by channel.
+fn blend(foreground: &str, background: &str, share: f64) -> String {
+    let mix = |index| {
+        let from = channel(background, index);
+        (from + (channel(foreground, index) - from) * share).round() as u8
+    };
+    format!("#{:02x}{:02x}{:02x}", mix(1), mix(3), mix(5))
+}
+/// The text colour: Base16's default foreground, unless a scheme files a dimmer
+/// grey there (Everforest's `base05` is its `gray1`, 3.8:1), in which case its
+/// own lighter foregrounds are tried in order, and the most legible of the three
+/// stands if none reaches body-text contrast.
+fn foreground(palette: &BTreeMap<String, String>) -> &str {
+    let base = palette["base00"].as_str();
+    let slots = ["base05", "base06", "base07"].map(|key| palette[key].as_str());
+    slots
+        .iter()
+        .copied()
+        .find(|slot| contrast(slot, base) >= TEXT_FLOOR)
+        .unwrap_or_else(|| {
+            slots.iter().copied().fold(slots[0], |best, slot| {
+                if contrast(slot, base) > contrast(best, base) {
+                    slot
+                } else {
+                    best
+                }
+            })
+        })
+}
+fn legible(slot: &str, text: &str, base: &str, share: f64, floor: f64) -> String {
+    if contrast(slot, base) >= floor {
+        return slot.to_owned();
+    }
+    let mut share = share;
+    loop {
+        let candidate = blend(text, base, share);
+        if share >= 1.0 || contrast(&candidate, base) >= floor {
+            return candidate;
+        }
+        share = (share + 0.01).min(1.0);
+    }
+}
+
 // One projection bridges Base16's semantic slots to existing Seele/app roles.
 #[derive(Serialize)]
 struct Colors<'a> {
@@ -36,9 +113,9 @@ struct Colors<'a> {
     mantle: &'a str,
     crust: &'a str,
     surface: &'a str,
-    overlay: &'a str,
+    overlay: String,
     text: &'a str,
-    subtext: &'a str,
+    subtext: String,
     accent: &'a str,
     red: &'a str,
     green: &'a str,
@@ -48,14 +125,27 @@ struct Colors<'a> {
 impl Theme {
     fn colors(&self) -> Colors<'_> {
         let p = &self.palette;
+        let text = foreground(p);
         Colors {
             base: &p["base00"],
             mantle: &p["base01"],
             crust: &p["base00"],
             surface: &p["base02"],
-            overlay: &p["base03"],
-            text: &p["base05"],
-            subtext: &p["base04"],
+            overlay: legible(
+                &p["base03"],
+                text,
+                &p["base00"],
+                OVERLAY_SHARE,
+                OVERLAY_FLOOR,
+            ),
+            text,
+            subtext: legible(
+                &p["base04"],
+                text,
+                &p["base00"],
+                SUBTEXT_SHARE,
+                SUBTEXT_FLOOR,
+            ),
             accent: &p["base0D"],
             red: &p["base08"],
             green: &p["base0B"],
@@ -182,10 +272,10 @@ fn files(t: &Theme) -> BTreeMap<&'static str, String> {
         ("fg", &c.text),
         ("surface_0", &c.surface),
         ("surface_1", &c.surface),
-        ("surface_2", &c.overlay),
-        ("overlay_0", &c.overlay),
-        ("overlay_1", &c.overlay),
-        ("overlay_2", &c.subtext),
+        ("surface_2", &c.overlay.as_str()),
+        ("overlay_0", &c.overlay.as_str()),
+        ("overlay_1", &c.overlay.as_str()),
+        ("overlay_2", &c.subtext.as_str()),
         ("red", &c.red),
         ("green", &c.green),
         ("yellow", &c.yellow),
@@ -381,4 +471,245 @@ pub fn main() -> Result {
     };
     println!("{}", serde_json::to_string(&reply)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // base00, base03 to base07 of every curated preset, as the pinned
+    // `base16-schemes` package ships them.
+    const PRESETS: [(&str, &str, &str, &str, &str, &str, &str); 13] = [
+        (
+            "catppuccin-mocha",
+            "#1e1e2e",
+            "#45475a",
+            "#585b70",
+            "#cdd6f4",
+            "#f5e0dc",
+            "#b4befe",
+        ),
+        (
+            "catppuccin-macchiato",
+            "#24273a",
+            "#494d64",
+            "#5b6078",
+            "#cad3f5",
+            "#f4dbd6",
+            "#b7bdf8",
+        ),
+        (
+            "catppuccin-frappe",
+            "#303446",
+            "#51576d",
+            "#626880",
+            "#c6d0f5",
+            "#f2d5cf",
+            "#babbf1",
+        ),
+        (
+            "catppuccin-latte",
+            "#eff1f5",
+            "#bcc0cc",
+            "#acb0be",
+            "#4c4f69",
+            "#dc8a78",
+            "#7287fd",
+        ),
+        (
+            "rose-pine",
+            "#191724",
+            "#6e6a86",
+            "#908caa",
+            "#e0def4",
+            "#e0def4",
+            "#524f67",
+        ),
+        (
+            "rose-pine-moon",
+            "#232136",
+            "#6e6a86",
+            "#908caa",
+            "#e0def4",
+            "#e0def4",
+            "#56526e",
+        ),
+        (
+            "rose-pine-dawn",
+            "#faf4ed",
+            "#9893a5",
+            "#797593",
+            "#575279",
+            "#575279",
+            "#cecacd",
+        ),
+        (
+            "flexoki-dark",
+            "#100f0f",
+            "#575653",
+            "#878580",
+            "#cecdc3",
+            "#e6e4d9",
+            "#fffcf0",
+        ),
+        (
+            "flexoki-light",
+            "#fffcf0",
+            "#cecdc3",
+            "#9f9d96",
+            "#403e3c",
+            "#282726",
+            "#100f0f",
+        ),
+        (
+            "gruvbox-dark-medium",
+            "#282828",
+            "#665c54",
+            "#bdae93",
+            "#d5c4a1",
+            "#ebdbb2",
+            "#fbf1c7",
+        ),
+        (
+            "gruvbox-light-medium",
+            "#fbf1c7",
+            "#bdae93",
+            "#665c54",
+            "#504945",
+            "#3c3836",
+            "#282828",
+        ),
+        (
+            "nord", "#2e3440", "#4c566a", "#d8dee9", "#e5e9f0", "#eceff4", "#8fbcbb",
+        ),
+        (
+            "everforest-dark-medium",
+            "#2d353b",
+            "#475258",
+            "#7a8478",
+            "#859289",
+            "#9da9a0",
+            "#d3c6aa",
+        ),
+    ];
+
+    fn palette(preset: (&str, &str, &str, &str, &str, &str, &str)) -> BTreeMap<String, String> {
+        let (_, base00, base03, base04, base05, base06, base07) = preset;
+        [
+            ("base00", base00),
+            ("base03", base03),
+            ("base04", base04),
+            ("base05", base05),
+            ("base06", base06),
+            ("base07", base07),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
+    }
+    fn preset(
+        id: &str,
+    ) -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
+        PRESETS
+            .iter()
+            .copied()
+            .find(|preset| preset.0 == id)
+            .unwrap()
+    }
+
+    fn quiet(base: &str, dim: &str, text: &str, share: f64, floor: f64) -> String {
+        legible(dim, text, base, share, floor)
+    }
+
+    #[test]
+    fn the_default_theme_keeps_the_quiet_text_it_already_had() {
+        let (_, base, overlay, subtext, text, _, _) = PRESETS[0];
+        assert_eq!(
+            quiet(base, subtext, text, SUBTEXT_SHARE, SUBTEXT_FLOOR),
+            "#a6adc8",
+            "Catppuccin Mocha's own subtext0"
+        );
+        assert_eq!(
+            quiet(base, overlay, text, OVERLAY_SHARE, OVERLAY_FLOOR),
+            "#6c7086",
+            "Catppuccin Mocha's own overlay0"
+        );
+    }
+
+    #[test]
+    fn a_scheme_that_is_already_legible_keeps_its_own_colour() {
+        let (_, base, overlay, subtext, text, _, _) = preset("rose-pine");
+        assert_eq!(
+            quiet(base, subtext, text, SUBTEXT_SHARE, SUBTEXT_FLOOR),
+            subtext
+        );
+        assert_eq!(
+            quiet(base, overlay, text, OVERLAY_SHARE, OVERLAY_FLOOR),
+            overlay
+        );
+    }
+
+    #[test]
+    fn every_curated_preset_clears_both_floors_in_either_mode() {
+        for entry in PRESETS {
+            let (id, base, overlay, subtext, ..) = entry;
+            let palette = palette(entry);
+            let text = foreground(&palette);
+            assert!(contrast(text, base) >= SUBTEXT_FLOOR, "{id} text {text}");
+            let subtext = quiet(base, subtext, text, SUBTEXT_SHARE, SUBTEXT_FLOOR);
+            let overlay = quiet(base, overlay, text, OVERLAY_SHARE, OVERLAY_FLOOR);
+            assert!(
+                contrast(&subtext, base) >= SUBTEXT_FLOOR,
+                "{id} subtext {subtext}"
+            );
+            assert!(
+                contrast(&overlay, base) >= OVERLAY_FLOOR,
+                "{id} overlay {overlay}"
+            );
+            // Quiet stays quieter than the text it sits beside.
+            assert!(
+                contrast(&subtext, base) <= contrast(text, base),
+                "{id} subtext"
+            );
+            assert!(
+                contrast(&overlay, base) <= contrast(&subtext, base),
+                "{id} overlay"
+            );
+        }
+    }
+
+    #[test]
+    fn the_default_foreground_is_kept_unless_a_scheme_files_a_grey_there() {
+        for entry in PRESETS {
+            let colors = palette(entry);
+            let text = foreground(&colors);
+            if entry.0 == "everforest-dark-medium" {
+                assert_eq!(text, entry.6, "Everforest's own fg, filed as base07");
+            } else {
+                assert_eq!(text, entry.4, "{} keeps base05", entry.0);
+            }
+        }
+        // Rosé Pine Dawn's base05 is under the body-text floor, and its lighter
+        // foregrounds are lighter still on a light background: the most legible
+        // of the three is kept rather than a dimmer one.
+        let dawn = palette(preset("rose-pine-dawn"));
+        assert_eq!(foreground(&dawn), preset("rose-pine-dawn").4);
+    }
+
+    #[test]
+    fn contrast_and_blending_follow_their_definitions() {
+        assert!((contrast("#000000", "#ffffff") - 21.0).abs() < 1e-9);
+        assert!((contrast("#777777", "#777777") - 1.0).abs() < 1e-9);
+        assert_eq!(blend("#ffffff", "#000000", 0.5), "#808080");
+        assert_eq!(blend("#cdd6f4", "#1e1e2e", 0.0), "#1e1e2e");
+        assert_eq!(blend("#cdd6f4", "#1e1e2e", 1.0), "#cdd6f4");
+    }
 }
