@@ -1,4 +1,3 @@
-import "../shared/ListModels.js" as Models
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -8,19 +7,24 @@ import "../shared/Native.js" as Bridge
 // files and every reload belong to that helper; what is kept here is what one
 // open panel is looking at. Listing reads the catalog and changes nothing, and
 // the applied theme is read from the selection the helper itself publishes, so
-// a theme chosen from the launcher marks the same row here without polling.
+// a theme chosen from the launcher marks the same tile here without polling.
 Scope {
   id: store
-  property alias model: rows
-  ListModel { id: rows }
 
   readonly property string stateDirectory: Quickshell.env("SEELE_THEME_STATE")
     || (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/seele-theme"
   property var catalog: ({ ok: false, current: "", themes: [] })
   property bool panelOpen: false
   property string query: ""
+  // "all", "dark" or "light"; the native layout ignores anything else.
+  property string mode: "all"
+  // How many tiles a row holds. The panel measures it; the layout wraps by it.
+  property int columns: 4
+  // The tile the reader last moved to. It is only a wish: what is previewed
+  // is decided natively from it, the search and the applied theme.
+  property string highlighted: ""
   // What the published selection names, rather than what this panel last asked
-  // for, so the row marked as current is the one the desktop is actually using.
+  // for, so the tile marked as applied is the one the desktop is actually using.
   property string selection: ""
   property string selectionName: ""
   property string error: ""
@@ -31,14 +35,18 @@ Scope {
   property string applying: ""
   readonly property bool busy: applying !== "" || list.running
   readonly property string current: store.selection !== "" ? store.selection : store.catalog.current || ""
+  readonly property var themes: store.catalog.themes || []
+  readonly property int total: store.themes.length
+  readonly property bool filtered: store.query !== "" || store.mode !== "all"
+  readonly property var layout: Bridge.call("themes.layout", [store.themes, store.current, store.query, store.mode, store.columns])
+  readonly property string focusedId: Bridge.call("themes.focus", [store.layout, store.highlighted, store.current])
+  // The preset the preview draws, or null when nothing is shown.
+  readonly property var preview: Bridge.call("themes.find", [store.themes, store.focusedId])
   // What the bar-level surfaces name. The published selection carries its own
   // display name, so a tile says which theme is applied before this panel has
   // ever been opened and the catalog read.
   readonly property string currentName: store.selectionName !== "" ? store.selectionName
     : Bridge.call("themes.name", [store.themes, store.current])
-  readonly property var themes: store.catalog.themes || []
-  readonly property int total: store.themes.length
-  readonly property string detail: Bridge.call("themes.detail", [{ themes: store.themes, current: store.current }, rows.count])
 
   function failure(code) {
     return Bridge.call("themes.failure", [code || ""])
@@ -52,10 +60,18 @@ Scope {
     if (!next.ok) { error = failure(next.error); return }
     catalog = next
     error = ""
-    publish()
   }
-  function publish() {
-    Models.reconcile(rows, Bridge.call("themes.rows", [store.themes, current, query]), "entry", function (item) { return item.id })
+  function highlight(id) {
+    highlighted = id
+  }
+  // Moves the preview to the neighbouring tile; the native layout decides
+  // which one that is, so a wrapped family and a filtered grid move alike.
+  function step(direction) {
+    highlighted = Bridge.call("themes.step", [layout, focusedId, direction])
+  }
+  function resetFilters() {
+    query = ""
+    mode = "all"
   }
   function known(id) {
     for (var i = 0; i < store.themes.length; i++) if (store.themes[i].id === id) return true
@@ -74,6 +90,9 @@ Scope {
     guard.restart()
     return true
   }
+  function applyFocused() {
+    return apply(focusedId)
+  }
   function applied(value) {
     // The selection file says which theme is current; this reply only reports
     // what the helper could not reload while it was there.
@@ -81,11 +100,11 @@ Scope {
     actionError = ""
   }
 
-  onQueryChanged: publish()
-  onCurrentChanged: publish()
   onPanelOpenChanged: {
     if (!panelOpen) {
-      query = ""
+      // Reopening starts from the applied theme with nothing filtered.
+      resetFilters()
+      highlighted = ""
       actionError = ""
       reloadPending = ""
       return

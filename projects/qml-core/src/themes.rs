@@ -1,13 +1,15 @@
-//! Theme picker presentation: one normalized catalog, the grouped rows a panel
-//! draws, and the wording for what a switch did and did not reach.
+//! Theme picker presentation: one normalized catalog, the families a panel
+//! lays out, where the arrow keys lead, and the wording for what a switch did
+//! and did not reach.
 //!
 //! Publication, reloading and every file the switch writes belong to
 //! `seele-theme`. What is left here is what one open panel is looking at, and
 //! it is kept in Rust so a palette never reaches a Qt colour property without
-//! having been checked, and so the launcher and the panel group and describe
-//! the same catalog the same way.
+//! having been checked, and so grouping and movement are decided once rather
+//! than by whichever delegate happens to be drawing.
 use crate::value::{array, number, text, trim};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 /// Every colour role the panel draws with. The native helper projects Base16
 /// into exactly these, so a theme missing one of them is not a theme the panel
@@ -19,6 +21,7 @@ const ROLES: [&str; 11] = [
 const MAX_THEMES: usize = 32;
 const MAX_WORDS: usize = 8;
 const MAX_PENDING: usize = 8;
+const MAX_COLUMNS: usize = 8;
 
 /// `#rrggbb` and nothing else. Qt would accept a colour name or an `#aarrggbb`
 /// with a different channel order, so anything but the helper's own form is
@@ -75,15 +78,81 @@ fn matches(row: &Value, words: &[String]) -> bool {
     words.iter().all(|word| haystack.contains(word))
 }
 
-/// A row's own four self-evident colours, so the delegate draws a preview
-/// rather than choosing what a preview is.
-fn swatches(row: &Value) -> Value {
-    json!([
-        text(row.get("accent")),
-        text(row.get("red")),
-        text(row.get("green")),
-        text(row.get("yellow")),
-    ])
+/// A family is the presets sharing a first word, labelled by the words all of
+/// them share: "Catppuccin" for Mocha to Latte, "Rosé Pine" for the original,
+/// Moon and Dawn. A variant is what its own name adds; the original of a family
+/// adds nothing and keeps its full name. Presets alone in their family are
+/// gathered into one closing row, so a single preset never gets a row whose
+/// label repeats its only tile.
+fn families(themes: &[Value]) -> Vec<(String, Vec<(Value, String)>)> {
+    let mut order: Vec<String> = vec![];
+    let mut groups: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+    for row in themes {
+        let name = text(row.get("name"));
+        let key = name
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(row);
+    }
+    let mut rows = vec![];
+    let mut alone = vec![];
+    for key in order {
+        let members = &groups[&key];
+        if members.len() == 1 {
+            let row = members[0];
+            alone.push((row.clone(), text(row.get("name"))));
+            continue;
+        }
+        let names: Vec<Vec<String>> = members
+            .iter()
+            .map(|row| {
+                text(row.get("name"))
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .collect();
+        let shared = (0..names.iter().map(Vec::len).min().unwrap_or(0))
+            .take_while(|&index| names.iter().all(|words| words[index] == names[0][index]))
+            .count()
+            .max(1);
+        let family = names[0][..shared].join(" ");
+        let variants = members
+            .iter()
+            .zip(&names)
+            .map(|(row, words)| {
+                let variant = words[shared.min(words.len())..].join(" ");
+                let label = if variant.is_empty() {
+                    text(row.get("name"))
+                } else {
+                    variant
+                };
+                ((*row).clone(), label)
+            })
+            .collect();
+        rows.push((family, variants));
+    }
+    if !alone.is_empty() {
+        let label = if rows.is_empty() { "Presets" } else { "More" };
+        rows.push((label.to_owned(), alone));
+    }
+    rows
+}
+
+/// Where each shown preset sits: `(row, column)` in reading order.
+fn positions(layout: &Value) -> Vec<(usize, usize, String)> {
+    let mut out = vec![];
+    for (row, entry) in array(layout.get("rows")).iter().enumerate() {
+        for (column, member) in array(entry.get("members")).iter().enumerate() {
+            out.push((row, column, text(member.get("id"))));
+        }
+    }
+    out
 }
 
 fn failure(code: &str) -> &'static str {
@@ -149,80 +218,127 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 "themes": rows,
             })
         }
-        // The rows a panel shows: the selection first, then the catalog's own
-        // curated order inside each mode. Nothing is re-sorted alphabetically,
-        // because the order presets were chosen in is information too.
-        "rows" => {
+        // The families a panel lays out, filtered by the search and the mode,
+        // each chunked into rows of at most `columns` tiles. A family keeps
+        // the catalog's own curated order inside it; the label rides on its
+        // first row only, so a family that wraps still reads as one.
+        "layout" => {
             let themes = array(Some(first));
             let current = text(args.get(1));
             let query = text(args.get(2)).to_lowercase();
+            let mode = text(args.get(3));
+            let columns = (number(args.get(4)).max(1.0) as usize).min(MAX_COLUMNS);
             let words: Vec<String> = trim(&query)
                 .split_whitespace()
                 .take(MAX_WORDS)
                 .map(str::to_owned)
                 .collect();
-            let mut groups: [Vec<Value>; 3] = [vec![], vec![], vec![]];
-            for row in themes.iter().take(MAX_THEMES) {
-                if !matches(row, &words) {
-                    continue;
-                }
-                let selected = !current.is_empty() && text(row.get("id")) == current;
-                let group = if selected {
-                    0
-                } else if text(row.get("mode")) == "dark" {
-                    1
-                } else {
-                    2
-                };
-                let dots = swatches(row);
-                let mut row = row.clone();
-                if let Some(object) = row.as_object_mut() {
-                    object.insert("current".to_owned(), json!(selected));
-                    object.insert(
-                        "section".to_owned(),
-                        json!(["CURRENT", "DARK", "LIGHT"][group]),
-                    );
-                    object.insert("swatches".to_owned(), dots);
-                }
-                groups[group].push(row);
-            }
-            let [selected, dark, light] = groups;
-            // Which row opens a group is decided here, so a delegate never has
-            // to look at the row above it to know whether to draw a heading.
-            let mut listed: Vec<Value> = selected.into_iter().chain(dark).chain(light).collect();
-            let mut opened = String::new();
-            for row in &mut listed {
-                let section = text(row.get("section"));
-                let first = section != opened;
-                opened = section;
-                if let Some(object) = row.as_object_mut() {
-                    object.insert("first".to_owned(), json!(first));
-                }
-            }
-            json!(listed)
-        }
-        // The one line under the panel title: what is applied now, and how much
-        // of the catalog the search has left.
-        "detail" => {
-            let themes = array(first.get("themes"));
-            let current = text(first.get("current"));
-            let shown = number(args.get(1)).max(0.0) as usize;
-            let total = themes.len();
-            let name = themes
-                .iter()
-                .find(|row| text(row.get("id")) == current)
-                .map(|row| text(row.get("name")))
-                .unwrap_or_default();
-            let count = if shown == total {
-                format!("{total} preset{}", if total == 1 { "" } else { "s" })
-            } else {
-                format!("{shown} of {total}")
+            // Families come from the whole catalog, and the search and mode
+            // only take tiles out of them: a tile keeps its label and its row
+            // while the reader types, instead of the grid regrouping itself.
+            let catalog: Vec<Value> = themes.iter().take(MAX_THEMES).cloned().collect();
+            let shown = |row: &Value| {
+                (!matches!(mode.as_str(), "dark" | "light") || text(row.get("mode")) == mode)
+                    && matches(row, &words)
             };
-            json!(if name.is_empty() {
-                count
-            } else {
-                format!("{name} · {count}")
-            })
+            let mut rows = vec![];
+            let mut order = vec![];
+            for (family, members) in families(&catalog) {
+                let members: Vec<&(Value, String)> =
+                    members.iter().filter(|(row, _)| shown(row)).collect();
+                for (index, chunk) in members.chunks(columns).enumerate() {
+                    let members: Vec<Value> = chunk
+                        .iter()
+                        .map(|(row, variant)| {
+                            let mut row = row.clone();
+                            let id = text(row.get("id"));
+                            order.push(id.clone());
+                            if let Some(object) = row.as_object_mut() {
+                                object.insert("variant".to_owned(), json!(variant));
+                                object.insert(
+                                    "current".to_owned(),
+                                    json!(!current.is_empty() && id == current),
+                                );
+                            }
+                            row
+                        })
+                        .collect();
+                    rows.push(json!({
+                        "family": if index == 0 { family.clone() } else { String::new() },
+                        "first": index == 0,
+                        "members": members,
+                    }));
+                }
+            }
+            json!({"rows": rows, "order": order, "count": order.len(), "total": themes.len()})
+        }
+        // Where an arrow key leads from a tile. Left and right follow reading
+        // order across rows; up and down keep the column where the next row
+        // is long enough to have it. The ends hold rather than wrap, so a held
+        // key stops somewhere the reader can see.
+        "step" => {
+            let places = positions(first);
+            let id = text(args.get(1));
+            let direction = text(args.get(2));
+            let Some(at) = places.iter().position(|place| place.2 == id) else {
+                return Ok(json!(
+                    places
+                        .first()
+                        .map(|place| place.2.clone())
+                        .unwrap_or_default()
+                ));
+            };
+            let (row, column, _) = places[at];
+            let target = match direction.as_str() {
+                "left" => at.checked_sub(1),
+                "right" => (at + 1 < places.len()).then_some(at + 1),
+                "up" | "down" => {
+                    let rows = places.last().map_or(0, |place| place.0 + 1);
+                    let next = if direction == "up" {
+                        row.checked_sub(1)
+                    } else {
+                        (row + 1 < rows).then_some(row + 1)
+                    };
+                    next.and_then(|next| {
+                        places
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, place)| place.0 == next)
+                            .take_while(|(_, place)| place.1 <= column)
+                            .last()
+                            .map(|(index, _)| index)
+                    })
+                }
+                _ => None,
+            };
+            json!(places[target.unwrap_or(at)].2)
+        }
+        // What the preview shows: the highlighted preset while the search
+        // still shows it, else the applied theme, else the first shown one.
+        "focus" => {
+            let order: Vec<String> = array(first.get("order"))
+                .iter()
+                .map(|id| text(Some(id)))
+                .collect();
+            let highlighted = text(args.get(1));
+            let current = text(args.get(2));
+            json!(
+                [highlighted, current]
+                    .into_iter()
+                    .find(|id| !id.is_empty() && order.contains(id))
+                    .or_else(|| order.first().cloned())
+                    .unwrap_or_default()
+            )
+        }
+        // One preset by ID, for the preview; `null` when it is not in the
+        // catalog rather than whichever preset happens to come first.
+        "find" => {
+            let id = text(args.get(1));
+            array(Some(first))
+                .iter()
+                .find(|row| text(row.get("id")) == id)
+                .cloned()
+                .unwrap_or(Value::Null)
         }
         // The display name of one ID, so a tile or a heading names a theme
         // without a lookup loop in QML.
@@ -284,164 +400,211 @@ mod tests {
         )
         .unwrap()
     }
-    fn rows(catalog: &Value, query: &str) -> Vec<Value> {
+    // The curated catalog, in its own order, as the parent flake declares it.
+    fn curated() -> Value {
+        let presets = [
+            ("catppuccin-mocha", "Catppuccin Mocha", "dark"),
+            ("catppuccin-macchiato", "Catppuccin Macchiato", "dark"),
+            ("catppuccin-frappe", "Catppuccin Frappé", "dark"),
+            ("catppuccin-latte", "Catppuccin Latte", "light"),
+            ("rose-pine", "Rosé Pine", "dark"),
+            ("rose-pine-moon", "Rosé Pine Moon", "dark"),
+            ("rose-pine-dawn", "Rosé Pine Dawn", "light"),
+            ("flexoki-dark", "Flexoki Dark", "dark"),
+            ("flexoki-light", "Flexoki Light", "light"),
+            ("gruvbox-dark-medium", "Gruvbox Dark", "dark"),
+            ("gruvbox-light-medium", "Gruvbox Light", "light"),
+            ("nord", "Nord", "dark"),
+            ("everforest-dark-medium", "Everforest", "dark"),
+        ];
+        let themes: Vec<Value> = presets
+            .iter()
+            .map(|(id, name, mode)| preset(id, name, mode))
+            .collect();
         call(
-            "rows",
+            "catalog",
+            &[json!({"current": "catppuccin-mocha", "themes": themes})],
+        )
+        .unwrap()
+    }
+    fn layout(catalog: &Value, query: &str, mode: &str, columns: u64) -> Value {
+        call(
+            "layout",
             &[
                 catalog["themes"].clone(),
                 catalog["current"].clone(),
                 json!(query),
+                json!(mode),
+                json!(columns),
             ],
         )
         .unwrap()
-        .as_array()
-        .unwrap()
-        .clone()
     }
-
-    #[test]
-    fn a_catalog_is_accepted_whole_or_not_at_all() {
-        let accepted = catalog();
-        assert_eq!(accepted["ok"], json!(true));
-        assert_eq!(accepted["current"], json!("nord"));
-        assert_eq!(accepted["themes"].as_array().unwrap().len(), 4);
-        assert_eq!(accepted["themes"][0]["modeLabel"], json!("Dark"));
-        assert_eq!(accepted["themes"][2]["modeLabel"], json!("Light"));
-
-        let mut short = preset("nord", "Nord", "dark");
-        short.as_object_mut().unwrap().remove("accent");
-        for broken in [
-            json!({"current": "nord", "themes": []}),
-            json!({"current": "nord", "themes": [short]}),
-            json!({"current": "nord", "themes": [preset("nord", "Nord", "sepia")]}),
-            json!({"current": "nord", "themes": [preset("Nord!", "Nord", "dark")]}),
-            json!({"current": "nord", "themes": [preset("nord", "", "dark")]}),
-            json!({"current": "nord", "themes": [preset("nord", "Nord", "dark"), preset("nord", "Nord Again", "dark")]}),
-            json!({"current": "nord", "themes": vec![preset("nord", "Nord", "dark"); MAX_THEMES + 1]}),
-        ] {
-            assert_eq!(
-                call("catalog", std::slice::from_ref(&broken)).unwrap()["ok"],
-                json!(false),
-                "{broken}"
-            );
-        }
-        let mut wrong = preset("nord", "Nord", "dark");
-        wrong
-            .as_object_mut()
-            .unwrap()
-            .insert("base".to_owned(), json!("black"));
-        assert_eq!(
-            call("catalog", &[json!({"current": "nord", "themes": [wrong]})]).unwrap()["ok"],
-            json!(false),
-            "a colour Qt would accept but the helper never writes is refused"
-        );
-        assert_eq!(
-            call(
-                "catalog",
-                &[json!({"current": "missing", "themes": [preset("nord", "Nord", "dark")]})]
-            )
-            .unwrap()["current"],
-            json!(""),
-            "an unknown selection marks nothing"
-        );
-    }
-
-    #[test]
-    fn the_selection_leads_and_the_catalogs_own_order_is_kept() {
-        let catalog = catalog();
-        let listed = rows(&catalog, "");
-        assert_eq!(
-            listed
-                .iter()
-                .map(|row| string(row.get("id")))
-                .collect::<Vec<_>>(),
-            [
-                "nord",
-                "catppuccin-mocha",
-                "rose-pine-dawn",
-                "gruvbox-light"
-            ],
-            "the applied theme leads, then dark and light in catalog order"
-        );
-        assert_eq!(
-            listed
-                .iter()
-                .map(|row| string(row.get("section")))
-                .collect::<Vec<_>>(),
-            ["CURRENT", "DARK", "LIGHT", "LIGHT"]
-        );
-        assert_eq!(listed[0]["current"], json!(true));
-        assert_eq!(listed[1]["current"], json!(false));
-        assert_eq!(
-            listed
-                .iter()
-                .map(|row| row["first"].as_bool().unwrap())
-                .collect::<Vec<_>>(),
-            [true, true, true, false],
-            "each group's first shown row carries its own heading"
-        );
-        let filtered = rows(&catalog, "light");
-        assert_eq!(
-            filtered
-                .iter()
-                .map(|row| row["first"].as_bool().unwrap())
-                .collect::<Vec<_>>(),
-            [true, false],
-            "a heading belongs to the first row a search actually left in the group"
-        );
-        assert_eq!(
-            listed[0]["swatches"],
-            json!([
-                listed[0]["accent"],
-                listed[0]["red"],
-                listed[0]["green"],
-                listed[0]["yellow"]
-            ]),
-            "a row carries the colours its preview is drawn with"
-        );
-    }
-
-    #[test]
-    fn a_search_reaches_a_preset_by_family_variant_or_mode() {
-        let catalog = catalog();
-        for (query, expected) in [
-            ("mocha", vec!["catppuccin-mocha"]),
-            ("CATPPUCCIN", vec!["catppuccin-mocha"]),
-            ("  rosé  ", vec!["rose-pine-dawn"]),
-            ("rose dawn", vec!["rose-pine-dawn"]),
-            ("light", vec!["rose-pine-dawn", "gruvbox-light"]),
-            ("nothing", vec![]),
-        ] {
-            assert_eq!(
-                rows(&catalog, query)
+    // Each row as "Family: variant, variant", so a whole layout reads at once.
+    fn shape(layout: &Value) -> Vec<String> {
+        array(layout.get("rows"))
+            .iter()
+            .map(|row| {
+                let tiles: Vec<String> = array(row.get("members"))
                     .iter()
-                    .map(|row| string(row.get("id")))
-                    .collect::<Vec<_>>(),
-                expected,
-                "{query}"
-            );
-        }
+                    .map(|member| string(member.get("variant")))
+                    .collect();
+                format!("{}: {}", string(row.get("family")), tiles.join(", "))
+            })
+            .collect()
+    }
+    fn step(layout: &Value, id: &str, direction: &str) -> String {
+        string(Some(
+            &call("step", &[layout.clone(), json!(id), json!(direction)]).unwrap(),
+        ))
     }
 
     #[test]
-    fn the_header_states_what_is_applied_and_how_much_is_shown() {
-        let catalog = catalog();
+    fn presets_group_into_families_named_by_what_they_share() {
+        let listed = layout(&curated(), "", "all", 4);
         assert_eq!(
-            string(Some(&call("detail", &[catalog.clone(), json!(4)]).unwrap())),
-            "Nord · 4 presets"
+            shape(&listed),
+            [
+                "Catppuccin: Mocha, Macchiato, Frappé, Latte",
+                "Rosé Pine: Rosé Pine, Moon, Dawn",
+                "Flexoki: Dark, Light",
+                "Gruvbox: Dark, Light",
+                "More: Nord, Everforest",
+            ],
+            "an original keeps its full name, and presets alone in a family share one closing row"
+        );
+        assert_eq!(listed["count"], json!(13));
+        assert_eq!(listed["total"], json!(13));
+        let mocha = &listed["rows"][0]["members"][0];
+        assert_eq!(mocha["current"], json!(true));
+        assert_eq!(
+            mocha["name"],
+            json!("Catppuccin Mocha"),
+            "the full name travels with the tile"
+        );
+        assert_eq!(listed["rows"][1]["members"][0]["current"], json!(false));
+        assert_eq!(
+            array(listed.get("order")).len(),
+            13,
+            "every shown preset has one place in reading order"
+        );
+    }
+
+    #[test]
+    fn the_search_and_the_mode_narrow_the_families_they_leave() {
+        let catalog = curated();
+        assert_eq!(
+            shape(&layout(&catalog, "", "light", 4)),
+            [
+                "Catppuccin: Latte",
+                "Rosé Pine: Dawn",
+                "Flexoki: Light",
+                "Gruvbox: Light",
+            ]
         );
         assert_eq!(
-            string(Some(&call("detail", &[catalog, json!(1)]).unwrap())),
-            "Nord · 1 of 4"
+            shape(&layout(&catalog, "pine", "dark", 4)),
+            ["Rosé Pine: Rosé Pine, Moon"]
         );
-        let unselected = call(
-            "catalog",
-            &[json!({"current": "", "themes": [preset("nord", "Nord", "dark")]})],
-        )
-        .unwrap();
         assert_eq!(
-            string(Some(&call("detail", &[unselected, json!(1)]).unwrap())),
-            "1 preset"
+            shape(&layout(&catalog, "ROSÉ dawn", "all", 4)),
+            ["Rosé Pine: Dawn"],
+            "every word has to match, in any case"
+        );
+        let nothing = layout(&catalog, "solarized", "all", 4);
+        assert_eq!(shape(&nothing), Vec::<String>::new());
+        assert_eq!(nothing["count"], json!(0));
+        assert_eq!(nothing["total"], json!(13));
+    }
+
+    #[test]
+    fn a_family_wider_than_the_panel_wraps_but_is_labelled_once() {
+        let listed = layout(&curated(), "catppuccin", "all", 3);
+        assert_eq!(
+            shape(&listed),
+            ["Catppuccin: Mocha, Macchiato, Frappé", ": Latte"]
+        );
+        assert_eq!(listed["rows"][0]["first"], json!(true));
+        assert_eq!(listed["rows"][1]["first"], json!(false));
+        assert_eq!(
+            shape(&layout(&curated(), "catppuccin", "all", 0)).len(),
+            4,
+            "a nonsensical column count still lays out one tile per row"
+        );
+    }
+
+    #[test]
+    fn arrow_keys_move_in_reading_order_and_keep_their_column() {
+        let listed = layout(&curated(), "", "all", 4);
+        // Across a row, and over its end into the next row.
+        assert_eq!(
+            step(&listed, "catppuccin-mocha", "right"),
+            "catppuccin-macchiato"
+        );
+        assert_eq!(step(&listed, "catppuccin-latte", "right"), "rose-pine");
+        assert_eq!(step(&listed, "rose-pine", "left"), "catppuccin-latte");
+        // Down keeps the column where the next row has it, and otherwise
+        // lands on that row's last tile rather than skipping it.
+        assert_eq!(
+            step(&listed, "catppuccin-macchiato", "down"),
+            "rose-pine-moon"
+        );
+        assert_eq!(step(&listed, "catppuccin-latte", "down"), "rose-pine-dawn");
+        assert_eq!(step(&listed, "rose-pine-dawn", "down"), "flexoki-light");
+        assert_eq!(step(&listed, "flexoki-light", "up"), "rose-pine-moon");
+        // The ends hold.
+        assert_eq!(
+            step(&listed, "catppuccin-mocha", "left"),
+            "catppuccin-mocha"
+        );
+        assert_eq!(
+            step(&listed, "catppuccin-frappe", "up"),
+            "catppuccin-frappe"
+        );
+        assert_eq!(
+            step(&listed, "everforest-dark-medium", "right"),
+            "everforest-dark-medium"
+        );
+        assert_eq!(step(&listed, "nord", "down"), "nord");
+        // Something the layout no longer holds starts again at the top.
+        assert_eq!(step(&listed, "gone", "down"), "catppuccin-mocha");
+        assert_eq!(
+            step(&layout(&curated(), "solarized", "all", 4), "nord", "down"),
+            ""
+        );
+    }
+
+    #[test]
+    fn the_preview_follows_the_highlight_then_the_applied_theme() {
+        let catalog = curated();
+        let all = layout(&catalog, "", "all", 4);
+        let focus = |layout: &Value, highlighted: &str, current: &str| {
+            string(Some(
+                &call(
+                    "focus",
+                    &[layout.clone(), json!(highlighted), json!(current)],
+                )
+                .unwrap(),
+            ))
+        };
+        assert_eq!(focus(&all, "nord", "catppuccin-mocha"), "nord");
+        assert_eq!(focus(&all, "", "catppuccin-mocha"), "catppuccin-mocha");
+        let light = layout(&catalog, "", "light", 4);
+        assert_eq!(
+            focus(&light, "nord", "catppuccin-mocha"),
+            "catppuccin-latte",
+            "a filtered-out highlight falls back to the first preset still shown"
+        );
+        assert_eq!(
+            focus(&layout(&catalog, "zzz", "all", 4), "nord", "nord"),
+            ""
+        );
+        let found = call("find", &[catalog["themes"].clone(), json!("nord")]).unwrap();
+        assert_eq!(found["name"], json!("Nord"));
+        assert!(
+            call("find", &[catalog["themes"].clone(), json!("gone")])
+                .unwrap()
+                .is_null()
         );
     }
 
