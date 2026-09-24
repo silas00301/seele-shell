@@ -87,6 +87,21 @@
       ]
     },
     {
+      "name": "clean-link",
+      "title": "Copy Clean Link",
+      "description": "Preview and explicitly copy a clipboard link without recognized tracking parameters",
+      "mode": "view",
+      "keywords": [
+        "seele",
+        "url",
+        "clipboard",
+        "tracking",
+        "utm",
+        "clean",
+        "link"
+      ]
+    },
+    {
       "name": "screen-links",
       "title": "Seele Screen Links and Codes",
       "description": "Open or copy a numbered link, QR code, or barcode on screen",

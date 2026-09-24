@@ -306,3 +306,23 @@ busy/waiting sets, concurrent-session priority and event transitions belong to
 `agents.rs`. The native hook retains bounded SHA-256 session identities in its
 private metadata sidecar; it never receives permission contents or model text.
 Startup/shutdown reset that sidecar, and stale process cleanup removes it.
+
+## Clean Link preview
+
+`seele-control vicinae-clean-link` accepts one UTF-8 HTTP(S) URL on stdin,
+limited to 16 KiB and a two-second EOF deadline. Arguments beyond the endpoint
+are refused. It returns a JSON object with `original`, `cleaned`, `removed`
+(recognized parameter names), `status` (`cleaned`, `unchanged`, `protected`, or
+`ambiguous`), `message`, and inert `markdown` for the Vicinae preview. Invalid
+input fails with a fixed error and no payload in diagnostics. The endpoint
+contacts no desktop service or network and retains nothing. The host reads and
+copies through its clipboard API; only the user's explicit copy action writes.
+
+The URL parser validates but never serializes the result: retained query fields,
+order, raw escaping, authority/path and fragments stay byte-for-byte intact.
+Known authentication/signature markers and semicolon-separated queries preserve
+the whole URL. The exact conservative tracking rule set and its custom-signature
+limitation are documented in `projects/vicinae/README.md`. Run
+`cargo test -p seele-tools --test clean_link` for real executable stdin, bounds,
+privacy, deadline and cancellation fixtures, and `cargo test -p seele-tools
+--lib clean_link` for parsing policy.
