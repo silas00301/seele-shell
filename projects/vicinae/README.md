@@ -222,6 +222,9 @@ confirmation callbacks, and scalar control icon/text expressions. These renderin
 expressions start no processes, retain no policy state and make no authorization
 decisions. Native endpoints own snapshots, validation and action arguments.
 
+**Seele Text Workbench** opens the private local transform panel through
+`seele-shellctl control text-workbench`. Clipboard text is read only by Paste.
+
 `tests/vicinae-clean-link.cjs` drives the actual command component and stdin
 adapter: one clipboard read, no automatic write, duplicate-copy suppression,
 unchanged/protected previews, generic failures, cancellation before and after the
