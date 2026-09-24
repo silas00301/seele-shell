@@ -102,6 +102,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
     substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./CaffeinateStore.qml} "$out/share/seele-shell/CaffeinateStore.qml"
+    install -m644 ${./MeetingPlanner.qml} "$out/share/seele-shell/MeetingPlanner.qml"
+    substituteInPlace "$out/share/seele-shell/MeetingPlanner.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./CaffeinatePanel.qml} "$out/share/seele-shell/CaffeinatePanel.qml"
     substituteInPlace "$out/share/seele-shell/CaffeinatePanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./PortsStore.qml} "$out/share/seele-shell/PortsStore.qml"
@@ -319,7 +321,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -349,7 +351,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/calculator-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_calculator.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -414,6 +416,10 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/shell-presentation.js "$out/share/seele-shell/shell.qml"
     python3 ${tests}/dictation.py "$out/bin/seele-dictation-levels"
     bash ${tests}/clock.sh "$out/bin/seele-clock"
+    node ${tests}/meeting-planner.js "$out/share/seele-shell/shell.qml"
+    python3 ${tests}/meeting-planner.py "$out/bin/seele-clock"
+    bash ${tests}/meeting-planner-qml.sh "$out/share/seele-shell" \
+      ${tests}/tst_meetingplanner.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     PATH="${runtimePath}:$PATH" bash ${tests}/audio-routing.sh "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${tests}/network-vpn.sh "$out/libexec/seele-shell/seele-control"
     PATH="${runtimePath}:$PATH" bash ${tests}/bluetooth-receiver-routing.sh \

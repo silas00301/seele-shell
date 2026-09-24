@@ -273,6 +273,23 @@
         "units",
         "tape"
       ]
+    },
+    {
+      "name": "meeting-planner",
+      "title": "Seele Meeting Planner",
+      "description": "Find a meeting time across local and pinned world clocks",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "meeting",
+        "time",
+        "timezone",
+        "world",
+        "clock",
+        "overlap",
+        "schedule",
+        "utc"
+      ]
     }
   ]
 }
