@@ -39,9 +39,12 @@ state.accept({version:1,groups:[],error:'service-unavailable'});
 assert.equal(rows.count,0,'a stopped service clears stale controls');
 assert.match(panel,/fileMode: FileDialog.OpenFiles/);
 assert.match(panel,/DropArea/);
-assert.match(panel,/"open", "reveal", "move", "trash"/);
+assert.match(panel,/"preview", "open", "reveal", "move", "trash"/);
 assert.match(shell,/visible: transfersStore.attention/);
-assert.match(shell,/TransfersPanel \{ theme: root; store: transfersStore/);
+assert.match(shell,/TransfersPanel \{\s*\n\s*theme: root\s*\n\s*store: transfersStore/);
+// A received file is previewable without handing it to its application.
+assert.match(panel,/previewRequested\(String\(fileRow\.modelData\.path \|\| ""\)\)/);
+assert.match(shell,/onPreviewRequested: path => root\.toggleQuickLook\(path\)/);
 assert.match(shell,/label: "Transfers"/);
 assert.doesNotMatch(panel,/tailscale|file-put|file-targets/,'UI stays provider-neutral');
 console.log('Transfers selection, duplicate actions, stable rows, notification focus and production wiring passed');
