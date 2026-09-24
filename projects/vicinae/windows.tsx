@@ -15,6 +15,7 @@ import {
   focusWindow,
   focusWorkspace,
   forceQuitWindow,
+  moveWindow,
 } from "./desktop";
 import { binaries, perform, run, useQuery } from "./runtime";
 import { RefreshAction, Unavailable, applicationIcon, shortcuts } from "./ui";
@@ -154,6 +155,26 @@ export default function Command() {
                     )
                   }
                 />
+                {(client.moveTargets?.length ?? 0) > 0 && (
+                  <ActionPanel.Submenu
+                    title="Move to Workspace"
+                    icon={Icon.Desktop}
+                  >
+                    {client.moveTargets?.map((destination) => (
+                      <Action
+                        key={destination.selector}
+                        title={`Workspace ${destination.name}`}
+                        icon={Icon.Desktop}
+                        onAction={() =>
+                          perform("Move window", async () => {
+                            await moveWindow(client, destination);
+                            refresh();
+                          })
+                        }
+                      />
+                    ))}
+                  </ActionPanel.Submenu>
+                )}
                 <Action
                   title="Close Window"
                   icon={Icon.XMarkCircle}

@@ -21,7 +21,7 @@ fn capture(program: &str, args: &[&str], timeout: Duration) -> Result<String> {
     command::output_with_input(program, args, b"", timeout, MAX_BYTES)
         .ok_or_else(|| "Desktop query failed".into())
 }
-fn parsed(program: &str, args: &[&str]) -> Result<Value> {
+pub(crate) fn parsed(program: &str, args: &[&str]) -> Result<Value> {
     Ok(serde_json::from_str(&capture(
         program,
         args,
@@ -175,7 +175,12 @@ fn desktop() -> Result<Value> {
             workspaces,
         )
     });
-    core("desktop", &[clients?, workspaces?])
+    let clients = clients?;
+    let workspaces = workspaces?;
+    let mut snapshot = core("desktop", &[clients.clone(), workspaces.clone()])?;
+    let rules = crate::window_move::workspace_rules();
+    crate::window_move::enrich(&mut snapshot, &clients, &workspaces, &rules)?;
+    Ok(snapshot)
 }
 fn focus(arguments: &[String]) -> Result {
     if arguments.len() != 2 {
@@ -248,6 +253,7 @@ pub fn run(arguments: &[String]) -> Result {
         }
         "vicinae-caffeinate" => println!("{}", caffeinate(args)?),
         "vicinae-focus" => focus(args)?,
+        "vicinae-window-move" => crate::window_move::run(args)?,
         "vicinae-audio" if args.len() == 2 && matches!(args[1].as_str(), "select" | "toggle") => {
             if args[0].len() > 16384 {
                 return Err("Audio selection exceeds its limit".into());

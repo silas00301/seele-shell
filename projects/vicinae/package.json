@@ -47,7 +47,7 @@
     {
       "name": "windows",
       "title": "Seele Windows and Workspaces",
-      "description": "Search running windows, switch workspaces, and close applications",
+      "description": "Search running windows, move them between workspaces, and close applications",
       "mode": "view",
       "keywords": [
         "seele",
@@ -55,7 +55,8 @@
         "workspace",
         "switch",
         "focus",
-        "close"
+        "close",
+        "move"
       ]
     },
     {
