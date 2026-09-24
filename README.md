@@ -353,3 +353,7 @@ not change Do Not Disturb or start another session automatically. State survives
 QML reloads in memory, but is never written to disk and resets on shell exit.
 `tests/focus.js` checks the production deadline state machine, pause/resume,
 completion, invalid input, clock rollback, and reload restoration.
+
+The native [Calculator workbench](projects/shell/CALCULATOR.md) provides local
+arithmetic, unit conversions and a private calculation tape through the Control
+Center, shell IPC and Vicinae.

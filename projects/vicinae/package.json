@@ -259,6 +259,20 @@
       "title": "Seele Caffeinate",
       "description": "Keep the session awake until a task ends, a time passes, or you stop it",
       "mode": "view"
+    },
+    {
+      "name": "calculator",
+      "title": "Seele Calculator",
+      "description": "Open the private arithmetic and unit-conversion workbench",
+      "mode": "no-view",
+      "keywords": [
+        "calculate",
+        "calculator",
+        "math",
+        "convert",
+        "units",
+        "tape"
+      ]
     }
   ]
 }

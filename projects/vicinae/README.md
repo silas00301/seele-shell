@@ -84,7 +84,7 @@ reach it from the launcher's root search.
   **Seele Notifications**, **Seele Now Playing**, **Seele AI Cockpit**,
   **Seele Quick AI Prompt**, **Seele GitHub Inbox**, **Seele Home Assistant**,
   **Seele System Health**, **Seele Session Controls**, **Seele Notes**,
-  **Seele Transfers**, and **Seele Screen Links and Codes**.
+  **Seele Transfers**, **Seele Calculator**, and **Seele Screen Links and Codes**.
 
 In Seele Controls, Enter toggles mute on either volume row, Ctrl+Up and
 Ctrl+Down change that row's volume in five-percent steps, and the `Set Level`

@@ -2955,7 +2955,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 4 + gap * 3
+    height: devicesY + smallTileHeight * 5 + gap * 4
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -2989,6 +2989,16 @@ Shared.Theme {
       detail: portsStore.total ? portsStore.total + " local TCP listeners" : "Find what is listening on this machine"
       glyph: Text { text: "󰛳"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("ports", controlGrid.screenName)
+    }
+
+    ControlTile {
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 4 + controlGrid.gap * 4
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Calculator"
+      detail: "Calculate, convert and keep a private tape"
+      glyph: Text { text: "󰃬"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("calculator", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8274,6 +8284,56 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰛳"; title: "Ports"; detail: portsPanel.hint }
           PortsPanel { id: portsPanel; theme: root; store: portsStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Private calculator: destroying the Loader also drops TextField undo data.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: calculatorWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "calculator" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.calculatorWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: calculatorLoader.item ? calculatorLoader.item.implicitHeight + root.panelMargin * 2 : 0
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-calculator"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      PanelSurface {
+        Loader {
+          id: calculatorLoader
+          active: calculatorWindow.visible
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          onLoaded: Qt.callLater(function() { if (item) item.focusInput() })
+          sourceComponent: CalculatorPanel {
+            id: calculatorPanel
+            theme: root
+            maximumHeight: Math.min(root.calculatorMaximumHeight, calculatorWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2)
+            onCloseRequested: root.closeOverlays()
+            onCopyRequested: text => {
+              if (calculatorClipboard.running) return
+              calculatorClipboard.payload = text
+              calculatorClipboard.stdinEnabled = true
+              calculatorClipboard.running = true
+            }
+            Process {
+              id: calculatorClipboard
+              property string payload: ""
+              command: ["wl-copy", "--type", "text/plain;charset=utf-8"]
+              onStarted: { write(payload); stdinEnabled = false; payload = "" }
+              onExited: (code, status) => {
+                calculatorPanel.notice = code === 0 && status === 0 ? "Copied to clipboard" : ""
+                calculatorPanel.copyError = code === 0 && status === 0 ? "" : "Could not copy. Try again."
+              }
+            }
+          }
         }
       }
     }
