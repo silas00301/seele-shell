@@ -2,6 +2,8 @@ mod codes;
 mod image;
 mod links;
 mod ocr;
+mod page;
+mod validate;
 
 use image::Image;
 use links::Link;
@@ -28,6 +30,7 @@ const STRIP: usize = 512;
 const OVERLAP: usize = 64;
 const MAX_CAPTURE: usize = 128 * 1024 * 1024;
 const MAX_CAPTURE_TOTAL: usize = 512 * 1024 * 1024;
+const MAX_RENDER_REGIONS: usize = 1024;
 
 /// Charge allocation capacity, not just received bytes, across every session.
 /// Cancellation releases the charge when the last queued OCR job drops pixels.
@@ -202,11 +205,17 @@ fn fixture(path: PathBuf) -> Result<Capture> {
     })
 }
 
+struct Recognition {
+    links: Vec<Link>,
+    failed: bool,
+}
+
 struct Job {
     capture: Arc<Capture>,
     strip: Option<(usize, usize)>,
     cancel: Arc<AtomicBool>,
-    reply: mpsc::Sender<std::result::Result<Vec<Link>, String>>,
+    reply: mpsc::Sender<Recognition>,
+    page: Arc<Mutex<page::Page>>,
 }
 
 fn queue(jobs: &mpsc::SyncSender<Job>, mut job: Job) -> Result {
@@ -258,7 +267,11 @@ impl Pool {
                         let Some((core_start, core_end)) = job.strip else {
                             let result = codes::scan(image, &job.capture.output, &job.cancel)
                                 .map_err(|e| e.to_string());
-                            let _ = job.reply.send(result);
+                            let failed = result.is_err();
+                            let _ = job.reply.send(Recognition {
+                                links: result.unwrap_or_default(),
+                                failed,
+                            });
                             continue;
                         };
                         let start = core_start.saturating_sub(OVERLAP);
@@ -266,21 +279,18 @@ impl Pool {
                         let result = match &mut engine {
                             Ok(engine) => engine
                                 .words(image, start, end - start, &job.cancel)
-                                .map(|words| {
-                                    links::extract(
-                                        words,
-                                        &job.capture.output,
-                                        image.width,
-                                        image.height,
-                                        start,
-                                        core_start,
-                                        core_end,
-                                    )
-                                })
                                 .map_err(|e| e.to_string()),
                             Err(error) => Err(error.clone()),
                         };
-                        let _ = job.reply.send(result);
+                        if job.cancel.load(Ordering::Relaxed) {
+                            continue;
+                        }
+                        let (links, failed) = job
+                            .page
+                            .lock()
+                            .unwrap()
+                            .finish(core_start, core_end, result);
+                        let _ = job.reply.send(Recognition { links, failed });
                     }
                 })
             })
@@ -315,7 +325,17 @@ fn scan(
     )?;
     let (reply, results) = mpsc::channel();
     let mut remaining = 0;
-    for capture in &captures {
+    let pages: Vec<_> = captures
+        .iter()
+        .map(|c| {
+            Arc::new(Mutex::new(page::Page::new(
+                c.output.clone(),
+                c.image.width,
+                c.image.height,
+            )))
+        })
+        .collect();
+    for (capture, page) in captures.iter().zip(&pages) {
         queue(
             jobs,
             Job {
@@ -323,14 +343,15 @@ fn scan(
                 strip: None,
                 cancel: cancel.clone(),
                 reply: reply.clone(),
+                page: page.clone(),
             },
         )?;
         remaining += 1;
     }
-    // Interleave outputs so every monitor gets its first hints promptly.
+    // Interleave outputs so recognition progresses on every monitor together.
     let max_height = captures.iter().map(|c| c.image.height).max().unwrap_or(0);
     for start in (0..max_height).step_by(STRIP) {
-        for capture in &captures {
+        for (capture, page) in captures.iter().zip(&pages) {
             if start >= capture.image.height {
                 continue;
             }
@@ -341,6 +362,7 @@ fn scan(
                     strip: Some((start, (start + STRIP).min(capture.image.height))),
                     cancel: cancel.clone(),
                     reply: reply.clone(),
+                    page: page.clone(),
                 },
             )?;
             remaining += 1;
@@ -350,22 +372,35 @@ fn scan(
     // Jobs own the pixels now. Only the image files live for the whole picker.
     drop(captures);
     let mut next_number = 1;
+    let mut output_regions = std::collections::HashMap::<String, usize>::new();
     let mut failures = 0;
     while remaining > 0 && !cancel.load(Ordering::Relaxed) {
         match results.recv_timeout(Duration::from_millis(20)) {
             Ok(result) => {
                 remaining -= 1;
-                match result {
-                    Ok(mut links) => {
-                        for link in &mut links {
-                            link.number = next_number;
-                            next_number += 1;
-                        }
-                        if !links.is_empty() {
-                            emit(json!({ "id": request.id, "event": "links", "links": links }))?;
-                        }
+                failures += usize::from(result.failed);
+                let mut links = result.links;
+                let recognized = links.len();
+                links.retain(|link| {
+                    let count = output_regions.entry(link.output.clone()).or_default();
+                    let regions = link.regions.len().max(1);
+                    if regions > 9 || count.saturating_add(regions) > MAX_RENDER_REGIONS {
+                        return false;
                     }
-                    Err(_) => failures += 1,
+                    *count += regions;
+                    true
+                });
+                failures += usize::from(links.len() != recognized);
+                for link in &mut links {
+                    link.number = next_number;
+                    next_number += 1;
+                }
+                // Stay below the wire frame bound even for dense text screens.
+                for batch in links.chunks(64) {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    emit(json!({ "id": request.id, "event": "links", "links": batch }))?;
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => (),

@@ -436,6 +436,8 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/uri-picker.js "$out/share/seele-shell/uri-picker.js" "$out/share/seele-shell/UriPicker.qml"
     TESSDATA_PREFIX=${tools.tesseract}/share/tessdata bash ${tests}/uri-picker.sh \
       ${tools}/bin/seele-uri-worker ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf
+    bash ${tests}/uri-overlay.sh "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared" \
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/color-picker.js "$out/share/seele-shell/color-picker.js" "$out/share/seele-shell/ColorPicker.qml"
     bash ${tests}/color-picker.sh ${tools}/bin/seele-color-worker
     node ${tests}/status-patches.js "$out/share/seele-shell/shell.qml"

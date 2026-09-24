@@ -4772,6 +4772,7 @@ Shared.Theme {
           required property real y0
           required property real w
           required property real h
+          required property var regions
           readonly property bool matching: !uriPicker.digits || String(number).indexOf(uriPicker.digits) === 0
           readonly property var position: uriWindow.positions[number] || ({ x: 0, y: 0 })
           visible: output === uriWindow.modelData.name
@@ -4782,24 +4783,39 @@ Shared.Theme {
           height: h * uriWindow.height
           z: 2
 
-          Rectangle {
-            anchors.fill: parent
-            anchors.margins: -1
-            radius: root.radiusSmall
-            color: uriLinkMouse.pressed ? root.pressColor : root.activeTint
-            border.width: 1
-            border.color: root.accent
-            Rectangle { anchors.fill: parent; radius: parent.radius; color: uriHover.hovered ? root.hoverColor : root.clearColor }
-            HoverHandler { id: uriHover }
-            MouseArea {
-              id: uriLinkMouse
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+          Repeater {
+            model: uriHint.regions
+            delegate: Rectangle {
+              required property int index
+              objectName: "uriRegion_" + uriHint.number + "_" + index
+              required property real x0
+              required property real y0
+              required property real w
+              required property real h
+              x: (x0 - uriHint.x0) * uriWindow.width - 1
+              y: (y0 - uriHint.y0) * uriWindow.height - 1
+              width: w * uriWindow.width + 2
+              height: h * uriWindow.height + 2
+              radius: root.radiusSmall
+              color: uriLinkMouse.pressed ? root.pressColor : root.activeTint
+              border.width: 1
+              border.color: root.accent
+              HoverWash { hovered: uriHover.hovered; radius: parent.radius }
+              HoverHandler {
+                id: uriHover
+                onHoveredChanged: uriPicker.hoveredUri = hovered ? uriHint.text : ""
+              }
+              MouseArea {
+                id: uriLinkMouse
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+              }
             }
           }
 
           Rectangle {
+            objectName: "uriBadge_" + uriHint.number
             x: uriHint.position.x - uriHint.x
             y: uriHint.position.y - uriHint.y
             width: uriWindow.badgeWidth
@@ -4881,10 +4897,6 @@ Shared.Theme {
           }
 
           onVisibleChanged: if (!visible && uriPicker.hoveredUri === text) uriPicker.hoveredUri = ""
-          Connections {
-            target: uriHover
-            function onHoveredChanged() { uriPicker.hoveredUri = uriHover.hovered ? uriHint.text : "" }
-          }
           Connections {
             target: uriNumberHover
             function onHoveredChanged() { uriPicker.hoveredUri = uriNumberHover.hovered ? uriHint.text : "" }
