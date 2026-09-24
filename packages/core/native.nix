@@ -54,6 +54,7 @@ let
     qml-core = "seele-qml-functions";
   };
   fixtures = {
+    tools = ''python3 projects/tools/tests/network_activity.py "$out/bin/seele-network-activity"'';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';
     integrations = ''
       python3 projects/integrations/tests/home_assistant.py "$out/bin/seele-home-assistant"

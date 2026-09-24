@@ -300,6 +300,8 @@ Shared.Theme {
     if (panel === "clock") refreshClock()
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
+    // This panel owns local counters and needs no general device refresh.
+    if (panel === "network-activity") return
     if (panel === "home-assistant") {
       homeAssistantStore.refresh()
       return
@@ -1907,6 +1909,10 @@ Shared.Theme {
   }
   CaffeinateStore {
     id: caffeinateStore
+  }
+  NetworkActivityStore {
+    id: networkActivityStore
+    panelOpen: root.controlPanel === "network-activity"
   }
   PortsStore {
     id: portsStore
@@ -8449,6 +8455,46 @@ Shared.Theme {
     }
   }
 
+  // Network activity ----------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: networkActivityWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "network-activity" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.networkActivityWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: activityContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-network-activity"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { networkActivityPanel.forceActiveFocus() })
+      PanelSurface {
+        id: activitySurface
+        Column {
+          id: activityContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { id: activityHeader; width: parent.width; glyph: "󰛳"; title: "Network activity"; detail: "Live traffic on this machine" }
+          Shared.SeeleFlickable {
+            theme: root
+            width: parent.width
+            height: Math.min(networkActivityPanel.implicitHeight, Math.max(root.controlHeight, modelData.height - root.barHeight - root.panelGap * 3 - root.panelMargin * 2 - activityHeader.height - root.panelSpacing))
+            contentHeight: networkActivityPanel.implicitHeight
+            clip: true
+            NetworkActivityPanel { id: networkActivityPanel; theme: root; store: networkActivityStore; width: parent.width }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: activitySurface.hovered }
+          }
+        }
+      }
+    }
+  }
+
   // Private text transforms ----------------------------------------------------
   Variants {
     model: Quickshell.screens
@@ -8938,6 +8984,12 @@ Shared.Theme {
               busy: root.controlBusy("wifi", "toggle")
               onToggled: if (root.runControl("wifi", "toggle")) root.patchSystemData({ wifiEnabled: !root.systemData.wifiEnabled })
             }
+          }
+          Shared.ActionButton {
+            theme: root
+            width: parent.width
+            text: "Network activity  ↗"
+            onClicked: root.toggleControl("network-activity", networkWindow.modelData.name, root.overlayAnchorX)
           }
           SectionRule { width: parent.width; label: "CONNECTION" }
 

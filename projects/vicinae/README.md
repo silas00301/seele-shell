@@ -91,6 +91,7 @@ reach it from the launcher's root search.
 - Direct commands open a panel and nothing else: **Seele Control Center**,
   **Seele Notifications**, **Seele Now Playing**, **Seele AI Cockpit**,
   **Seele Quick AI Prompt**, **Seele GitHub Inbox**, **Seele Home Assistant**,
+  **Seele Network Activity** (per-interface rates and session totals),
   **Seele System Health**, **Seele Session Controls**, **Seele Notes**,
   **Seele Transfers**, **Seele Calculator**, and **Seele Screen Links and Codes**.
 

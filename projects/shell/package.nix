@@ -106,6 +106,9 @@ pkgs.stdenvNoCC.mkDerivation {
     substituteInPlace "$out/share/seele-shell/MeetingPlanner.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./CaffeinatePanel.qml} "$out/share/seele-shell/CaffeinatePanel.qml"
     substituteInPlace "$out/share/seele-shell/CaffeinatePanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./NetworkActivityStore.qml} "$out/share/seele-shell/NetworkActivityStore.qml"
+    install -m644 ${./NetworkActivityPanel.qml} "$out/share/seele-shell/NetworkActivityPanel.qml"
+    substituteInPlace "$out/share/seele-shell/NetworkActivityPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./PortsStore.qml} "$out/share/seele-shell/PortsStore.qml"
     install -m644 ${./CalculatorPanel.qml} "$out/share/seele-shell/CalculatorPanel.qml"
     substituteInPlace "$out/share/seele-shell/CalculatorPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared' --replace-fail 'import "../shared/Native.js"' 'import "shared/Native.js"'
@@ -280,6 +283,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-clock --set TZDIR "${pkgs.tzdata}/share/zoneinfo"
     makeTool seele-yubikey-watch
     makeWrapper ${tools}/bin/seele-dictation-levels "$out/bin/seele-dictation-levels"
+    makeWrapper ${tools}/bin/seele-network-activity "$out/bin/seele-network-activity"
     # The port inspector finds its privileged helper beside its own executable
     # rather than through PATH, so the two stay in the same store directory and
     # only the worker is exposed as a command.
@@ -327,7 +331,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in NetworkActivityStore.qml NetworkActivityPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -360,7 +364,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/calculator-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_calculator.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/NetworkActivityStore.qml" "$out/share/seele-shell/NetworkActivityPanel.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -378,7 +382,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -398,6 +402,9 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/text-workbench.js "$out/share/seele-shell/TextWorkbenchSession.qml"
     python3 ${tests}/text-workbench-clipboard.py ${tools}/bin/seele-text-clipboard
     node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/network-activity.js "$out/share/seele-shell/NetworkActivityStore.qml"
+    bash ${tests}/network-activity.sh "$out/share/seele-shell" \
+      ${tests}/tst_networkactivity.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/ports.js "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/ports-panel.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/mic-test.js "$out/share/seele-shell/mic-test.js" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml" "$out/share/seele-shell/shell.qml"
