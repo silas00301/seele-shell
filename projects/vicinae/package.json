@@ -290,6 +290,22 @@
         "schedule",
         "utc"
       ]
+    },
+    {
+      "name": "color-lab",
+      "title": "Seele Colour Lab",
+      "description": "Compare contrast, preview typography and create tonal palettes",
+      "mode": "no-view",
+      "keywords": [
+        "color",
+        "colour",
+        "contrast",
+        "palette",
+        "wcag",
+        "hex",
+        "rgb",
+        "hsl"
+      ]
     }
   ]
 }

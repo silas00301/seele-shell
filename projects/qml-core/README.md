@@ -110,3 +110,19 @@ also live here. Preview and commit share one evaluation path; commit projects a
 maximum of 32 tape entries and the last finite answer. `CalculatorPanel.qml`
 retains that state only while its Loader is alive. See
 [`CALCULATOR.md`](../shell/CALCULATOR.md) for grammar, precision and privacy.
+
+## Colour workbench
+
+`color_lab.view` takes foreground/background strings and returns a validated
+pair, native HEX/RGB/HSL forms, full and display contrast ratios, five threshold
+verdicts and a CSS declaration pair. `color_lab.palette` takes a selected colour
+and its counterpart and returns nine fixed lightness steps with actual contrast
+and normal-AA verdicts. `color_lab.copy` takes the pair, an explicit format and
+foreground/background target (ignored for CSS), refusing an invalid pair or
+unknown format/target. All input syntax is bounded, ASCII and opaque sRGB.
+No Qt colour-string interpretation or JS contrast arithmetic is involved.
+
+Run `cargo test -p seele-qml-core --locked color_lab` for reference contrast,
+conversion round trips, percentage midpoint rounding, malformed/alpha rejection,
+limits and export behavior. The shell's real Qt interaction fixture is
+`tests/tst_colorlab.qml`; package validation executes it through `Seele.Core`.

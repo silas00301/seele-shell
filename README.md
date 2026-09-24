@@ -208,6 +208,53 @@ and images using an empty private configuration and synthetic authentication.
 contract. Broker and prompt share `runtime::codex` isolation; see
 [the native workspace guide](docs/native-workspace.md).
 
+## Colour Lab
+
+Open **Colour Lab** in Control Center or Vicinae, or run `seele-shellctl color-lab`
+(`seele-shellctl control color-lab` also works). Edit foreground and background
+as opaque `#RGB`, `#RRGGBB`, `rgb()` or `hsl()`. The typography specimen uses the
+exact solid pair. The contrast card reports normal and large text AA/AAA, plus
+the non-text UI/graphics threshold. These are colour-pair checks, not a claim
+that an entire interface meets WCAG. Threshold comparisons use the full ratio;
+only the displayed number is rounded. Large means at least 18pt, or 14pt bold.
+
+Select either editor to target it, then choose from nine lightness steps of its
+hue and saturation. A green mark means that swatch meets normal-text AA against
+the other colour; its tooltip and accessible name include the actual ratio.
+Swap exchanges the two edit buffers. Select HEX, RGB, HSL or CSS and Copy; CSS
+exports both declarations, while the other formats copy the targeted colour.
+**Use sampled colour** deliberately applies the frozen-screen picker's current
+sample to the chosen editor. It appears only after a sample exists and never
+reads the clipboard. The screen picker's status card remains click-through.
+
+Tab traverses every control, Alt+1/Alt+2 selects an editor, Ctrl+S swaps,
+Ctrl+Enter copies the selected format and Ctrl+Shift+Enter copies CSS. Enter or
+Space activates a focused button. Escape or Close dismisses the workbench.
+It pins to the opening output, retains edit buffers only in shell memory, and
+bounds both width and height to that output. Small outputs scroll the content.
+Nothing goes to the network or disk; clipboard writes use `wl-copy` stdin and
+report success only after the process succeeds. Alpha is refused everywhere,
+including fully opaque alpha syntax, so CSS/Qt alpha order cannot disagree and
+no unknown backdrop enters the contrast calculation. Inputs are bounded to 96
+ASCII bytes; RGB channels and HSL components are checked before conversion.
+
+The in-process Rust `color_lab` policy in `qml-core` owns all parsing, colour
+conversion, palette construction, contrast math and exported strings. Its unit
+tests cover reference ratios, unrounded grades, RGB percentage midpoint rounding,
+4,096 round trips in every format, invalid/non-finite inputs, bounds and alpha.
+`tests/tst_colorlab.qml` sends real pointer and keyboard input through the
+production panel and native policy; `tests/color-lab-interaction.sh` runs it
+against `Seele.Core` during the shell package check. The panel is installed and
+included in `qmllint`. Local validation without the plugin used the same compiled
+Rust CLI behind a test-only QObject with real Qt 6.11 rendering and interaction.
+
+Contrast math and thresholds follow W3C's
+[minimum contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html),
+[enhanced contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-enhanced.html)
+and [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)
+explanations. They use sRGB relative luminance, the 0.04045 transfer breakpoint,
+and `(lighter + 0.05) / (darker + 0.05)`.
+
 ## Screen links
 
 Run `seele-shellctl uris` (Super + Ctrl + S on nerv) to freeze every output and
