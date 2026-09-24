@@ -7,6 +7,26 @@ reach it from the launcher's root search.
 
 ## Commands
 
+- **Copy Clean Link** (`clean-link.tsx`): reads the current text clipboard once
+  when invoked, previews the original and cleaned HTTP(S) URL and the recognized
+  tracking parameter names removed, and copies only on **Copy Cleaned Link**.
+  Unchanged links explain why and offer **Copy Unchanged Link**. Closing cancels
+  the native request; neither opening nor failure changes the clipboard. There
+  is no watcher, history, persisted link, network request, or navigation.
+  Native `seele-control vicinae-clean-link` accepts the link only on bounded
+  stdin (16 KiB, two-second input deadline), never in argv. It rejects whitespace,
+  control and directional-format characters, malformed URLs/percent escapes,
+  and non-HTTP(S) input. It removes case-insensitive `utm_*`, `fbclid`, `gclid`,
+  `dclid`, `msclkid`, `mc_cid`, `mc_eid`, `igshid`, `_ga`, and `_gl` names,
+  including percent-encoded names. Unknown query fields, their order, raw
+  encodings, and fragments retain their exact bytes; duplicate tracking fields
+  are removed together. Credentials, recognized signing/authentication markers
+  (including AWS, Google, Azure, CloudFront and token/expiry keys), or ambiguous
+  semicolon queries keep the entire URL unchanged. This is a conservative local
+  rule set, not a network check of a site's custom signing scheme; review the
+  preview before copying. Preview contents are inert code text, so clipboard
+  Markdown cannot load a remote image.
+
 - **Seele Caffeinate**: keep the machine awake, its displays on and its session
   unlocked until a selected task ends, a chosen duration passes, or the session
   is stopped. The searchable list shows the current session first, then the
@@ -172,3 +192,12 @@ The host retains React section composition, locale collation, clipboard and
 confirmation callbacks, and scalar control icon/text expressions. These rendering
 expressions start no processes, retain no policy state and make no authorization
 decisions. Native endpoints own snapshots, validation and action arguments.
+
+`tests/vicinae-clean-link.cjs` drives the actual command component and stdin
+adapter: one clipboard read, no automatic write, duplicate-copy suppression,
+unchanged/protected previews, generic failures, cancellation before and after the
+clipboard read, and EPIPE. Native `tools/tests/clean_link.rs` runs the executable
+without external tools to check stdin-only payloads, output privacy, size limits,
+EOF deadlines and cancellation. The native unit tests cover exact raw-byte
+preservation, recognized/encoded/duplicate keys, signing markers and invalid
+input. Both fixtures run in the package's existing check paths.

@@ -974,6 +974,7 @@ pub fn run(arguments: &[String]) -> Result {
     let command = arguments.first().map(String::as_str).unwrap_or("status");
     let arg = |index: usize| arguments.get(index).map(String::as_str).unwrap_or("");
     match command {
+        "vicinae-clean-link" => return crate::clean_link::run(arguments),
         "vicinae-keybindings"
         | "vicinae-input-keybinding"
         | "vicinae-desktop"
