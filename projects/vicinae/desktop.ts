@@ -5,6 +5,20 @@ export type Client = {
   workspace: { id: number; name: string };
   monitor: number;
   focusHistoryID: number;
+  moveWindow: {
+    address: string;
+    pid: number;
+    started: number;
+    initial_class: string;
+    initial_title_hash: string;
+    workspace: number;
+  } | null;
+  moveTargets: MoveDestination[];
+};
+export type MoveDestination = {
+  selector: string;
+  name: string;
+  id: number | null;
 };
 export type Workspace = {
   id: number;
@@ -42,4 +56,11 @@ export async function closeWindow(address: string) {
 }
 export async function forceQuitWindow(address: string) {
   await run(binaries.control, ["application", "force-quit", address]);
+}
+
+export async function moveWindow(client: Client, destination: MoveDestination) {
+  await run(binaries.control, [
+    "vicinae-window-move",
+    JSON.stringify({ window: client.moveWindow, destination }),
+  ]);
 }

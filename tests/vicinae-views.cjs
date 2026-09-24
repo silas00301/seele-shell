@@ -183,6 +183,7 @@ const runtime = {
   run: async (file, args) => {
     calls.push([file, [...args]]);
     const reply = replies.get(`${file} ${args[0]}`);
+    if (reply instanceof Error) throw reply;
     if (reply === undefined) return "";
     return reply;
   },
@@ -336,6 +337,12 @@ const [, , controlsPath, windowsPath, audioPath, keybindingsPath] =
     workspace: { id: workspace, name: String(workspace) },
     monitor: 0,
     focusHistoryID: order,
+    moveWindow: { address, pid: 123, started: 12345, initial_class: "ghostty", initial_title_hash: "title-hash", workspace },
+    moveTargets: workspace === 1 ? [
+      { selector: "2", name: "2", id: 2 },
+      { selector: "9", name: "9", id: null },
+      { selector: "name:writing", name: "writing", id: null },
+    ] : [],
   });
   replies.set(
     "control vicinae-desktop",
@@ -364,6 +371,29 @@ const [, , controlsPath, windowsPath, audioPath, keybindingsPath] =
     ["close", []],
     ["control", ["vicinae-focus", "window", "0xa"]],
   ]);
+  const moveMenu = elements(focused.props.actions, ActionPanel.Submenu)
+    .find((entry) => entry.props.title === "Move to Workspace");
+  assert(moveMenu, "Eligible windows offer a destination submenu");
+  assert.deepEqual(elements(moveMenu, Action).map((entry) => entry.props.title),
+    ["Workspace 2", "Workspace 9", "Workspace writing"]);
+  assert.equal(elements(item(desktop, "Window 0xb").props.actions, ActionPanel.Submenu).length, 0,
+    "No dead submenu is shown when native policy supplies no destinations");
+  calls.length = 0;
+  await action(focused, "Workspace writing").onAction();
+  assert.deepEqual(calls, [
+    ["control", ["vicinae-window-move", JSON.stringify({
+      window: client("0xa", 0, 1).moveWindow,
+      destination: { selector: "name:writing", name: "writing", id: null },
+    })]],
+    ["refresh", []],
+  ], "A move passes both native identities, refreshes, and keeps the launcher open");
+  calls.length = 0;
+  replies.set("control vicinae-window-move", new Error("private compositor output"));
+  await action(focused, "Workspace 2").onAction();
+  assert.deepEqual(calls.map(([operation]) => operation), ["control", "toast"],
+    "A refused move keeps the launcher open and uses the shared failure toast");
+  assert.deepEqual(calls.at(-1), ["toast", ["Move window"]]);
+  replies.delete("control vicinae-window-move");
   calls.length = 0;
   await action(focused, "Close Window").onAction();
   assert.deepEqual(calls, [
@@ -401,6 +431,11 @@ const [, , controlsPath, windowsPath, audioPath, keybindingsPath] =
     ["Window 0xa", "Window 0xb"],
     "A workspace that disappeared must not hide the whole desktop",
   );
+
+  delete queryState.data.clients[0].moveTargets;
+  desktop = windows();
+  assert.equal(elements(item(desktop, "Window 0xa").props.actions, ActionPanel.Submenu).length, 0,
+    "An older snapshot without move targets remains usable");
 
   // --- Audio devices -------------------------------------------------------
   reset();

@@ -56,6 +56,18 @@ counts and bytes and reject symlink, hardlink and foreign-owner records. The
 host-event parity and hostile-file tests live in `tests/harness-status.sh` at
 the workspace root.
 
+## Launcher window moves
+
+`seele-control vicinae-desktop` includes each eligible window's `moveWindow`
+identity and `moveTargets`. `vicinae-window-move <json>` consumes
+`{"window": <moveWindow>, "destination": <moveTargets entry>}`. The native boundary
+owns exact workspace-selector discovery, current/special exclusions, identity
+revalidation, silent Lua dispatch, and post-action location/focus checks. Runtime
+state is queried on demand and nothing is stored. The launcher only renders
+native choices and forwards the selected identities. See the
+[Vicinae contract](../vicinae/README.md); `tests/vicinae.rs` exercises the actual
+binary against synthetic compositor commands, never the live desktop.
+
 ## Caffeinate
 
 `seele-caffeinate serve|request|watch` is the resident session service behind the
