@@ -118,36 +118,6 @@ Column {
     font.family: panel.theme.fontFamily
     font.pixelSize: panel.theme.textIcon
   }
-  component Choice: Button {
-    id: choice
-    Keys.onPressed: event => {
-      if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
-      if (!event.isAutoRepeat && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) choice.clicked()
-      event.accepted = true
-    }
-    property bool selected: false
-    width: parent.width / 2
-    height: parent.height
-    hoverEnabled: true
-    focusPolicy: Qt.StrongFocus
-    contentItem: Label {
-      text: choice.text
-      font.pixelSize: panel.theme.textLabel
-      font.weight: choice.selected ? panel.theme.weightStrong : panel.theme.weightMedium
-      color: choice.selected ? panel.theme.text : panel.theme.subtext
-      horizontalAlignment: Text.AlignHCenter
-      verticalAlignment: Text.AlignVCenter
-    }
-    // Keyboard focus is reported in the same neutral light as the pointer, so
-    // the well never shows two segments lit.
-    background: Shared.Segment {
-      theme: panel.theme
-      selected: choice.selected
-      hovered: choice.hovered || choice.visualFocus
-      pressed: choice.down
-    }
-    HoverHandler { cursorShape: Qt.PointingHandCursor }
-  }
   // A device level is drawn as the Audio panel and the player draw theirs: a
   // well carrying its own fill, named inside the track it sets. It stays a
   // Slider so the keyboard and accessibility contract is Qt's.
@@ -353,8 +323,8 @@ Column {
       id: deviceFilter
       theme: panel.theme
       width: parent.width
-      Choice { text: "Your devices"; selected: panel.selectedOnly; onClicked: panel.selectedOnly = true }
-      Choice { text: "Add devices"; selected: !panel.selectedOnly; onClicked: panel.selectedOnly = false }
+      Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; text: "Your devices"; selected: panel.selectedOnly; onClicked: panel.selectedOnly = true }
+      Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; text: "Add devices"; selected: !panel.selectedOnly; onClicked: panel.selectedOnly = false }
     }
     Shared.DeviceListCard {
       id: deviceCard

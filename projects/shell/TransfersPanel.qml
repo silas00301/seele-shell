@@ -8,6 +8,13 @@ Column {
   required property var store
   property string moveGroup: ""
   property int moveIndex: -1
+  Keys.onPressed: event => {
+    if (event.key === Qt.Key_F && (event.modifiers & Qt.ControlModifier)) {
+      search.forceActiveFocus()
+      search.selectAll()
+      event.accepted = true
+    }
+  }
   function revealGroup() {
     for (var i = 0; i < cards.children.length; i++) {
       var child = cards.children[i]
@@ -20,7 +27,9 @@ Column {
   Connections {
     target: panel.store
     function onExpandedChanged() { Qt.callLater(panel.revealGroup) }
+    function onRevealRequested() { Qt.callLater(panel.revealGroup) }
   }
+  Component.onCompleted: Qt.callLater(panel.revealGroup)
   width: parent.width
   spacing: theme.panelSpacing
   // A transfer's state is a chip beside its progress, graded like every other
@@ -93,6 +102,89 @@ Column {
         enabled: !panel.store.busy
         onClicked: panel.store.enqueue({ op: "send", target: modelData.id })
       }
+    }
+  }
+  Column {
+    width: parent.width
+    visible: panel.store.groups.length > 0 || panel.store.filtering
+    spacing: panel.theme.spaceSmall
+    Shared.SectionRule {
+      theme: panel.theme
+      width: parent.width
+      label: "History"
+      detail: panel.store.history.matched + " / " + panel.store.history.total
+    }
+    Shared.SearchField {
+      id: search
+      objectName: "transferSearch"
+      theme: panel.theme
+      width: parent.width
+      placeholderText: "Search filenames or devices…"
+      maximumLength: 512
+      text: panel.store.query
+      onTextEdited: panel.store.query = text
+      Keys.onEscapePressed: event => {
+        if (panel.store.filtering) { panel.store.resetFilters(); event.accepted = true }
+        else event.accepted = false
+      }
+    }
+    Shared.SegmentWell {
+      theme: panel.theme
+      width: parent.width
+      Repeater {
+        model: [{value: "all", label: "Both directions"}, {value: "incoming", label: "Received"}, {value: "outgoing", label: "Sent"}]
+        Shared.SegmentChoice {
+          required property var modelData
+          objectName: "direction_" + value
+          theme: panel.theme
+          width: parent.width / 3
+          height: parent.height
+          text: modelData.label
+          property string value: modelData.value
+          selected: panel.store.direction === value
+          onClicked: panel.store.direction = value
+        }
+      }
+    }
+    Shared.SegmentWell {
+      theme: panel.theme
+      width: parent.width
+      Repeater {
+        model: [{value: "all", label: "All outcomes"}, {value: "completed", label: "Completed"}, {value: "failed", label: "Failed"}, {value: "cancelled", label: "Cancelled"}]
+        Shared.SegmentChoice {
+          required property var modelData
+          objectName: "status_" + value
+          theme: panel.theme
+          width: parent.width / 4
+          height: parent.height
+          text: modelData.label
+          property string value: modelData.value
+          selected: panel.store.status === value
+          onClicked: panel.store.status = value
+        }
+      }
+    }
+    Text {
+      width: parent.width
+      visible: panel.store.history.active > 0
+      text: "Active transfers stay visible above history."
+      color: panel.theme.subtext
+      font.family: panel.theme.fontFamily
+      font.pixelSize: panel.theme.textCaption
+    }
+    Shared.ActionButton {
+      objectName: "resetFilters"
+      theme: panel.theme
+      visible: panel.store.filtering
+      text: "Reset filters"
+      onClicked: { panel.store.resetFilters(); search.forceActiveFocus() }
+    }
+    Shared.EmptyState {
+      theme: panel.theme
+      width: parent.width
+      visible: panel.store.filtering && panel.store.history.matched === 0
+      title: "No matching history"
+      detail: "Try another filename, device or filter."
     }
   }
   Shared.EmptyState {

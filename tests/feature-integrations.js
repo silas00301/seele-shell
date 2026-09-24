@@ -5,6 +5,8 @@ const shell = fs.readFileSync(process.argv[2], 'utf8');
 const pkg = fs.readFileSync(process.argv[3], 'utf8');
 
 const shellPatterns = {
+  'transfers store': /TransfersStore\s*\{\s*id: transfersStore/,
+  'transfers history panel': /TransfersPanel \{ theme: root; store: transfersStore/,
   'registered health store': /IntegrationHealthStore\s*\{\s*id: integrationHealth/,
   'system health panel': /SystemHealthPanel\s*\{\s*id:\s*healthContent/,
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
@@ -144,3 +146,6 @@ assert.ok(!pkg.includes('/bin/python3'), 'Python must not be a shell runtime wra
 
 assert.ok(!/notificationSearch|notificationClipboard/.test(shell), 'notification UI must retain the 11:00 behavior');
 console.log('production QML, packaged helpers, and focused checks cover the enabled features');
+
+assert.ok(pkg.includes('bash ${tests}/transfers-panel.sh'), 'Transfers keyboard/render fixture is packaged');
+assert.ok(pkg.includes('node ${tests}/transfers.js'), 'Transfers native history/store fixture is packaged');

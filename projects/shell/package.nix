@@ -381,6 +381,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/home-assistant-store.js "$out/share/seele-shell/HomeAssistantStore.qml"
     node ${tests}/maintenance.js "$out/share/seele-shell/MaintenanceStore.qml"
     node ${tests}/health.js "$out/share/seele-shell/health.js"
+    bash ${tests}/transfers-panel.sh "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shared" ${tests}/tst_transferspanel.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     bash ${tests}/github-inbox.sh "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/shared" ${tests}/tst_githubinbox.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/github.js "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     node ${tests}/network-addresses.js "$out/share/seele-shell/network.js"

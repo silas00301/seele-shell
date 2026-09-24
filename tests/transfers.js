@@ -8,8 +8,8 @@ const shell = fs.readFileSync(process.argv[4], 'utf8');
 const methods = [...source.matchAll(/^  function \w+\([^\n]*\) \{\n[\s\S]*?^  \}/gm)].map(m=>m[0]).join('\n');
 const values = [];
 let reveals = 0;
-const rows = {get count(){return values.length}, get(i){return values[i]}, insert(i,v){values.splice(i,0,v)}, move(i,j){values.splice(j,0,values.splice(i,1)[0])}, setProperty(i,k,v){values[i][k]=v},remove(i){values.splice(i,1)}};
-const state = vm.createContext({Models:require("./list-models.cjs")(),Bridge:nativeBridge(),rows, groups:[],targets:[],selection:[],capabilities:{},error:'',actionError:'',lastFocus:'',lastFocusRevision:0,expanded:'',panelOpen:false,queue:[],payload:'',action:{running:false},revealRequested(){reveals++}, busy:false});
+const rows = {get count(){return values.length}, get(i){return values[i]}, insert(i,v){values.splice(i,0,v)}, move(i,j){values.splice(j,0,values.splice(i,1)[0])}, setProperty(i,k,v){values[i][k]=v},remove(i,count=1){values.splice(i,count)}};
+const state = vm.createContext({Models:require("./list-models.cjs")(),Bridge:nativeBridge(),rows, groups:[],targets:[],selection:[],capabilities:{},error:'',actionError:'',lastFocus:'',lastFocusRevision:0,expanded:'',query:'',direction:'all',status:'all',history:{},panelOpen:false,queue:[],payload:'',action:{running:false},revealRequested(){reveals++}, busy:false});
 vm.runInContext(methods,state);
 state.selectUrls(['https://example.test/file']);
 assert.equal(state.queue.length,0);
@@ -64,3 +64,40 @@ const projection=source.match(/readonly property var projection: ([^\n]+)/)[1];
 state.groups=[{state:"sending",size:200,bytes:51,seen:true},{state:"receiving",size:100,bytes:51,seen:false}];
 assert.equal(vm.runInContext(projection,state).barText,"󰇚 34%");
 console.log("Transfers bounded native URL/action policy and batched seen checks passed");
+
+// Execute native matching through production store methods, retaining original entries.
+const historyGroups = [
+  {id:'done',direction:'incoming',device:'Phone',state:'completed',files:[{name:'Summer Photo.JPG'}]},
+  {id:'failure',direction:'outgoing',device:'Tablet',state:'failed',files:[{name:'Other.txt'},{name:'Budget.pdf'}]},
+  {id:'live',direction:'outgoing',device:'Laptop',state:'sending',files:[{name:'Unrelated.zip'}]},
+  {id:'cancel',direction:'incoming',device:'Tablet',state:'cancelled',files:[{name:'note.md'}]},
+];
+state.panelOpen=false;
+state.accept({version:1,groups:historyGroups});
+assert.deepEqual(values.map(row=>row.entry.id),['live','done','failure','cancel']);
+state.query='  BUDGET  ';state.refreshRows();
+assert.deepEqual(values.map(row=>row.entry.id),['live','failure']);
+assert.equal(rows.get(1).entry.files[1].name,'Budget.pdf','matched multi-file group retains original file order');
+assert.equal(state.history.matched,1);
+state.direction='incoming';state.refreshRows();
+assert.deepEqual(values.map(row=>row.entry.id),['live'],'active work survives every filter');
+state.query='tablet';state.status='cancelled';state.refreshRows();
+assert.deepEqual(values.map(row=>row.entry.id),['live','cancel']);
+state.accept({version:1,groups:historyGroups,focus:'failure',focusRevision:2});
+assert.equal(state.query,'');assert.equal(state.direction,'all');assert.equal(state.status,'all');
+assert.equal(state.expanded,'failure');
+assert.equal(rows.count,4,'explicit notification focus reveals a previously filtered history group');
+state.query='no match';state.refreshRows();
+state.accept({version:1,groups:historyGroups.map(group=>group.id==='live'?{...group,state:'completed'}:group)});
+assert.equal(rows.count,0,'completed work follows current history filters');
+assert.equal(state.groups.length,4,'filtering never edits canonical history');
+state.resetFilters();assert.equal(rows.count,4);
+assert.match(panel,/Shared.SearchField/);assert.match(panel,/No matching history/);
+assert.match(panel,/Qt.Key_F.*Qt.ControlModifier/);
+assert.match(source,/onQueryChanged: refreshRows\(\)/);
+assert.match(source,/onDirectionChanged: refreshRows\(\)/);
+assert.match(source,/onStatusChanged: refreshRows\(\)/);
+console.log('Transfers native history search, combined filters, active jobs and notification reveal passed');
+
+assert.match(shell,/onVisibleChanged: if \(visible\) Qt.callLater\(function\(\) \{ transfersPanel.forceActiveFocus\(\) \}\)/, 'opening Transfers focuses the panel that handles Ctrl+F');
+assert.match(panel,/function onRevealRequested\(\) \{ Qt.callLater\(panel.revealGroup\) \}/, 'repeated notification focus scrolls after clearing filters');
