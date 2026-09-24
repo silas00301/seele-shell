@@ -153,6 +153,13 @@ const panels: Entry[] = [
     keywords: ["maintenance", "status", "diagnostics"],
   },
   {
+    title: "Resources",
+    subtitle: "Live CPU, memory, and local processes",
+    icon: Icon.Heartbeat,
+    args: ["resources"],
+    keywords: ["cpu", "memory", "ram", "process", "performance"],
+  },
+  {
     title: "Transfers",
     subtitle: "Send files to personal devices and view received files",
     icon: Icon.Download,

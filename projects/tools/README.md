@@ -413,3 +413,45 @@ the production QML coordinator's request/reply logic; `tst_meetingplanner.qml`
 uses the actual component for date entry, scrubbing, keyboard shortcuts, copy
 eligibility and bounded scrolling. The package installs/lints the component and
 runs all three alongside the existing `clock.sh` fixtures.
+
+## CPU, memory and local processes
+
+`seele-resources` backs the Resources utility and `seele-shellctl resources`.
+A Loader creates one worker per open panel; closing destroys it, and captured
+session generations reject late output or exit signals after a rapid reopen.
+The worker reads only `/proc/stat`, `/proc/meminfo`, and each PID's `stat`.
+Names are kernel `comm` names, never command lines, environment or executable
+paths. Nothing is written, escalated, killed, or retained after the panel closes.
+
+Sampling runs at most once a second, independently of query changes. The last
+60 readings live in memory. Missed wall-clock intervals insert bounded gaps and
+reset CPU baselines, including after suspend or a stalled reader. The first
+reading, CPU counter regressions, CPU-count changes and a new PID/start-time
+identity have unknown CPU rather than a guessed zero. Process disappearance
+keeps the selection named as unavailable; PID reuse cannot replace it.
+
+The top CPU chart measures total logical-CPU capacity. Process CPU uses the
+aggregate tick delta multiplied by logical CPU count: **100% is one logical
+CPU**, so a multithreaded process may exceed 100%. Memory used is `MemTotal -
+MemAvailable`, swap used is `SwapTotal - SwapFree`, and process resident memory
+is RSS pages multiplied by the kernel page size. RSS includes shared pages in
+each process and virtual size is an address-space size, not a memory charge.
+
+Version-1 newline JSON snapshots carry system readings, cadence and history
+capacity, bounded histories, rows, and an independently pinned selection.
+Requests are `query` (`text`, 128
+characters), `sort` (`value`: `cpu` or `memory`, descending), and `select` (`id`,
+`PID:starttime`; empty clears). Filtering and sorting run in Rust. Each scan
+visits at most 65,536 directory entries and 32,768 process files, each stat read
+is bounded to 8 KiB, and only the first 256 matching rows are published. The
+snapshot discloses incomplete reading and the full matched count. Requests are
+bounded to 4 KiB and EOF exits. The chart renderer is the shared
+`HistoryChart.qml`; QML owns bindings, focus, search debounce and rendering.
+
+Validation: `cargo test -p seele-tools --bin seele-resources` covers synthetic
+proc data, resets, PID reuse, disappearance, hotplug, bounds, sorting and gaps;
+`python3 projects/tools/tests/resources.py target/debug/seele-resources`
+exercises the real worker, privacy shape, cadence, projection and EOF cleanup.
+`tests/resources.sh` runs production panel/state and lifecycle fixtures in Qt,
+including keyboard search, sorting, stable selection, narrow rendering and
+late callbacks across close/reopen. Package checks run all three layers.
