@@ -3004,7 +3004,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 6 + gap * 5
+    height: devicesY + smallTileHeight * 7 + gap * 6
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -3059,6 +3059,16 @@ Shared.Theme {
       detail: "Contrast, typography and tonal palettes"
       glyph: Text { text: "󰏘"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
       onActivated: root.toggleControl("color-lab", controlGrid.screenName)
+    }
+
+    ControlTile {
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 6 + controlGrid.gap * 6
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Text workbench"
+      detail: "Format, encode and clean text locally"
+      glyph: Text { text: "󰦨"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("text-workbench", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8434,6 +8444,44 @@ Shared.Theme {
           colorLabPanel.notice = exitCode === 0 && exitStatus === 0 ? "Copied" : "Could not copy · try again"
           stdinEnabled = true
           colorLabWindow.copying = ""
+        }
+      }
+    }
+  }
+
+  // Private text transforms ----------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: textWorkbenchWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "text-workbench" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.textWorkbenchWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: Math.min(workbenchLoader.implicitHeight + root.panelMargin * 2, modelData.height - root.barHeight - root.panelGap * 2)
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-text-workbench"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      PanelSurface {
+        Shared.SeeleFlickable {
+          theme: root
+          anchors { fill: parent; margins: root.panelMargin }
+          contentHeight: workbenchLoader.implicitHeight
+          clip: true
+          Loader {
+            id: workbenchLoader
+            width: parent.width
+            active: textWorkbenchWindow.visible
+            sourceComponent: TextWorkbenchSession {
+              theme: root
+              onDismissed: root.closeOverlays()
+            }
+            onLoaded: item.focusInput()
+          }
         }
       }
     }

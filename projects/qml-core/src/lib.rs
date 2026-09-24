@@ -23,6 +23,7 @@ mod pi;
 mod ports;
 mod presentation;
 mod system;
+mod text_workbench;
 mod time;
 mod transfers;
 mod uri_picker;
@@ -73,6 +74,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "caffeinate" => caffeinate::call(function, arguments),
         "calculator" => calculator::call(function, arguments),
         "time" => time::call(function, arguments),
+        "text_workbench" => text_workbench::call(function, arguments),
         // Dispatch entries are added with each independently migrated policy.
         "fixture" if function == "echo" => Ok(arguments.first().cloned().unwrap_or(Value::Null)),
         _ => Err("unknown native function".into()),

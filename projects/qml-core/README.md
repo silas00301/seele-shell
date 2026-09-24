@@ -126,3 +126,24 @@ Run `cargo test -p seele-qml-core --locked color_lab` for reference contrast,
 conversion round trips, percentage midpoint rounding, malformed/alpha rejection,
 limits and export behavior. The shell's real Qt interaction fixture is
 `tests/tst_colorlab.qml`; package validation executes it through `Seele.Core`.
+
+### Private text workbench
+
+`text_workbench.transform(input, mode)` implements JSON format/minify, URL
+component encode/decode, standard padded Base64 encode/decode, line cleanup,
+and stable exact-line deduplication. Input is limited to 64 KiB of UTF-8 and
+output to 256 KiB. Errors return `valid: false` with no partial output.
+JSON layout preserves original numeric lexemes, duplicate keys and string
+escapes. Malformed syntax and unpaired surrogate escapes are rejected. URL
+decoding preserves literal plus signs; Base64 whitespace, binary non-UTF-8
+output and NUL bytes fail visibly.
+
+The panel previews after a 200 ms pause and invalidates Copy immediately when
+input or mode changes. Its conservative character preflight catches large input;
+the native UTF-8 byte and output bounds remain authoritative.
+Closing destroys the input document, undo history, results, pending clipboard
+state and transport. Clipboard transfers use bounded native I/O; contents never
+enter argv or logs, and a stale Paste reply cannot replace newer edits.
+
+Validation lives in the `text_workbench` Rust tests, the native clipboard
+fixture, the production QML coordinator fixture, and `tst_textworkbench.qml`.
