@@ -85,6 +85,9 @@ reach it from the launcher's root search.
   its content. A switch action appears only after that diff succeeds and
   requires a destructive confirmation. The picker deliberately contains no
   cleanup control; the existing `nh` policy owns retention.
+- **Seele Colour Lab** (`color-lab.tsx`): opens the local contrast, typography
+  and tonal-palette workbench. Also available under Panels in Seele Controls;
+  keywords include colour/color, contrast, palette, WCAG and the export formats.
 - Direct commands open a panel and nothing else: **Seele Control Center**,
   **Seele Notifications**, **Seele Now Playing**, **Seele AI Cockpit**,
   **Seele Quick AI Prompt**, **Seele GitHub Inbox**, **Seele Home Assistant**,

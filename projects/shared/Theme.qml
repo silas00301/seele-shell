@@ -183,6 +183,9 @@ ShellRoot {
   // Wide enough for the block to set a title and an artist beside its art
   // without eliding either, and to carry the transport under them unsqueezed.
   readonly property int mediaPanelWidth: 400
+  // Colour workbench: paired editors and a fixed contrast readout column.
+  readonly property int colorLabWidth: 480
+  readonly property int colorLabScoreWidth: 172
   readonly property int notesWindowWidth: 960
   readonly property int notesWindowHeight: 680
   // Small enough to be tiled into a column beside something else, which is
