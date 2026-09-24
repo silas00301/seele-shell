@@ -329,3 +329,89 @@ console.log('Notification malformed markup, inherited actions and protocol-relat
 console.log('Native notification state preserves sender action order and inert history');
 for (const gap of ['\r','\n','\u2028','\u2029','🦀'.repeat(40)])
   assert.equal(code('Use 123456 '+gap+' to sign in'),'','verification context keeps JavaScript line and UTF-16 span boundaries');
+
+// Application silence changes only future toast admission, using the same app
+// identity as stacks. Exercise real native policy and retained QObject actions.
+{
+  const h=harness(), key='desktop:org.chat';
+  const first=h.make(100,{offered:{reply:'Reply'},resident:true});
+  h.store.receive(first,1000);
+  assert.equal(h.store.setAppQuiet(key,true),true);
+  assert.equal(h.view.popups.length,1,'an already visible toast is untouched');
+  assert.equal(h.store.invoke(100,'reply'),true);
+  assert.deepEqual(first.invoked,['reply']);
+  const next=h.make(101,{desktopEntry:'ORG.CHAT.desktop',urgency:2});
+  h.store.receive(next,1001);
+  assert.equal(h.view.items.length,2);
+  assert.equal(h.view.popups.length,1,'quiet also follows existing DND policy for critical senders');
+  first.body='Replacement';h.store.receive(first,1002);
+  assert.equal(h.view.popups.length,0,'a replacement cannot bypass application silence');
+  h.store.receive(h.make(102,{desktopEntry:'org.other'}),1002);
+  assert.equal(h.view.popups.length,1,'other applications keep their toasts');
+  const transient=h.make(103,{transient:true});h.store.receive(transient,1002);
+  h.store.advance(1032);
+  assert.equal(transient.expired,1,'suppressed transient senders retain their expiry');
+  assert.equal(h.view.history.length,0);
+  h.store.dismiss(101);
+  assert.equal(h.view.history.length,1,'explicit dismissal still creates history');
+  h.store.pin(100);
+  assert.equal(h.view.popups.length,1,'an explicit pin remains a deliberate request to show');
+  h.store.retire(100);
+  h.store.setAppQuiet(key,false);
+  assert.equal(h.view.popups.length,0,'resuming never replays the suppressed backlog');
+  h.store.receive(h.make(104),1033);
+  assert.equal(h.view.popups.length,1);
+}
+{
+  const h=harness(), key='desktop:org.chat';
+  h.store.receive(h.make(110),1000);h.store.dismiss(110);
+  assert.equal(h.store.setAppQuiet(key,true),true,'a history group can silence future arrivals');
+  const next=harness();next.store.restore(h.store.save());
+  next.store.receive(next.make(111),1001);
+  assert.equal(next.view.popups.length,0,'application silence survives an in-memory QML reload');
+  next.store.setDnd(true);next.store.resumeApps();
+  assert.equal(next.dnd,true,'resuming apps does not switch global DND off');
+  assert.equal(next.view.quietApps.length,0);
+  next.store.setDnd(false);assert.equal(next.view.popups.length,0);
+  h.store.clear(true);assert.equal(h.view.history.length,0);
+  assert.equal(h.store.setAppQuiet(key,false),true,'resume still works after the group disappears');
+  const fresh=harness();fresh.store.receive(fresh.make(112),1001);
+  assert.equal(fresh.view.popups.length,1,'a new shell session starts with no quiet applications');
+}
+{
+  const h=harness();
+  h.store.receive(h.make(120,{desktopEntry:'',appName:'Mail'}),1000);
+  assert.equal(h.store.setAppQuiet('app:mail',true),true);
+  h.store.receive(h.make(121,{desktopEntry:'',appName:'MAIL'}),1001);
+  assert.equal(h.view.popups.length,1,'name-only senders share their normalized identity');
+  h.store.receive(h.make(122,{desktopEntry:'',appName:''}),1001);
+  assert.equal(h.store.setAppQuiet('id:122',true),false,'anonymous numeric IDs never become app policy');
+  assert.equal(h.store.setAppQuiet('desktop:unknown',true),false);
+  assert.equal(notifications.appQuiet({id:122},[]).key,'');
+  assert.equal(notifications.appQuiet({app_name:'x'.repeat(513)},[]).available,false);
+  assert.equal(notifications.appQuiet({app_name:'Chat'},['app:chat']).quiet,true);
+}
+// Resume-all is reachable from the actual menu even when no cards remain.
+{
+  const shell=fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]),'shell.qml'),'utf8');
+  const handler=shell.match(/function chooseQuiet\(minutes\) \{([^]*?)\n      \}/);
+  assert(handler);
+  const h=harness();h.store.receive(h.make(130),1000);h.store.setAppQuiet('desktop:org.chat',true);h.store.clear(false);h.store.clear(true);
+  const context=vm.createContext({notificationStore:{controller:h.store},quietMenuOpen:true,Date:{now:()=>1000000}});
+  vm.runInContext('function chooseQuiet(minutes) {'+handler[1]+'}',context);
+  context.chooseQuiet(-2);
+  assert.equal(context.quietMenuOpen,false);
+  assert.equal(h.view.quietApps.length,0);
+  assert.equal(h.view.items.length,0);
+}
+console.log('Application silence identity, reload, action, transient and resume checks passed');
+
+{
+  const h=harness();h.store.receive(h.make(140,{expireTimeout:0}),1000);
+  h.store.setAppQuiet('desktop:org.chat',true);
+  const next=harness();next.store.restore(h.store.save());
+  next.store.receive(next.make(140,{expireTimeout:0,lastGeneration:true}),1001);
+  assert.equal(next.view.popups.length,1,'reload keeps an existing permanent toast from a quiet app');
+  next.store.receive(next.make(141),1001);
+  assert.equal(next.view.popups.length,1,'new arrivals remain quiet after the same reload');
+}

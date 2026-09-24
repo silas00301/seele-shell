@@ -2,6 +2,7 @@
 // QObject properties are projected once; policy runs in the shared Rust core.
 function actions(entry) { return Bridge.call("notifications.actions",[entry,entry && entry.action_order || Object.keys(entry && entry.actions || {})]) }
 function verificationCode(entry) { return Bridge.call("notifications.verificationCode",[entry]) }
+function appQuiet(entry, quietApps) { return Bridge.call("notifications.appQuiet",[entry,quietApps]) }
 function groupKey(entry) { return Bridge.call("notifications.groupKey",[entry]) }
 function stackedRows(entries, expanded) { return Bridge.call("notifications.stackedRows",[entries,expanded]) }
 function localImage(source) { return Bridge.call("notifications.localImage",[source]) }
@@ -68,6 +69,8 @@ function createStore(publish, arrived, now) {
   state.retire=function(id) { return apply("retire",[id]) }
   state.dismiss=function(id) { return apply("dismiss",[id]) }
   state.pin=function(id) { return apply("pin",[id]) }
+  state.setAppQuiet=function(key,quiet) { return apply("setAppQuiet",[key,quiet]) }
+  state.resumeApps=function() { return apply("resumeApps",[]) }
   state.setDnd=function(enabled) { return apply("setDnd",[enabled]) }
   state.snooze=function(minutes,timestamp) { return apply("snooze",[Bridge.number(minutes),Bridge.number(timestamp)]) }
   state.clear=function(history) { return apply("clear",[history]) }
