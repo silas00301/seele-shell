@@ -322,6 +322,21 @@
         "deduplicate",
         "format"
       ]
+    },
+    {
+      "name": "network-activity",
+      "title": "Seele Network Activity",
+      "description": "View live interface receive and send rates and session totals",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "network",
+        "bandwidth",
+        "traffic",
+        "interface",
+        "receive",
+        "send"
+      ]
     }
   ]
 }

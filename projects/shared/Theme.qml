@@ -222,6 +222,8 @@ ShellRoot {
   // Two readable editing columns for transient local text transforms.
   readonly property int textWorkbenchWidth: 760
   readonly property int textWorkbenchEditorHeight: 240
+  // A duplex chart and two rate columns retain their measure on this panel.
+  readonly property int networkActivityWidth: 480
   // The calculator keeps its tape within one compact workbench.
   readonly property int calculatorWidth: 480
   readonly property int calculatorMaximumHeight: 620
