@@ -7,6 +7,8 @@ Item {
   property bool initialized: false
   readonly property var timerState: retained.state
   readonly property string label: timerState.status === "done" ? "Done" : Focus.label(timerState.remaining)
+  readonly property bool canExtend: Focus.canExtend(timerState)
+  readonly property string extensionHint: Focus.extensionHint(timerState)
   signal completed()
 
   function command(action, minutes) {
