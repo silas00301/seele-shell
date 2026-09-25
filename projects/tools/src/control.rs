@@ -563,47 +563,48 @@ fn litra_glow_device() -> Option<String> {
         .and_then(|list| litra_glow_devices(&list).into_iter().next())
 }
 
-fn litra_glow_control(command: &str, identity: &str) -> Result {
-    if litra_glow_device().as_deref() != Some(identity) {
-        return Err("Litra Glow is no longer available".into());
-    }
-    let args = match command {
-        "on" => vec!["light", "on", "--device", identity],
-        "off" => vec!["light", "off", "--device", identity],
+fn litra_glow_args<'a>(command: &'a str, identity: &'a str) -> Result<Vec<&'a str>> {
+    match command {
+        "on" => Ok(vec!["light", "on", "--device", identity]),
+        "off" => Ok(vec!["light", "off", "--device", identity]),
         _ => {
             if let Some(value) = command.strip_prefix("brightness:") {
-                if matches!(value, "25" | "50" | "75" | "100") {
-                    return require_status(
-                        "openlogi",
-                        [
-                            "light",
-                            "brightness",
-                            "--device",
-                            identity,
-                            "--percent",
-                            value,
-                        ],
-                    );
+                if value.parse::<u8>().is_ok_and(|level| level <= 100) {
+                    return Ok(vec![
+                        "light",
+                        "brightness",
+                        "--device",
+                        identity,
+                        "--percent",
+                        value,
+                    ]);
                 }
             }
             if let Some(value) = command.strip_prefix("temperature:") {
-                if matches!(value, "3000" | "4000" | "5000" | "6500") {
-                    return require_status(
-                        "openlogi",
-                        [
-                            "light",
-                            "temperature",
-                            "--device",
-                            identity,
-                            "--kelvin",
-                            value,
-                        ],
-                    );
+                if value
+                    .parse::<u16>()
+                    .is_ok_and(|kelvin| (2700..=6500).contains(&kelvin) && kelvin % 100 == 0)
+                {
+                    return Ok(vec![
+                        "light",
+                        "temperature",
+                        "--device",
+                        identity,
+                        "--kelvin",
+                        value,
+                    ]);
                 }
             }
-            return Err("invalid Litra Glow command".into());
+            Err("invalid Litra Glow command".into())
         }
-    };
+    }
+}
+
+fn litra_glow_control(command: &str, identity: &str) -> Result {
+    let args = litra_glow_args(command, identity)?;
+    if litra_glow_device().as_deref() != Some(identity) {
+        return Err("Litra Glow is no longer available".into());
+    }
     require_status("openlogi", args)
 }
 fn percent(text: &str) -> u64 {
@@ -1687,11 +1688,35 @@ mod volume_tests {
 
 #[cfg(test)]
 mod litra_glow_tests {
-    use super::litra_glow_devices;
+    use super::{litra_glow_args, litra_glow_devices};
 
     #[test]
     fn inventory_only_selects_the_glow_hid_route() {
         let listing = "Litra Beam — beam-id (046d:c901 usage ff43:0202)\n  power: yes\nLitra Glow — glow-id (046d:c900 usage ff43:0202)\n  brightness: 20–250 Lumens\nOther — wrong-interface (046d:c900 usage 0001:0001)\n";
         assert_eq!(litra_glow_devices(listing), vec!["glow-id"]);
+    }
+
+    #[test]
+    fn light_commands_cover_full_supported_ranges_without_crossing_them() {
+        for command in [
+            "on",
+            "off",
+            "brightness:0",
+            "brightness:100",
+            "temperature:2700",
+            "temperature:6500",
+        ] {
+            assert!(litra_glow_args(command, "glow-id").is_ok(), "{command}");
+        }
+        for command in [
+            "brightness:101",
+            "brightness:-1",
+            "temperature:2600",
+            "temperature:6550",
+            "temperature:6501",
+            "toggle",
+        ] {
+            assert!(litra_glow_args(command, "glow-id").is_err(), "{command}");
+        }
     }
 }

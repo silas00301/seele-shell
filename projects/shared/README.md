@@ -21,3 +21,9 @@ policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`
 (default 60), and `maximum` (default 100). Samples occupy a fixed right-aligned
 window. Missing/non-finite values break strokes; finite values clamp to the
 scale. CPU/memory and network inspection share this component.
+
+`DeviceSlider.qml` is the shared level track for Home Assistant devices and
+local lights. `current` is the last known value, while `valueKnown: false`
+keeps the track empty and labels it `Set` for devices that only expose writes.
+Only pointer and keyboard input emits `committed`; an incoming value update
+does not write back to the device.

@@ -99,6 +99,12 @@ Shared.Theme {
   // lives here rather than in each surface that turns.
   readonly property int audioWheelStep: 5
   property string cameraPreviewDevice: ""
+  // OpenLogi's light CLI can write settings but cannot read them back. These
+  // values describe successful writes from this shell session only.
+  property bool litraPowerKnown: false
+  property bool litraPower: false
+  property int litraBrightness: -1
+  property int litraTemperature: -1
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
   property string agentMetricPeriod: "day"
@@ -151,6 +157,15 @@ Shared.Theme {
     return periods[agentMetricPeriod] || { totalTokens: 0, totalCost: 0, models: [] }
   }
   readonly property SystemState systemData: SystemState {}
+  Connections {
+    target: root.systemData
+    function onLitraGlowDeviceChanged() {
+      root.litraPowerKnown = false
+      root.litraPower = false
+      root.litraBrightness = -1
+      root.litraTemperature = -1
+    }
+  }
   readonly property var agentProjection: Bridge.call("presentation.agents", [
     (agentData.launchers || []).map(function(item) { return {id:item.id, name:item.name} }),
     (agentData.subscriptions || []).map(function(item) { return {id:item.id, name:item.name, limits:(item.limits || []).map(function(limit) { return {usedPercent:limit.usedPercent} })} }),
@@ -1669,6 +1684,14 @@ Shared.Theme {
         root.completedControlAction = root.pendingControlAction
         root.completedControlValue = root.pendingControlValue
         root.completedControlExtra = root.pendingControlExtra
+        if (action === "litra-glow" && root.pendingControlExtra === root.systemData.litraGlowDevice) {
+          var litraCommand = root.pendingControlValue
+          if (litraCommand === "on" || litraCommand === "off") {
+            root.litraPower = litraCommand === "on"
+            root.litraPowerKnown = true
+          } else if (litraCommand.startsWith("brightness:")) root.litraBrightness = Number(litraCommand.slice(11))
+          else if (litraCommand.startsWith("temperature:")) root.litraTemperature = Number(litraCommand.slice(12))
+        }
       } else {
         root.failedControlAction = root.pendingControlAction
         root.failedControlValue = root.pendingControlValue
@@ -7675,7 +7698,6 @@ Shared.Theme {
                 spacing: root.spaceLarge
 
                 SegmentWell {
-                  property int optionCount: modelData.options.length
                   width: parent.width
 
                   Repeater {
@@ -10691,62 +10713,101 @@ Shared.Theme {
             expanded: cameraWindow.litraGlowExpanded
             onToggled: cameraWindow.litraGlowExpanded = !cameraWindow.litraGlowExpanded
           }
-          Column {
-            visible: cameraWindow.litraGlowExpanded
+          Item {
+            id: litraBody
             width: parent.width
-            spacing: root.spaceMedium
-
-            Text {
-              visible: !root.systemData.litraGlowDevice
+            height: cameraWindow.litraGlowExpanded ? litraBodyContent.implicitHeight : 0
+            visible: height > 0
+            clip: true
+            Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
+            Column {
+              id: litraBodyContent
               width: parent.width
-              text: "Connect your Litra Glow to use its light controls."
-              wrapMode: Text.WordWrap
-              color: root.subtext
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
-            }
-            Repeater {
-              model: root.systemData.litraGlowDevice ? [
-                {label:"POWER", options:[{label:"On", command:"on"}, {label:"Off", command:"off"}]},
-                {label:"BRIGHTNESS", options:[{label:"25%", command:"brightness:25"}, {label:"50%", command:"brightness:50"}, {label:"75%", command:"brightness:75"}, {label:"100%", command:"brightness:100"}]},
-                {label:"COLOUR TEMPERATURE", options:[{label:"3000K", command:"temperature:3000"}, {label:"4000K", command:"temperature:4000"}, {label:"5000K", command:"temperature:5000"}, {label:"6500K", command:"temperature:6500"}]}
-              ] : []
-              Column {
-                required property var modelData
+              spacing: root.panelSpacing
+              Rectangle {
+                visible: !root.systemData.litraGlowDevice
                 width: parent.width
-                spacing: root.spaceTight
-                SectionLabel { text: modelData.label }
-                SegmentWell {
-                  width: parent.width
-                  height: root.controlHeight
-                  Repeater {
-                    model: modelData.options
-                    Segment {
-                      required property var modelData
-                      readonly property string device: root.systemData.litraGlowDevice
-                      readonly property bool busy: root.controlBusy("litra-glow", modelData.command, device)
-                      readonly property bool complete: root.controlCompleted("litra-glow", modelData.command, device)
-                      readonly property bool failed: root.controlFailed("litra-glow", modelData.command, device)
-                      width: parent.width / parent.parent.optionCount
-                      selected: complete
-                      hovered: litraOptionMouse.containsMouse
-                      pressed: litraOptionMouse.pressed
+                implicitHeight: missingLitra.implicitHeight + root.cardPadding * 2
+                radius: root.radius
+                color: root.cardColor
+                CardEdge {}
+                Text {
+                  id: missingLitra
+                  anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.cardPadding }
+                  text: "Connect your Litra Glow to use its light controls."
+                  wrapMode: Text.WordWrap
+                  color: root.subtext
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textBody
+                }
+              }
+              Rectangle {
+                id: litraCard
+                visible: !!root.systemData.litraGlowDevice
+                width: parent.width
+                implicitHeight: litraControls.implicitHeight + root.cardPadding * 2
+                radius: root.radius
+                color: root.cardColor
+                CardEdge {}
+                Column {
+                  id: litraControls
+                  anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.cardPadding }
+                  spacing: root.spaceSmall
+                  Item {
+                    width: parent.width
+                    height: root.detailRowHeight
+                    Column {
+                      anchors { left: parent.left; right: litraPowerSwitch.left; rightMargin: root.spaceMedium; verticalCenter: parent.verticalCenter }
+                      spacing: root.spaceTight
+                      Text { text: "Litra Glow"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
                       Text {
-                        anchors.centerIn: parent
-                        text: parent.busy ? "…" : parent.failed ? "× " + parent.modelData.label : parent.complete ? "✓ " + parent.modelData.label : parent.modelData.label
-                        color: parent.failed ? root.red : parent.complete ? root.green : root.text
+                        text: root.litraPowerKnown ? (root.litraPower ? "On" : "Off") + " · last set" : "Power state unknown"
+                        color: root.subtext
                         font.family: root.fontFamily
-                        font.pixelSize: root.textLabel
-                      }
-                      MouseArea {
-                        id: litraOptionMouse
-                        anchors.fill: parent
-                        enabled: !controlProcess.running && parent.device !== ""
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.runControl("litra-glow", parent.modelData.command, parent.device)
+                        font.pixelSize: root.textCaption
                       }
                     }
+                    Shared.ActionButton {
+                      id: litraOffAction
+                      theme: root
+                      visible: !root.litraPowerKnown
+                      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                      text: "Off"
+                      enabled: !controlProcess.running
+                      onClicked: root.runControl("litra-glow", "off", root.systemData.litraGlowDevice)
+                    }
+                    ControlSwitch {
+                      id: litraPowerSwitch
+                      anchors { right: litraOffAction.visible ? litraOffAction.left : parent.right; rightMargin: litraOffAction.visible ? root.spaceSmall : 0; verticalCenter: parent.verticalCenter }
+                      checked: root.litraPowerKnown && root.litraPower
+                      busy: root.controlBusy("litra-glow", checked ? "off" : "on", root.systemData.litraGlowDevice)
+                      enabled: !controlProcess.running || busy
+                      onToggled: root.runControl("litra-glow", checked ? "off" : "on", root.systemData.litraGlowDevice)
+                    }
+                  }
+                  Shared.DeviceSlider {
+                    theme: root
+                    width: parent.width
+                    title: "Brightness"
+                    minimum: 0
+                    maximum: 100
+                    current: root.litraBrightness >= 0 ? root.litraBrightness : 50
+                    valueKnown: root.litraBrightness >= 0
+                    enabled: !controlProcess.running
+                    onCommitted: value => root.runControl("litra-glow", "brightness:" + Math.round(value), root.systemData.litraGlowDevice)
+                  }
+                  Shared.DeviceSlider {
+                    theme: root
+                    width: parent.width
+                    title: "Color temperature"
+                    minimum: 2700
+                    maximum: 6500
+                    step: 100
+                    suffix: " K"
+                    current: root.litraTemperature >= 0 ? root.litraTemperature : 4600
+                    valueKnown: root.litraTemperature >= 0
+                    enabled: !controlProcess.running
+                    onCommitted: value => root.runControl("litra-glow", "temperature:" + Math.round(value), root.systemData.litraGlowDevice)
                   }
                 }
               }
