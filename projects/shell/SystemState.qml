@@ -36,6 +36,9 @@ QtObject {
   property string cameraDevice: ""
   property bool cameraActive: false
   property string litraGlowDevice: ""
+  property bool litraAutoEnabled: false
+  property var litraAutoPower: null
+  property string litraAutoError: ""
   property bool screenRecording: false
   property var audioDevices: []
   property var audioStreams: []

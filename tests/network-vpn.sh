@@ -210,7 +210,17 @@ jq -e '
   and .sshServer == {available:true,mode:"mixed",tailscaleAvailable:true,sshAvailable:true}
   and any(.batteries[]; .kind == "logitech" and .name == "MX Master 3S" and .percent == 73)
   and .cameraDevices == [{name:"Fixture Camera",device:"/dev/video0"}]
+  and .litraAutoEnabled == false
 ' <<<"$state" >/dev/null
+
+SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto on
+jq -e '.litraAutoEnabled == true' <<<"$("$control" status)" >/dev/null
+if SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto toggle; then
+  printf 'invalid automatic light mode was accepted\n' >&2
+  exit 1
+fi
+SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto off
+jq -e '.litraAutoEnabled == false' <<<"$("$control" status)" >/dev/null
 
 SEELE_CONTROL_NO_STATUS=1 "$control" tailscale down
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect

@@ -30,6 +30,15 @@ avoiding repeated registry searches. Shutdown joins status producers before the
 controller exits. Bluetooth pairing cleanup closes discoverability even after
 SIGTERM or a D-Bus failure.
 
+The Camera panel's Litra Glow automatic mode is opt-in and saved in
+`seele-shell/litra-glow-auto` under the user's config directory. The resident
+status monitor follows the same PipeWire camera-active signal as the shell's
+camera indicator. It powers the detected Glow on while a camera source runs
+and off after the source has been idle for 750 ms. An unknown or disconnected
+PipeWire graph never triggers an off write. Failed writes retry after five
+seconds; disabling automatic mode leaves the current light state alone. Manual
+power stays available when automatic mode is off.
+
 ## Application launchers and lifecycle adapters
 
 `seele-lock-run` preserves Quickshell's successful daemon handoff and returns

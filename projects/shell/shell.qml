@@ -165,6 +165,7 @@ Shared.Theme {
       root.litraBrightness = -1
       root.litraTemperature = -1
     }
+    function onLitraAutoEnabledChanged() { root.litraPowerKnown = false }
   }
   readonly property var agentProjection: Bridge.call("presentation.agents", [
     (agentData.launchers || []).map(function(item) { return {id:item.id, name:item.name} }),
@@ -10761,7 +10762,9 @@ Shared.Theme {
                       spacing: root.spaceTight
                       Text { text: "Litra Glow"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
                       Text {
-                        text: root.litraPowerKnown ? (root.litraPower ? "On" : "Off") + " · last set" : "Power state unknown"
+                        text: root.systemData.litraAutoEnabled
+                          ? root.systemData.litraAutoError || (root.systemData.litraAutoPower === null ? "Automatic · waiting for camera" : root.systemData.litraAutoPower === root.systemData.cameraActive ? (root.systemData.cameraActive ? "Automatic · camera in use" : "Automatic · camera idle") : "Automatic · syncing")
+                          : root.litraPowerKnown ? (root.litraPower ? "On" : "Off") + " · last set" : "Power state unknown"
                         color: root.subtext
                         font.family: root.fontFamily
                         font.pixelSize: root.textCaption
@@ -10770,7 +10773,7 @@ Shared.Theme {
                     Shared.ActionButton {
                       id: litraOffAction
                       theme: root
-                      visible: !root.litraPowerKnown
+                      visible: !root.systemData.litraAutoEnabled && !root.litraPowerKnown
                       anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                       text: "Off"
                       enabled: !controlProcess.running
@@ -10779,9 +10782,9 @@ Shared.Theme {
                     ControlSwitch {
                       id: litraPowerSwitch
                       anchors { right: litraOffAction.visible ? litraOffAction.left : parent.right; rightMargin: litraOffAction.visible ? root.spaceSmall : 0; verticalCenter: parent.verticalCenter }
-                      checked: root.litraPowerKnown && root.litraPower
+                      checked: root.systemData.litraAutoEnabled ? root.systemData.litraAutoPower === true : root.litraPowerKnown && root.litraPower
                       busy: root.controlBusy("litra-glow", checked ? "off" : "on", root.systemData.litraGlowDevice)
-                      enabled: !controlProcess.running || busy
+                      enabled: !root.systemData.litraAutoEnabled && (!controlProcess.running || busy)
                       onToggled: root.runControl("litra-glow", checked ? "off" : "on", root.systemData.litraGlowDevice)
                     }
                   }
@@ -10808,6 +10811,24 @@ Shared.Theme {
                     valueKnown: root.litraTemperature >= 0
                     enabled: !controlProcess.running
                     onCommitted: value => root.runControl("litra-glow", "temperature:" + Math.round(value), root.systemData.litraGlowDevice)
+                  }
+                  Item {
+                    width: parent.width
+                    height: root.detailRowHeight
+                    Column {
+                      anchors { left: parent.left; right: litraAutoSwitch.left; rightMargin: root.spaceMedium; verticalCenter: parent.verticalCenter }
+                      spacing: root.spaceTight
+                      Text { text: "Auto with camera"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
+                      Text { text: "Turn on while the webcam is in use"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; elide: Text.ElideRight; width: parent.width }
+                    }
+                    ControlSwitch {
+                      id: litraAutoSwitch
+                      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                      checked: root.systemData.litraAutoEnabled
+                      busy: root.controlBusy("litra-glow-auto", checked ? "off" : "on")
+                      enabled: !controlProcess.running || busy
+                      onToggled: root.runControl("litra-glow-auto", checked ? "off" : "on")
+                    }
                   }
                 }
               }

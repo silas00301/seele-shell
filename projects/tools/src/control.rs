@@ -558,7 +558,7 @@ fn litra_glow_devices(list: &str) -> Vec<String> {
         .collect()
 }
 
-fn litra_glow_device() -> Option<String> {
+pub(crate) fn litra_glow_device() -> Option<String> {
     output("openlogi", ["light", "list"])
         .and_then(|list| litra_glow_devices(&list).into_iter().next())
 }
@@ -600,12 +600,23 @@ fn litra_glow_args<'a>(command: &'a str, identity: &'a str) -> Result<Vec<&'a st
     }
 }
 
-fn litra_glow_control(command: &str, identity: &str) -> Result {
+pub(crate) fn litra_glow_control(command: &str, identity: &str) -> Result {
     let args = litra_glow_args(command, identity)?;
     if litra_glow_device().as_deref() != Some(identity) {
         return Err("Litra Glow is no longer available".into());
     }
     require_status("openlogi", args)
+}
+
+pub(crate) fn litra_auto_enabled() -> bool {
+    fs::read_to_string(config_file("litra-glow-auto")).is_ok_and(|value| value.trim() == "on")
+}
+
+fn set_litra_auto_enabled(value: &str) -> Result {
+    if !matches!(value, "on" | "off") {
+        return Err("invalid Litra Glow automatic mode".into());
+    }
+    atomic_write(&config_file("litra-glow-auto"), value.as_bytes())
 }
 fn percent(text: &str) -> u64 {
     text.split_whitespace()
@@ -777,7 +788,7 @@ pub(crate) fn auxiliary_status() -> Value {
         "networkAddresses":addresses.pointer("/0/addr_info").cloned().unwrap_or_else(|| json!([])),
         "voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),
         "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),
-        "litraGlowDevice":litra_glow})
+        "litraGlowDevice":litra_glow,"litraAutoEnabled":litra_auto_enabled()})
 }
 
 // The stream gate belongs to the caller, because which applications belong in
@@ -1545,6 +1556,7 @@ pub fn run(arguments: &[String]) -> Result {
             detached("cameraview", &["-d".into(), device])?;
         }
         "litra-glow" => litra_glow_control(arg(1), arg(2))?,
+        "litra-glow-auto" => set_litra_auto_enabled(arg(1))?,
         "notification-action" => {
             let _: u32 = arg(1).parse().map_err(|_| "invalid notification id")?;
             if arg(2).is_empty() {
