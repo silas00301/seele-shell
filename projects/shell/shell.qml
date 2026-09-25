@@ -46,6 +46,11 @@ Shared.Theme {
   }
 
   property bool agentsOpen: false
+  // The theme picker floats on its own: it is not one of the control panels,
+  // so opening it leaves whatever panel is open where it is, and closing
+  // those leaves it.
+  property bool themesOpen: false
+  property string themesScreen: ""
   AiActivityStore { id: aiActivity }
   // Panels stay on the screen they were opened from. Tracking Hyprland's
   // focused monitor instead would move an open panel to another output the
@@ -284,6 +289,13 @@ Shared.Theme {
     var window = promptWindowContext()
     closeOverlays()
     if (shouldOpen) aiPrompt.open(screen, window)
+  }
+
+  // Unlike every other toggle this closes nothing: the picker is meant to sit
+  // beside an open panel while the desktop repaints around both.
+  function toggleThemes() {
+    themesOpen = !themesOpen
+    if (themesOpen) themesScreen = currentScreen()
   }
 
   function toggleLauncher(mode) {
@@ -1967,7 +1979,7 @@ Shared.Theme {
   }
   ThemeStore {
     id: themeStore
-    panelOpen: root.controlPanel === "themes"
+    panelOpen: root.themesOpen
   }
 
   IpcHandler {
@@ -1998,6 +2010,7 @@ Shared.Theme {
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
     function toggleAgents(): void { root.toggleAgents() }
     function togglePrompt(): void { root.togglePrompt() }
+    function toggleThemes(): void { root.toggleThemes() }
     function toggleUris(): void { root.toggleUris() }
     function toggleColor(): void { root.toggleColor() }
     function previewFiles(paths: string): void { root.toggleQuickLook(paths) }
@@ -3147,7 +3160,7 @@ Shared.Theme {
       label: "Themes"
       detail: themeStore.currentName !== "" ? themeStore.currentName : "Recolor the desktop, terminal and editor"
       glyph: Text { text: "󰔎"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("themes", controlGrid.screenName)
+      onActivated: root.toggleThemes()
     }
 
     Rectangle {
@@ -8737,17 +8750,19 @@ Shared.Theme {
   }
 
   // Themes ---------------------------------------------------------------------
+  // A floating picker centred on the output it was opened on. An unanchored
+  // layer surface is centred by the compositor, and it sits on the overlay
+  // layer above the click-away catcher, so a click outside closes the control
+  // panel beside it and leaves the picker open.
   Variants {
     model: Quickshell.screens
     PanelWindow {
       id: themesWindow
       required property var modelData
       screen: modelData
-      visible: root.controlPanel === "themes" && root.pinnedScreen(root.overlayScreen, modelData)
-      anchors { top: true; left: true }
-      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: root.clockWidth
-      implicitHeight: themesContent.implicitHeight + root.panelMargin * 2
+      visible: root.themesOpen && root.pinnedScreen(root.themesScreen, modelData)
+      implicitWidth: Math.min(root.themesWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: themesPanel.implicitHeight + root.panelMargin * 2
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -8755,13 +8770,13 @@ Shared.Theme {
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { themesPanel.forceActiveFocus() })
       PanelSurface {
-        Column {
-          id: themesContent
+        ThemePanel {
+          id: themesPanel
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
-          spacing: root.panelSpacing
-          Keys.onEscapePressed: root.closeOverlays()
-          PanelHeader { id: themesHeader; width: parent.width; glyph: "󰔎"; title: "Themes"; detail: themesPanel.hint }
-          ThemePanel { id: themesPanel; theme: root; store: themeStore; width: parent.width; maximumHeight: Math.min(root.themesMaximumHeight, themesWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2 - themesHeader.height - root.panelSpacing) }
+          theme: root
+          store: themeStore
+          maximumHeight: Math.min(root.themesMaximumHeight, themesWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2)
+          onCloseRequested: root.themesOpen = false
         }
       }
     }

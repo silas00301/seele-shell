@@ -91,7 +91,9 @@ Two surfaces call this helper and neither owns anything it owns: the Vicinae
 **Seele Themes** command and the shell's Themes panel (`ThemeStore.qml`,
 `ThemePanel.qml`, with grouping, search and wording in `qml-core`'s
 `themes.rs`). Both list only what they are showing and apply one theme at a
-time. The shell panel does not treat its own `set` reply as the answer to which
+time. The shell panel switches as the reader moves between tiles, so a held
+arrow key is coalesced: moves settle for a moment, only the last is sent, and a
+choice made while a switch runs follows the moment it finishes. The shell panel does not treat its own `set` reply as the answer to which
 theme is applied: it watches the published `selection.json` for that, so a
 switch made from the launcher, from `seele-theme` directly or during activation
 marks the same row. Their behavior is covered by `tests/vicinae-themes.cjs` and
