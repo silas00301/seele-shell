@@ -282,89 +282,6 @@ fn watch_pipewire(
     }
 }
 
-fn watch_litra_auto(camera: Arc<Mutex<Option<bool>>>, sender: SyncSender<Event>) {
-    let stop = crate::command::shutdown_signal();
-    let mut enabled_before = false;
-    let mut device: Option<String> = None;
-    let mut applied: Option<(String, bool)> = None;
-    let mut attempted: Option<(String, bool)> = None;
-    let mut observed: Option<bool> = None;
-    let mut observed_since = Instant::now();
-    let mut last_probe = Instant::now() - Duration::from_secs(5);
-    let mut next_attempt = Instant::now();
-    while stop.load(Ordering::Relaxed) == 0 {
-        let enabled = control::litra_auto_enabled();
-        if !enabled {
-            if enabled_before
-                && sender
-                    .send(Event::Patch(
-                        json!({"litraAutoPower":null,"litraAutoError":""}),
-                    ))
-                    .is_err()
-            {
-                return;
-            }
-            enabled_before = false;
-            applied = None;
-            attempted = None;
-            device = None;
-            observed = None;
-        } else {
-            if !enabled_before || last_probe.elapsed() >= Duration::from_secs(5) {
-                let found = control::litra_glow_device();
-                if found != device {
-                    applied = None;
-                    attempted = None;
-                    next_attempt = Instant::now();
-                    if sender
-                        .send(Event::Patch(
-                            json!({"litraAutoPower":null,"litraAutoError":""}),
-                        ))
-                        .is_err()
-                    {
-                        return;
-                    }
-                }
-                device = found;
-                last_probe = Instant::now();
-            }
-            enabled_before = true;
-            let active = *camera.lock().unwrap();
-            if active != observed {
-                observed = active;
-                observed_since = Instant::now();
-            }
-            if let (Some(identity), Some(active)) = (device.as_deref(), active) {
-                let target = (identity.to_owned(), active);
-                if attempted.as_ref() != Some(&target) {
-                    attempted = Some(target.clone());
-                    next_attempt = Instant::now();
-                }
-                // A short graph rebuild can momentarily report no running
-                // source. Wait before switching off, but turn on promptly.
-                if applied.as_ref() != Some(&target)
-                    && Instant::now() >= next_attempt
-                    && (active || observed_since.elapsed() >= Duration::from_millis(750))
-                {
-                    let command = if active { "on" } else { "off" };
-                    let result = control::litra_glow_control(command, identity);
-                    next_attempt = Instant::now() + Duration::from_secs(5);
-                    let patch = if result.is_ok() {
-                        applied = Some(target);
-                        json!({"litraAutoPower":active,"litraAutoError":""})
-                    } else {
-                        json!({"litraAutoError":"Could not set Litra Glow"})
-                    };
-                    if sender.send(Event::Patch(patch)).is_err() {
-                        return;
-                    }
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
-}
-
 fn changed(previous: &mut Value, patch: Value) -> Option<Value> {
     let mut delta = serde_json::Map::new();
     if let Value::Object(fields) = patch {
@@ -405,8 +322,12 @@ pub(crate) fn run() -> Result {
     workers.push(thread::spawn(move || {
         watch_pipewire(updates, guard, activity)
     }));
+    let (updates, requests) = (sender.clone(), crate::litra::Requests::default());
+    let litra = requests.clone();
     workers.push(thread::spawn(move || {
-        watch_litra_auto(camera, sender.clone())
+        crate::litra::watch(camera, litra, |patch| {
+            updates.send(Event::Patch(patch)).is_ok()
+        })
     }));
     thread::spawn(move || {
         let mut input = io::stdin().lock();
@@ -416,6 +337,10 @@ pub(crate) fn run() -> Result {
                 continue;
             };
             let command = command.trim();
+            if let Some(request) = command.strip_prefix("litra ") {
+                requests.submit(request);
+                continue;
+            }
             if matches!(command, "audio" | "all") {
                 let _guard = audio.lock().unwrap();
                 if sender.send(Event::Refresh(control::volumes())).is_err() {

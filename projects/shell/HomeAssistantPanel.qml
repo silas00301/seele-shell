@@ -617,6 +617,7 @@ Column {
                         width: parent.width
                         title: "Color temperature"
                         suffix: " K"
+                        spectrum: panel.theme.temperatureSpectrum
                         step: 50
                         minimum: homeRow.payload.min_kelvin || 2000
                         maximum: homeRow.payload.max_kelvin || 6500

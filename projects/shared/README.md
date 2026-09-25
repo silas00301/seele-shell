@@ -23,7 +23,10 @@ window. Missing/non-finite values break strokes; finite values clamp to the
 scale. CPU/memory and network inspection share this component.
 
 `DeviceSlider.qml` is the shared level track for Home Assistant devices and
-local lights. `current` is the last known value, while `valueKnown: false`
-keeps the track empty and labels it `Set` for devices that only expose writes.
-Only pointer and keyboard input emits `committed`; an incoming value update
-does not write back to the device.
+the Camera panel's Litra Glow. `current` is the device's value. Only pointer
+and keyboard input emits `committed`, and pointer movement emits `changing`
+for a device cheap enough to follow the drag; an incoming value update never
+writes back to the device. A level that sets a colour passes `spectrum`, the
+colours at the track's start, middle and end; colour-temperature tracks use
+the theme's `temperatureSpectrum`, so the well shows the range and the fill
+ends on the chosen colour.

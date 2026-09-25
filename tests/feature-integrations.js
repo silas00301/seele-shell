@@ -54,7 +54,7 @@ const shellPatterns = {
   'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,
   'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
   'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
-  'collapsible Litra Glow controls': /label: "LITRA GLOW"[\s\S]*?collapsible: true[\s\S]*?root\.runControl\("litra-glow"/,
+  'collapsible Litra Glow controls': /label: "LITRA GLOW"[\s\S]*?collapsible: true[\s\S]*?root\.litraGlowRequest\(litraGroup\.modelData\.device, "mode"/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {

@@ -210,17 +210,23 @@ jq -e '
   and .sshServer == {available:true,mode:"mixed",tailscaleAvailable:true,sshAvailable:true}
   and any(.batteries[]; .kind == "logitech" and .name == "MX Master 3S" and .percent == 73)
   and .cameraDevices == [{name:"Fixture Camera",device:"/dev/video0"}]
-  and .litraAutoEnabled == false
 ' <<<"$state" >/dev/null
 
-SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto on
-jq -e '.litraAutoEnabled == true' <<<"$("$control" status)" >/dev/null
-if SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto toggle; then
-  printf 'invalid automatic light mode was accepted\n' >&2
-  exit 1
-fi
-SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow-auto off
-jq -e '.litraAutoEnabled == false' <<<"$("$control" status)" >/dev/null
+# The status monitor applies each Litra Glow's stored choice; the command
+# only records it, one validated field of one light at a time.
+litra="$XDG_CONFIG_HOME/seele-shell/litra-glow.json"
+SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow serial:glow-a mode camera
+SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow serial:glow-a brightness 70
+SEELE_CONTROL_NO_STATUS=1 "$control" litra-glow serial:glow-b mode off
+jq -e '.lights == {"serial:glow-a":{mode:"camera",brightness:70,temperature:4000},"serial:glow-b":{mode:"off",brightness:50,temperature:4000}}' "$litra" >/dev/null
+for request in "serial:glow-a mode auto" "serial:glow-a brightness 0" "serial:glow-a temperature 6550" "serial:glow-a power on" "'' mode on"; do
+  # shellcheck disable=SC2086 # Each request is a light, a setting and its value.
+  if eval SEELE_CONTROL_NO_STATUS=1 '"$control"' litra-glow $request 2>/dev/null; then
+    printf 'invalid Litra Glow request was accepted: %s\n' "$request" >&2
+    exit 1
+  fi
+done
+jq -e '.lights["serial:glow-a"].mode == "camera" and (.lights | length) == 2' "$litra" >/dev/null
 
 SEELE_CONTROL_NO_STATUS=1 "$control" tailscale down
 SEELE_CONTROL_NO_STATUS=1 "$control" proton-vpn connect

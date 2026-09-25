@@ -30,14 +30,25 @@ avoiding repeated registry searches. Shutdown joins status producers before the
 controller exits. Bluetooth pairing cleanup closes discoverability even after
 SIGTERM or a D-Bus failure.
 
-The Camera panel's Litra Glow automatic mode is opt-in and saved in
-`seele-shell/litra-glow-auto` under the user's config directory. The resident
-status monitor follows the same PipeWire camera-active signal as the shell's
-camera indicator. It powers the detected Glow on while a camera source runs
-and off after the source has been idle for 750 ms. An unknown or disconnected
-PipeWire graph never triggers an off write. Failed writes retry after five
-seconds; disabling automatic mode leaves the current light state alone. Manual
-power stays available when automatic mode is off.
+The Camera panel's Litra Glows belong to the resident status monitor
+(`src/litra.rs`). OpenLogi's light commands cannot read a light back, so the
+monitor owns each light's desired state instead: mode (`off`, `on` or
+`camera`), brightness and colour temperature live per OpenLogi identity
+(normally `serial:…`) under `lights` in `seele-shell/litra-glow.json` in the
+user's config directory, and the monitor is the only writer to the devices. An
+unplugged light keeps its entry. The monitor applies a light's state when it
+appears or reappears, when it changes, and in camera mode when the PipeWire
+camera signal starts (at once) or stops (after 750 ms), then publishes
+`litraGlows` with the power it actually applied. It writes nothing to a light
+before the user has chosen something for it, and an unknown PipeWire graph
+never switches a light off. Turning on always re-sends the shown levels; levels
+changed while off wait for the next On. Only reachable lights are published: a
+light missing from `openlogi light list`, or one that refused its last write,
+is withdrawn and retried every five seconds until a write succeeds. The shell
+sends `litra <identity> <field> <value>` lines over the monitor's input,
+coalesced per light and field so a dragged slider reaches the light live;
+`seele-control litra-glow <identity> <field> <value>` edits the same file for
+scripts. A light's own buttons can still drift it until the next transition.
 
 ## Application launchers and lifecycle adapters
 
