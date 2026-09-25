@@ -52,7 +52,7 @@ const shellPatterns = {
   'port inspector tile': /label: "Ports"/,
   'port inspector leaves the bar and takes focus only when opened': /namespace: "seele-shell-ports"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'theme picker store': /ThemeStore\s*\{\s*\n\s*id: themeStore/,
-  'theme picker panel': /ThemePanel \{ id: themesPanel; theme: root; store: themeStore/,
+  'theme picker panel': /ThemePanel \{\s*\n\s*id: themesPanel\n[\s\S]{0,200}?store: themeStore\n/,
   'theme picker tile': /label: "Themes"/,
   'theme picker leaves the bar and takes focus only when opened': /namespace: "seele-shell-themes"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,

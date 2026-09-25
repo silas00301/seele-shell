@@ -10,6 +10,7 @@ Commands:
   menu [apps|commands]      Toggle the launcher
   agents                    Toggle the AI dashboard
   prompt                    Toggle the quick AI prompt
+  themes                    Toggle the floating theme picker without closing panels
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
   network-activity          Open live per-interface traffic
@@ -86,6 +87,7 @@ pub fn run(arguments: &[String]) -> Result {
         ),
         "agents" => call("toggleAgents", &[]),
         "prompt" => call("togglePrompt", &[]),
+        "themes" => call("toggleThemes", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
         "network-activity" => call("toggleControl", &["network-activity".into()]),
