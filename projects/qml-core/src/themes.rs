@@ -253,8 +253,19 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                             let mut row = row.clone();
                             let id = text(row.get("id"));
                             order.push(id.clone());
+                            // A tile's second line states the mode, unless the
+                            // variant's own name already does ("Flexoki Dark").
+                            let named = variant
+                                .split_whitespace()
+                                .any(|word| word.eq_ignore_ascii_case(&text(row.get("mode"))));
+                            let detail = if named {
+                                String::new()
+                            } else {
+                                text(row.get("modeLabel"))
+                            };
                             if let Some(object) = row.as_object_mut() {
                                 object.insert("variant".to_owned(), json!(variant));
+                                object.insert("detail".to_owned(), json!(detail));
                                 object.insert(
                                     "current".to_owned(),
                                     json!(!current.is_empty() && id == current),
@@ -313,8 +324,8 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             };
             json!(places[target.unwrap_or(at)].2)
         }
-        // What the preview shows: the highlighted preset while the search
-        // still shows it, else the applied theme, else the first shown one.
+        // Which tile the keyboard is on: the highlighted preset while the
+        // search still shows it, else the applied theme, else the first shown.
         "focus" => {
             let order: Vec<String> = array(first.get("order"))
                 .iter()
@@ -329,16 +340,6 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                     .or_else(|| order.first().cloned())
                     .unwrap_or_default()
             )
-        }
-        // One preset by ID, for the preview; `null` when it is not in the
-        // catalog rather than whichever preset happens to come first.
-        "find" => {
-            let id = text(args.get(1));
-            array(Some(first))
-                .iter()
-                .find(|row| text(row.get("id")) == id)
-                .cloned()
-                .unwrap_or(Value::Null)
         }
         // The display name of one ID, so a tile or a heading names a theme
         // without a lookup loop in QML.
@@ -478,6 +479,17 @@ mod tests {
         let mocha = &listed["rows"][0]["members"][0];
         assert_eq!(mocha["current"], json!(true));
         assert_eq!(
+            mocha["detail"],
+            json!("Dark"),
+            "a variant that does not say its mode is told it"
+        );
+        assert_eq!(
+            listed["rows"][2]["members"][1]["detail"],
+            json!(""),
+            "Flexoki's Light already says so"
+        );
+        assert_eq!(listed["rows"][0]["members"][3]["detail"], json!("Light"));
+        assert_eq!(
             mocha["name"],
             json!("Catppuccin Mocha"),
             "the full name travels with the tile"
@@ -575,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn the_preview_follows_the_highlight_then_the_applied_theme() {
+    fn the_ring_follows_the_highlight_then_the_applied_theme() {
         let catalog = curated();
         let all = layout(&catalog, "", "all", 4);
         let focus = |layout: &Value, highlighted: &str, current: &str| {
@@ -598,13 +610,6 @@ mod tests {
         assert_eq!(
             focus(&layout(&catalog, "zzz", "all", 4), "nord", "nord"),
             ""
-        );
-        let found = call("find", &[catalog["themes"].clone(), json!("nord")]).unwrap();
-        assert_eq!(found["name"], json!("Nord"));
-        assert!(
-            call("find", &[catalog["themes"].clone(), json!("gone")])
-                .unwrap()
-                .is_null()
         );
     }
 

@@ -30,13 +30,16 @@ function methods(text) {
 }
 
 const guards = [];
+const settle = {running: false, restart() { this.running = true }, stop() { this.running = false }};
 const state = vm.createContext({
   Bridge: nativeBridge(),
   catalog: {ok: false, current: '', themes: []},
   panelOpen: false, query: '', mode: 'all', columns: 4, highlighted: '',
+  desired: '', sent: '', opened: '',
   selection: '', selectionName: '', error: '', actionError: '', reloadPending: '', applying: '',
   list: {running: false},
   set: {running: false, command: []},
+  settle,
   guard: {restart() { guards.push('restart') }, stop() { guards.push('stop') }},
   JSON,
 });
@@ -46,10 +49,11 @@ Object.defineProperties(state, {
   total: {get() { return state.themes.length }},
   current: {get() { return state.selection !== '' ? state.selection : state.catalog.current || '' }},
   busy: {get() { return state.applying !== '' || state.list.running }},
+  switching: {get() { return state.applying !== '' || state.settle.running }},
   filtered: {get() { return state.query !== '' || state.mode !== 'all' }},
   layout: {get() { return state.Bridge.call('themes.layout', [state.themes, state.current, state.query, state.mode, state.columns]) }},
   focusedId: {get() { return state.Bridge.call('themes.focus', [state.layout, state.highlighted, state.current]) }},
-  preview: {get() { return state.Bridge.call('themes.find', [state.themes, state.focusedId]) }},
+  openedName: {get() { return state.nameOf(state.opened) }},
   store: {get() { return state }},
 });
 vm.runInContext(methods(source), state);
@@ -75,54 +79,115 @@ const reply = {
 // Each row as "Family: variant, variant", so a whole layout reads at once.
 const shape = () => state.layout.rows.map(row =>
   `${row.family}: ${row.members.map(member => member.variant).join(', ')}`);
+const sent = () => [...state.set.command].slice(2);
+// The helper answers the switch in flight, and the desktop publishes it.
+function helperFinishes(code = 0) {
+  if (code === 0) state.selection = state.applying;
+  state.set.running = false;
+  state.finished(code);
+  state.list.running = false;
+}
 
 // A catalog is read and laid out; nothing is written and nothing runs.
 state.accept(reply);
 assert.equal(state.error, '');
 assert.deepEqual(shape(), ['Catppuccin: Mocha, Latte', 'Rosé Pine: Rosé Pine, Dawn', 'More: Nord']);
-assert.equal(state.layout.rows[0].members[0].current, true);
-assert.equal(state.focusedId, 'catppuccin-mocha', 'the preview opens on the applied theme');
-assert.equal(state.preview.name, 'Catppuccin Mocha');
+assert.equal(state.focusedId, 'catppuccin-mocha', 'the ring opens on the applied theme');
 
-// Moving is native: the store only remembers where the reader went.
+// Opening remembers where the desktop started, so it is one step away later.
+state.panelOpen = true;
+state.openChanged();
+assert.equal(state.opened, 'catppuccin-mocha');
+assert.equal(state.openedName, 'Catppuccin Mocha');
+state.list.running = false;
+
+// A burst of arrow presses moves the ring at once but sends only its end.
 state.step('right');
-assert.equal(state.focusedId, 'catppuccin-latte');
 state.step('down');
-assert.equal(state.focusedId, 'rose-pine-dawn', 'down keeps the column');
-state.step('down');
-assert.equal(state.focusedId, 'nord', 'a shorter row takes its last tile');
-state.step('down');
-assert.equal(state.focusedId, 'nord', 'the last row holds');
-state.highlight('rose-pine');
-assert.equal(state.preview.name, 'Rosé Pine', 'pointing at a tile previews it');
+assert.equal(state.focusedId, 'rose-pine-dawn', 'the ring follows every press');
+assert.equal(state.settle.running, true, 'a keyboard move waits for the burst to settle');
+assert.equal(state.set.running, false, 'nothing is sent mid-burst');
+assert.equal(state.switching, true);
+state.settle.running = false;
+state.flush();
+assert.deepEqual(sent(), ['rose-pine-dawn'], 'the burst sends its last move only');
 
-// The mode and the search take tiles out; a highlight they hide falls back.
+// The reader keeps moving while that switch runs; the latest choice follows
+// the moment it finishes, and the one in between is never sent.
+state.step('left');
+assert.equal(state.desired, 'rose-pine');
+state.settle.running = false;
+state.flush();
+assert.deepEqual(sent(), ['rose-pine-dawn'], 'one switch runs at a time');
+helperFinishes();
+assert.equal(state.current, 'rose-pine-dawn');
+assert.deepEqual(sent(), ['rose-pine'], 'the latest choice follows at once');
+helperFinishes();
+assert.equal(state.current, 'rose-pine');
+assert.equal(state.switching, false);
+state.flush();
+assert.equal(state.set.running, false, 'what is applied is not sent again');
+
+// Listing again after a switch never blocks the next one.
+state.list.running = true;
+state.choose('nord', true);
+assert.deepEqual(sent(), ['nord'], 'a click switches at once, even while the catalog is re-read');
+helperFinishes();
+
+// A switch that failed is not taken for applied: choosing it again resends it.
+state.choose('catppuccin-latte', true);
+helperFinishes(1);
+assert.match(state.actionError, /could not be applied/);
+assert.equal(state.current, 'nord');
+state.choose('catppuccin-latte', true);
+assert.deepEqual(sent(), ['catppuccin-latte'], 'the failed choice can be sent again');
+helperFinishes();
+
+// Back returns to where the panel opened, at once.
+state.revert();
+assert.deepEqual(sent(), ['catppuccin-mocha']);
+helperFinishes();
+assert.equal(state.current, 'catppuccin-mocha');
+
+// Closing in the middle of a burst keeps its last move rather than dropping it.
+state.step('right');
+assert.equal(state.set.running, false);
+state.panelOpen = false;
+state.openChanged();
+assert.deepEqual(sent(), ['catppuccin-latte'], 'closing sends the settled-on choice');
+assert.equal(state.highlighted, '', 'reopening starts from the applied theme');
+helperFinishes();
+
+// Unknown or empty choices are refused, and nothing is sent for them.
+state.panelOpen = true;
+state.openChanged();
+state.list.running = false;
+state.set.command = [];
+state.choose('not-a-theme', true);
+state.choose('', true);
+assert.deepEqual([...state.set.command], [], 'a theme the catalog does not hold is never sent');
+assert.equal(state.apply('not-a-theme'), false);
+assert.match(state.actionError, /no longer in the catalog/);
+state.actionError = '';
+
+// The mode and the search take tiles out and move the ring without
+// switching anything: only a move the reader made does.
 state.mode = 'light';
 assert.deepEqual(shape(), ['Catppuccin: Latte', 'Rosé Pine: Dawn']);
-assert.equal(state.focusedId, 'catppuccin-latte', 'a hidden highlight falls back to the first tile shown');
-assert.equal(state.filtered, true);
-state.mode = 'all';
-state.query = 'nord';
-assert.deepEqual(shape(), ['More: Nord']);
-assert.equal(state.focusedId, 'nord');
+assert.equal(state.focusedId, 'catppuccin-latte');
 state.query = 'solarized';
 assert.deepEqual(shape(), []);
-assert.equal(state.focusedId, '', 'nothing shown previews nothing');
-assert.equal(state.preview, null);
+assert.equal(state.focusedId, '');
+state.step('down');
+assert.equal(state.settle.running, false, 'an empty grid has nowhere to move');
 state.resetFilters();
-assert.equal(state.query, '');
-assert.equal(state.mode, 'all');
-assert.equal(state.filtered, false);
-assert.deepEqual(shape(), ['Catppuccin: Mocha, Latte', 'Rosé Pine: Rosé Pine, Dawn', 'More: Nord']);
+assert.deepEqual([state.query, state.mode, state.filtered], ['', 'all', false]);
+assert.deepEqual([...state.set.command], [], 'filtering never switched the desktop');
 
-// The published selection wins over the reply, because it is what the desktop
-// is actually wearing: a theme applied from the launcher marks its tile here.
-state.highlighted = '';
-state.selection = 'rose-pine-dawn';
-assert.equal(state.focusedId, 'rose-pine-dawn');
-assert.equal(state.layout.rows[1].members[1].current, true);
-assert.equal(state.layout.rows[0].members[0].current, false);
-state.selection = '';
+// The published selection, not the request, marks the applied tile.
+assert.equal(state.layout.rows[0].members[1].current, true);
+state.selection = 'nord';
+assert.equal(state.layout.rows[2].members[0].current, true);
 
 // A malformed catalog keeps the one that was already read.
 const kept = state.catalog;
@@ -133,26 +198,10 @@ for (const broken of [{current: 'nord', themes: []}, {current: 'nord', themes: [
   state.error = '';
 }
 
-// Applying is one reviewed ID at a time, and only an ID the catalog holds.
-assert.equal(state.apply('not-a-theme'), false);
-assert.match(state.actionError, /no longer in the catalog/);
-assert.deepEqual([...state.set.command], [], 'a theme the catalog does not hold is never sent');
-assert.equal(state.apply(''), false);
-state.highlight('catppuccin-latte');
-assert.equal(state.applyFocused(), true, 'Enter applies what the preview shows');
-assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-latte']);
-assert.equal(state.set.running, true);
-assert.equal(state.actionError, '');
-assert.deepEqual(guards, ['restart']);
-assert.equal(state.apply('nord'), false, 'a second choice cannot overtake the one in flight');
-assert.deepEqual([...state.set.command], ['seele-theme', 'set', 'catppuccin-latte']);
-
-// The reply says what could not be reloaded, never what is selected: that is
-// read back from the helper's own published selection.
-state.applied({id: 'catppuccin-latte', pending: ['Ghostty', 'tmux']});
+// The reply says what could not be reloaded, never what is selected.
+state.applied({id: 'nord', pending: ['Ghostty', 'tmux']});
 assert.equal(state.reloadPending, 'Ghostty and tmux still show the previous palette.');
-assert.equal(state.current, 'catppuccin-mocha', 'the request does not mark the tile; the selection file does');
-state.applied({id: 'catppuccin-latte', pending: []});
+state.applied({id: 'nord', pending: []});
 assert.equal(state.reloadPending, '');
 
 // Failure wording is the shared native map's, and says what happened to the
@@ -169,21 +218,34 @@ const commands = [...source.matchAll(/command = \[([^\]]*)\]|command: \[([^\]]*)
 assert.deepEqual(commands.sort(), ['"seele-theme", "list"', '"seele-theme", "set", id']);
 assert.doesNotMatch(source, /atomicWrite|writeFile|\.write\(/, 'the store publishes nothing itself');
 assert.match(source, /Bridge\.call\("themes\.selected"/, 'the published selection is parsed natively');
-for (const policy of ['layout', 'focus', 'find', 'step'])
+for (const policy of ['layout', 'focus', 'step', 'name'])
   assert.match(source, new RegExp(`Bridge\\.call\\("themes\\.${policy}"`), `${policy} is decided natively`);
 assert.doesNotMatch(source, /ListModel|Models\.reconcile/, 'the layout is read whole, not mirrored into a model');
 assert.match(source, /watchChanges: true/, 'the applied theme is watched rather than polled');
 assert.doesNotMatch(panel, /Process\s*\{/, 'the panel starts no process of its own');
 assert.doesNotMatch(panel, /#[0-9a-fA-F]{6}/, 'every colour the panel draws comes from a palette');
 
-// Production wiring.
+// Production wiring: the picker floats on its own and closes nothing.
 assert.match(shell, /ThemeStore \{\s*\n\s*id: themeStore/, 'the store is instantiated');
-assert.match(shell, /panelOpen: root\.controlPanel === "themes"/, 'listing follows the open panel');
-assert.match(shell, /ThemePanel \{ id: themesPanel; theme: root; store: themeStore/, 'tile and panel share one store');
+assert.match(shell, /panelOpen: root\.themesOpen/, 'listing follows the floating picker');
+assert.match(shell, /ThemePanel \{\s*\n\s*id: themesPanel\n[\s\S]{0,200}?store: themeStore\n/, 'tile and picker share one store');
+assert.match(shell, /onCloseRequested: root\.themesOpen = false/);
 assert.match(shell, /namespace: "seele-shell-themes"/);
 assert.match(shell, /label: "Themes"/, 'the Control Center carries the module');
-assert.match(shell, /root\.toggleControl\("themes"/, 'the tile opens the panel');
+assert.match(shell, /onActivated: root\.toggleThemes\(\)/, 'the tile opens the picker');
+assert.match(shell, /function toggleThemes\(\): void \{ root\.toggleThemes\(\) \}/, 'shellctl can open it');
 assert.match(shell, /detail: themeStore\.currentName/, 'the tile names the applied theme');
+const body = name => {
+  const start = shell.indexOf(`  function ${name}(`);
+  return shell.slice(start, shell.indexOf('\n  }\n', start));
+};
+assert.doesNotMatch(body('toggleThemes'), /closeOverlays|controlPanel/, 'opening the picker closes no panel');
+assert.doesNotMatch(body('closeOverlays'), /themesOpen/, 'closing the panels leaves the picker');
+const floating = shell.slice(shell.indexOf('id: themesWindow'), shell.indexOf('ThemePanel {', shell.indexOf('id: themesWindow')));
+assert.doesNotMatch(floating, /anchors \{|margins \{/, 'an unanchored layer surface is centred by the compositor');
+assert.match(floating, /WlrLayershell\.layer: WlrLayer\.Overlay/, 'above the click-away catcher');
+assert.doesNotMatch(panel, /store\.apply\(|component Scene|\"Apply\"/, 'the desktop is the preview; there is no apply step');
+
 // The tile has a row of its own and the grid is tall enough to hold it. The
 // row count is read from the grid rather than fixed here, so a module added
 // later moves this assertion along with it instead of breaking it.
@@ -201,4 +263,4 @@ assert.ok(themesRow.row < gridRows, 'the grid is tall enough to show the Themes 
 assert.doesNotMatch(grid.slice(grid.indexOf('label: "Themes"') - 400, grid.indexOf('label: "Themes"') + 400),
   /\u{f03d8}/u, 'the palette mark belongs to Colour Lab; Themes carries its own');
 
-console.log('Theme families, native movement and focus, filtering, selection marking, single-flight applies, reload reporting and production wiring passed');
+console.log('Theme families, instant coalesced switching, going back, filtering, selection marking and floating production wiring passed');
