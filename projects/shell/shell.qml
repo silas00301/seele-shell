@@ -7675,6 +7675,7 @@ Shared.Theme {
                 spacing: root.spaceLarge
 
                 SegmentWell {
+                  property int optionCount: modelData.options.length
                   width: parent.width
 
                   Repeater {
@@ -10560,6 +10561,7 @@ Shared.Theme {
       required property var modelData
       readonly property var camera: root.previewCamera()
       readonly property int deviceCount: (root.systemData.cameraDevices || []).length
+      property bool litraGlowExpanded: false
       screen: modelData
       visible: root.controlPanel === "camera" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
@@ -10676,6 +10678,75 @@ Shared.Theme {
                   onClicked: {
                     if (parent.modelData.action === "camera-preview") root.openCameraPreview(parent.device)
                     else root.openCameraSettings(parent.device)
+                  }
+                }
+              }
+            }
+          }
+          SectionRule {
+            width: parent.width
+            label: "LITRA GLOW"
+            detail: root.systemData.litraGlowDevice ? "Connected" : "Not detected"
+            collapsible: true
+            expanded: cameraWindow.litraGlowExpanded
+            onToggled: cameraWindow.litraGlowExpanded = !cameraWindow.litraGlowExpanded
+          }
+          Column {
+            visible: cameraWindow.litraGlowExpanded
+            width: parent.width
+            spacing: root.spaceMedium
+
+            Text {
+              visible: !root.systemData.litraGlowDevice
+              width: parent.width
+              text: "Connect your Litra Glow to use its light controls."
+              wrapMode: Text.WordWrap
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            Repeater {
+              model: root.systemData.litraGlowDevice ? [
+                {label:"POWER", options:[{label:"On", command:"on"}, {label:"Off", command:"off"}]},
+                {label:"BRIGHTNESS", options:[{label:"25%", command:"brightness:25"}, {label:"50%", command:"brightness:50"}, {label:"75%", command:"brightness:75"}, {label:"100%", command:"brightness:100"}]},
+                {label:"COLOUR TEMPERATURE", options:[{label:"3000K", command:"temperature:3000"}, {label:"4000K", command:"temperature:4000"}, {label:"5000K", command:"temperature:5000"}, {label:"6500K", command:"temperature:6500"}]}
+              ] : []
+              Column {
+                required property var modelData
+                width: parent.width
+                spacing: root.spaceTight
+                SectionLabel { text: modelData.label }
+                SegmentWell {
+                  width: parent.width
+                  height: root.controlHeight
+                  Repeater {
+                    model: modelData.options
+                    Segment {
+                      required property var modelData
+                      readonly property string device: root.systemData.litraGlowDevice
+                      readonly property bool busy: root.controlBusy("litra-glow", modelData.command, device)
+                      readonly property bool complete: root.controlCompleted("litra-glow", modelData.command, device)
+                      readonly property bool failed: root.controlFailed("litra-glow", modelData.command, device)
+                      width: parent.width / parent.parent.optionCount
+                      selected: complete
+                      hovered: litraOptionMouse.containsMouse
+                      pressed: litraOptionMouse.pressed
+                      Text {
+                        anchors.centerIn: parent
+                        text: parent.busy ? "…" : parent.failed ? "× " + parent.modelData.label : parent.complete ? "✓ " + parent.modelData.label : parent.modelData.label
+                        color: parent.failed ? root.red : parent.complete ? root.green : root.text
+                        font.family: root.fontFamily
+                        font.pixelSize: root.textLabel
+                      }
+                      MouseArea {
+                        id: litraOptionMouse
+                        anchors.fill: parent
+                        enabled: !controlProcess.running && parent.device !== ""
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.runControl("litra-glow", parent.modelData.command, parent.device)
+                      }
+                    }
                   }
                 }
               }

@@ -547,6 +547,65 @@ fn camera_devices() -> Vec<Value> {
     }
     values
 }
+
+fn litra_glow_devices(list: &str) -> Vec<String> {
+    list.lines()
+        .filter_map(|line| {
+            let (_, route) = line.rsplit_once(" — ")?;
+            let identity = route.strip_suffix(" (046d:c900 usage ff43:0202)")?;
+            (!identity.is_empty()).then(|| identity.to_owned())
+        })
+        .collect()
+}
+
+fn litra_glow_device() -> Option<String> {
+    output("openlogi", ["light", "list"])
+        .and_then(|list| litra_glow_devices(&list).into_iter().next())
+}
+
+fn litra_glow_control(command: &str, identity: &str) -> Result {
+    if litra_glow_device().as_deref() != Some(identity) {
+        return Err("Litra Glow is no longer available".into());
+    }
+    let args = match command {
+        "on" => vec!["light", "on", "--device", identity],
+        "off" => vec!["light", "off", "--device", identity],
+        _ => {
+            if let Some(value) = command.strip_prefix("brightness:") {
+                if matches!(value, "25" | "50" | "75" | "100") {
+                    return require_status(
+                        "openlogi",
+                        [
+                            "light",
+                            "brightness",
+                            "--device",
+                            identity,
+                            "--percent",
+                            value,
+                        ],
+                    );
+                }
+            }
+            if let Some(value) = command.strip_prefix("temperature:") {
+                if matches!(value, "3000" | "4000" | "5000" | "6500") {
+                    return require_status(
+                        "openlogi",
+                        [
+                            "light",
+                            "temperature",
+                            "--device",
+                            identity,
+                            "--kelvin",
+                            value,
+                        ],
+                    );
+                }
+            }
+            return Err("invalid Litra Glow command".into());
+        }
+    };
+    require_status("openlogi", args)
+}
 fn percent(text: &str) -> u64 {
     text.split_whitespace()
         .nth(1)
@@ -685,6 +744,7 @@ pub(crate) fn bluetooth_status(bluetooth: &Value) -> Value {
 
 pub(crate) fn auxiliary_status() -> Value {
     let cameras = camera_devices();
+    let litra_glow = litra_glow_device().unwrap_or_default();
     let route = json_output("ip", ["-json", "route", "get", "1.1.1.1"], json!([]));
     let address_route = if route.pointer("/0/dev").and_then(Value::as_str).is_some() {
         route.clone()
@@ -715,7 +775,8 @@ pub(crate) fn auxiliary_status() -> Value {
         "networkInterface":interface,
         "networkAddresses":addresses.pointer("/0/addr_info").cloned().unwrap_or_else(|| json!([])),
         "voxtypeStatus":output("voxtype",["status"]).unwrap_or_else(||"unavailable".into()).lines().next().unwrap_or("unavailable"),
-        "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or("")})
+        "cameraDevices":cameras,"cameraDevice":cameras.first().and_then(|value|value["device"].as_str()).unwrap_or(""),
+        "litraGlowDevice":litra_glow})
 }
 
 // The stream gate belongs to the caller, because which applications belong in
@@ -1482,6 +1543,7 @@ pub fn run(arguments: &[String]) -> Result {
             };
             detached("cameraview", &["-d".into(), device])?;
         }
+        "litra-glow" => litra_glow_control(arg(1), arg(2))?,
         "notification-action" => {
             let _: u32 = arg(1).parse().map_err(|_| "invalid notification id")?;
             if arg(2).is_empty() {
@@ -1620,5 +1682,16 @@ mod volume_tests {
             assert_eq!(before, start, "incorrect volume at {start}%");
             assert_eq!(after - before, 5, "incorrect step from {start}%");
         }
+    }
+}
+
+#[cfg(test)]
+mod litra_glow_tests {
+    use super::litra_glow_devices;
+
+    #[test]
+    fn inventory_only_selects_the_glow_hid_route() {
+        let listing = "Litra Beam — beam-id (046d:c901 usage ff43:0202)\n  power: yes\nLitra Glow — glow-id (046d:c900 usage ff43:0202)\n  brightness: 20–250 Lumens\nOther — wrong-interface (046d:c900 usage 0001:0001)\n";
+        assert_eq!(litra_glow_devices(listing), vec!["glow-id"]);
     }
 }
