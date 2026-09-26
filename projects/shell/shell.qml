@@ -1970,6 +1970,7 @@ Shared.Theme {
 
   NotificationStore {
     id: notificationStore
+    calendarFocusQuiet: focusTimer.timerState.status === "running"
     onPublished: (view, dnd) => {
       root.systemData.apply({ notifications: view, dnd: dnd })
       var present = {}, unfolded = {}

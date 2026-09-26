@@ -60,8 +60,8 @@ function createStore(publish, arrived, now) {
   state.view=function() { return policy.call("view",[]) }
   state.publish=function() { publish(state.view(),snapshot.dnd) }
   state.restore=function(saved) { return apply("restore",[saved]) }
-  state.receive=function(n,timestamp) {
-    return apply("receive",[fromNative(n,timestamp),Bridge.number(timestamp),n.lastGeneration],n)
+  state.receive=function(n,timestamp,suppressPopup) {
+    return apply("receive",[fromNative(n,timestamp),Bridge.number(timestamp),n.lastGeneration,!!suppressPopup],n)
   }
   state.closed=function(id,reason) { delete objects[String(id)]; return apply("closed",[id,reason]) }
   state.advance=function(timestamp) { return apply("advance",[Bridge.number(timestamp)]) }
