@@ -58,7 +58,7 @@ const shellPatterns = {
   'camera previews lease camera activity': /function cameraPreviewActivity\(source, active\)[\s\S]*?"camera-preview " \+ source \+ " " \+ \(active \? "on" : "off"\)/,
   'inline camera preview owns a lease': /id: cameraPreviewLoader[\s\S]*?onActiveChanged: root\.cameraPreviewActivity\("panel", active\)/,
   'preview window owns a lease': /id: cameraPreviewProcess[\s\S]*?root\.cameraPreviewActivity\("window", false\)/,
-  'Home Assistant stays an icon-only standard bar item': /width: root\.barHeight\s+[\s\S]*?text: "󰋜"[\s\S]*?id: homeAssistantMouse/,
+  'Home Assistant mark is centered beside its summary': /width: Math\.max\(root\.barHeight, homeAssistantSummary\.implicitWidth \+ root\.spaceLarge\)[\s\S]*?id: homeAssistantSummary[\s\S]*?CenteredGlyph \{\s*width: root\.textStrong\s*height: root\.barHeight[\s\S]*?text: homeAssistantStore\.summaryText/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
