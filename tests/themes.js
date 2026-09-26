@@ -10,6 +10,7 @@ const {nativeBridge} = require('./native-functions.cjs');
 const source = fs.readFileSync(process.argv[2], 'utf8');
 const panel = fs.readFileSync(process.argv[3], 'utf8');
 const shell = fs.readFileSync(process.argv[4], 'utf8');
+const settingsPanel = fs.readFileSync(process.argv[5], 'utf8');
 
 // The store's functions, braces counted rather than guessed, so a one-line
 // method is extracted exactly like a block.
@@ -46,7 +47,7 @@ const state = vm.createContext({
   rows,
   catalog: {ok: false, current: '', themes: []},
   appearance: {mode: 'dark', dark: '', light: '', auto: {source: 'off', lightAt: '07:00', darkAt: '19:00'}, next: null},
-  panelOpen: false, query: '', mode: 'dark', slots: {dark: '', light: ''}, showAll: false, highlighted: '',
+  panelOpen: false, mode: 'dark', slots: {dark: '', light: ''}, highlighted: '',
   opened: null, queue: [], running: null, settling: null,
   selection: '', selectionName: '', error: '', actionError: '', reloadPending: '',
   list: {running: false},
@@ -62,11 +63,12 @@ Object.defineProperties(state, {
   current: {get() { return state.selection !== '' ? state.selection : state.catalog.current || '' }},
   busy: {get() { return state.running !== null || state.list.running }},
   switching: {get() { return state.running !== null || state.queue.length > 0 || state.settling !== null }},
-  slot: {get() { return state.slots[state.mode] || '' }},
-  carousel: {get() { return state.Bridge.call('themes.carousel', [state.themes, state.slot, state.query, state.showAll ? 'all' : state.mode]) }},
-  focusedId: {get() { return state.Bridge.call('themes.focus', [state.carousel, state.highlighted, state.slot]) }},
+  carousel: {get() { return state.Bridge.call('themes.carousel', [state.themes, state.current]) }},
+  focusedId: {get() { return state.Bridge.call('themes.focus', [state.carousel, state.highlighted, state.current]) }},
   scheduleText: {get() { return state.Bridge.call('themes.schedule', [state.appearance]) }},
   autoSource: {get() { return (state.appearance.auto || {}).source || 'off' }},
+  appearanceChoice: {get() { return state.autoSource !== 'off' ? 'auto' : state.mode }},
+  appearanceGlyph: {get() { return ({light: '󰖙', dark: '󰖔', auto: '󰔎'})[state.appearanceChoice] || '󰔎' }},
   store: {get() { return state }},
 });
 vm.runInContext(methods(source), state);
@@ -105,7 +107,7 @@ function helperAnswers(over = {}, code = 0) {
   state.finished(code);
 }
 
-// Opening reads the catalog and the helper's slots and mode; what it first
+// Opening reads the catalog and the helper's themes and mode; what it first
 // reads is what a cancel puts back.
 state.panelOpen = true;
 state.openChanged();
@@ -116,72 +118,104 @@ assert.equal(state.mode, 'dark');
 assert.deepEqual({...state.slots}, {dark: 'catppuccin-mocha', light: 'catppuccin-latte'});
 assert.deepEqual({...state.opened}, {mode: 'dark', dark: 'catppuccin-mocha', light: 'catppuccin-latte'});
 
-// The carousel offers the edited mode's presets, centred on the slot's own.
-assert.deepEqual(names(), ['Catppuccin Mocha', 'Rosé Pine', 'Nord']);
+// The switcher offers every preset, in the catalog's order, centred on the
+// one on screen: nothing is filtered by mode.
+assert.deepEqual(names(), reply.themes.map(theme => theme.name));
 assert.equal(state.focusedId, 'catppuccin-mocha');
-state.toggleAll();
-assert.equal(names().length, 5, 'any preset may fill the slot');
-state.toggleAll();
 
-// Arrows move the slot at once and tell the helper once the burst settles.
+// Arrows switch at once and tell the helper once the burst settles. A pick
+// becomes the theme for its own mode and brings that mode with it.
 state.step('right');
+assert.equal(state.focusedId, 'catppuccin-latte');
+assert.deepEqual([state.mode, state.slots.light], ['light', 'catppuccin-latte'], 'a light preset brings light mode');
 state.step('right');
-assert.equal(state.slots.dark, 'nord', 'the picker is ahead of the helper');
-assert.equal(state.focusedId, 'nord');
+assert.equal(state.focusedId, 'rose-pine');
+assert.deepEqual([state.mode, state.slots.dark, state.slots.light], ['dark', 'rose-pine', 'catppuccin-latte'],
+  'the other mode keeps its theme');
 assert.deepEqual(commands, [], 'nothing is sent mid-burst');
 assert.equal(state.switching, true);
 state.flushSettling();
-assert.deepEqual(commands, ['slot dark nord'], 'the burst sends its last move only, for its own slot');
+assert.deepEqual(commands, ['pick rose-pine'], 'the burst sends its last move only');
 
-// While that runs, the reader switches mode and picks a light theme: each
-// waits its turn, and a newer choice for a slot replaces the waiting one.
-state.setMode('light');
-assert.equal(state.mode, 'light');
-assert.deepEqual(names(), ['Catppuccin Latte', 'Rosé Pine Dawn'], 'the carousel now edits the light slot');
+// While that runs, clicks wait their turn, and a newer pick replaces the
+// waiting one.
 state.choose('rose-pine-dawn', true);
-state.choose('catppuccin-latte', true);
+state.choose('nord', true);
 state.choose('rose-pine-dawn', true);
-assert.deepEqual([...state.queue].map(item => item.op + ' ' + (item.id || item.mode)), ['mode light', 'slot rose-pine-dawn']);
+assert.deepEqual([...state.queue].map(item => item.op + ' ' + item.id), ['pick rose-pine-dawn']);
 // A reply while the reader is ahead is kept, not adopted.
-state.answered({pending: [], appearance: appearance({dark: 'nord'})});
+state.answered({pending: [], appearance: appearance({dark: 'rose-pine'})});
 assert.equal(state.mode, 'light', 'an older reply does not pull the picker back');
-helperAnswers({dark: 'nord'});
-assert.deepEqual(commands, ['slot dark nord', 'mode light']);
-helperAnswers({dark: 'nord', mode: 'light'});
-assert.deepEqual(commands, ['slot dark nord', 'mode light', 'slot light rose-pine-dawn']);
-helperAnswers({dark: 'nord', light: 'rose-pine-dawn', mode: 'light'});
+helperAnswers({dark: 'rose-pine'});
+assert.deepEqual(commands, ['pick rose-pine', 'pick rose-pine-dawn']);
+helperAnswers({dark: 'rose-pine', light: 'rose-pine-dawn', mode: 'light'});
 assert.equal(state.switching, false);
-assert.deepEqual([state.mode, state.slots.light, state.slots.dark], ['light', 'rose-pine-dawn', 'nord'],
+assert.deepEqual([state.mode, state.slots.light, state.slots.dark], ['light', 'rose-pine-dawn', 'rose-pine'],
   'once everything is answered, the helper\'s word stands');
+state.selection = 'rose-pine-dawn';
+state.highlighted = '';
+assert.equal(state.focusedId, 'rose-pine-dawn', 'the published selection centres the switcher');
 
-// A mode switch mid-burst sends the burst first, for the mode it belonged to.
+// The switcher stops at either end rather than wrapping.
+state.choose('catppuccin-mocha', true);
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn'});
+const before = commands.length;
 state.step('left');
-assert.equal(state.slots.light, 'catppuccin-latte');
-state.setMode('dark');
-assert.deepEqual(commands.slice(-1), ['slot light catppuccin-latte'], 'the light slot is told before the mode moves');
-helperAnswers({dark: 'nord', light: 'catppuccin-latte', mode: 'light'});
-assert.deepEqual(commands.slice(-1), ['mode dark']);
-helperAnswers({dark: 'nord', light: 'catppuccin-latte', mode: 'dark'});
+assert.equal(state.settling, null, 'the first preset has nothing to its left');
+assert.equal(commands.length, before);
 
-// The schedule: sun, fixed times keeping the saved ones, and off.
-state.setAuto('sun');
+// Settings: Light and Dark hold the mode, and turn a schedule off first.
+state.setAppearance('dark');
+assert.equal(commands.length, before, 'choosing what is already chosen sends nothing');
+state.setAppearance('light');
+assert.deepEqual(commands.slice(-1), ['mode light']);
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', mode: 'light'});
+assert.equal(state.appearanceChoice, 'light');
+
+// Auto follows the sun where the timezone names a city.
+state.setAppearance('auto');
 assert.deepEqual(commands.slice(-1), ['auto sun']);
-helperAnswers({dark: 'nord', light: 'catppuccin-latte', auto: {source: 'sun', lightAt: '07:00', darkAt: '19:00'}, next: {mode: 'light', clock: '07:12'}});
-assert.equal(state.autoSource, 'sun');
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', auto: {source: 'sun', lightAt: '07:00', darkAt: '19:00'}, next: {mode: 'light', clock: '07:12'}});
+assert.equal(state.appearanceChoice, 'auto');
 assert.equal(state.scheduleText, 'Light at 07:12 · sunrise in Berlin');
 state.setAuto('schedule');
 assert.deepEqual(commands.slice(-1), ['auto schedule 07:00 19:00'], 'the saved times are kept');
-helperAnswers({dark: 'nord', light: 'catppuccin-latte', auto: {source: 'schedule', lightAt: '07:00', darkAt: '19:00'}});
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', auto: {source: 'schedule', lightAt: '07:00', darkAt: '19:00'}});
 state.setAuto('schedule', '06:30', '21:15');
 assert.deepEqual(commands.slice(-1), ['auto schedule 06:30 21:15']);
-helperAnswers({dark: 'nord', light: 'catppuccin-latte', auto: {source: 'schedule', lightAt: '06:30', darkAt: '21:15'}});
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', auto: {source: 'schedule', lightAt: '06:30', darkAt: '21:15'}});
 state.setAuto('whenever');
 assert.deepEqual(commands.slice(-1), ['auto schedule 06:30 21:15'], 'an unknown source sends nothing');
+// A hand-picked mode ends the schedule before it takes the mode.
+state.setAppearance('dark');
+assert.deepEqual([...state.queue].map(item => item.op), ['mode'], 'the mode waits for the schedule to end');
+assert.deepEqual(commands.slice(-1), ['auto off']);
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn'});
+assert.deepEqual(commands.slice(-1), ['mode dark']);
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn'});
 
-// Cancel puts back mode and both slots as the picker opened, superseding
+// Without a city, Auto keeps the saved times instead.
+state.appearance = appearance({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', place: null, auto: {source: 'off', lightAt: '06:30', darkAt: '21:15'}});
+state.setAppearance('auto');
+assert.deepEqual(commands.slice(-1), ['auto schedule 06:30 21:15']);
+helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', auto: {source: 'off', lightAt: '06:30', darkAt: '21:15'}});
+
+// Use current gives the preset on screen to either mode, whatever its own.
+state.selection = 'catppuccin-mocha';
+const asked = commands.length;
+state.useCurrentFor('dark');
+assert.equal(commands.length, asked, 'a mode already wearing it is not asked again');
+state.useCurrentFor('light');
+assert.equal(state.slots.light, 'catppuccin-mocha', 'a dark preset may be the light theme');
+assert.equal(commands.at(-1), 'slot light catppuccin-mocha');
+helperAnswers({dark: 'catppuccin-mocha', light: 'catppuccin-mocha'});
+state.useCurrentFor('dusk');
+assert.equal(commands.at(-1), 'slot light catppuccin-mocha', 'only the two modes have a theme');
+
+// Cancel puts back mode and both themes as the picker opened, superseding
 // whatever still waited.
-state.choose('rose-pine', true);
-state.setMode('light');
+state.choose('nord', true);
+state.choose('catppuccin-latte', true);
 state.cancel();
 assert.deepEqual([state.mode, state.slots.dark, state.slots.light], ['dark', 'catppuccin-mocha', 'catppuccin-latte']);
 assert.deepEqual([...state.queue].map(item => item.op), ['restore'], 'nothing waiting survives a restore');
@@ -193,36 +227,48 @@ helperAnswers();
 state.choose('nord', true);
 helperAnswers({}, 1);
 assert.match(state.actionError, /could not be applied/);
-assert.equal(state.list.running, true, 'after a refusal the slots are read again');
+assert.equal(state.list.running, true, 'after a refusal the themes are read again');
 state.list.running = false;
 
-// Something else switching — the schedule at a boundary, the launcher — makes
-// an idle open picker read the slots and mode again.
-state.selectionMoved();
+// Something else switching or choosing — the schedule at a boundary, the
+// launcher — makes the idle store read the themes and mode again, open picker
+// or not, so the tile's knob stays true.
+state.changedElsewhere();
 assert.equal(state.list.running, true);
 state.list.running = false;
+state.panelOpen = false;
+state.changedElsewhere();
+assert.equal(state.list.running, true, 'the tile is kept current with no picker open');
+state.list.running = false;
+state.panelOpen = true;
 state.choose('rose-pine', false);
-state.selectionMoved();
+state.changedElsewhere();
 assert.equal(state.list.running, false, 'a switch of its own does not');
-state.flushSettling();
+state.keep();
+assert.equal(commands.at(-1), 'pick rose-pine', 'Enter sends the burst now');
 helperAnswers({dark: 'rose-pine'});
 
-// Filtering narrows the carousel and switches nothing.
-const sent = commands.length;
-state.query = 'nord';
-assert.deepEqual(names(), ['Nord']);
-state.query = 'zzz';
-assert.equal(state.carousel.count, 0);
-assert.equal(state.focusedId, '');
-state.step('right');
-state.resetFilters();
-assert.equal(commands.length, sent, 'filtering never switched the desktop');
+// The tile's knob steps Light, Dark, Auto and back, and shows where it is.
+assert.deepEqual([state.appearanceChoice, state.appearanceGlyph], ['dark', '󰖔']);
+state.cycleAppearance();
+assert.equal(commands.at(-1), 'auto sun', 'after Dark comes Auto');
+helperAnswers({dark: 'rose-pine', auto: {source: 'sun', lightAt: '07:00', darkAt: '19:00'}});
+assert.deepEqual([state.appearanceChoice, state.appearanceGlyph], ['auto', '󰔎']);
+state.cycleAppearance();
+assert.equal(commands.at(-1), 'auto off', 'after Auto comes Light: the schedule ends first');
+helperAnswers({dark: 'rose-pine'});
+assert.equal(commands.at(-1), 'mode light');
+helperAnswers({dark: 'rose-pine', mode: 'light'});
+assert.deepEqual([state.appearanceChoice, state.appearanceGlyph], ['light', '󰖙']);
+state.cycleAppearance();
+assert.equal(commands.at(-1), 'mode dark', 'after Light comes Dark');
+helperAnswers({dark: 'rose-pine'});
 
 // Closing mid-burst keeps the last move, and the next opening starts afresh.
 state.step('right');
 state.panelOpen = false;
 state.openChanged();
-assert.match(commands.at(-1), /^slot dark /, 'closing sends the settled-on choice');
+assert.match(commands.at(-1), /^pick /, 'closing sends the settled-on choice');
 assert.equal(state.opened, null);
 assert.equal(state.highlighted, '');
 
@@ -237,29 +283,46 @@ assert.match(state.failure('unavailable'), /Nothing was changed/);
 assert.match(state.failure('timeout'), /Refresh to see what is selected/);
 assert.match(state.failure('whatever'), /Try again/);
 
-// This surface reads the catalog and asks the helper for five things: a
-// slot, the mode, a restore, the schedule, and the catalog itself. It writes
+// This surface reads the catalog and asks the helper for six things: a pick,
+// a theme for one mode, the mode, a restore, the schedule, and the catalog
+// itself. It writes
 // no file, keeps no palette of its own and starts nothing else.
 const verbs = [...source.matchAll(/\["seele-theme", "([a-z]+)"/g)].map(match => match[1]);
-assert.deepEqual([...new Set(verbs)].sort(), ['auto', 'list', 'mode', 'restore', 'slot']);
-assert.doesNotMatch(source, /"seele-theme", "set"/, 'the picker names the slot it edits rather than the mode on screen');
+assert.deepEqual([...new Set(verbs)].sort(), ['auto', 'list', 'mode', 'pick', 'restore', 'slot']);
+assert.doesNotMatch(source, /"seele-theme", "set"/, 'a pick files the preset under its own mode rather than the mode on screen');
 assert.doesNotMatch(source, /atomicWrite|writeFile|\.write\(/, 'the store publishes nothing itself');
 assert.match(source, /Bridge\.call\("themes\.selected"/, 'the published selection is parsed natively');
 for (const policy of ['carousel', 'focus', 'step', 'schedule', 'name'])
   assert.match(source, new RegExp(`Bridge\\.call\\("themes\\.${policy}"`), `${policy} is decided natively`);
 assert.match(source, /Models\.reconcile\(rows, carousel\.items/, 'cards are kept by ID so they slide rather than rebuild');
 assert.match(source, /watchChanges: true/, 'the applied theme is watched rather than polled');
-assert.doesNotMatch(panel, /Process\s*\{/, 'the panel starts no process of its own');
-assert.doesNotMatch(panel, /#[0-9a-fA-F]{6}/, 'every colour the panel draws comes from a palette');
+for (const [name, text] of [['switcher', panel], ['Control Center panel', settingsPanel]]) {
+  assert.doesNotMatch(text, /Process\s*\{/, `the ${name} starts no process of its own`);
+  assert.doesNotMatch(text, /#[0-9a-fA-F]{6}/, `every colour the ${name} draws comes from a palette`);
+}
+assert.match(source, /stateDirectory \+ "\/preferences\.json"[\s\S]{0,80}watchChanges: true/, 'a schedule turned on elsewhere is seen');
 
-// Production wiring: the picker floats on its own and closes nothing.
+// Production wiring: the switcher floats on its own and closes nothing; the
+// Control Center's tile carries the knob and opens the settings panel.
 assert.match(shell, /ThemeStore \{\s*\n\s*id: themeStore/, 'the store is instantiated');
 assert.match(shell, /panelOpen: root\.themesOpen/, 'listing follows the floating picker');
 assert.match(shell, /ThemePanel \{\s*\n\s*id: themesPanel\n[\s\S]{0,200}?store: themeStore\n/, 'tile and picker share one store');
 assert.match(shell, /onCloseRequested: root\.themesOpen = false/);
 assert.match(shell, /namespace: "seele-shell-themes"/);
 assert.match(shell, /label: "Themes"/, 'the Control Center carries the module');
-assert.match(shell, /onActivated: root\.toggleThemes\(\)/, 'the tile opens the picker');
+const tile = shell.slice(shell.indexOf('label: "Themes"') - 200, shell.indexOf('label: "Themes"') + 700);
+assert.match(tile, /knob: true/, 'the tile\'s glyph is a knob');
+assert.match(tile, /text: themeStore\.appearanceGlyph/, 'the knob shows Light, Dark or Auto');
+assert.match(tile, /onKnobClicked: themeStore\.cycleAppearance\(\)/, 'and steps to the next');
+assert.match(tile, /onActivated: root\.toggleControl\("themes", controlGrid\.screenName\)/, 'the tile opens the Themes panel');
+assert.match(shell, /visible: root\.controlPanel === "themes"/, 'the panel is a Control Center panel');
+assert.match(shell, /namespace: "seele-shell-theme-settings"/);
+assert.match(shell, /ThemeSettingsPanel \{ theme: root; store: themeStore; width: parent\.width; onBrowseRequested: root\.toggleThemes\(\) \}/,
+  'Browse opens the switcher over it, from the same store');
+assert.match(shell, /if \(panel === "themes"\) \{\s*themeStore\.refresh\(\)/, 'opening the panel reads the helper again');
+const controlTile = shell.slice(shell.indexOf('component ControlTile:'), shell.indexOf('component ControlCenterGrid:'));
+assert.match(controlTile, /z: 1[\s\S]*onClicked: controlTile\.knobClicked\(\)/, 'the knob sits above the tile\'s drag area');
+assert.match(controlTile, /enabled: controlTile\.knob/, 'other tiles have no knob');
 assert.match(shell, /function toggleThemes\(\): void \{ root\.toggleThemes\(\) \}/, 'shellctl can open it');
 assert.match(shell, /detail: themeStore\.currentName/, 'the tile names the applied theme');
 const body = name => {
@@ -272,6 +335,7 @@ const floating = shell.slice(shell.indexOf('id: themesWindow'), shell.indexOf('T
 assert.doesNotMatch(floating, /anchors \{|margins \{/, 'an unanchored layer surface is centred by the compositor');
 assert.match(floating, /WlrLayershell\.layer: WlrLayer\.Overlay/, 'above the click-away catcher');
 assert.doesNotMatch(panel, /store\.apply\(|text: "Apply"/, 'moving switches; there is no apply step');
+assert.doesNotMatch(source + panel, /query|showAll|toggleAll/, 'the switcher is never filtered');
 
 // The tile has a row of its own and the grid is tall enough to hold it. The
 // row count is read from the grid rather than fixed here, so a module added
@@ -290,4 +354,4 @@ assert.ok(themesRow.row < gridRows, 'the grid is tall enough to show the Themes 
 assert.doesNotMatch(grid.slice(grid.indexOf('label: "Themes"') - 400, grid.indexOf('label: "Themes"') + 400),
   /\u{f03d8}/u, 'the palette mark belongs to Colour Lab; Themes carries its own');
 
-console.log('Theme slots, mode, schedule, coalesced switching, cancel, refusals, filtering and floating production wiring passed');
+console.log('Unfiltered switching, picks by mode, appearance, the knob, schedule, coalescing, cancel, refusals and production wiring passed');

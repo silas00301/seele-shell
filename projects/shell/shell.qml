@@ -334,6 +334,10 @@ Shared.Theme {
       homeAssistantStore.refresh()
       return
     }
+    if (panel === "themes") {
+      themeStore.refresh()
+      return
+    }
     var group = panel === "notifications" ? "notifications"
       : panel === "audio" ? "audio"
       : ["bluetooth", "airpods"].indexOf(panel) >= 0 ? "bluetooth"
@@ -3008,7 +3012,9 @@ Shared.Theme {
   }
 
   // A Control Center module tile. The glyph is a component slot because each
-  // supported headphone family has its own silhouette.
+  // supported headphone family has its own silhouette. A tile whose glyph is
+  // also a control draws it as a knob, the way a connectivity row does: the
+  // knob acts, and the rest of the tile opens the module.
   component ControlTile: Rectangle {
     id: controlTile
 
@@ -3018,7 +3024,10 @@ Shared.Theme {
     property string module: ""
     property bool active: false
     property bool compact: false
+    property bool knob: false
+    readonly property real glyphWidth: controlTile.knob ? 30 : controlTile.compact ? 18 : 22
     signal activated()
+    signal knobClicked()
 
     radius: root.radius
     opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? 0.45 : 1
@@ -3031,20 +3040,44 @@ Shared.Theme {
     HoverHandler { id: controlTileHover }
 
     Row {
+      // Above the tile's own drag area, so a knob answers its own clicks.
+      z: 1
       anchors.fill: parent
       anchors.leftMargin: controlTile.compact ? 8 : 10
       anchors.rightMargin: controlTile.compact ? 8 : 10
       spacing: controlTile.compact ? 5 : 9
 
       Item {
-        width: controlTile.compact ? 18 : 22
+        width: controlTile.glyphWidth
         height: parent.height
+        Rectangle {
+          visible: controlTile.knob
+          anchors.centerIn: parent
+          width: 30
+          height: 30
+          radius: width / 2
+          color: controlTileKnob.pressed ? root.pressColor : root.wellColor
+          border.width: 1
+          border.color: root.edgeLight
+          antialiasing: true
+          Behavior on color { ColorAnimation { duration: root.durationFast } }
+          HoverWash { hovered: controlTileKnob.containsMouse }
+        }
         Loader { anchors.centerIn: parent; sourceComponent: controlTile.glyph }
+        MouseArea {
+          id: controlTileKnob
+          objectName: "controlTileKnob"
+          anchors.fill: parent
+          enabled: controlTile.knob
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: controlTile.knobClicked()
+        }
       }
 
       Column {
         anchors.verticalCenter: parent.verticalCenter
-        width: parent.width - (controlTile.compact ? 23 : 31)
+        width: parent.width - controlTile.glyphWidth - (controlTile.compact ? 5 : 9)
         spacing: 2
 
         Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: controlTile.compact ? root.textLabel : root.textBody; font.weight: root.weightStrong }
@@ -3158,9 +3191,13 @@ Shared.Theme {
       width: parent.width
       height: controlGrid.smallTileHeight
       label: "Themes"
-      detail: themeStore.currentName !== "" ? themeStore.currentName : "Recolor the desktop, terminal and editor"
-      glyph: Text { text: "󰔎"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleThemes()
+      detail: themeStore.currentName !== "" ? themeStore.currentName + " · " + themeStore.appearanceLabel : "Recolor the desktop, terminal and editor"
+      // The knob shows Light, Dark or Auto and steps to the next; the tile
+      // opens the Themes panel.
+      knob: true
+      glyph: Text { text: themeStore.appearanceGlyph; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
+      onKnobClicked: themeStore.cycleAppearance()
+      onActivated: root.toggleControl("themes", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8750,6 +8787,37 @@ Shared.Theme {
   }
 
   // Themes ---------------------------------------------------------------------
+  // The Control Center panel: Light, Dark or Auto, the schedule, and which
+  // preset each mode wears. Browsing opens the floating switcher over it.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: themeSettingsWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "themes" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.themeSettingsWidth
+      implicitHeight: themeSettingsContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-theme-settings"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      PanelSurface {
+        Column {
+          id: themeSettingsContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: themeStore.appearanceGlyph; title: "Themes"; detail: themeStore.currentName }
+          ThemeSettingsPanel { theme: root; store: themeStore; width: parent.width; onBrowseRequested: root.toggleThemes() }
+        }
+      }
+    }
+  }
+
   // A floating picker centred on the output it was opened on. An unanchored
   // layer surface is centred by the compositor, and it sits on the overlay
   // layer above the click-away catcher, so a click outside closes the control

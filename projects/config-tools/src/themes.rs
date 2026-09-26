@@ -598,7 +598,7 @@ fn catalog_file() -> Result<Catalog> {
     catalog.validate()?;
     Ok(catalog)
 }
-const USAGE: &str = "Use: seele-theme list | current | set <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset";
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
@@ -638,6 +638,16 @@ pub fn main() -> Result {
             catalog.theme(id)?;
             change(&catalog, &state, true, |prefs| {
                 prefs.set_slot(prefs.mode, (*id).to_owned());
+                Ok(())
+            })?
+        }
+        // The switcher's choice: the preset becomes the theme for its own mode,
+        // and the desktop switches to that mode.
+        ["pick", id] => {
+            let own = catalog.mode_of(id)?;
+            change(&catalog, &state, false, |prefs| {
+                prefs.set_slot(own, (*id).to_owned());
+                prefs.mode = own;
                 Ok(())
             })?
         }
