@@ -243,9 +243,9 @@ ShellRoot {
   // the preview and the controls leave: tall enough that the curated catalog
   // fits beside the preview without scrolling.
   readonly property int themesMaximumHeight: 640
-  // The floating picker is wide enough for a family of four tiles that are
-  // large enough to read a theme's name and quiet text on.
-  readonly property int themesWidth: 600
+  // The floating carousel is wide enough for a 16:10 preview and three
+  // slices on either side of it.
+  readonly property int themesWidth: 1040
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
   // Keeps the UTC timeline and a few pinned zones visible without taking an output.

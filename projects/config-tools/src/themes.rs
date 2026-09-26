@@ -1,4 +1,5 @@
 //! One catalog, one durable selection, and generated app-only includes.
+use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
 use crate::Result;
 use seele_runtime::{
     fs::{atomic_write, private_directory, read_bounded},
@@ -224,6 +225,33 @@ impl Catalog {
             .find(|t| t.id == id)
             .ok_or_else(|| "Unknown theme".into())
     }
+    fn mode_of(&self, id: &str) -> Result<Mode> {
+        Mode::parse(&self.theme(id)?.mode).ok_or_else(|| "Invalid theme mode".into())
+    }
+    /// The preset a mode starts with: the default when it is that mode, else
+    /// the default's own family's variant of it (Latte beside Mocha), else the
+    /// catalog's first preset of that mode.
+    fn default_for(&self, mode: Mode) -> String {
+        if self.mode_of(&self.default).ok() == Some(mode) {
+            return self.default.clone();
+        }
+        let family = self.default.split('-').next().unwrap_or_default();
+        self.themes
+            .iter()
+            .filter(|t| t.mode == mode.as_str())
+            .find(|t| t.id.split('-').next() == Some(family))
+            .or_else(|| self.themes.iter().find(|t| t.mode == mode.as_str()))
+            .map_or_else(|| self.default.clone(), |t| t.id.clone())
+    }
+    fn defaults(&self) -> Preferences {
+        Preferences {
+            version: 1,
+            dark: self.default_for(Mode::Dark),
+            light: self.default_for(Mode::Light),
+            mode: self.mode_of(&self.default).unwrap_or(Mode::Dark),
+            auto: Auto::default(),
+        }
+    }
 }
 fn xdg(key: &str, fallback: &str) -> Result<PathBuf> {
     if let Some(value) = env::var_os(key).filter(|v| !v.is_empty()) {
@@ -369,18 +397,15 @@ fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
     }
     pending
 }
-fn apply(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serde_json::Value> {
-    catalog.theme(id)?;
+/// Serialize competing pickers, the scheduler and activation. Directory locks
+/// need no replaceable lock file and release automatically with the handle.
+fn locked(state: &Path) -> Result<fs::File> {
     let directory = private_directory(state)?;
-    // Serialize competing pickers and activation; directory locks need no
-    // replaceable lock file and release automatically with the descriptor.
     directory.lock()?;
-    let saved = if live {
-        id.to_string()
-    } else {
-        selected(state, catalog)?
-    };
-    let id = saved.as_str();
+    Ok(directory)
+}
+/// Publishes one preset's files and selection. The caller holds the lock.
+fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serde_json::Value> {
     let theme = catalog.theme(id)?;
     let generation = tempfile::Builder::new()
         .permissions(fs::Permissions::from_mode(0o700))
@@ -441,38 +466,268 @@ fn apply(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serde_
     }
     Ok(serde_json::json!({"id": id, "pending": pending}))
 }
-pub fn main() -> Result {
-    let args: Vec<String> = env::args().skip(1).collect();
-    if args.iter().any(|arg| arg == "--help") {
-        println!("seele-theme list | current | set <id> | init | reset");
-        return Ok(());
+const PREFERENCES: &str = "preferences.json";
+
+/// The saved light and dark preferences. Before there were any, the one saved
+/// selection becomes the slot of its own mode and the other slot starts at
+/// that mode's default, so an upgrade changes nothing on screen.
+fn preferences(state: &Path, catalog: &Catalog) -> Result<Preferences> {
+    match read_bounded(&state.join(PREFERENCES), 16384, true) {
+        Ok(bytes) => {
+            let saved: Preferences =
+                serde_json::from_slice(&bytes).map_err(|_| "Invalid saved appearance")?;
+            if saved.version != 1
+                || appearance::clock(&saved.auto.light_at).is_none()
+                || appearance::clock(&saved.auto.dark_at).is_none()
+            {
+                return Err("Invalid saved appearance".into());
+            }
+            catalog.theme(&saved.dark)?;
+            catalog.theme(&saved.light)?;
+            Ok(saved)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut migrated = catalog.defaults();
+            let id = selected(state, catalog)?;
+            let mode = catalog.mode_of(&id)?;
+            migrated.set_slot(mode, id);
+            migrated.mode = mode;
+            Ok(migrated)
+        }
+        Err(e) => Err(e.into()),
     }
+}
+fn now() -> i64 {
+    // A fixed clock for the fixtures; a real session never sets it.
+    env::var("SEELE_THEME_NOW")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_secs() as i64)
+        })
+}
+/// What a picker needs to draw the light and dark controls: both slots, the
+/// mode, the schedule's settings, and what the schedule will do next.
+fn describe(prefs: &Preferences, now: i64) -> serde_json::Value {
+    let place = appearance::place();
+    let calendar = Local;
+    let plan = appearance::plan(&prefs.auto, &calendar, place.as_ref(), now);
+    let sun = place.as_ref().map(|place| {
+        let today = calendar.day(now, 0) + 12 * 3600;
+        match appearance::sun(place.latitude, place.longitude, today) {
+            appearance::Sun::Rises(rise, set) => {
+                serde_json::json!({"rise": calendar.clock(rise), "set": calendar.clock(set)})
+            }
+            appearance::Sun::AlwaysUp => serde_json::json!({"polar": "day"}),
+            appearance::Sun::AlwaysDown => serde_json::json!({"polar": "night"}),
+        }
+    });
+    serde_json::json!({
+        "mode": prefs.mode.as_str(),
+        "dark": prefs.dark,
+        "light": prefs.light,
+        "auto": {
+            "source": prefs.auto.source,
+            "lightAt": prefs.auto.light_at,
+            "darkAt": prefs.auto.dark_at,
+        },
+        "place": place.map(|place| place.label),
+        "sun": sun,
+        "next": plan.and_then(|plan| plan.next).map(|next| serde_json::json!({
+            "mode": next.mode.as_str(),
+            "at": next.at,
+            "clock": calendar.clock(next.at),
+        })),
+    })
+}
+/// One locked step: read the preferences, change them, save them if they
+/// changed, and publish the preset the mode now wants if it differs from the
+/// one on screen. `force` republishes even an unchanged preset, which is what
+/// choosing the applied theme again asks for.
+fn change(
+    catalog: &Catalog,
+    state: &Path,
+    force: bool,
+    edit: impl FnOnce(&mut Preferences) -> Result,
+) -> Result<serde_json::Value> {
+    let _lock = locked(state)?;
+    let before = preferences(state, catalog)?;
+    let mut prefs = before.clone();
+    edit(&mut prefs)?;
+    catalog.theme(&prefs.dark)?;
+    catalog.theme(&prefs.light)?;
+    let fresh = !state.join(PREFERENCES).exists();
+    if prefs != before || fresh {
+        atomic_write(&state.join(PREFERENCES), &serde_json::to_vec(&prefs)?)?;
+    }
+    let shown = selected(state, catalog).ok();
+    let mut reply = if force || shown.as_deref() != Some(prefs.applied()) {
+        publish(catalog, state, prefs.applied(), true)?
+    } else {
+        serde_json::json!({"id": prefs.applied(), "pending": []})
+    };
+    reply["appearance"] = describe(&prefs, now());
+    Ok(reply)
+}
+/// The scheduler's step: when a boundary newer than the last one acted on has
+/// passed, the mode becomes the one it names. A mode chosen by hand since then
+/// is left alone until the next boundary.
+fn tick(catalog: &Catalog, state: &Path, now: i64) -> Result<(serde_json::Value, Option<i64>)> {
+    let place = appearance::place();
+    let mut next = None;
+    let reply = change(catalog, state, false, |prefs| {
+        if let Some(plan) = appearance::plan(&prefs.auto, &Local, place.as_ref(), now) {
+            next = plan.next.map(|boundary| boundary.at);
+            if plan.since > prefs.auto.last {
+                prefs.mode = plan.mode;
+                prefs.auto.last = plan.since;
+            }
+        }
+        Ok(())
+    })?;
+    Ok((reply, next))
+}
+fn catalog_file() -> Result<Catalog> {
     let catalog: Catalog = serde_json::from_slice(&read_bounded(
         &xdg("XDG_CONFIG_HOME", ".config")?.join("seele-theme/catalog.json"),
         131072,
         false,
     )?)?;
     catalog.validate()?;
+    Ok(catalog)
+}
+const USAGE: &str = "Use: seele-theme list | current | set <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset";
+pub fn main() -> Result {
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--help") {
+        println!("{USAGE}");
+        return Ok(());
+    }
     let state = xdg("XDG_STATE_HOME", ".local/state")?.join("seele-theme");
-    let reply = match args
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if args == ["follow"] {
+        // Wakes at the next boundary, and at least once a minute so that a
+        // resumed laptop, a changed clock or new settings are seen promptly.
+        loop {
+            let wait = match catalog_file().and_then(|catalog| tick(&catalog, &state, now())) {
+                Ok((_, Some(next))) => (next - now()).clamp(1, 60),
+                Ok((_, None)) => 60,
+                Err(error) => {
+                    eprintln!("Seele Themes: {error}");
+                    60
+                }
+            };
+            std::thread::sleep(std::time::Duration::from_secs(wait as u64));
+        }
+    }
+    let catalog = catalog_file()?;
+    let mode = |value: &str| Mode::parse(value).ok_or("Mode must be dark or light");
+    let reply = match args.as_slice() {
         ["list"] => {
-            serde_json::json!({"current": selected(&state, &catalog)?, "themes": catalog.themes.iter().map(Theme::display).collect::<Result<Vec<_>>>()?})
+            serde_json::json!({
+                "current": selected(&state, &catalog)?,
+                "themes": catalog.themes.iter().map(Theme::display).collect::<Result<Vec<_>>>()?,
+                "appearance": describe(&preferences(&state, &catalog)?, now()),
+            })
         }
         ["current"] => serde_json::json!({"id": selected(&state, &catalog)?}),
-        ["set", id] => apply(&catalog, &state, id, true)?,
-        ["reset"] => apply(&catalog, &state, &catalog.default, true)?,
-        ["init"] => apply(&catalog, &state, &selected(&state, &catalog)?, false)?,
-        _ => return Err("Use: seele-theme list | current | set <id> | init | reset".into()),
+        // The applied theme: the slot of the mode the desktop is in.
+        ["set", id] => {
+            catalog.theme(id)?;
+            change(&catalog, &state, true, |prefs| {
+                prefs.set_slot(prefs.mode, (*id).to_owned());
+                Ok(())
+            })?
+        }
+        ["slot", slot, id] => {
+            let slot = mode(slot)?;
+            catalog.theme(id)?;
+            change(&catalog, &state, false, |prefs| {
+                prefs.set_slot(slot, (*id).to_owned());
+                Ok(())
+            })?
+        }
+        ["mode", value] => {
+            let value = mode(value)?;
+            change(&catalog, &state, false, |prefs| {
+                prefs.mode = value;
+                Ok(())
+            })?
+        }
+        // Puts everything back as it was when a picker opened.
+        ["restore", value, dark, light] => {
+            let value = mode(value)?;
+            catalog.theme(dark)?;
+            catalog.theme(light)?;
+            change(&catalog, &state, false, |prefs| {
+                prefs.mode = value;
+                prefs.dark = (*dark).to_owned();
+                prefs.light = (*light).to_owned();
+                Ok(())
+            })?
+        }
+        ["auto", source, rest @ ..] => {
+            let source = match (*source, rest) {
+                ("off", []) => Source::Off,
+                ("sun", []) => Source::Sun,
+                ("schedule", [light, dark]) => {
+                    let (Some(light_at), Some(dark_at)) =
+                        (appearance::clock(light), appearance::clock(dark))
+                    else {
+                        return Err("Schedule times are HH:MM".into());
+                    };
+                    if light_at == dark_at {
+                        return Err("Light and dark need different times".into());
+                    }
+                    Source::Schedule
+                }
+                _ => return Err(USAGE.into()),
+            };
+            let place = appearance::place();
+            if source == Source::Sun && place.is_none() {
+                return Err("The timezone names no city to follow the sun from".into());
+            }
+            let now = now();
+            change(&catalog, &state, false, |prefs| {
+                prefs.auto.source = source;
+                if let ["schedule", light, dark] = args.as_slice()[1..] {
+                    prefs.auto.light_at = light.to_owned();
+                    prefs.auto.dark_at = dark.to_owned();
+                }
+                // Turning the schedule on puts the desktop where it says now.
+                if let Some(plan) = appearance::plan(&prefs.auto, &Local, place.as_ref(), now) {
+                    prefs.mode = plan.mode;
+                    prefs.auto.last = plan.since;
+                }
+                Ok(())
+            })?
+        }
+        ["tick"] => tick(&catalog, &state, now())?.0,
+        ["reset"] => {
+            let _lock = locked(&state)?;
+            let prefs = catalog.defaults();
+            atomic_write(&state.join(PREFERENCES), &serde_json::to_vec(&prefs)?)?;
+            let mut reply = publish(&catalog, &state, prefs.applied(), true)?;
+            reply["appearance"] = describe(&prefs, now());
+            reply
+        }
+        // Activation: refresh the generated files for what is chosen, and
+        // record preferences migrated from a single saved selection.
+        ["init"] => {
+            let _lock = locked(&state)?;
+            let prefs = preferences(&state, &catalog)?;
+            if !state.join(PREFERENCES).exists() {
+                atomic_write(&state.join(PREFERENCES), &serde_json::to_vec(&prefs)?)?;
+            }
+            publish(&catalog, &state, prefs.applied(), false)?
+        }
+        _ => return Err(USAGE.into()),
     };
     println!("{}", serde_json::to_string(&reply)?);
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

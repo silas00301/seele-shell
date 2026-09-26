@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod catalog;
 pub mod materialize;
 pub mod project_text;

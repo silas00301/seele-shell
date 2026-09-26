@@ -3,75 +3,74 @@ import QtTest
 import "production" as Shell
 import "production/shared" as Shared
 
-// The production Themes panel over a fixture store. Grouping, movement and the
-// switching itself are covered by qml-core's tests and themes.js; this covers
-// what a person does with the panel, and fails on any Qt warning.
+// The production Themes carousel over a fixture store. What the carousel holds,
+// where the keys lead and what the schedule says are native policy covered by
+// qml-core's tests and themes.js; this covers what a person does with the
+// picker, and fails on any Qt warning.
 TestCase {
   id: testCase
-  name: "ThemesPanel"
+  name: "ThemesPicker"
   when: windowShown
   visible: true
   property string screenshotPath: ""
-  width: 640
+  width: 1100
   height: 900
   Shared.Theme { id: theme }
 
-  // A preset exactly as the native layout carries one, with a real palette.
-  function preset(id, name, variant, detail, mode, colors, current) {
+  // An entry exactly as `themes.carousel` shapes one, with a real palette.
+  function preset(id, name, mode, colors, current) {
     return {
-      id: id, name: name, variant: variant, detail: detail, mode: mode,
-      modeLabel: mode === "light" ? "Light" : "Dark", current: current,
-      base: colors[0], mantle: colors[1], crust: colors[0], surface: colors[2],
+      id: id, name: name, mode: mode, modeLabel: mode === "light" ? "Light" : "Dark",
+      detail: name.indexOf(mode === "light" ? "Light" : "Dark") >= 0 ? "" : (mode === "light" ? "Light" : "Dark"),
+      current: current, base: colors[0], mantle: colors[1], crust: colors[0], surface: colors[2],
       overlay: colors[3], text: colors[4], subtext: colors[5], accent: colors[6],
       red: colors[7], green: colors[8], yellow: colors[9]
     }
   }
   readonly property var mocha: ["#1e1e2e", "#181825", "#313244", "#6c7086", "#cdd6f4", "#a6adc8", "#b4befe", "#f38ba8", "#a6e3a1", "#f9e2af"]
-  readonly property var latte: ["#eff1f5", "#e6e9ef", "#ccd0da", "#8c8fa1", "#4c4f69", "#6c6f85", "#7287fd", "#d20f39", "#40a02b", "#df8e1d"]
+  readonly property var nord: ["#2e3440", "#3b4252", "#434c5e", "#7f848e", "#e5e9f0", "#d8dee9", "#81a1c1", "#bf616a", "#a3be8c", "#ebcb8b"]
   readonly property var flexoki: ["#100f0f", "#1c1b1a", "#282726", "#878580", "#cecdc3", "#878580", "#4385be", "#d14d41", "#879a39", "#d0a215"]
-  function catalog(current) {
-    return {
-      rows: [
-        { family: "Catppuccin", first: true, members: [
-          preset("catppuccin-mocha", "Catppuccin Mocha", "Mocha", "Dark", "dark", mocha, current === "catppuccin-mocha"),
-          preset("catppuccin-latte", "Catppuccin Latte", "Latte", "Light", "light", latte, current === "catppuccin-latte")] },
-        { family: "Flexoki", first: true, members: [
-          preset("flexoki-dark", "Flexoki Dark", "Dark", "", "dark", flexoki, current === "flexoki-dark")] }
-      ],
-      order: ["catppuccin-mocha", "catppuccin-latte", "flexoki-dark"], count: 3, total: 3
-    }
+  function strip(count) {
+    var items = [
+      preset("catppuccin-mocha", "Catppuccin Mocha", "dark", mocha, true),
+      preset("nord", "Nord", "dark", nord, false),
+      preset("flexoki-dark", "Flexoki Dark", "dark", flexoki, false)
+    ]
+    for (var i = 0; i < (count || 0); i++) items.push(preset("extra-" + i, "Extra " + i, "dark", nord, false))
+    return { items: items, order: items.map(function (item) { return item.id }), count: items.length, scoped: items.length, total: 13 }
   }
-  readonly property var names: ({ "catppuccin-mocha": "Catppuccin Mocha", "catppuccin-latte": "Catppuccin Latte", "flexoki-dark": "Flexoki Dark" })
+  function fill(carousel) {
+    fixture.carousel = carousel
+    rows.clear()
+    for (var i = 0; i < carousel.items.length; i++) rows.append({ entry: carousel.items[i] })
+  }
+  ListModel { id: rows }
   QtObject {
     id: fixture
-    property int columns: 0
+    readonly property var model: rows
+    property var carousel: ({ items: [], order: [], count: 0, scoped: 0, total: 0 })
+    property string focusedId: "catppuccin-mocha"
+    property string mode: "dark"
+    property var appearance: ({ mode: "dark", place: "Berlin", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" } })
+    readonly property string autoSource: appearance.auto.source
+    property string scheduleText: ""
+    property int total: 13
     property string query: ""
-    property string mode: "all"
+    property bool showAll: false
+    property bool busy: false
     property string error: ""
     property string actionError: ""
     property string reloadPending: ""
-    property string applying: ""
-    property bool busy: false
-    property bool switching: false
-    property string current: "catppuccin-mocha"
-    property string opened: "catppuccin-mocha"
-    property string desired: "catppuccin-mocha"
-    readonly property string currentName: testCase.names[current] || ""
-    readonly property string openedName: testCase.names[opened] || ""
-    readonly property bool filtered: query !== "" || mode !== "all"
-    property var layout: testCase.catalog("catppuccin-mocha")
-    property string focusedId: "catppuccin-mocha"
-    property var steps: []
-    property var chosen: []
-    property int refreshed: 0
-    property int resets: 0
-    property int reverted: 0
-    function nameOf(id) { return testCase.names[id] || "" }
-    function refresh() { refreshed++ }
-    function step(direction) { steps = steps.concat([direction]) }
-    function choose(id, now) { chosen = chosen.concat([id + (now ? " now" : " settled")]) }
-    function revert() { reverted++ }
-    function resetFilters() { resets++; query = ""; mode = "all" }
+    property var calls: []
+    function record(call) { calls = calls.concat([call]) }
+    function step(direction) { record("step " + direction) }
+    function choose(id, now) { record("choose " + id + (now ? " now" : "")) }
+    function setMode(value) { record("mode " + value) }
+    function setAuto(source, lightAt, darkAt) { record(["auto", source].concat(lightAt ? [lightAt, darkAt] : []).join(" ")) }
+    function toggleAll() { record("all") }
+    function cancel() { record("cancel") }
+    function resetFilters() { record("reset"); query = ""; showAll = false }
+    function refresh() { record("refresh") }
     function failure(code) { return "" }
   }
   Rectangle { anchors.fill: parent; color: theme.crust }
@@ -81,7 +80,7 @@ TestCase {
     store: fixture
     x: theme.panelMargin
     y: theme.panelMargin
-    width: 568
+    width: 1008
   }
   SignalSpy { id: closes; target: panel; signalName: "closeRequested" }
 
@@ -90,221 +89,207 @@ TestCase {
     verify(item !== null, "Missing " + name)
     return item
   }
-  function press(key, modifiers) {
-    panel.handleKey({ key: key, modifiers: modifiers || Qt.NoModifier, accepted: false })
+  function press(key, modifiers, text) {
+    panel.handleKey({ key: key, modifiers: modifiers || Qt.NoModifier, text: text || "", accepted: false })
   }
   function init() {
     failOnWarning(/.?/)
+    fixture.focusedId = "catppuccin-mocha"
+    fixture.mode = "dark"
+    fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" } })
+    fixture.scheduleText = ""
+    fixture.total = 13
     fixture.query = ""
-    fixture.mode = "all"
+    fixture.showAll = false
+    fixture.busy = false
     fixture.error = ""
     fixture.actionError = ""
     fixture.reloadPending = ""
-    fixture.applying = ""
-    fixture.busy = false
-    fixture.switching = false
-    fixture.current = "catppuccin-mocha"
-    fixture.opened = "catppuccin-mocha"
-    fixture.desired = "catppuccin-mocha"
-    fixture.layout = catalog("catppuccin-mocha")
-    fixture.focusedId = "catppuccin-mocha"
-    fixture.steps = []
-    fixture.chosen = []
-    fixture.refreshed = 0
-    fixture.resets = 0
-    fixture.reverted = 0
+    fixture.calls = []
+    fill(strip(0))
+    panel.width = 1008
     panel.maximumHeight = theme.themesMaximumHeight
     closes.clear()
     wait(20)
   }
 
-  function test_the_panel_tells_the_layout_how_wide_a_row_is() {
-    compare(fixture.columns, panel.columns)
+  function test_the_centre_is_a_live_scene_and_its_neighbours_are_slices() {
+    var centre = child(panel, "card-catppuccin-mocha")
+    tryCompare(centre, "width", panel.cardWidth)
+    verify(child(centre, "scene"), "the centre draws its preset")
+    compare(child(centre, "scene").preset.id, "catppuccin-mocha")
+    var neighbour = child(panel, "card-nord")
+    compare(neighbour.width, panel.sliceWidth)
+    verify(findChild(neighbour, "scene") === null, "a neighbour is a slice, not a second scene")
+    verify(neighbour.x > centre.x + centre.width, "later entries sit to the right")
+    compare(child(panel, "name").text, "Catppuccin Mocha")
+    compare(child(panel, "scope").text, "Dark theme · 1 of 3")
+    fixture.focusedId = "nord"
+    tryCompare(child(panel, "card-nord"), "width", panel.cardWidth)
+    verify(child(panel, "card-catppuccin-mocha").x < child(panel, "card-nord").x, "the previous entry slid to the left")
+    compare(child(panel, "scope").text, "Dark theme · 2 of 3")
   }
 
-  function test_tiles_sample_themselves_and_mark_the_applied_theme() {
-    var grid = child(panel, "grid")
-    verify(child(child(grid, "tile-catppuccin-mocha"), "appliedMark").visible)
-    verify(!child(child(grid, "tile-catppuccin-latte"), "appliedMark").visible)
-    verify(!child(child(grid, "tile-flexoki-dark"), "appliedMark").visible)
-    compare(child(child(grid, "tile-catppuccin-mocha"), "ring").border.width, 2, "the keyboard's tile wears the ring")
-    compare(child(child(grid, "tile-catppuccin-latte"), "ring").border.width, 1)
-  }
-
-  function test_arrow_keys_switch_as_they_move() {
-    press(Qt.Key_Right); press(Qt.Key_L); press(Qt.Key_Down); press(Qt.Key_J)
-    press(Qt.Key_Left); press(Qt.Key_H); press(Qt.Key_Up); press(Qt.Key_K)
-    compare(fixture.steps, ["right", "right", "down", "down", "left", "left", "up", "up"])
-    press(Qt.Key_J, Qt.ControlModifier)
-    compare(fixture.steps.length, 8, "a chord belongs to the compositor, not the panel")
-    press(Qt.Key_R)
-    compare(fixture.refreshed, 1)
-    compare(closes.count, 0)
-  }
-
-  function test_enter_keeps_the_ringed_tile_and_escape_closes() {
-    fixture.focusedId = "flexoki-dark"
-    press(Qt.Key_Return)
-    compare(fixture.chosen, ["flexoki-dark now"], "a ring moved by a search is switched to at once")
-    compare(closes.count, 1)
+  function test_keys_choose_switch_modes_filter_keep_and_put_back() {
+    press(Qt.Key_Right); press(Qt.Key_Tab); press(Qt.Key_Left); press(Qt.Key_Backtab)
+    press(Qt.Key_Up); press(Qt.Key_Down)
+    compare(fixture.calls, ["step right", "step right", "step left", "step left", "mode light", "mode dark"])
+    fixture.calls = []
+    press(Qt.Key_N, Qt.NoModifier, "n"); press(Qt.Key_O, Qt.NoModifier, "o")
+    compare(fixture.query, "no", "typing filters")
+    press(Qt.Key_Space, Qt.NoModifier, " ")
+    compare(fixture.query, "no ", "a space joins words once there is a filter")
+    press(Qt.Key_Backspace)
+    compare(fixture.query, "no")
     press(Qt.Key_Escape)
+    compare(fixture.query, "", "Escape first takes back the filter")
+    compare(closes.count, 0)
+    press(Qt.Key_Space, Qt.NoModifier, " ")
+    compare(fixture.query, "", "a leading space is not a filter")
+    press(Qt.Key_A, Qt.ControlModifier, "\u0001")
+    compare(fixture.calls, ["all"], "Ctrl + A opens the carousel to every preset")
+    press(Qt.Key_J, Qt.ControlModifier)
+    compare(fixture.calls, ["all"], "other chords belong to the compositor")
+    press(Qt.Key_Escape)
+    compare(fixture.calls, ["all", "cancel"], "then Escape puts everything back")
+    compare(closes.count, 1)
+    fixture.focusedId = "nord"
+    press(Qt.Key_Return)
+    compare(fixture.calls.slice(-1), ["choose nord now"], "Enter keeps the centre, even one a filter moved")
     compare(closes.count, 2)
-    compare(fixture.chosen.length, 1, "Escape keeps what is applied and switches nothing")
   }
 
-  function test_the_search_field_steps_until_there_is_text_to_edit() {
-    var search = child(panel, "search")
-    search.forceActiveFocus()
-    keyClick(Qt.Key_Down)
-    keyClick(Qt.Key_Right)
-    compare(fixture.steps, ["down", "right"], "with nothing typed, arrows switch")
-    keyClick(Qt.Key_N)
-    keyClick(Qt.Key_O)
-    compare(fixture.query, "no", "typing reaches the store's query")
-    keyClick(Qt.Key_Left)
-    compare(fixture.steps, ["down", "right"], "with text typed, left and right move the caret")
-    compare(search.cursorPosition, 1)
-    keyClick(Qt.Key_Up)
-    compare(fixture.steps, ["down", "right", "up"], "up and down still switch")
-    keyClick(Qt.Key_Return)
-    compare(fixture.chosen, ["catppuccin-mocha now"])
-    compare(closes.count, 1, "Return in the field picks and closes")
-    search.forceActiveFocus()
-    keyClick(Qt.Key_Escape)
-    compare(closes.count, 2, "Escape in the field closes")
-  }
-
-  function test_clicking_switches_and_hovering_only_lights() {
-    var tile = child(child(panel, "grid"), "tile-flexoki-dark")
-    mouseMove(tile, tile.width / 2 - 4, tile.height / 2)
-    mouseMove(tile, tile.width / 2, tile.height / 2)
-    compare(fixture.chosen, [], "pointing at a tile switches nothing")
-    tryVerify(function() { return child(tile, "ring").border.color.a > 0 }, 500, "but lights it")
-    mouseClick(tile, tile.width / 2, tile.height / 2)
-    compare(fixture.chosen, ["flexoki-dark now"], "a click switches at once")
+  function test_clicking_a_neighbour_chooses_it_and_clicking_the_centre_keeps_it() {
+    var neighbour = child(panel, "card-flexoki-dark")
+    mouseClick(neighbour, neighbour.width / 2, neighbour.height / 2)
+    compare(fixture.calls, ["choose flexoki-dark now"])
     compare(closes.count, 0, "and leaves the picker open for the next one")
-  }
-
-  function test_the_close_button_closes() {
-    var close = child(panel, "close")
-    mouseClick(close, close.width / 2, close.height / 2)
+    var centre = child(panel, "card-catppuccin-mocha")
+    mouseClick(centre, centre.width / 2, centre.height / 2)
+    compare(fixture.calls.slice(-1), ["choose catppuccin-mocha now"])
     compare(closes.count, 1)
   }
 
-  function test_the_footer_says_what_is_applied_and_offers_the_way_back() {
-    var status = child(panel, "status")
-    var back = child(panel, "back")
-    compare(status.text, "Catppuccin Mocha is applied")
-    verify(!back.visible, "nothing to go back to yet")
-    fixture.current = "flexoki-dark"
-    fixture.desired = "flexoki-dark"
-    wait(20)
-    compare(status.text, "Flexoki Dark is applied")
-    verify(back.visible)
-    compare(back.text, "Back to Catppuccin Mocha")
-    mouseClick(back, back.width / 2, back.height / 2)
-    compare(fixture.reverted, 1)
-    fixture.desired = "catppuccin-mocha"
-    fixture.switching = true
-    wait(20)
-    compare(status.text, "Switching to Catppuccin Mocha…")
-    verify(!back.visible, "going back is already under way")
-  }
-
-  function test_a_variant_that_names_its_mode_is_not_told_it_again() {
-    var grid = child(panel, "grid")
-    var texts = function(tile) {
-      var out = []
-      for (var i = 0; i < tile.children.length; i++) collect(tile.children[i], out)
-      return out
-    }
-    var collect = function(item, out) {
-      if (item.text !== undefined && item.visible && item.text !== "" && item.text !== "\u{f012c}") out.push(item.text)
-      for (var i = 0; i < item.children.length; i++) collect(item.children[i], out)
-    }
-    compare(texts(child(grid, "tile-catppuccin-latte")), ["Latte", "Light"])
-    compare(texts(child(grid, "tile-flexoki-dark")), ["Dark"], "Flexoki's Dark is not followed by 'Dark'")
-  }
-
-  function test_the_mode_filter_is_one_click() {
-    var dark = child(panel, "modeDark")
-    mouseClick(dark, dark.width / 2, dark.height / 2)
-    compare(fixture.mode, "dark")
-    verify(dark.selected)
+  function test_the_mode_and_the_schedule_are_one_click_each() {
     var light = child(panel, "modeLight")
-    light.forceActiveFocus()
-    keyClick(Qt.Key_Return)
-    compare(fixture.mode, "light")
-    compare(fixture.chosen, [], "filtering switches nothing")
+    mouseClick(light, light.width / 2, light.height / 2)
+    for (var name of ["autoOff", "autoSun", "autoSchedule"]) {
+      var choice = child(panel, name)
+      mouseClick(choice, choice.width / 2, choice.height / 2)
+    }
+    compare(fixture.calls, ["mode light", "auto off", "auto sun", "auto schedule"])
+    fixture.appearance = ({ mode: "dark", place: null, auto: { source: "off", lightAt: "07:00", darkAt: "19:00" } })
+    wait(20)
+    verify(!child(panel, "autoSun").enabled, "a timezone without a city cannot follow the sun")
   }
 
-  function test_an_empty_grid_offers_its_own_way_out() {
+  function test_the_schedule_line_and_its_times() {
+    verify(!child(panel, "lightAt").visible, "times appear only for a fixed schedule")
+    fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "schedule", lightAt: "07:00", darkAt: "19:00" } })
+    fixture.scheduleText = "Light at 07:00 · on a schedule"
+    wait(20)
+    compare(child(panel, "schedule").text, "Light at 07:00 · on a schedule")
+    var lightAt = child(panel, "lightAt")
+    verify(lightAt.visible)
+    compare(lightAt.text, "07:00")
+    lightAt.forceActiveFocus()
+    lightAt.selectAll()
+    keyClick(Qt.Key_0); keyClick(Qt.Key_6); keyClick(Qt.Key_Colon); keyClick(Qt.Key_3); keyClick(Qt.Key_0)
+    keyClick(Qt.Key_Return)
+    compare(fixture.calls, ["auto schedule 06:30 19:00"], "Enter sends the time and nothing else")
+    compare(closes.count, 0, "Enter in a time field does not close the picker")
+    compare(fixture.query, "", "typing a time is not a filter")
+    verify(panel.activeFocus, "the keyboard is handed back to the carousel")
+    // The field loses focus again as the row changes: an edit already sent
+    // is not sent twice.
+    fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" } })
+    wait(20)
+    compare(fixture.calls.length, 1)
+    // The helper's word differs from the edit (another picker, a refusal):
+    // the field shows what is saved, not what was typed.
+    fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "schedule", lightAt: "05:45", darkAt: "19:00" } })
+    wait(20)
+    compare(lightAt.text, "05:45", "the field follows the saved time")
+    var darkAt = child(panel, "darkAt")
+    darkAt.forceActiveFocus()
+    darkAt.selectAll()
+    keyClick(Qt.Key_2); keyClick(Qt.Key_5)
+    keyClick(Qt.Key_Return)
+    compare(fixture.calls.length, 1, "an unfinished time is not sent")
+    darkAt.forceActiveFocus()
+    keyClick(Qt.Key_Escape)
+    compare(darkAt.text, "19:00", "Escape in a field puts its saved time back")
+    compare(closes.count, 0, "and does not close the picker")
+    compare(fixture.calls.slice(-1)[0].indexOf("cancel"), -1, "nor put the theme back")
+  }
+
+  function test_the_scope_toggle_says_what_it_adds() {
+    var toggle = child(panel, "scopeToggle")
+    compare(toggle.text, "Show all 13")
+    mouseClick(toggle, toggle.width / 2, toggle.height / 2)
+    compare(fixture.calls, ["all"])
+    fixture.showAll = true
+    wait(20)
+    compare(toggle.text, "Only dark presets")
+  }
+
+  function test_an_empty_carousel_offers_its_own_way_out() {
     fixture.query = "zzz"
-    fixture.layout = { rows: [], order: [], count: 0, total: 3 }
+    fill({ items: [], order: [], count: 0, scoped: 3, total: 13 })
     fixture.focusedId = ""
     wait(20)
-    verify(!child(panel, "grid").visible)
+    verify(!child(panel, "carousel").visible)
+    verify(!child(panel, "name").visible)
     var action = child(panel, "emptyAction")
-    verify(action.visible)
     compare(action.text, "Show all presets")
     mouseClick(action, action.width / 2, action.height / 2)
-    compare(fixture.resets, 1)
-    fixture.layout = { rows: [], order: [], count: 0, total: 0 }
+    compare(fixture.calls, ["reset"])
+    verify(fixture.showAll, "and every preset is offered")
+    fixture.total = 0
     wait(20)
     compare(action.text, "Refresh")
     mouseClick(action, action.width / 2, action.height / 2)
-    compare(fixture.refreshed, 1)
-    fixture.busy = true
-    verify(!action.enabled, "a refresh already running is not asked for again")
+    compare(fixture.calls.slice(-1), ["refresh"])
   }
 
-  function test_unavailable_catalog_and_unreloaded_apps_are_stated_in_place() {
-    fixture.reloadPending = "Ghostty and tmux still show the previous palette."
+  function test_problems_are_stated_in_place() {
+    fixture.reloadPending = "Ghostty still shows the previous palette."
     fixture.error = "The theme helper is unavailable. Nothing was changed."
     var retry = child(panel, "retry")
     tryVerify(function() { return retry.visible && retry.width > 0 && retry.mapToItem(panel, 0, 0).y >= 0 })
     waitForRendering(panel)
     mouseClick(retry, retry.width / 2, retry.height / 2)
-    compare(fixture.refreshed, 1)
+    compare(fixture.calls, ["refresh"])
   }
 
-  function test_the_panel_stays_inside_the_room_it_is_given_and_keeps_the_ring_in_view() {
-    var layout = catalog("catppuccin-mocha")
-    for (var i = 0; i < 6; i++) {
-      var id = "extra-" + i
-      layout.rows.push({ family: "Extra " + i, first: true, members: [preset(id, "Extra " + i, "Extra " + i, "Dark", "dark", flexoki, false)] })
-      layout.order.push(id)
-    }
-    layout.count = layout.order.length
-    layout.total = layout.order.length
-    fixture.layout = layout
-    // A short output: the grid gives way, the header, controls and footer do not.
+  function test_the_carousel_fits_the_room_it_is_given() {
+    fill(strip(8))
+    // A short output: the card shrinks, keeping its shape, before anything
+    // is cut off.
     panel.maximumHeight = 420
     wait(20)
-    verify(panel.implicitHeight <= panel.maximumHeight, "panel " + panel.implicitHeight + " fits " + panel.maximumHeight)
-    var grid = child(panel, "grid")
-    verify(grid.height >= panel.tileHeight, "at least one row of tiles stays visible")
-    verify(grid.contentHeight > grid.height, "the rest scrolls")
-    fixture.focusedId = "extra-5"
-    var tile = child(grid, "tile-extra-5")
-    tryVerify(function() {
-      var top = tile.mapToItem(grid, 0, 0).y
-      return top - panel.ringReach >= -0.5 && top + tile.height + panel.ringReach <= grid.height + 0.5
-    }, 1000, "the ringed tile scrolls into view")
-    fixture.focusedId = "catppuccin-mocha"
-    var first = child(grid, "tile-catppuccin-mocha")
-    tryVerify(function() { return first.mapToItem(grid, 0, 0).y - panel.ringReach >= -0.5 }, 1000, "and back up")
+    verify(panel.implicitHeight <= panel.maximumHeight + 0.5, "picker " + panel.implicitHeight + " fits " + panel.maximumHeight)
+    compare(Math.round(panel.cardWidth / panel.cardHeight * 10), 16, "the card keeps 16:10")
+    // A narrow output shows fewer slices rather than squeezing them.
+    panel.width = 640
+    wait(20)
+    var shown = 0
+    for (var i = 0; i < rows.count; i++) if (child(panel, "card-" + rows.get(i).entry.id).visible) shown++
+    compare(shown, 1 + panel.sideCount, "the centre and the slices the width holds")
+    // Cards slide to their places; once they have, each is inside the strip.
+    for (var j = 0; j < rows.count; j++) {
+      var card = child(panel, "card-" + rows.get(j).entry.id)
+      if (!card.visible) continue
+      tryVerify(function() { return card.x >= -0.5 && card.x + card.width <= child(panel, "carousel").width + 0.5 },
+        1000, card.objectName + " stays inside")
+    }
   }
 
   function test_controls_fit_and_render() {
-    var search = child(panel, "search")
-    var modes = child(panel, "modeLight")
-    verify(modes.mapToItem(panel, modes.width, 0).x <= panel.width + 0.5, "the mode filter stays inside the panel")
-    verify(search.width > modes.width, "the search keeps the room it needs")
-    var last = child(child(panel, "grid"), "tile-catppuccin-latte")
-    verify(last.mapToItem(panel, last.width + panel.ringReach, 0).x <= panel.width + 0.5, "a row and its ring fit")
-    verify(panel.tileWidth * panel.columns + panel.tileGap * (panel.columns - 1) + panel.familyWidth + theme.spaceMedium <= panel.width + 0.5,
-      "a full family of four fits")
+    var auto = child(panel, "autoSchedule")
+    verify(auto.mapToItem(panel, auto.width, 0).x <= panel.width + 0.5, "the schedule control stays inside the picker")
+    var centre = child(panel, "card-catppuccin-mocha")
+    verify(Math.abs(centre.x + centre.width / 2 - child(panel, "carousel").width / 2) < 1, "the centre is centred")
     var capture = grabImage(panel)
     verify(capture.width > 0 && capture.height > 0)
     if (screenshotPath !== "") capture.save(screenshotPath)
