@@ -29,8 +29,8 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 | "networkInterface" | "voxtypeStatus" | "cameraDevice" => {
                     value.as_str().is_some_and(|text| text.len() <= 4096)
                 }
-                "networkAddresses" | "bluetoothDevices" | "cameraDevices" | "audioDevices"
-                | "audioStreams" | "batteries" | "trayHidden" => {
+                "networkAddresses" | "bluetoothDevices" | "cameraDevices" | "litraGlows"
+                | "audioDevices" | "audioStreams" | "batteries" | "trayHidden" => {
                     value.as_array().is_some_and(|items| items.len() <= 16384)
                 }
                 "tailscale" | "protonVpn" | "sshServer" | "headphones" | "barModules"
@@ -70,6 +70,14 @@ mod tests {
         assert_eq!(
             call("patch", &[json!({"audioStreams":{"id":7}})]).unwrap(),
             json!({})
+        );
+        assert_eq!(
+            call(
+                "patch",
+                &[json!({"litraGlows":[{"device":"serial:glow","mode":"camera"}]})]
+            )
+            .unwrap(),
+            json!({"litraGlows":[{"device":"serial:glow","mode":"camera"}]})
         );
     }
 }
