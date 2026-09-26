@@ -5,23 +5,22 @@ import "../shared" as Shared
 
 // A carousel of palettes, after Omarchy's: the chosen preset large in the
 // middle as a small desktop drawn in its own colours, its neighbours as narrow
-// slices fading off to either side, and its name beneath. Moving switches the
-// desktop at once, so the shell around the picker repaints with each step.
+// slices fading off to either side, and its name beneath. Every preset is on
+// it, and moving switches the desktop at once, so the shell around the picker
+// repaints with each step.
 //
-// The picker edits one of two slots, the light theme or the dark theme; the
-// mode toggle chooses which, and is also the desktop's mode. By default the
-// carousel offers only presets of the mode it is editing, and one click opens
-// it to every preset. The schedule that flips the mode by itself sits beside
-// the toggle. The catalog, the slots, publication and the schedule belong to
-// `seele-theme`; ordering, filtering and movement belong to `qml-core`.
+// A preset chosen here becomes the theme for its own mode and brings that mode
+// with it, so the switcher needs nothing else. Light, Dark or Auto, the
+// schedule, and a preset worn by the other mode belong to the Control Center's
+// Themes panel. The catalog, both themes, publication and the schedule belong
+// to `seele-theme`; ordering and movement belong to `qml-core`.
 FocusScope {
   id: panel
   required property var theme
   required property var store
   // Bounds the whole picker, so the window can hand it what its output has.
   property real maximumHeight: theme.themesMaximumHeight
-  readonly property string hint: "←→ choose · ↑ light · ↓ dark · type to filter · Enter keeps · Esc puts back"
-  readonly property bool light: store.mode === "light"
+  readonly property string hint: "←→ switch · Enter keeps · Esc puts back"
   readonly property int centre: store.carousel.order.indexOf(store.focusedId)
   readonly property var preview: centre >= 0 && centre < store.model.count ? store.model.get(centre).entry : null
   // Card and slice sizes shrink together on a short output, keeping 16:10.
@@ -36,43 +35,16 @@ FocusScope {
   signal closeRequested()
 
   function handleKey(event) {
-    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) {
-      if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_A) { store.toggleAll(); event.accepted = true }
-      return
-    }
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
     if (event.key === Qt.Key_Left || event.key === Qt.Key_Backtab) { store.step("left"); event.accepted = true }
     else if (event.key === Qt.Key_Right || event.key === Qt.Key_Tab) { store.step("right"); event.accepted = true }
-    else if (event.key === Qt.Key_Up) { store.setMode("light"); event.accepted = true }
-    else if (event.key === Qt.Key_Down) { store.setMode("dark"); event.accepted = true }
     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { keep(); event.accepted = true }
-    else if (event.key === Qt.Key_Escape) {
-      // Escape first takes back a filter, and only then the picker's changes.
-      if (store.query !== "") store.query = ""
-      else { store.cancel(); closeRequested() }
-      event.accepted = true
-    }
-    else if (event.key === Qt.Key_Backspace) {
-      if (store.query !== "") store.query = store.query.slice(0, -1)
-      event.accepted = true
-    }
-    else if (event.key === Qt.Key_Space) {
-      if (store.query !== "") store.query = store.query + " "
-      event.accepted = true
-    }
-    else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) > 32 && event.text.charCodeAt(0) !== 127) {
-      store.query = store.query + event.text
-      event.accepted = true
-    }
+    else if (event.key === Qt.Key_Escape) { store.cancel(); closeRequested(); event.accepted = true }
   }
-  // Keeps what is on screen — including a centre a filter moved without
-  // switching anything — and closes.
+  // Keeps what is on screen and closes.
   function keep() {
-    store.choose(store.focusedId, true)
+    store.keep()
     closeRequested()
-  }
-  function showEverything() {
-    store.resetFilters()
-    store.showAll = true
   }
 
   // A line of the scene's terminal.
@@ -347,45 +319,6 @@ FocusScope {
     }
   }
 
-  // A schedule time, sent once when it is a real `HH:MM` and has changed.
-  // Enter and Escape end the edit here and hand the keyboard back to the
-  // carousel; neither reaches the picker, whose Enter keeps and closes.
-  component TimeField: TextField {
-    id: field
-    property string committed: ""
-    property string sent: ""
-    signal chosen(string value)
-    width: 64
-    implicitHeight: panel.theme.chipHeight
-    text: field.committed
-    horizontalAlignment: Text.AlignHCenter
-    maximumLength: 5
-    validator: RegularExpressionValidator { regularExpression: /^([01][0-9]|2[0-3]):[0-5][0-9]$/ }
-    color: panel.theme.text
-    selectionColor: panel.theme.selectedColor
-    font.family: panel.theme.fontFamily
-    font.pixelSize: panel.theme.textBody
-    function commit() {
-      if (!acceptableInput || text === committed || text === sent) return
-      sent = text
-      chosen(text)
-    }
-    // Typing leaves the binding to the saved time in place, so a saved time
-    // that changes replaces the edit by itself; what was sent is forgotten, so
-    // the same time can be chosen again later.
-    onCommittedChanged: sent = ""
-    onEditingFinished: commit()
-    Keys.onReturnPressed: event => { commit(); panel.forceActiveFocus(); event.accepted = true }
-    Keys.onEnterPressed: event => { commit(); panel.forceActiveFocus(); event.accepted = true }
-    Keys.onEscapePressed: event => { text = committed; panel.forceActiveFocus(); event.accepted = true }
-    background: Rectangle {
-      radius: panel.theme.radiusSmall
-      color: panel.theme.wellColor
-      border.width: 1
-      border.color: field.activeFocus ? panel.theme.accent : field.acceptableInput ? panel.theme.cardBorder : panel.theme.red
-    }
-  }
-
   Column {
     id: content
     width: parent.width
@@ -395,6 +328,7 @@ FocusScope {
       id: chrome
       width: parent.width
       spacing: panel.theme.panelSpacing
+      visible: panel.store.error !== "" || panel.store.reloadPending !== ""
 
       Shared.StatusBanner {
         theme: panel.theme
@@ -421,56 +355,10 @@ FocusScope {
         title: "Some applications keep the old colors"
         detail: panel.store.reloadPending
       }
-
-      // Which slot the carousel edits, which is also the desktop's mode, and
-      // the schedule that changes the mode by itself.
-      Item {
-        width: parent.width
-        height: panel.theme.controlHeight
-        Shared.SegmentWell {
-          id: modes
-          theme: panel.theme
-          width: 196
-          height: parent.height
-          Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; objectName: "modeLight"; text: "󰖙  Light"; selected: panel.light; onClicked: panel.store.setMode("light") }
-          Shared.SegmentChoice { theme: panel.theme; width: parent.width / 2; height: parent.height; objectName: "modeDark"; text: "󰖔  Dark"; selected: !panel.light; onClicked: panel.store.setMode("dark") }
-        }
-        Row {
-          anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-          spacing: panel.theme.spaceMedium
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Auto"
-            color: panel.theme.subtext
-            font.family: panel.theme.fontFamily
-            font.pixelSize: panel.theme.textLabel
-            font.weight: panel.theme.weightMedium
-          }
-          Shared.SegmentWell {
-            theme: panel.theme
-            width: 246
-            height: modes.height
-            Shared.SegmentChoice { theme: panel.theme; width: parent.width / 3; height: parent.height; objectName: "autoOff"; text: "Off"; selected: panel.store.autoSource === "off"; onClicked: panel.store.setAuto("off") }
-            Shared.SegmentChoice {
-              theme: panel.theme
-              width: parent.width / 3
-              height: parent.height
-              objectName: "autoSun"
-              text: "Sun"
-              selected: panel.store.autoSource === "sun"
-              // Sunrise and sunset need the timezone's city; without one the
-              // choice is shown but cannot be made.
-              enabled: !!panel.store.appearance.place
-              onClicked: panel.store.setAuto("sun")
-            }
-            Shared.SegmentChoice { theme: panel.theme; width: parent.width / 3; height: parent.height; objectName: "autoSchedule"; text: "Times"; selected: panel.store.autoSource === "schedule"; onClicked: panel.store.setAuto("schedule") }
-          }
-        }
-      }
     }
 
-    // The carousel. The centre is the preset on screen for the edited mode;
-    // every other entry sits a fixed step away on its side and slides there.
+    // The carousel. The centre is the preset on screen; every other entry
+    // sits a fixed step away on its side and slides there.
     Item {
       id: strip
       objectName: "carousel"
@@ -509,10 +397,11 @@ FocusScope {
             active: !card.centred
             sourceComponent: Slice { preset: card.entry }
           }
-          // Neighbours sit back under a light veil, kept light so that under a
-          // pale shell they fade rather than turn grey and lose the colours
-          // they are there to show; the centre is lit by the shell's own
-          // accent, the way the keyboard is shown everywhere else.
+          // Neighbours sit back under a light veil, kept light so that
+          // under a pale shell they fade rather than turn grey and lose the
+          // colours they are there to show; the centre is lit by the
+          // shell's own accent, the way the keyboard is shown everywhere
+          // else.
           Rectangle {
             anchors.fill: parent
             radius: panel.theme.radius
@@ -522,7 +411,8 @@ FocusScope {
             antialiasing: true
             Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
           }
-          // A neighbour is chosen by clicking it; the centre, clicked, is kept.
+          // A neighbour is chosen by clicking it; the centre, clicked, is
+          // kept.
           MouseArea {
             id: sliceMouse
             anchors.fill: parent
@@ -546,22 +436,15 @@ FocusScope {
         theme: panel.theme
         width: parent.width
         visible: panel.store.model.count === 0
-        glyph: panel.store.query !== "" ? "󰍉" : "󰔎"
-        title: panel.store.total === 0 ? "No themes available"
-          : panel.store.query !== "" ? "Nothing matches “" + panel.store.query + "”"
-          : "No " + panel.store.mode + " presets"
-        detail: panel.store.total === 0
-          ? "The catalog is generated during a rebuild. Refresh once the desktop has one."
-          : "Any preset may be the " + panel.store.mode + " theme."
+        glyph: "󰔎"
+        title: "No themes available"
+        detail: "The catalog is generated during a rebuild. Refresh once the desktop has one."
         Shared.ActionButton {
           theme: panel.theme
           objectName: "emptyAction"
-          text: panel.store.total === 0 ? "Refresh" : "Show all presets"
-          enabled: panel.store.total > 0 || !panel.store.busy
-          onClicked: {
-            if (panel.store.total === 0) panel.store.refresh()
-            else panel.showEverything()
-          }
+          text: "Refresh"
+          enabled: !panel.store.busy
+          onClicked: panel.store.refresh()
         }
       }
 
@@ -578,84 +461,15 @@ FocusScope {
         font.pixelSize: panel.theme.textDisplay
         font.weight: panel.theme.weightStrong
       }
-
-      // What is being edited, how much of the catalog is shown, and the way
-      // to the rest.
-      Row {
-        anchors.horizontalCenter: parent.horizontalCenter
-        spacing: panel.theme.spaceMedium
-        visible: panel.store.total > 0
-        Text {
-          objectName: "scope"
-          anchors.verticalCenter: parent.verticalCenter
-          text: (panel.light ? "Light theme" : "Dark theme")
-            + (panel.centre >= 0 ? " · " + (panel.centre + 1) + " of " + panel.store.model.count : "")
-          textFormat: Text.PlainText
-          color: panel.theme.subtext
-          font.family: panel.theme.fontFamily
-          font.pixelSize: panel.theme.textCaption
-        }
-        Shared.ActionButton {
-          objectName: "scopeToggle"
-          theme: panel.theme
-          implicitHeight: panel.theme.chipHeight
-          text: panel.store.showAll ? "Only " + panel.store.mode + " presets" : "Show all " + panel.store.total
-          onClicked: panel.store.toggleAll()
-        }
-      }
-
+      // Which mode the preset on screen belongs to, and so which it now is
+      // the theme for.
       Text {
-        objectName: "filter"
+        objectName: "kind"
         width: parent.width
-        visible: panel.store.query !== ""
-        text: "󰍉  " + panel.store.query
+        visible: !!panel.preview
+        text: panel.preview ? (panel.preview.mode === "light" ? "󰖙  Light" : "󰖔  Dark") + " · " + (panel.centre + 1) + " of " + panel.store.model.count : ""
         textFormat: Text.PlainText
         horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
-        color: panel.theme.accent
-        font.family: panel.theme.fontFamily
-        font.pixelSize: panel.theme.textBody
-      }
-
-      // The schedule's two times, while it keeps them.
-      Row {
-        anchors.horizontalCenter: parent.horizontalCenter
-        spacing: panel.theme.spaceMedium
-        visible: panel.store.autoSource === "schedule"
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "󰖙  Light from"
-          color: panel.theme.subtext
-          font.family: panel.theme.fontFamily
-          font.pixelSize: panel.theme.textCaption
-        }
-        TimeField {
-          objectName: "lightAt"
-          committed: (panel.store.appearance.auto || {}).lightAt || "07:00"
-          onChosen: value => panel.store.setAuto("schedule", value, (panel.store.appearance.auto || {}).darkAt)
-        }
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "󰖔  Dark from"
-          color: panel.theme.subtext
-          font.family: panel.theme.fontFamily
-          font.pixelSize: panel.theme.textCaption
-        }
-        TimeField {
-          objectName: "darkAt"
-          committed: (panel.store.appearance.auto || {}).darkAt || "19:00"
-          onChosen: value => panel.store.setAuto("schedule", (panel.store.appearance.auto || {}).lightAt, value)
-        }
-      }
-      // What the schedule will do next.
-      Text {
-        objectName: "schedule"
-        width: parent.width
-        visible: text !== ""
-        text: panel.store.scheduleText
-        textFormat: Text.PlainText
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
         color: panel.theme.subtext
         font.family: panel.theme.fontFamily
         font.pixelSize: panel.theme.textCaption

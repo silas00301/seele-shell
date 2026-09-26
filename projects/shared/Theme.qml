@@ -239,13 +239,15 @@ ShellRoot {
   // The calculator keeps its tape within one compact workbench.
   readonly property int calculatorWidth: 480
   readonly property int calculatorMaximumHeight: 620
-  // The whole theme picker stays inside this bound, and its grid inside what
-  // the preview and the controls leave: tall enough that the curated catalog
-  // fits beside the preview without scrolling.
+  // The floating theme switcher stays inside this bound; on a shorter output
+  // its centre card shrinks, keeping its shape, before anything is cut off.
   readonly property int themesMaximumHeight: 640
   // The floating carousel is wide enough for a 16:10 preview and three
   // slices on either side of it.
   readonly property int themesWidth: 1040
+  // The Control Center's Themes panel: a three-way segment and two theme
+  // rows with their names beside their swatches.
+  readonly property int themeSettingsWidth: 440
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
   // Keeps the UTC timeline and a few pinned zones visible without taking an output.

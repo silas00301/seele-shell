@@ -92,6 +92,15 @@ with tempfile.TemporaryDirectory(prefix="seele-appearance-") as temporary:
     call("mode", "light")
     assert shown() == "catppuccin-latte"
 
+    # Picking files a preset under its own mode and switches to that mode.
+    call("pick", "flexoki-light")
+    assert (saved()["mode"], saved()["light"], shown()) == ("light", "flexoki-light", "flexoki-light")
+    assert saved()["dark"] == "nord", "the other mode's theme is kept"
+    call("pick", "catppuccin-mocha")
+    assert (saved()["mode"], saved()["dark"], shown()) == ("dark", "catppuccin-mocha", "catppuccin-mocha")
+    assert saved()["light"] == "flexoki-light"
+    call("pick", "missing", ok=False)
+
     # Restore puts back mode and both slots at once.
     call("restore", "dark", "catppuccin-mocha", "flexoki-light")
     assert (shown(), saved()["dark"], saved()["light"], saved()["mode"]) == ("catppuccin-mocha", "catppuccin-mocha", "flexoki-light", "dark")

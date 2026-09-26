@@ -1,11 +1,11 @@
-//! Theme picker presentation: one normalized catalog, the carousel a picker
-//! steps through, what the schedule will do next, and the wording for what a
-//! switch did and did not reach.
+//! Theme picker presentation: one normalized catalog, the carousel the
+//! switcher steps through, what the schedule will do next, and the wording for
+//! what a switch did and did not reach.
 //!
 //! Publication, reloading, the light and dark slots and the schedule itself
-//! belong to `seele-theme`. What is left here is what one open picker is
+//! belong to `seele-theme`. What is left here is what the Themes surfaces are
 //! looking at, and it is kept in Rust so a palette never reaches a Qt colour
-//! property without having been checked, and so ordering, filtering and the
+//! property without having been checked, and so ordering, movement and the
 //! schedule's sentence are decided once rather than by a delegate.
 use crate::value::{array, text, trim};
 use serde_json::{Value, json};
@@ -18,7 +18,6 @@ const ROLES: [&str; 11] = [
     "yellow",
 ];
 const MAX_THEMES: usize = 32;
-const MAX_WORDS: usize = 8;
 const MAX_PENDING: usize = 8;
 
 /// `#rrggbb` and nothing else. Qt would accept a colour name or an `#aarrggbb`
@@ -64,30 +63,6 @@ fn theme(value: &Value) -> Option<Value> {
         object.insert(role.to_owned(), json!(color(value.get(role))?));
     }
     Some(row)
-}
-
-fn matches(row: &Value, words: &[String]) -> bool {
-    let haystack = format!(
-        "{} {} {}",
-        text(row.get("name")).to_lowercase(),
-        text(row.get("id")),
-        text(row.get("mode"))
-    );
-    words.iter().all(|word| haystack.contains(word))
-}
-
-/// A carousel entry's second line: its mode, unless its name already says it
-/// ("Flexoki Light").
-fn detail(row: &Value) -> String {
-    let mode = text(row.get("mode"));
-    let named = text(row.get("name"))
-        .split_whitespace()
-        .any(|word| word.eq_ignore_ascii_case(&mode));
-    if named {
-        String::new()
-    } else {
-        text(row.get("modeLabel"))
-    }
 }
 
 /// One line saying what the schedule will do next, from the helper's own
@@ -187,47 +162,27 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 "themes": rows,
             })
         }
-        // The strip a picker steps through: the catalog's own curated order,
-        // narrowed to the mode being edited unless the reader asked for all,
-        // and by the search. Each entry says whether it is the slot's own.
+        // The strip the switcher steps through: every preset, in the catalog's
+        // own curated order, each saying whether it is the one on screen.
         "carousel" => {
-            let themes = array(Some(first));
-            let slot = text(args.get(1));
-            let query = text(args.get(2)).to_lowercase();
-            let scope = text(args.get(3));
-            let words: Vec<String> = trim(&query)
-                .split_whitespace()
-                .take(MAX_WORDS)
-                .map(str::to_owned)
-                .collect();
-            let in_scope = |row: &Value| {
-                !matches!(scope.as_str(), "dark" | "light") || text(row.get("mode")) == scope
-            };
-            let items: Vec<Value> = themes
+            let current = text(args.get(1));
+            let items: Vec<Value> = array(Some(first))
                 .iter()
                 .take(MAX_THEMES)
-                .filter(|row| in_scope(row) && matches(row, &words))
                 .map(|row| {
                     let mut row = row.clone();
                     let id = text(row.get("id"));
-                    let line = detail(&row);
                     if let Some(object) = row.as_object_mut() {
-                        object.insert("detail".to_owned(), json!(line));
-                        object.insert("current".to_owned(), json!(!slot.is_empty() && id == slot));
+                        object.insert(
+                            "current".to_owned(),
+                            json!(!current.is_empty() && id == current),
+                        );
                     }
                     row
                 })
                 .collect();
             let order: Vec<String> = items.iter().map(|row| text(row.get("id"))).collect();
-            json!({
-                "items": items,
-                "order": order,
-                "count": order.len(),
-                // How many the scope alone leaves, so a picker can say how
-                // much "all" would add.
-                "scoped": themes.iter().take(MAX_THEMES).filter(|row| in_scope(row)).count(),
-                "total": themes.len(),
-            })
+            json!({"items": items, "order": order, "count": order.len()})
         }
         // Where left and right lead from an entry. The ends hold rather than
         // wrap, so a held key stops somewhere the reader can see.
@@ -249,8 +204,8 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             json!(order[target])
         }
         "schedule" => json!(schedule(first)),
-        // Which entry the carousel centres: the highlighted preset while the
-        // search still shows it, else the slot's own, else the first shown.
+        // Which entry the carousel centres: the preset just moved to, else
+        // the one on screen, else the first.
         "focus" => {
             let order: Vec<String> = array(first.get("order"))
                 .iter()
@@ -353,17 +308,8 @@ mod tests {
         )
         .unwrap()
     }
-    fn carousel(catalog: &Value, slot: &str, query: &str, scope: &str) -> Value {
-        call(
-            "carousel",
-            &[
-                catalog["themes"].clone(),
-                json!(slot),
-                json!(query),
-                json!(scope),
-            ],
-        )
-        .unwrap()
+    fn carousel(catalog: &Value, current: &str) -> Value {
+        call("carousel", &[catalog["themes"].clone(), json!(current)]).unwrap()
     }
     fn names(carousel: &Value) -> Vec<String> {
         array(carousel.get("items"))
@@ -378,122 +324,77 @@ mod tests {
     }
 
     #[test]
-    fn the_carousel_shows_the_edited_modes_presets_unless_asked_for_all() {
+    fn the_carousel_shows_every_preset_in_the_catalogs_order() {
         let catalog = curated();
-        let light = carousel(&catalog, "catppuccin-latte", "", "light");
+        let all = carousel(&catalog, "catppuccin-latte");
+        assert_eq!(all["count"], json!(13), "light and dark side by side");
         assert_eq!(
-            names(&light),
+            &names(&all)[..5],
             [
+                "Catppuccin Mocha",
+                "Catppuccin Macchiato",
+                "Catppuccin Frappé",
                 "Catppuccin Latte",
-                "Rosé Pine Dawn",
-                "Flexoki Light",
-                "Gruvbox Light"
+                "Rosé Pine"
             ],
-            "the catalog's own order, narrowed to the mode being edited"
+            "the catalog's own order, families together"
         );
-        assert_eq!(light["count"], json!(4));
-        assert_eq!(light["scoped"], json!(4));
-        assert_eq!(light["total"], json!(13));
         assert_eq!(
-            light["items"][0]["current"],
+            all["items"][3]["current"],
             json!(true),
-            "the slot's own preset is marked"
+            "the preset on screen is marked"
         );
-        assert_eq!(light["items"][1]["current"], json!(false));
-        let all = carousel(&catalog, "catppuccin-latte", "", "all");
-        assert_eq!(all["count"], json!(13), "every preset may fill either slot");
-        assert_eq!(carousel(&catalog, "nord", "", "dark")["count"], json!(9));
-    }
-
-    #[test]
-    fn a_search_narrows_whatever_the_scope_leaves() {
-        let catalog = curated();
-        assert_eq!(
-            names(&carousel(&catalog, "", "rose", "all")),
-            ["Rosé Pine", "Rosé Pine Moon", "Rosé Pine Dawn"]
-        );
-        assert_eq!(
-            names(&carousel(&catalog, "", "ROSÉ dawn", "all")),
-            ["Rosé Pine Dawn"],
-            "every word, in any case"
-        );
-        assert_eq!(
-            names(&carousel(&catalog, "", "rose", "dark")),
-            ["Rosé Pine", "Rosé Pine Moon"]
-        );
-        let nothing = carousel(&catalog, "", "solarized", "all");
-        assert_eq!(nothing["count"], json!(0));
-        assert_eq!(nothing["total"], json!(13));
-    }
-
-    #[test]
-    fn an_entrys_second_line_names_its_mode_only_when_its_name_does_not() {
-        let catalog = curated();
-        let all = carousel(&catalog, "", "", "all");
-        let detail = |name: &str| {
-            array(all.get("items"))
+        assert_eq!(all["items"][0]["current"], json!(false));
+        assert!(
+            array(carousel(&catalog, "").get("items"))
                 .iter()
-                .find(|item| string(item.get("name")) == name)
-                .map(|item| string(item.get("detail")))
-                .unwrap()
-        };
-        assert_eq!(detail("Catppuccin Mocha"), "Dark");
-        assert_eq!(detail("Rosé Pine Dawn"), "Light");
-        assert_eq!(
-            detail("Flexoki Light"),
-            "",
-            "Flexoki's Light already says so"
+                .all(|item| item["current"] == json!(false)),
+            "nothing on screen marks nothing"
         );
-        assert_eq!(detail("Gruvbox Dark"), "");
     }
 
     #[test]
     fn left_and_right_move_through_the_strip_and_hold_at_its_ends() {
-        let light = carousel(&curated(), "", "", "light");
-        assert_eq!(step(&light, "catppuccin-latte", "right"), "rose-pine-dawn");
-        assert_eq!(step(&light, "rose-pine-dawn", "next"), "flexoki-light");
-        assert_eq!(step(&light, "rose-pine-dawn", "left"), "catppuccin-latte");
-        assert_eq!(step(&light, "catppuccin-latte", "left"), "catppuccin-latte");
+        let all = carousel(&curated(), "");
+        assert_eq!(step(&all, "catppuccin-frappe", "right"), "catppuccin-latte");
+        assert_eq!(step(&all, "catppuccin-latte", "next"), "rose-pine");
+        assert_eq!(step(&all, "catppuccin-latte", "left"), "catppuccin-frappe");
+        assert_eq!(step(&all, "catppuccin-mocha", "left"), "catppuccin-mocha");
         assert_eq!(
-            step(&light, "gruvbox-light-medium", "right"),
-            "gruvbox-light-medium"
+            step(&all, "everforest-dark-medium", "right"),
+            "everforest-dark-medium"
         );
         assert_eq!(
-            step(&light, "gone", "right"),
-            "catppuccin-latte",
-            "something no longer shown starts at the front"
+            step(&all, "gone", "right"),
+            "catppuccin-mocha",
+            "something no longer in the catalog starts at the front"
         );
-        assert_eq!(
-            step(&carousel(&curated(), "", "zzz", "all"), "nord", "right"),
-            ""
-        );
+        let empty = call("carousel", &[json!([]), json!("")]).unwrap();
+        assert_eq!(step(&empty, "nord", "right"), "");
     }
 
     #[test]
-    fn the_centre_follows_the_highlight_then_the_slots_own_preset() {
+    fn the_centre_follows_the_move_then_the_preset_on_screen() {
         let catalog = curated();
-        let all = carousel(&catalog, "catppuccin-mocha", "", "all");
-        let focus = |carousel: &Value, highlighted: &str, slot: &str| {
+        let all = carousel(&catalog, "catppuccin-mocha");
+        let focus = |carousel: &Value, highlighted: &str, current: &str| {
             string(Some(
                 &call(
                     "focus",
-                    &[carousel.clone(), json!(highlighted), json!(slot)],
+                    &[carousel.clone(), json!(highlighted), json!(current)],
                 )
                 .unwrap(),
             ))
         };
         assert_eq!(focus(&all, "nord", "catppuccin-mocha"), "nord");
         assert_eq!(focus(&all, "", "catppuccin-mocha"), "catppuccin-mocha");
-        let light = carousel(&catalog, "catppuccin-mocha", "", "light");
         assert_eq!(
-            focus(&light, "nord", "catppuccin-mocha"),
-            "catppuccin-latte",
-            "a centre the scope hides falls back to the first entry shown"
+            focus(&all, "gone", "also-gone"),
+            "catppuccin-mocha",
+            "presets no longer in the catalog fall back to the first"
         );
-        assert_eq!(
-            focus(&carousel(&catalog, "", "zzz", "all"), "nord", "nord"),
-            ""
-        );
+        let empty = call("carousel", &[json!([]), json!("")]).unwrap();
+        assert_eq!(focus(&empty, "nord", "nord"), "");
     }
 
     #[test]

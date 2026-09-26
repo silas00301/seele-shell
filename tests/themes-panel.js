@@ -1,4 +1,5 @@
-// Render the production Themes panel over a fixture store; catalog policy is
+// Render the production Themes switcher and Control Center panel over a
+// fixture store; catalog policy is
 // covered by qml-core's themes tests and store round trips by themes.js.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,7 +11,8 @@ try {
   fs.mkdirSync(path.join(work, 'production'));
   const shared = fs.existsSync(path.join(source, 'shared')) ? path.join(source, 'shared') : path.resolve(source, '../shared');
   fs.cpSync(shared, path.join(work, 'production/shared'), {recursive: true});
-  fs.writeFileSync(path.join(work, 'production/ThemePanel.qml'), fs.readFileSync(path.join(source, 'ThemePanel.qml'), 'utf8').replace('import "../shared"', 'import "shared"'));
+  for (const file of ['ThemePanel.qml', 'ThemeSettingsPanel.qml'])
+    fs.writeFileSync(path.join(work, 'production', file), fs.readFileSync(path.join(source, file), 'utf8').replace('import "../shared"', 'import "shared"'));
   // Only Quickshell's executable-owned config IO is omitted. The real tokens,
   // components and entire panel remain intact in this Qt host.
   const themePath = path.join(work, 'production/shared/Theme.qml');
@@ -20,7 +22,8 @@ try {
     .replace('Qt.resolvedUrl("grain.png")', '""');
   fs.writeFileSync(themePath, theme + '}\n');
   fs.writeFileSync(path.join(work, 'tst_themes.qml'), fs.readFileSync(path.resolve(__dirname, 'tst_themes.qml'), 'utf8')
-    .replace('property string screenshotPath: ""', 'property string screenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SCREENSHOT || '')));
+    .replace('property string screenshotPath: ""', 'property string screenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SCREENSHOT || ''))
+    .replace('property string settingsScreenshotPath: ""', 'property string settingsScreenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SETTINGS_SCREENSHOT || '')));
   const result = spawnSync('qmltestrunner', ['-import', process.argv[3], '-input', path.join(work, 'tst_themes.qml')], {
     stdio: 'inherit', env: {...process.env, QT_QPA_PLATFORM: 'offscreen', QT_QUICK_BACKEND: 'software'},
   });
