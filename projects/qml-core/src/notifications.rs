@@ -447,6 +447,7 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
             let mut entry = candidate.clone();
             let time = timestamp(args.get(1))?;
             let generation = truthy(args.get(2));
+            let suppress_popup = truthy(args.get(3));
             state.make_room(&entry, &mut effects);
             if let Some(index) = state.find(entry.get("id")) {
                 let mut record = state.current.remove(index);
@@ -462,8 +463,9 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                 };
                 record.entry = entry;
                 if fresh {
-                    record.popup =
-                        !state.dnd && !state.quiet_apps.contains(&group_key(&record.entry));
+                    record.popup = !state.dnd
+                        && !suppress_popup
+                        && !state.quiet_apps.contains(&group_key(&record.entry));
                     record.remaining = popup_duration(&record.entry);
                     record.clock = time;
                     if record.popup {
@@ -496,6 +498,7 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     entry["pinned"] = json!(truthy(saved.get("pinned")));
                 }
                 let popup = !state.dnd
+                    && !suppress_popup
                     && if generation {
                         // Reload restores an existing permanent toast, not a new
                         // arrival. Silencing its app must not discard that toast.
@@ -723,6 +726,30 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transient_focus_quiet_keeps_calendar_reminders_in_panel() {
+        let mut state = new_state(1000.0).unwrap();
+        let reminder = json!({"id":1,"app_name":"Seele Calendar","summary":"Meeting","timeout":-1,"urgency":1});
+        state_call(
+            &mut state,
+            "receive",
+            &[reminder, json!(1000), json!(false), json!(true)],
+        )
+        .unwrap();
+        assert_eq!(state.current.len(), 1);
+        assert!(!state.current[0].popup);
+        assert!(state.quiet_apps.is_empty());
+        let next =
+            json!({"id":2,"app_name":"Seele Calendar","summary":"Next","timeout":-1,"urgency":1});
+        state_call(
+            &mut state,
+            "receive",
+            &[next, json!(1001), json!(false), json!(false)],
+        )
+        .unwrap();
+        assert!(state.current[0].popup);
+        assert!(!state.current[1].popup);
+    }
     #[test]
     fn application_silence_is_bounded_and_resumes_at_capacity() {
         let mut state = new_state(1000.0).unwrap();
