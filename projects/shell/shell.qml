@@ -128,6 +128,10 @@ Shared.Theme {
   property var meetingSelection: ({})
   readonly property string calendarDay: Qt.formatDate(now, "yyyy-MM-dd")
   readonly property date calendarDate: new Date(calendarDay + "T12:00:00")
+  readonly property var calendarIndicator: calendarStore.indicator(now.getTime())
+  property string calendarFocusId: ""
+  property string calendarFocusDay: ""
+  property bool calendarSettingsRequested: false
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
@@ -1916,7 +1920,10 @@ Shared.Theme {
   property string healthMaintenanceUrgency: maintenance.urgency
   IntegrationHealthStore {
     id: integrationHealth
-    onOpenSettings: destination => root.toggleControl(destination, root.currentScreen())
+    onOpenSettings: destination => {
+      if (destination === "calendar") root.calendarSettingsRequested = true
+      root.toggleControl(destination, root.currentScreen())
+    }
     onConfigured: {
       var routes = {}
       routes.github = function(action, token) {
@@ -1926,6 +1933,10 @@ Shared.Theme {
       routes["home-assistant"] = function(action, token) {
         homeAssistantStore.healthToken=token
         homeAssistantStore.refresh()
+      }
+      routes.calendar = function(action, token) {
+        calendarStore.healthToken = token
+        calendarStore.send("refresh")
       }
       integrationHealth.handlers=routes
       githubStore.refresh(false)
@@ -1976,6 +1987,14 @@ Shared.Theme {
     onHealthPublished: (state, success) => {
       integrationHealth.publish("home-assistant",{state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Set up the Home Assistant connection" : "Connection unavailable",lastSuccess:success,actions:["reconnect","settings"]})
       if(healthToken) { integrationHealth.complete("home-assistant",healthToken,state === "healthy"); healthToken=0 }
+    }
+  }
+  CalendarStore {
+    id: calendarStore
+    property int healthToken: 0
+    onHealthPublished: (state, success) => {
+      integrationHealth.publish("calendar", {state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Sign in with Google" : "Offline calendar cache",lastSuccess:success,actions:["retry","settings"]})
+      if (healthToken) { integrationHealth.complete("calendar",healthToken,state === "healthy"); healthToken=0 }
     }
   }
   MicTestStore {
@@ -5675,6 +5694,37 @@ Shared.Theme {
           }
 
           BarItem {
+            visible: root.calendarIndicator !== null
+            width: visible ? Math.min(root.calendarIndicatorWidth, eventBarLabel.implicitWidth + 14) : 0
+            hovered: eventBarMouse.containsMouse
+            active: root.panelHere("calendar", barWindow.modelData)
+            Text {
+              id: eventBarLabel
+              anchors.centerIn: parent
+              width: parent.width - root.spaceLarge
+              elide: Text.ElideRight
+              text: root.calendarIndicator ? (root.calendarIndicator.event.summary || "Event") + " · " + root.calendarIndicator.text + (root.calendarIndicator.extra ? " +" + root.calendarIndicator.extra : "") : ""
+              color: root.calendarIndicator ? calendarStore.eventColor(root.calendarIndicator.event) || root.accent : root.text
+              font.family: root.fontFamily
+              font.pixelSize: root.textLabel
+            }
+            MouseArea {
+              id: eventBarMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (!root.calendarIndicator) return
+                var event = root.calendarIndicator.event
+                root.calendarFocusDay = Qt.formatDate(new Date(event.start.dateTime), "yyyy-MM-dd")
+                root.calendarFocusId = String(event.calendar_id) + ":" + String(event.id)
+                if (root.controlPanel !== "calendar") root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent))
+              }
+            }
+            HoverTip { mouse: eventBarMouse; text: "Open calendar event" }
+          }
+
+          BarItem {
             visible: focusTimer.timerState.status !== "idle"
             width: visible ? focusBarLabel.implicitWidth + 14 : 0
             hovered: focusBarMouse.containsMouse
@@ -6532,8 +6582,23 @@ Shared.Theme {
     PanelWindow {
       id: calendarWindow
       property string selectedDate: ""
+      property bool settingsOpen: false
+      readonly property string agendaDay: selectedDate || root.calendarDay
       property string copyStatus: ""
       property bool copyPending: false
+      onAgendaDayChanged: calendarStore.forDay(agendaDay)
+      Connections {
+        target: root
+        function onCalendarFocusIdChanged() {
+          if (!calendarWindow.visible || !root.calendarFocusId) return
+          calendarWindow.selectedDate = root.calendarFocusDay
+          calendarAgenda.expandedId = root.calendarFocusId
+          var location = Time.moveCalendarDate(root.now, calendarWindow.agendaDay, 0)
+          if (location) calendarMonths.positionViewAtIndex(location.monthOffset + 60, ListView.Contain)
+          root.calendarFocusId = ""
+          root.calendarFocusDay = ""
+        }
+      }
 
       function copyCalendarDate(cell) {
         var value = Time.calendarCopyDate(cell)
@@ -6592,7 +6657,7 @@ Shared.Theme {
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 390
-      implicitHeight: Math.min(modelData.height - 60, 470)
+      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap - root.panelMargin, root.calendarMaximumHeight)
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -6600,12 +6665,19 @@ Shared.Theme {
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
       onVisibleChanged: if (visible) {
+        if (root.calendarSettingsRequested) settingsOpen = true
+        root.calendarSettingsRequested = false
         if (!copyPending) {
-          selectedDate = ""
+          selectedDate = root.calendarFocusDay || ""
           copyStatus = ""
         }
+        calendarAgenda.expandedId = root.calendarFocusId
+        root.calendarFocusDay = ""
+        root.calendarFocusId = ""
+        calendarStore.forDay(agendaDay)
         Qt.callLater(function() {
-          calendarMonths.positionViewAtIndex(60, ListView.Beginning)
+          var location = Time.moveCalendarDate(root.now, calendarWindow.agendaDay, 0)
+          calendarMonths.positionViewAtIndex(location ? location.monthOffset + 60 : 60, ListView.Beginning)
           calendarSurface.forceActiveFocus()
         })
       }
@@ -6665,13 +6737,34 @@ Shared.Theme {
             }
           }
 
+          Row {
+            width: parent.width
+            spacing: root.spaceSmall
+            Shared.ActionButton {
+              theme: root
+              text: calendarWindow.settingsOpen ? "Agenda" : "Calendar settings"
+              selected: calendarWindow.settingsOpen
+              onClicked: calendarWindow.settingsOpen = !calendarWindow.settingsOpen
+            }
+            Text { visible: calendarStore.stale; text: "Offline / stale"; color: root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+          }
+
+          CalendarSettings {
+            id: calendarSettings
+            visible: calendarWindow.settingsOpen
+            width: parent.width
+            theme: root
+            store: calendarStore
+          }
+
           SeeleListView {
             id: calendarMonths
             width: parent.width
+            visible: !calendarWindow.settingsOpen
             // The list takes whatever the header and the gap under it leave,
             // so a change to either cannot quietly clip the last week of a
             // month or reserve a strip nothing draws in.
-            height: parent.height - calendarHeader.height - root.panelSpacing
+            height: visible ? Math.max(root.rowHeight * 4 + root.spaceLarge, parent.height - calendarHeader.height - calendarAgenda.height - root.panelSpacing * 4 - root.textLabel) : 0
             model: 121
             spacing: 8
             clip: true
@@ -6738,19 +6831,33 @@ Shared.Theme {
                       width: monthGrid.width / 8
                       height: monthDelegate.cellHeight
                       Rectangle {
-                        visible: !calendarCell.modelData.week && calendarCell.modelData.today
+                        visible: !calendarCell.modelData.week && (calendarCell.modelData.today || calendarCell.selected)
                         anchors.centerIn: parent
                         width: root.chipHeight; height: width; radius: width / 2
-                        color: root.accent
+                        color: calendarCell.modelData.today ? root.accent : root.selectedColor
                       }
                       Text {
-                        anchors.centerIn: parent
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: 2
                         text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
                           : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
                         color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.crust : root.text
                         font.family: root.fontFamily
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
+                      }
+                      Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 2
+                        spacing: 2
+                        readonly property var marks: calendarStore.dots(calendarCell.copyDate)
+                        Repeater {
+                          model: parent.marks.slice(0, 3)
+                          Rectangle { required property var modelData; width: root.spaceTight; height: width; radius: width / 2; color: modelData.color || root.accent }
+                        }
+                        Text { visible: parent.marks.length > 3; text: "+" + (parent.marks.length - 3); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textMicro }
                       }
                       HoverHandler { id: calendarDayHover; enabled: calendarCell.copyDate !== "" }
                       MouseArea {
@@ -6759,15 +6866,27 @@ Shared.Theme {
                         enabled: calendarCell.copyDate !== "" && !calendarWindow.copyPending
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
+                        onClicked: {
+                          calendarWindow.selectedDate = calendarCell.copyDate
+                          calendarWindow.copyStatus = ""
+                          calendarAgenda.expandedId = ""
+                        }
                       }
-                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Copy " + calendarCell.copyDate }
+                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Show " + calendarCell.copyDate + " · Enter to copy" }
                     }
                   }
                 }
               }
             }
             ScrollBar.vertical: SlimScrollBar { popupHovered: calendarSurface.hovered }
+          }
+          CalendarAgenda {
+            id: calendarAgenda
+            visible: !calendarWindow.settingsOpen
+            width: parent.width
+            theme: root
+            store: calendarStore
+            day: calendarWindow.agendaDay
           }
         }
       }

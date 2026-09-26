@@ -154,6 +154,12 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./SystemHealthPanel.qml} "$out/share/seele-shell/SystemHealthPanel.qml"
     substituteInPlace "$out/share/seele-shell/SystemHealthPanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
+    install -m644 ${./CalendarStore.qml} "$out/share/seele-shell/CalendarStore.qml"
+    install -m644 ${./CalendarAgenda.qml} "$out/share/seele-shell/CalendarAgenda.qml"
+    substituteInPlace "$out/share/seele-shell/CalendarAgenda.qml" --replace-fail '"../shared"' '"shared"'
+    install -m644 ${./CalendarSettings.qml} "$out/share/seele-shell/CalendarSettings.qml"
+    substituteInPlace "$out/share/seele-shell/CalendarSettings.qml" --replace-fail '"../shared"' '"shared"'
+    install -m644 ${./calendar.js} "$out/share/seele-shell/calendar.js"
     install -m644 ${./GitHubInboxStore.qml} "$out/share/seele-shell/GitHubInboxStore.qml"
     install -m644 ${./GitHubInboxPanel.qml} "$out/share/seele-shell/GitHubInboxPanel.qml"
     substituteInPlace "$out/share/seele-shell/GitHubInboxStore.qml" --replace-fail '../shared/ListModels.js' 'shared/ListModels.js'
@@ -260,6 +266,8 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix PATH : "$out/bin:${runtimePath}"
     makeWrapper ${integrations}/bin/seele-home-assistant "$out/bin/seele-home-assistant" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
+    makeWrapper ${integrations}/bin/seele-calendar "$out/bin/seele-calendar" \
+      --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret pkgs.libnotify pkgs.xdg-utils ]}"
     makeWrapper ${integrations}/bin/seele-github-inbox "$out/bin/seele-github-inbox" \
       --prefix PATH : "${
         lib.makeBinPath [
@@ -411,7 +419,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-calendar seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -423,6 +431,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-control" \
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${tests}/feature-integrations.js "$out/share/seele-shell/shell.qml" ${./package.nix}
+    node ${tests}/calendar.js "$out/share/seele-shell/calendar.js"
     node ${tests}/ai-activity.js "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
     node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     bash ${tests}/text-workbench.sh "$out/share/seele-shell" \
