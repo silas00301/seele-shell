@@ -4,39 +4,35 @@ import Quickshell
 import Quickshell.Io
 import "../shared/Native.js" as Bridge
 
-// The picker's view of `seele-theme`. The catalog, both slots, the mode, the
-// schedule, publication and every reload belong to that helper; what is kept
-// here is what one open picker is looking at, and the requests it has yet to
-// send. The theme on screen is read from the selection the helper publishes,
-// so a switch made anywhere else is seen here without polling.
+// The Themes surfaces' view of `seele-theme`: the floating switcher, the
+// Control Center panel and its tile. The catalog, the light and dark themes,
+// the mode, the schedule, publication and every reload belong to that helper;
+// what is kept here is what one open picker is looking at, and the requests it
+// has yet to send. The theme on screen is read from the selection the helper
+// publishes, so a switch made anywhere else is seen here without polling.
 //
-// The picker is optimistic: the mode and both slots change here the moment
-// the reader moves, and the helper is told after. Every request publishes
-// files and reloads applications, so requests run one at a time, a burst of
-// arrow presses settles for a moment first, and a request still waiting is
-// replaced by a newer one of the same kind rather than queued behind it.
+// The switcher is optimistic: it moves at once and tells the helper after.
+// Every request publishes files and reloads applications, so requests run one
+// at a time, a burst of arrow presses settles for a moment first, and a
+// request still waiting is replaced by a newer one of the same kind.
 Scope {
   id: store
-  // The carousel's entries, kept as one model reconciled by ID so a card that
-  // moves slides where it goes instead of being built again.
+  // Every preset in the catalog's order, kept as one model reconciled by ID
+  // so a card that moves slides where it goes instead of being built again.
   property alias model: rows
   ListModel { id: rows }
 
   readonly property string stateDirectory: Quickshell.env("SEELE_THEME_STATE")
     || (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/seele-theme"
   property var catalog: ({ ok: false, current: "", themes: [] })
-  // The helper's own description of the slots, the mode and the schedule, as
-  // the last reply left it.
+  // The helper's own description of both themes, the mode and the schedule.
   property var appearance: ({ mode: "dark", dark: "", light: "", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" }, next: null })
   property bool panelOpen: false
-  property string query: ""
-  // The mode the carousel edits, and both slots, ahead of the helper.
+  // The mode and both themes, ahead of the helper while requests are pending.
   property string mode: "dark"
   property var slots: ({ dark: "", light: "" })
-  // The carousel shows the edited mode's presets unless the reader asks for all.
-  property bool showAll: false
   property string highlighted: ""
-  // Mode and both slots as the picker opened, so a cancel can put them back.
+  // Mode and both themes as the picker opened, so Escape can put them back.
   property var opened: null
   property var queue: []
   property var running: null
@@ -51,11 +47,14 @@ Scope {
   readonly property string current: store.selection !== "" ? store.selection : store.catalog.current || ""
   readonly property var themes: store.catalog.themes || []
   readonly property int total: store.themes.length
-  readonly property string slot: store.slots[store.mode] || ""
-  readonly property var carousel: Bridge.call("themes.carousel", [store.themes, store.slot, store.query, store.showAll ? "all" : store.mode])
-  readonly property string focusedId: Bridge.call("themes.focus", [store.carousel, store.highlighted, store.slot])
-  readonly property string scheduleText: Bridge.call("themes.schedule", [store.appearance])
+  readonly property var carousel: Bridge.call("themes.carousel", [store.themes, store.current])
+  readonly property string focusedId: Bridge.call("themes.focus", [store.carousel, store.highlighted, store.current])
   readonly property string autoSource: (store.appearance.auto || {}).source || "off"
+  // Light, Dark or Auto, as the Control Center shows it.
+  readonly property string appearanceChoice: store.autoSource !== "off" ? "auto" : store.mode
+  readonly property string appearanceGlyph: ({ light: "󰖙", dark: "󰖔", auto: "󰔎" })[store.appearanceChoice] || "󰔎"
+  readonly property string appearanceLabel: ({ light: "Light", dark: "Dark", auto: "Auto" })[store.appearanceChoice] || ""
+  readonly property string scheduleText: Bridge.call("themes.schedule", [store.appearance])
   // What the bar-level surfaces name. The published selection carries its own
   // display name, so a tile says which theme is applied before this picker has
   // ever been opened and the catalog read.
@@ -68,9 +67,9 @@ Scope {
   function failure(code) {
     return Bridge.call("themes.failure", [code || ""])
   }
-  function known(id) {
-    for (var i = 0; i < store.themes.length; i++) if (store.themes[i].id === id) return true
-    return false
+  function find(id) {
+    for (var i = 0; i < store.themes.length; i++) if (store.themes[i].id === id) return store.themes[i]
+    return null
   }
   function refresh() {
     if (list.running) return
@@ -83,52 +82,44 @@ Scope {
     error = ""
     if (value.appearance) adopt(value.appearance)
   }
-  // Takes the helper's word for the slots and the mode, unless the reader has
-  // already moved on and the helper has yet to hear about it: then the reply
-  // is kept and adopted once the last request is answered.
+  // Takes the helper's word for both themes and the mode, unless the reader
+  // is ahead of it: then the reply is kept and adopted once all is answered.
   function adopt(value) {
     appearance = value
     if (switching) return
     mode = value.mode
     slots = ({ dark: value.dark, light: value.light })
-    // What an open picker first reads is what a cancel puts back.
+    // What an open picker first reads is what Escape puts back.
     if (panelOpen && opened === null) opened = ({ mode: mode, dark: slots.dark, light: slots.light })
   }
 
-  // Moves the carousel and switches the edited mode's slot to where it lands.
+  // The switcher: moving picks the neighbouring preset, which becomes the
+  // theme for its own mode, and the desktop follows at once.
   function step(direction) {
     var next = Bridge.call("themes.step", [carousel, focusedId, direction])
     if (next === "" || next === focusedId) return
     choose(next, false)
   }
-  // A deliberate choice (a click, Enter) is sent at once; a keyboard move
-  // waits for the burst it may belong to.
+  // A deliberate choice (a click) is sent at once; a keyboard move waits for
+  // the burst it may belong to.
   function choose(id, now) {
-    if (id === "" || !known(id)) return
+    var preset = find(id)
+    if (!preset) return
     highlighted = id
+    mode = preset.mode
     var next = Object.assign({}, slots)
-    next[mode] = id
+    next[preset.mode] = id
     slots = next
-    var request = { op: "slot", mode: mode, id: id }
+    var request = { op: "pick", id: id }
     if (now) { settle.stop(); settling = null; send(request) }
     else { settling = request; settle.restart() }
   }
-  function setMode(value) {
-    if (value !== "dark" && value !== "light" || value === mode) return
+  // Enter: whatever the switcher last moved to is sent now rather than after
+  // the burst settles.
+  function keep() {
     flushSettling()
-    mode = value
-    highlighted = ""
-    send({ op: "mode", mode: value })
   }
-  function setAuto(source, lightAt, darkAt) {
-    if (["off", "sun", "schedule"].indexOf(source) < 0) return
-    var times = source === "schedule" ? [lightAt || (appearance.auto || {}).lightAt || "07:00", darkAt || (appearance.auto || {}).darkAt || "19:00"] : []
-    send({ op: "auto", source: source, times: times })
-  }
-  function toggleAll() {
-    showAll = !showAll
-  }
-  // Puts back the mode and both slots as the picker found them.
+  // Escape: the mode and both themes as the picker found them.
   function cancel() {
     settle.stop()
     settling = null
@@ -139,6 +130,39 @@ Scope {
     queue = []
     send({ op: "restore", mode: opened.mode, dark: opened.dark, light: opened.light })
   }
+
+  // The Control Center: Light, Dark or Auto; the schedule's source and
+  // times; and which preset each mode wears.
+  function setAppearance(value) {
+    if (value === appearanceChoice) return
+    // The sun where the timezone names a city, the saved times otherwise.
+    if (value === "auto") { setAuto(appearance.place ? "sun" : "schedule"); return }
+    if (value !== "dark" && value !== "light") return
+    flushSettling()
+    if (autoSource !== "off") send({ op: "auto", source: "off", times: [] })
+    mode = value
+    send({ op: "mode", mode: value })
+  }
+  // The tile's knob steps through the three in the order the segments show.
+  function cycleAppearance() {
+    setAppearance(({ light: "dark", dark: "auto", auto: "light" })[appearanceChoice] || "light")
+  }
+  function setAuto(source, lightAt, darkAt) {
+    if (["off", "sun", "schedule"].indexOf(source) < 0) return
+    var times = source === "schedule"
+      ? [lightAt || (appearance.auto || {}).lightAt || "07:00", darkAt || (appearance.auto || {}).darkAt || "19:00"]
+      : []
+    send({ op: "auto", source: source, times: times })
+  }
+  // Makes the preset on screen the theme for `slot`, whatever its own mode.
+  function useCurrentFor(slot) {
+    if ((slot !== "dark" && slot !== "light") || current === "" || slots[slot] === current) return
+    var next = Object.assign({}, slots)
+    next[slot] = current
+    slots = next
+    send({ op: "slot", mode: slot, id: current })
+  }
+
   function flushSettling() {
     if (settling === null) return
     settle.stop()
@@ -146,9 +170,8 @@ Scope {
     settling = null
     send(request)
   }
-  // Queues a request, replacing a waiting one of the same kind: a slot choice
-  // replaces the waiting choice for that slot, a mode or schedule change the
-  // waiting one, and a restore everything that waits.
+  // Queues a request, replacing a waiting one of the same kind (a slot only
+  // for the same mode), and letting a restore replace everything that waits.
   function send(request) {
     var waiting = request.op === "restore" ? [] : queue.filter(function (item) {
       return item.op !== request.op || (request.op === "slot" && item.mode !== request.mode)
@@ -157,6 +180,7 @@ Scope {
     next()
   }
   function command(request) {
+    if (request.op === "pick") return ["seele-theme", "pick", request.id]
     if (request.op === "slot") return ["seele-theme", "slot", request.mode, request.id]
     if (request.op === "mode") return ["seele-theme", "mode", request.mode]
     if (request.op === "restore") return ["seele-theme", "restore", request.mode, request.dark, request.light]
@@ -188,15 +212,10 @@ Scope {
     if (code === 0) adopt(appearance)
     else refresh()
   }
-  function resetFilters() {
-    query = ""
-    showAll = false
-  }
   function openChanged() {
     if (!panelOpen) {
       // Closing mid-burst keeps the last move rather than dropping it.
       flushSettling()
-      resetFilters()
       highlighted = ""
       actionError = ""
       reloadPending = ""
@@ -206,16 +225,18 @@ Scope {
     opened = null
     refresh()
   }
-  // Something else switched (the schedule at a boundary, the launcher): an
-  // open picker reads the slots and the mode again, unless it is mid-switch
-  // itself and that change is its own.
-  function selectionMoved() {
-    if (panelOpen && !switching) refresh()
+  // Something else switched or chose (the schedule at a boundary, the
+  // launcher): while nothing of its own is pending, the store reads both
+  // themes, the mode and the schedule again, so the tile's knob and the panel
+  // stay true while no picker is open.
+  function changedElsewhere() {
+    if (!switching) refresh()
   }
 
   onPanelOpenChanged: openChanged()
+  onSelectionChanged: changedElsewhere()
+  Component.onCompleted: refresh()
   onCarouselChanged: Models.reconcile(rows, carousel.items, "entry", function (item) { return item.id })
-  onSelectionChanged: selectionMoved()
 
   // The published selection, watched rather than polled: the helper renames it
   // into place, and the shell's own palette follows that same file.
@@ -238,6 +259,15 @@ Scope {
       store.selection = ""
       store.selectionName = ""
     }
+  }
+
+  // The helper's preferences, watched for the changes that publish nothing:
+  // a schedule turned on, a theme given to the mode not in use.
+  FileView {
+    path: store.stateDirectory + "/preferences.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: store.changedElsewhere()
   }
 
   Process {

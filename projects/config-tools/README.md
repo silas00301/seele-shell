@@ -101,6 +101,9 @@ beside Mocha), else the catalog's first preset of that mode.
 
 - `set <id>` fills the slot of the mode on screen and always republishes, which
   is what choosing the applied theme again asks for.
+- `pick <id>` fills the slot of the preset's own mode and switches to that
+  mode, so a light preset brings light mode with it and the other slot keeps
+  its preset.
 - `slot <dark|light> <id>` fills one slot, publishing only if its mode is on
   screen; `mode <dark|light>` switches mode; `restore <mode> <dark> <light>`
   puts back all three at once, which is how a picker cancels.
@@ -140,17 +143,26 @@ boundary on its own.
 
 ### Pickers
 
-Two surfaces call this helper and neither owns anything it owns: the Vicinae
-**Seele Themes** command, and the shell's floating Themes carousel
-(`ThemeStore.qml` and `ThemePanel.qml`, with ordering, filtering, movement and
-the schedule's sentence in `qml-core`'s `themes.rs`). The launcher applies the
-theme for the mode on screen with `set`. The carousel names the slot it edits
-with `slot`, switches with `mode` and cancels with `restore`, and switches as
-the reader moves, so a held arrow key is coalesced: moves settle for a moment,
-only the last is sent, one request runs at a time, and a newer request of the
-same kind replaces one still waiting. The carousel does not treat a reply as the
-answer to which theme is applied: it watches the published `selection.json`,
-so a switch made from the launcher, by the schedule or during activation is seen
-by an open picker too. Their behavior is covered by `tests/vicinae-themes.cjs`,
-`tests/themes.js` and `tests/tst_themes.qml`; parent-side integration is
-documented in Seele's `docs/theme-switching.md`.
+Three surfaces call this helper and none owns anything it owns: the Vicinae
+**Seele Themes** command, the shell's floating Themes switcher, and the Control
+Center's Themes panel (`ThemeStore.qml`, `ThemePanel.qml` and
+`ThemeSettingsPanel.qml`, with ordering, movement and the schedule's sentence in
+`qml-core`'s `themes.rs`). The launcher applies the theme for the mode on screen
+with `set`.
+
+The switcher is a carousel of every preset, never filtered, and each step sends
+`pick`, so it needs no mode control of its own; Escape cancels with `restore`.
+Moves are coalesced: a held arrow key settles for a moment, only the last move
+is sent, one request runs at a time, and a newer request of the same kind
+replaces one still waiting. The Control Center panel holds the rest: Light and
+Dark (`auto off`, then `mode`), Auto with sunrise and sunset or two times
+(`auto`), and `slot` for a mode that should wear a preset of the other kind.
+Its tile's knob shows Light, Dark or Auto and steps to the next.
+
+No surface treats a reply as the answer to which theme is applied: the store
+watches the published `selection.json` and `preferences.json` and reads the
+helper again whenever either changes while nothing of its own is pending, so a
+switch made from the launcher, by the schedule or during activation reaches the
+tile and an open picker alike. Their behavior is covered by
+`tests/vicinae-themes.cjs`, `tests/themes.js` and `tests/tst_themes.qml`;
+parent-side integration is documented in Seele's `docs/theme-switching.md`.

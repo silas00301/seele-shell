@@ -42,8 +42,9 @@ reach it from the launcher's root search.
   theme's name, naming anything the helper could not reload rather than calling a
   saved switch a failure; duplicate applies coalesce. Native `seele-theme` owns
   publication and reloads. Applying fills the theme for the mode on screen, light
-  or dark; the shell's own floating Themes carousel edits either slot, switches
-  the mode and sets the schedule that flips it. `tests/vicinae-themes.cjs` renders the actual component
+  or dark; the shell's floating Themes switcher gives a preset to its own mode,
+  and the Control Center's Themes panel switches the mode, sets the schedule
+  that flips it and gives either mode any preset. `tests/vicinae-themes.cjs` renders the actual component
   and covers its sections, previews, shared shortcuts, selection, reload
   reporting and retry paths.
 
