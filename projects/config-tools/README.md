@@ -87,15 +87,70 @@ concurrent switching/activation, invalid palettes, missing generated assets,
 legacy state migration, rollback, symlink boundaries
 and exact reload arguments against fake desktop tools.
 
+### Light, dark and the schedule
+
+The desktop keeps two presets, one for light mode and one for dark, and a mode
+that picks between them; any preset may fill either slot. They live beside the
+selection in mode-0600 `preferences.json`, and every command below changes
+them under the same directory lock as publication, so a picker, the scheduler
+and activation never interleave. A preset is published only when the applied
+one actually changes. Before there were preferences, the one saved selection
+becomes the slot of its own mode and the other slot starts at that mode's
+default: the default itself, else its family's variant of that mode (Latte
+beside Mocha), else the catalog's first preset of that mode.
+
+- `set <id>` fills the slot of the mode on screen and always republishes, which
+  is what choosing the applied theme again asks for.
+- `slot <dark|light> <id>` fills one slot, publishing only if its mode is on
+  screen; `mode <dark|light>` switches mode; `restore <mode> <dark> <light>`
+  puts back all three at once, which is how a picker cancels.
+- `auto off | sun | schedule <light HH:MM> <dark HH:MM>` sets the schedule.
+  Turning it on puts the desktop where the schedule says now; off keeps the
+  times for next time.
+- `tick` runs one step of the schedule, and `follow` runs it as a loop.
+
+The schedule is edge-triggered. It records the last boundary it acted on, and a
+step changes the mode only when a newer boundary has passed, so a mode chosen by
+hand holds until the next sunrise, sunset or fixed time, and a boundary missed
+while the machine slept is caught up at the next step. `follow` wakes at the next
+boundary and at least once a minute, so a resumed machine, a changed clock and
+new settings are seen promptly.
+
+`appearance.rs` computes the boundaries. Fixed times go through the system's
+own local time via `libc`, as `seele-clock` does, so a daylight-saving day still
+switches at the time on the clock. Sunrise and sunset use the algorithm behind
+NOAA's solar calculator, whose results match published tables to within a
+couple of minutes. A polar summer or winter has no boundary and holds light or
+dark. The place is never asked for and never stored: it is the system
+timezone's reference city from the tz database's `zone1970.tab` (from `TZ`, else
+`/etc/localtime`), which says nothing a timezone does not already say. A zone
+without a city, such as `Etc/UTC`, cannot follow the sun, and the command
+refuses rather than guessing. `list` and every reply describe the slots, the
+mode, the schedule, today's sunrise and sunset, and the next boundary, for a
+picker to draw.
+
+`src/appearance.rs` tests the schedule against a fixed-offset calendar, and
+the sun against independently published times for Berlin across the year, New
+York, Sydney and Tromsø's polar day and night.
+`python3 projects/config-tools/tests/appearance.py target/debug/seele-theme`
+drives the real CLI with a fixed clock and a synthetic tz table through
+migration, both slots, the mode, restore, both schedules, a hand-chosen mode
+holding until its boundary, catch-up after a gap, and `follow` applying a
+boundary on its own.
+
+### Pickers
+
 Two surfaces call this helper and neither owns anything it owns: the Vicinae
-**Seele Themes** command and the shell's Themes panel (`ThemeStore.qml`,
-`ThemePanel.qml`, with grouping, search and wording in `qml-core`'s
-`themes.rs`). Both list only what they are showing and apply one theme at a
-time. The shell panel switches as the reader moves between tiles, so a held
-arrow key is coalesced: moves settle for a moment, only the last is sent, and a
-choice made while a switch runs follows the moment it finishes. The shell panel does not treat its own `set` reply as the answer to which
-theme is applied: it watches the published `selection.json` for that, so a
-switch made from the launcher, from `seele-theme` directly or during activation
-marks the same row. Their behavior is covered by `tests/vicinae-themes.cjs` and
-`tests/themes.js`; parent-side integration is documented in Seele's
-`docs/theme-switching.md`.
+**Seele Themes** command, and the shell's floating Themes carousel
+(`ThemeStore.qml` and `ThemePanel.qml`, with ordering, filtering, movement and
+the schedule's sentence in `qml-core`'s `themes.rs`). The launcher applies the
+theme for the mode on screen with `set`. The carousel names the slot it edits
+with `slot`, switches with `mode` and cancels with `restore`, and switches as
+the reader moves, so a held arrow key is coalesced: moves settle for a moment,
+only the last is sent, one request runs at a time, and a newer request of the
+same kind replaces one still waiting. The carousel does not treat a reply as the
+answer to which theme is applied: it watches the published `selection.json`,
+so a switch made from the launcher, by the schedule or during activation is seen
+by an open picker too. Their behavior is covered by `tests/vicinae-themes.cjs`,
+`tests/themes.js` and `tests/tst_themes.qml`; parent-side integration is
+documented in Seele's `docs/theme-switching.md`.

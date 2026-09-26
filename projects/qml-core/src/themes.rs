@@ -1,15 +1,14 @@
-//! Theme picker presentation: one normalized catalog, the families a panel
-//! lays out, where the arrow keys lead, and the wording for what a switch did
-//! and did not reach.
+//! Theme picker presentation: one normalized catalog, the carousel a picker
+//! steps through, what the schedule will do next, and the wording for what a
+//! switch did and did not reach.
 //!
-//! Publication, reloading and every file the switch writes belong to
-//! `seele-theme`. What is left here is what one open panel is looking at, and
-//! it is kept in Rust so a palette never reaches a Qt colour property without
-//! having been checked, and so grouping and movement are decided once rather
-//! than by whichever delegate happens to be drawing.
-use crate::value::{array, number, text, trim};
+//! Publication, reloading, the light and dark slots and the schedule itself
+//! belong to `seele-theme`. What is left here is what one open picker is
+//! looking at, and it is kept in Rust so a palette never reaches a Qt colour
+//! property without having been checked, and so ordering, filtering and the
+//! schedule's sentence are decided once rather than by a delegate.
+use crate::value::{array, text, trim};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
 /// Every colour role the panel draws with. The native helper projects Base16
 /// into exactly these, so a theme missing one of them is not a theme the panel
@@ -21,7 +20,6 @@ const ROLES: [&str; 11] = [
 const MAX_THEMES: usize = 32;
 const MAX_WORDS: usize = 8;
 const MAX_PENDING: usize = 8;
-const MAX_COLUMNS: usize = 8;
 
 /// `#rrggbb` and nothing else. Qt would accept a colour name or an `#aarrggbb`
 /// with a different channel order, so anything but the helper's own form is
@@ -78,81 +76,52 @@ fn matches(row: &Value, words: &[String]) -> bool {
     words.iter().all(|word| haystack.contains(word))
 }
 
-/// A family is the presets sharing a first word, labelled by the words all of
-/// them share: "Catppuccin" for Mocha to Latte, "Rosé Pine" for the original,
-/// Moon and Dawn. A variant is what its own name adds; the original of a family
-/// adds nothing and keeps its full name. Presets alone in their family are
-/// gathered into one closing row, so a single preset never gets a row whose
-/// label repeats its only tile.
-fn families(themes: &[Value]) -> Vec<(String, Vec<(Value, String)>)> {
-    let mut order: Vec<String> = vec![];
-    let mut groups: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
-    for row in themes {
-        let name = text(row.get("name"));
-        let key = name
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_lowercase();
-        if !groups.contains_key(&key) {
-            order.push(key.clone());
-        }
-        groups.entry(key).or_default().push(row);
+/// A carousel entry's second line: its mode, unless its name already says it
+/// ("Flexoki Light").
+fn detail(row: &Value) -> String {
+    let mode = text(row.get("mode"));
+    let named = text(row.get("name"))
+        .split_whitespace()
+        .any(|word| word.eq_ignore_ascii_case(&mode));
+    if named {
+        String::new()
+    } else {
+        text(row.get("modeLabel"))
     }
-    let mut rows = vec![];
-    let mut alone = vec![];
-    for key in order {
-        let members = &groups[&key];
-        if members.len() == 1 {
-            let row = members[0];
-            alone.push((row.clone(), text(row.get("name"))));
-            continue;
-        }
-        let names: Vec<Vec<String>> = members
-            .iter()
-            .map(|row| {
-                text(row.get("name"))
-                    .split_whitespace()
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .collect();
-        let shared = (0..names.iter().map(Vec::len).min().unwrap_or(0))
-            .take_while(|&index| names.iter().all(|words| words[index] == names[0][index]))
-            .count()
-            .max(1);
-        let family = names[0][..shared].join(" ");
-        let variants = members
-            .iter()
-            .zip(&names)
-            .map(|(row, words)| {
-                let variant = words[shared.min(words.len())..].join(" ");
-                let label = if variant.is_empty() {
-                    text(row.get("name"))
-                } else {
-                    variant
-                };
-                ((*row).clone(), label)
-            })
-            .collect();
-        rows.push((family, variants));
-    }
-    if !alone.is_empty() {
-        let label = if rows.is_empty() { "Presets" } else { "More" };
-        rows.push((label.to_owned(), alone));
-    }
-    rows
 }
 
-/// Where each shown preset sits: `(row, column)` in reading order.
-fn positions(layout: &Value) -> Vec<(usize, usize, String)> {
-    let mut out = vec![];
-    for (row, entry) in array(layout.get("rows")).iter().enumerate() {
-        for (column, member) in array(entry.get("members")).iter().enumerate() {
-            out.push((row, column, text(member.get("id"))));
+/// One line saying what the schedule will do next, from the helper's own
+/// description of it, or nothing while it is off.
+fn schedule(appearance: &Value) -> String {
+    let auto = appearance.get("auto").unwrap_or(&Value::Null);
+    let source = text(auto.get("source"));
+    let place = text(appearance.get("place"));
+    let next = appearance.get("next").unwrap_or(&Value::Null);
+    let when = |value: &Value| {
+        let mode = mode_label(&text(value.get("mode")));
+        format!("{mode} at {}", text(value.get("clock")))
+    };
+    match source.as_str() {
+        "schedule" if !next.is_null() => format!("{} · on a schedule", when(next)),
+        "sun" if place.is_empty() => "Sunrise and sunset need a timezone with a city".to_owned(),
+        "sun" if next.is_null() => {
+            let polar = text(appearance.get("sun").and_then(|sun| sun.get("polar")));
+            if polar == "day" {
+                format!("The sun does not set in {place} today")
+            } else {
+                format!("The sun does not rise in {place} today")
+            }
         }
+        "sun" => {
+            let event = if text(next.get("mode")) == "light" {
+                "sunrise"
+            } else {
+                "sunset"
+            };
+            format!("{} · {event} in {place}", when(next))
+        }
+        _ => String::new(),
     }
-    out
 }
 
 fn failure(code: &str) -> &'static str {
@@ -218,114 +187,70 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 "themes": rows,
             })
         }
-        // The families a panel lays out, filtered by the search and the mode,
-        // each chunked into rows of at most `columns` tiles. A family keeps
-        // the catalog's own curated order inside it; the label rides on its
-        // first row only, so a family that wraps still reads as one.
-        "layout" => {
+        // The strip a picker steps through: the catalog's own curated order,
+        // narrowed to the mode being edited unless the reader asked for all,
+        // and by the search. Each entry says whether it is the slot's own.
+        "carousel" => {
             let themes = array(Some(first));
-            let current = text(args.get(1));
+            let slot = text(args.get(1));
             let query = text(args.get(2)).to_lowercase();
-            let mode = text(args.get(3));
-            let columns = (number(args.get(4)).max(1.0) as usize).min(MAX_COLUMNS);
+            let scope = text(args.get(3));
             let words: Vec<String> = trim(&query)
                 .split_whitespace()
                 .take(MAX_WORDS)
                 .map(str::to_owned)
                 .collect();
-            // Families come from the whole catalog, and the search and mode
-            // only take tiles out of them: a tile keeps its label and its row
-            // while the reader types, instead of the grid regrouping itself.
-            let catalog: Vec<Value> = themes.iter().take(MAX_THEMES).cloned().collect();
-            let shown = |row: &Value| {
-                (!matches!(mode.as_str(), "dark" | "light") || text(row.get("mode")) == mode)
-                    && matches(row, &words)
+            let in_scope = |row: &Value| {
+                !matches!(scope.as_str(), "dark" | "light") || text(row.get("mode")) == scope
             };
-            let mut rows = vec![];
-            let mut order = vec![];
-            for (family, members) in families(&catalog) {
-                let members: Vec<&(Value, String)> =
-                    members.iter().filter(|(row, _)| shown(row)).collect();
-                for (index, chunk) in members.chunks(columns).enumerate() {
-                    let members: Vec<Value> = chunk
-                        .iter()
-                        .map(|(row, variant)| {
-                            let mut row = row.clone();
-                            let id = text(row.get("id"));
-                            order.push(id.clone());
-                            // A tile's second line states the mode, unless the
-                            // variant's own name already does ("Flexoki Dark").
-                            let named = variant
-                                .split_whitespace()
-                                .any(|word| word.eq_ignore_ascii_case(&text(row.get("mode"))));
-                            let detail = if named {
-                                String::new()
-                            } else {
-                                text(row.get("modeLabel"))
-                            };
-                            if let Some(object) = row.as_object_mut() {
-                                object.insert("variant".to_owned(), json!(variant));
-                                object.insert("detail".to_owned(), json!(detail));
-                                object.insert(
-                                    "current".to_owned(),
-                                    json!(!current.is_empty() && id == current),
-                                );
-                            }
-                            row
-                        })
-                        .collect();
-                    rows.push(json!({
-                        "family": if index == 0 { family.clone() } else { String::new() },
-                        "first": index == 0,
-                        "members": members,
-                    }));
-                }
-            }
-            json!({"rows": rows, "order": order, "count": order.len(), "total": themes.len()})
+            let items: Vec<Value> = themes
+                .iter()
+                .take(MAX_THEMES)
+                .filter(|row| in_scope(row) && matches(row, &words))
+                .map(|row| {
+                    let mut row = row.clone();
+                    let id = text(row.get("id"));
+                    let line = detail(&row);
+                    if let Some(object) = row.as_object_mut() {
+                        object.insert("detail".to_owned(), json!(line));
+                        object.insert("current".to_owned(), json!(!slot.is_empty() && id == slot));
+                    }
+                    row
+                })
+                .collect();
+            let order: Vec<String> = items.iter().map(|row| text(row.get("id"))).collect();
+            json!({
+                "items": items,
+                "order": order,
+                "count": order.len(),
+                // How many the scope alone leaves, so a picker can say how
+                // much "all" would add.
+                "scoped": themes.iter().take(MAX_THEMES).filter(|row| in_scope(row)).count(),
+                "total": themes.len(),
+            })
         }
-        // Where an arrow key leads from a tile. Left and right follow reading
-        // order across rows; up and down keep the column where the next row
-        // is long enough to have it. The ends hold rather than wrap, so a held
-        // key stops somewhere the reader can see.
+        // Where left and right lead from an entry. The ends hold rather than
+        // wrap, so a held key stops somewhere the reader can see.
         "step" => {
-            let places = positions(first);
+            let order: Vec<String> = array(first.get("order"))
+                .iter()
+                .map(|id| text(Some(id)))
+                .collect();
             let id = text(args.get(1));
             let direction = text(args.get(2));
-            let Some(at) = places.iter().position(|place| place.2 == id) else {
-                return Ok(json!(
-                    places
-                        .first()
-                        .map(|place| place.2.clone())
-                        .unwrap_or_default()
-                ));
+            let Some(at) = order.iter().position(|entry| *entry == id) else {
+                return Ok(json!(order.first().cloned().unwrap_or_default()));
             };
-            let (row, column, _) = places[at];
             let target = match direction.as_str() {
-                "left" => at.checked_sub(1),
-                "right" => (at + 1 < places.len()).then_some(at + 1),
-                "up" | "down" => {
-                    let rows = places.last().map_or(0, |place| place.0 + 1);
-                    let next = if direction == "up" {
-                        row.checked_sub(1)
-                    } else {
-                        (row + 1 < rows).then_some(row + 1)
-                    };
-                    next.and_then(|next| {
-                        places
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, place)| place.0 == next)
-                            .take_while(|(_, place)| place.1 <= column)
-                            .last()
-                            .map(|(index, _)| index)
-                    })
-                }
-                _ => None,
+                "left" | "previous" => at.saturating_sub(1),
+                "right" | "next" => (at + 1).min(order.len() - 1),
+                _ => at,
             };
-            json!(places[target.unwrap_or(at)].2)
+            json!(order[target])
         }
-        // Which tile the keyboard is on: the highlighted preset while the
-        // search still shows it, else the applied theme, else the first shown.
+        "schedule" => json!(schedule(first)),
+        // Which entry the carousel centres: the highlighted preset while the
+        // search still shows it, else the slot's own, else the first shown.
         "focus" => {
             let order: Vec<String> = array(first.get("order"))
                 .iter()
@@ -428,188 +353,180 @@ mod tests {
         )
         .unwrap()
     }
-    fn layout(catalog: &Value, query: &str, mode: &str, columns: u64) -> Value {
+    fn carousel(catalog: &Value, slot: &str, query: &str, scope: &str) -> Value {
         call(
-            "layout",
+            "carousel",
             &[
                 catalog["themes"].clone(),
-                catalog["current"].clone(),
+                json!(slot),
                 json!(query),
-                json!(mode),
-                json!(columns),
+                json!(scope),
             ],
         )
         .unwrap()
     }
-    // Each row as "Family: variant, variant", so a whole layout reads at once.
-    fn shape(layout: &Value) -> Vec<String> {
-        array(layout.get("rows"))
+    fn names(carousel: &Value) -> Vec<String> {
+        array(carousel.get("items"))
             .iter()
-            .map(|row| {
-                let tiles: Vec<String> = array(row.get("members"))
-                    .iter()
-                    .map(|member| string(member.get("variant")))
-                    .collect();
-                format!("{}: {}", string(row.get("family")), tiles.join(", "))
-            })
+            .map(|item| string(item.get("name")))
             .collect()
     }
-    fn step(layout: &Value, id: &str, direction: &str) -> String {
+    fn step(carousel: &Value, id: &str, direction: &str) -> String {
         string(Some(
-            &call("step", &[layout.clone(), json!(id), json!(direction)]).unwrap(),
+            &call("step", &[carousel.clone(), json!(id), json!(direction)]).unwrap(),
         ))
     }
 
     #[test]
-    fn presets_group_into_families_named_by_what_they_share() {
-        let listed = layout(&curated(), "", "all", 4);
+    fn the_carousel_shows_the_edited_modes_presets_unless_asked_for_all() {
+        let catalog = curated();
+        let light = carousel(&catalog, "catppuccin-latte", "", "light");
         assert_eq!(
-            shape(&listed),
+            names(&light),
             [
-                "Catppuccin: Mocha, Macchiato, Frappé, Latte",
-                "Rosé Pine: Rosé Pine, Moon, Dawn",
-                "Flexoki: Dark, Light",
-                "Gruvbox: Dark, Light",
-                "More: Nord, Everforest",
+                "Catppuccin Latte",
+                "Rosé Pine Dawn",
+                "Flexoki Light",
+                "Gruvbox Light"
             ],
-            "an original keeps its full name, and presets alone in a family share one closing row"
+            "the catalog's own order, narrowed to the mode being edited"
         );
-        assert_eq!(listed["count"], json!(13));
-        assert_eq!(listed["total"], json!(13));
-        let mocha = &listed["rows"][0]["members"][0];
-        assert_eq!(mocha["current"], json!(true));
+        assert_eq!(light["count"], json!(4));
+        assert_eq!(light["scoped"], json!(4));
+        assert_eq!(light["total"], json!(13));
         assert_eq!(
-            mocha["detail"],
-            json!("Dark"),
-            "a variant that does not say its mode is told it"
+            light["items"][0]["current"],
+            json!(true),
+            "the slot's own preset is marked"
         );
-        assert_eq!(
-            listed["rows"][2]["members"][1]["detail"],
-            json!(""),
-            "Flexoki's Light already says so"
-        );
-        assert_eq!(listed["rows"][0]["members"][3]["detail"], json!("Light"));
-        assert_eq!(
-            mocha["name"],
-            json!("Catppuccin Mocha"),
-            "the full name travels with the tile"
-        );
-        assert_eq!(listed["rows"][1]["members"][0]["current"], json!(false));
-        assert_eq!(
-            array(listed.get("order")).len(),
-            13,
-            "every shown preset has one place in reading order"
-        );
+        assert_eq!(light["items"][1]["current"], json!(false));
+        let all = carousel(&catalog, "catppuccin-latte", "", "all");
+        assert_eq!(all["count"], json!(13), "every preset may fill either slot");
+        assert_eq!(carousel(&catalog, "nord", "", "dark")["count"], json!(9));
     }
 
     #[test]
-    fn the_search_and_the_mode_narrow_the_families_they_leave() {
+    fn a_search_narrows_whatever_the_scope_leaves() {
         let catalog = curated();
         assert_eq!(
-            shape(&layout(&catalog, "", "light", 4)),
-            [
-                "Catppuccin: Latte",
-                "Rosé Pine: Dawn",
-                "Flexoki: Light",
-                "Gruvbox: Light",
-            ]
+            names(&carousel(&catalog, "", "rose", "all")),
+            ["Rosé Pine", "Rosé Pine Moon", "Rosé Pine Dawn"]
         );
         assert_eq!(
-            shape(&layout(&catalog, "pine", "dark", 4)),
-            ["Rosé Pine: Rosé Pine, Moon"]
+            names(&carousel(&catalog, "", "ROSÉ dawn", "all")),
+            ["Rosé Pine Dawn"],
+            "every word, in any case"
         );
         assert_eq!(
-            shape(&layout(&catalog, "ROSÉ dawn", "all", 4)),
-            ["Rosé Pine: Dawn"],
-            "every word has to match, in any case"
+            names(&carousel(&catalog, "", "rose", "dark")),
+            ["Rosé Pine", "Rosé Pine Moon"]
         );
-        let nothing = layout(&catalog, "solarized", "all", 4);
-        assert_eq!(shape(&nothing), Vec::<String>::new());
+        let nothing = carousel(&catalog, "", "solarized", "all");
         assert_eq!(nothing["count"], json!(0));
         assert_eq!(nothing["total"], json!(13));
     }
 
     #[test]
-    fn a_family_wider_than_the_panel_wraps_but_is_labelled_once() {
-        let listed = layout(&curated(), "catppuccin", "all", 3);
+    fn an_entrys_second_line_names_its_mode_only_when_its_name_does_not() {
+        let catalog = curated();
+        let all = carousel(&catalog, "", "", "all");
+        let detail = |name: &str| {
+            array(all.get("items"))
+                .iter()
+                .find(|item| string(item.get("name")) == name)
+                .map(|item| string(item.get("detail")))
+                .unwrap()
+        };
+        assert_eq!(detail("Catppuccin Mocha"), "Dark");
+        assert_eq!(detail("Rosé Pine Dawn"), "Light");
         assert_eq!(
-            shape(&listed),
-            ["Catppuccin: Mocha, Macchiato, Frappé", ": Latte"]
+            detail("Flexoki Light"),
+            "",
+            "Flexoki's Light already says so"
         );
-        assert_eq!(listed["rows"][0]["first"], json!(true));
-        assert_eq!(listed["rows"][1]["first"], json!(false));
-        assert_eq!(
-            shape(&layout(&curated(), "catppuccin", "all", 0)).len(),
-            4,
-            "a nonsensical column count still lays out one tile per row"
-        );
+        assert_eq!(detail("Gruvbox Dark"), "");
     }
 
     #[test]
-    fn arrow_keys_move_in_reading_order_and_keep_their_column() {
-        let listed = layout(&curated(), "", "all", 4);
-        // Across a row, and over its end into the next row.
+    fn left_and_right_move_through_the_strip_and_hold_at_its_ends() {
+        let light = carousel(&curated(), "", "", "light");
+        assert_eq!(step(&light, "catppuccin-latte", "right"), "rose-pine-dawn");
+        assert_eq!(step(&light, "rose-pine-dawn", "next"), "flexoki-light");
+        assert_eq!(step(&light, "rose-pine-dawn", "left"), "catppuccin-latte");
+        assert_eq!(step(&light, "catppuccin-latte", "left"), "catppuccin-latte");
         assert_eq!(
-            step(&listed, "catppuccin-mocha", "right"),
-            "catppuccin-macchiato"
-        );
-        assert_eq!(step(&listed, "catppuccin-latte", "right"), "rose-pine");
-        assert_eq!(step(&listed, "rose-pine", "left"), "catppuccin-latte");
-        // Down keeps the column where the next row has it, and otherwise
-        // lands on that row's last tile rather than skipping it.
-        assert_eq!(
-            step(&listed, "catppuccin-macchiato", "down"),
-            "rose-pine-moon"
-        );
-        assert_eq!(step(&listed, "catppuccin-latte", "down"), "rose-pine-dawn");
-        assert_eq!(step(&listed, "rose-pine-dawn", "down"), "flexoki-light");
-        assert_eq!(step(&listed, "flexoki-light", "up"), "rose-pine-moon");
-        // The ends hold.
-        assert_eq!(
-            step(&listed, "catppuccin-mocha", "left"),
-            "catppuccin-mocha"
+            step(&light, "gruvbox-light-medium", "right"),
+            "gruvbox-light-medium"
         );
         assert_eq!(
-            step(&listed, "catppuccin-frappe", "up"),
-            "catppuccin-frappe"
+            step(&light, "gone", "right"),
+            "catppuccin-latte",
+            "something no longer shown starts at the front"
         );
         assert_eq!(
-            step(&listed, "everforest-dark-medium", "right"),
-            "everforest-dark-medium"
-        );
-        assert_eq!(step(&listed, "nord", "down"), "nord");
-        // Something the layout no longer holds starts again at the top.
-        assert_eq!(step(&listed, "gone", "down"), "catppuccin-mocha");
-        assert_eq!(
-            step(&layout(&curated(), "solarized", "all", 4), "nord", "down"),
+            step(&carousel(&curated(), "", "zzz", "all"), "nord", "right"),
             ""
         );
     }
 
     #[test]
-    fn the_ring_follows_the_highlight_then_the_applied_theme() {
+    fn the_centre_follows_the_highlight_then_the_slots_own_preset() {
         let catalog = curated();
-        let all = layout(&catalog, "", "all", 4);
-        let focus = |layout: &Value, highlighted: &str, current: &str| {
+        let all = carousel(&catalog, "catppuccin-mocha", "", "all");
+        let focus = |carousel: &Value, highlighted: &str, slot: &str| {
             string(Some(
                 &call(
                     "focus",
-                    &[layout.clone(), json!(highlighted), json!(current)],
+                    &[carousel.clone(), json!(highlighted), json!(slot)],
                 )
                 .unwrap(),
             ))
         };
         assert_eq!(focus(&all, "nord", "catppuccin-mocha"), "nord");
         assert_eq!(focus(&all, "", "catppuccin-mocha"), "catppuccin-mocha");
-        let light = layout(&catalog, "", "light", 4);
+        let light = carousel(&catalog, "catppuccin-mocha", "", "light");
         assert_eq!(
             focus(&light, "nord", "catppuccin-mocha"),
             "catppuccin-latte",
-            "a filtered-out highlight falls back to the first preset still shown"
+            "a centre the scope hides falls back to the first entry shown"
         );
         assert_eq!(
-            focus(&layout(&catalog, "zzz", "all", 4), "nord", "nord"),
+            focus(&carousel(&catalog, "", "zzz", "all"), "nord", "nord"),
             ""
+        );
+    }
+
+    #[test]
+    fn the_schedule_says_what_it_will_do_next() {
+        let say = |appearance: Value| string(Some(&call("schedule", &[appearance]).unwrap()));
+        assert_eq!(say(json!({"auto": {"source": "off"}, "next": null})), "");
+        assert_eq!(
+            say(
+                json!({"auto": {"source": "schedule"}, "next": {"mode": "dark", "clock": "19:00"}})
+            ),
+            "Dark at 19:00 · on a schedule"
+        );
+        assert_eq!(
+            say(
+                json!({"auto": {"source": "sun"}, "place": "Berlin", "next": {"mode": "light", "clock": "07:12"}})
+            ),
+            "Light at 07:12 · sunrise in Berlin"
+        );
+        assert_eq!(
+            say(
+                json!({"auto": {"source": "sun"}, "place": "Berlin", "next": {"mode": "dark", "clock": "16:02"}})
+            ),
+            "Dark at 16:02 · sunset in Berlin"
+        );
+        assert_eq!(
+            say(
+                json!({"auto": {"source": "sun"}, "place": "Tromsø", "next": null, "sun": {"polar": "night"}})
+            ),
+            "The sun does not rise in Tromsø today"
+        );
+        assert_eq!(
+            say(json!({"auto": {"source": "sun"}, "place": null, "next": null})),
+            "Sunrise and sunset need a timezone with a city"
         );
     }
 
