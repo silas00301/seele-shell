@@ -1,5 +1,11 @@
 # Google Calendar in Seele Shell
 
+These fixture-data previews illustrate the implemented calendar popup and picker layout; they are not captures from a running session.
+
+![Calendar month, day dots and expanded agenda](preview-agenda.svg)
+
+![Selected Google calendars and account controls](preview-settings.svg)
+
 Create a Google Cloud OAuth consent screen, enable the Google Calendar API, and create an OAuth client of type **Desktop app**. Add the Google account as a test user while the consent screen is in Testing. The app requests only `https://www.googleapis.com/auth/calendar.readonly`; Google may require verification before broader publication. Paste the Desktop client ID into Calendar → Calendar settings in Seele Shell and select **Sign in with Google**. The native worker opens the browser, accepts the result on a temporary `127.0.0.1` listener, verifies a random state and PKCE challenge, and puts the refresh token in the system Secret Service wallet. The client ID and calendar choices are not secrets; they are private user state. A locked wallet leaves the calendar disconnected until it can be unlocked. Switching Google accounts clears the old calendar choices and cache. Disconnect clears the wallet entry and cached state.
 
 The worker refreshes selected calendars and the event window every five minutes, and checks reminders every 30 seconds. A sync fetches 45 days on each side of the requested day, paginated up to 5,000 expanded event instances across at most 64 calendars. Google expands recurring instances and their exceptions through `singleEvents=true`; cancelled instances and declined invitations are hidden. Timed events use their RFC3339 offsets or the event's named time zone. All-day events use their date bounds and the calendar's time zone for reminder scheduling. Calendar and event colors come from Google and remain in the private cache when offline. A date outside cached coverage requests its own range; while unavailable, it says that data must be fetched.
