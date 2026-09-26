@@ -58,7 +58,7 @@ const shellPatterns = {
   'camera previews lease camera activity': /function cameraPreviewActivity\(source, active\)[\s\S]*?"camera-preview " \+ source \+ " " \+ \(active \? "on" : "off"\)/,
   'inline camera preview owns a lease': /id: cameraPreviewLoader[\s\S]*?onActiveChanged: root\.cameraPreviewActivity\("panel", active\)/,
   'preview window owns a lease': /id: cameraPreviewProcess[\s\S]*?root\.cameraPreviewActivity\("window", false\)/,
-  'Home Assistant icon-only button keeps the standard bar width': /width: Math\.max\(root\.barHeight, homeAssistantSummary\.implicitWidth \+ root\.spaceLarge\)/,
+  'Home Assistant stays an icon-only standard bar item': /width: root\.barHeight\s+[\s\S]*?text: "󰋜"[\s\S]*?id: homeAssistantMouse/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {
