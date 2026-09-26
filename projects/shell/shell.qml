@@ -99,6 +99,8 @@ Shared.Theme {
   // lives here rather than in each surface that turns.
   readonly property int audioWheelStep: 5
   property string cameraPreviewDevice: ""
+  // Litra Glow identities whose group the user folded. Open is the default.
+  property var litraGlowFolded: ({})
   property bool agentUsageOpen: false
   property bool agentModelsOpen: false
   property string agentMetricPeriod: "day"
@@ -387,6 +389,33 @@ Shared.Theme {
   function refreshStatus(group) {
     if (statusProcess.running) statusProcess.write(String(group || "all") + "\n")
     else statusProcess.running = true
+  }
+
+  // The status monitor owns every Litra Glow: it stores each light's choice,
+  // applies it and reports back through the status stream. Requests go to it
+  // directly, so a dragged level reaches the light while the pointer is still
+  // moving and never waits behind an unrelated control command.
+  function litraGlowRequest(device, key, value) {
+    if (statusProcess.running) statusProcess.write("litra " + device + " " + key + " " + value + "\n")
+  }
+
+  function toggleLitraGlowFold(device) {
+    var folded = Object.assign({}, root.litraGlowFolded)
+    if (folded[device]) delete folded[device]
+    else folded[device] = true
+    root.litraGlowFolded = folded
+  }
+
+  // What a Glow is doing, said on its rule. The mode is already lit in the
+  // well below, so this says only what the mode cannot: whether the light
+  // has caught up, and why camera mode currently has it on or off.
+  function litraGlowSummary(glow) {
+    if (glow.mode === "camera" && glow.power === null) return "Waiting for camera"
+    var target = glow.mode === "on" ? true : glow.mode === "off" ? false : glow.mode === "camera" ? root.systemData.cameraActive : glow.power
+    if (target === null || target === undefined) return ""
+    if (glow.power !== target) return target ? "Turning on…" : "Turning off…"
+    if (glow.mode === "camera") return target ? "On · camera in use" : "Off · camera idle"
+    return target ? "On" : "Off"
   }
 
   function refreshBluetoothStatus() {
@@ -10560,6 +10589,7 @@ Shared.Theme {
       required property var modelData
       readonly property var camera: root.previewCamera()
       readonly property int deviceCount: (root.systemData.cameraDevices || []).length
+      readonly property int litraGlowCount: (root.systemData.litraGlows || []).length
       screen: modelData
       visible: root.controlPanel === "camera" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
@@ -10676,6 +10706,88 @@ Shared.Theme {
                   onClicked: {
                     if (parent.modelData.action === "camera-preview") root.openCameraPreview(parent.device)
                     else root.openCameraSettings(parent.device)
+                  }
+                }
+              }
+            }
+          }
+          // One group per light beside the webcam. A light that is absent or
+          // refusing writes withdraws with its rule rather than holding a
+          // card open to say it cannot be reached.
+          Repeater {
+            model: root.systemData.litraGlows || []
+            Column {
+              id: litraGroup
+              required property var modelData
+              required property int index
+              readonly property bool expanded: !root.litraGlowFolded[modelData.device]
+              width: parent.width
+              spacing: root.panelSpacing
+              SectionRule {
+                width: parent.width
+                // Several lights take a stable number in identity order.
+                label: "LITRA GLOW" + (cameraWindow.litraGlowCount > 1 ? " " + (litraGroup.index + 1) : "")
+                detail: root.litraGlowSummary(litraGroup.modelData)
+                collapsible: true
+                expanded: litraGroup.expanded
+                onToggled: root.toggleLitraGlowFold(litraGroup.modelData.device)
+              }
+              Item {
+                width: parent.width
+                height: litraGroup.expanded ? litraCard.implicitHeight : 0
+                visible: height > 0
+                clip: true
+                Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
+                Rectangle {
+                  id: litraCard
+                  width: parent.width
+                  implicitHeight: litraControls.implicitHeight + root.cardPadding * 2
+                  radius: root.radius
+                  color: root.cardColor
+                  CardEdge {}
+                  Column {
+                    id: litraControls
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.cardPadding }
+                    spacing: root.spaceSmall
+                    // Power is one exclusive choice: off, on, or on only while
+                    // a camera is in use. The levels below apply whichever it is.
+                    SegmentWell {
+                      width: parent.width
+                      Repeater {
+                        model: [{ mode: "off", label: "Off" }, { mode: "on", label: "On" }, { mode: "camera", label: "With camera" }]
+                        Shared.SegmentChoice {
+                          required property var modelData
+                          theme: root
+                          width: parent.width / 3
+                          height: parent.height
+                          objectName: "litraMode-" + modelData.mode
+                          text: modelData.label
+                          selected: litraGroup.modelData.mode === modelData.mode
+                          onClicked: root.litraGlowRequest(litraGroup.modelData.device, "mode", modelData.mode)
+                        }
+                      }
+                    }
+                    Shared.DeviceSlider {
+                      theme: root
+                      width: parent.width
+                      title: "Brightness"
+                      current: litraGroup.modelData.brightness
+                      onChanging: value => root.litraGlowRequest(litraGroup.modelData.device, "brightness", Math.round(value))
+                      onCommitted: value => root.litraGlowRequest(litraGroup.modelData.device, "brightness", Math.round(value))
+                    }
+                    Shared.DeviceSlider {
+                      theme: root
+                      width: parent.width
+                      title: "Temperature"
+                      minimum: 2700
+                      maximum: 6500
+                      step: 100
+                      suffix: " K"
+                      spectrum: root.temperatureSpectrum
+                      current: litraGroup.modelData.temperature
+                      onChanging: value => root.litraGlowRequest(litraGroup.modelData.device, "temperature", Math.round(value))
+                      onCommitted: value => root.litraGlowRequest(litraGroup.modelData.device, "temperature", Math.round(value))
+                    }
                   }
                 }
               }

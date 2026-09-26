@@ -192,7 +192,11 @@ fn watch_auxiliary(wake: mpsc::Receiver<()>, bluetooth: Bluetooth, sender: SyncS
     }
 }
 
-fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
+fn watch_pipewire(
+    sender: SyncSender<Event>,
+    audio: Arc<Mutex<()>>,
+    camera: Arc<Mutex<Option<bool>>>,
+) {
     let stop = crate::command::shutdown_signal();
     while stop.load(Ordering::Relaxed) == 0 {
         let mut command = Command::new("pw-dump");
@@ -242,6 +246,7 @@ fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
                     }
                     let key = graph.volume_key();
                     let patch = control::graph_status(graph.snapshot(), &mut gate);
+                    *camera.lock().unwrap() = patch["cameraActive"].as_bool();
                     let _guard = audio.lock().unwrap();
                     let patch = if key != volume_key {
                         volume_key = key;
@@ -260,6 +265,9 @@ fn watch_pipewire(sender: SyncSender<Event>, audio: Arc<Mutex<()>>) {
         if closed || stop.load(Ordering::Relaxed) != 0 {
             return;
         }
+        // A disconnected graph says nothing about the webcam. Do not switch
+        // the light off until a new graph has established its actual state.
+        *camera.lock().unwrap() = None;
         {
             let _guard = audio.lock().unwrap();
             let reset = control::merge_status([
@@ -309,8 +317,18 @@ pub(crate) fn run() -> Result {
         watch_auxiliary(wake, cached, updates)
     }));
     let audio = Arc::new(Mutex::new(()));
-    let (updates, guard) = (sender.clone(), audio.clone());
-    workers.push(thread::spawn(move || watch_pipewire(updates, guard)));
+    let camera = Arc::new(Mutex::new(None));
+    let (updates, guard, activity) = (sender.clone(), audio.clone(), camera.clone());
+    workers.push(thread::spawn(move || {
+        watch_pipewire(updates, guard, activity)
+    }));
+    let (updates, requests) = (sender.clone(), crate::litra::Requests::default());
+    let litra = requests.clone();
+    workers.push(thread::spawn(move || {
+        crate::litra::watch(camera, litra, |patch| {
+            updates.send(Event::Patch(patch)).is_ok()
+        })
+    }));
     thread::spawn(move || {
         let mut input = io::stdin().lock();
         let mut frame = Vec::new();
@@ -319,6 +337,10 @@ pub(crate) fn run() -> Result {
                 continue;
             };
             let command = command.trim();
+            if let Some(request) = command.strip_prefix("litra ") {
+                requests.submit(request);
+                continue;
+            }
             if matches!(command, "audio" | "all") {
                 let _guard = audio.lock().unwrap();
                 if sender.send(Event::Refresh(control::volumes())).is_err() {

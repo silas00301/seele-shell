@@ -11,6 +11,7 @@ mod control;
 mod daemon;
 mod grain;
 mod launch;
+mod litra;
 mod live;
 mod mic_sync;
 mod mic_test;

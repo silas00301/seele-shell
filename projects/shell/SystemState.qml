@@ -35,6 +35,9 @@ QtObject {
   property var cameraDevices: []
   property string cameraDevice: ""
   property bool cameraActive: false
+  // Each reachable Litra Glow, in a stable order: its identity, chosen mode
+  // and levels, and the power the status monitor last applied to it.
+  property var litraGlows: []
   property bool screenRecording: false
   property var audioDevices: []
   property var audioStreams: []
