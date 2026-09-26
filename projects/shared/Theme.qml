@@ -250,6 +250,8 @@ ShellRoot {
   readonly property int themeSettingsWidth: 440
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
+  readonly property int calendarMaximumHeight: 640
+  readonly property int calendarIndicatorWidth: 190
   // Keeps the UTC timeline and a few pinned zones visible without taking an output.
   readonly property int meetingMaximumHeight: 570
 
