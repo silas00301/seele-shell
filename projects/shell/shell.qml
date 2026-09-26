@@ -1598,7 +1598,27 @@ Shared.Theme {
 
   function setMeetingPlanning(planning) {
     meetingPlanning = planning
-    if (planning) requestMeeting(meetingData.date ? {date: meetingData.date, minute: meetingData.minute, duration: meetingData.duration} : {})
+    if (planning) requestMeeting(meetingData.start ? {start: meetingData.start, duration: meetingData.duration} : {})
+  }
+
+  // Ask again for the selection on screen, or for the one still in flight,
+  // when the calendar's busy time changes underneath it.
+  function refreshMeeting() {
+    if (!meetingPlanning || !meetingData.start) return
+    requestMeeting(meetingPending ? meetingSelection : {start: meetingData.start, duration: meetingData.duration})
+  }
+
+  // The worker steers suggestions around the planner's own busy time, so each
+  // request carries the selected calendars' blocks a day and a half either
+  // side of where the selection is headed, nearest first up to the worker's
+  // bound. Event titles stay in the shell.
+  function meetingRequest(selection) {
+    var anchor = selection.date ? Date.parse(selection.date + "T12:00:00") / 1000
+      : (selection.start || Date.now() / 1000) + (selection.days || 0) * 86400
+    var distance = function(block) { return Math.abs((block.start + block.end) / 2 - anchor) }
+    var busy = calendarStore.busy(anchor - 129600, anchor + 129600)
+      .sort(function(a, b) { return distance(a) - distance(b) }).slice(0, 96)
+    return Object.assign({}, selection, {busy: busy.map(function(block) { return [block.start, block.end] })})
   }
 
   function requestMeeting(selection) {
@@ -1617,7 +1637,7 @@ Shared.Theme {
       if (clockProcess.running) {
         root.meetingSentId = root.meetingRequestId
         root.meetingInFlight = true
-        clockProcess.write(JSON.stringify({meeting: root.meetingSelection, requestId: root.meetingSentId}) + "\n")
+        clockProcess.write(JSON.stringify({meeting: root.meetingRequest(root.meetingSelection), requestId: root.meetingSentId}) + "\n")
       } else clockProcess.running = true
     }
   }
@@ -1638,7 +1658,13 @@ Shared.Theme {
       if (parsed && (parsed.meeting || parsed.meetingError) && parsed.requestId === root.meetingRequestId) {
         root.meetingPending = false
         root.meetingError = parsed.meetingError || ""
-        if (parsed.meeting) root.meetingData = parsed.meeting
+        if (parsed.meeting) {
+          // Only a new day asks the calendar for its events: a refresh the
+          // calendar itself caused must not ask again.
+          var day = parsed.meeting.day.date
+          if (!root.meetingData.day || root.meetingData.day.date !== day) calendarStore.forDay(day)
+          root.meetingData = parsed.meeting
+        }
       }
     } catch (error) {
       console.warn("seele-shell/clock", error)
@@ -1993,6 +2019,8 @@ Shared.Theme {
   CalendarStore {
     id: calendarStore
     property int healthToken: 0
+    onEventsChanged: root.refreshMeeting()
+    onSelectedChanged: root.refreshMeeting()
     onHealthPublished: (state, success) => {
       integrationHealth.publish("calendar", {state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Sign in with Google" : "Offline calendar cache",lastSuccess:success,actions:["retry","settings"]})
       if (healthToken) { integrationHealth.complete("calendar",healthToken,state === "healthy"); healthToken=0 }
@@ -7131,6 +7159,8 @@ Shared.Theme {
             height: visible ? implicitHeight : 0
             theme: root
             plan: root.meetingData
+            calendar: calendarStore
+            now: root.now.getTime() / 1000
             error: root.clockError || root.meetingError
             pending: root.meetingPending
             copyPending: clockWindow.copyPending
@@ -7139,6 +7169,7 @@ Shared.Theme {
               clockWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2 - clockHeader.height - clockMode.height - root.panelSpacing * 2)
             onRequested: selection => root.requestMeeting(selection)
             onCopyRequested: summary => clockWindow.copyClockText(summary, "meeting times")
+            onOpenRequested: url => Qt.openUrlExternally(url)
             onManagePins: { root.setMeetingPlanning(false); timezoneSearch.forceActiveFocus() }
             onCloseRequested: root.closeOverlays()
             onVisibleChanged: if (visible) Qt.callLater(function() { meetingPanel.forceActiveFocus() })

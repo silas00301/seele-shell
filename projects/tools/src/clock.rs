@@ -389,6 +389,10 @@ fn write_pins(values: &[String]) -> Result {
     Ok(())
 }
 
+// A meeting request carries a day and a half of busy intervals either side
+// of its start, which stays well inside this bound.
+const REQUEST_LIMIT: usize = 8192;
+
 // Drain an oversized line without allocating it. The worker is resident and
 // a malformed client must not grow its memory or smuggle a suffix request.
 fn request_line(input: &mut impl BufRead) -> io::Result<Option<String>> {
@@ -409,7 +413,7 @@ fn request_line(input: &mut impl BufRead) -> io::Result<Option<String>> {
         }
         let newline = buffer.iter().position(|byte| *byte == b'\n');
         let length = newline.map_or(buffer.len(), |index| index + 1);
-        if line.len() + length > 4096 {
+        if line.len() + length > REQUEST_LIMIT {
             oversized = true;
         }
         if !oversized {
@@ -437,7 +441,7 @@ pub fn run(arguments: &[String]) -> Result {
             while let Some(line) = request_line(&mut input)? {
                 if line.trim() == "refresh" {
                     print_snapshot(&mut catalog)?;
-                } else if line.len() <= 4096 {
+                } else if line.len() <= REQUEST_LIMIT {
                     let input: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
                     if let Some(request) = input.get("meeting") {
                         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
@@ -477,6 +481,10 @@ pub fn run(arguments: &[String]) -> Result {
     Ok(())
 }
 
+// Tests that change `TZ` take this first: the process has one timezone.
+#[cfg(test)]
+static TIMEZONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,8 +509,9 @@ mod tests {
 
     #[test]
     fn cached_metadata_keeps_live_dst_times_and_invalidates_with_database_and_year() {
-        // Clock runs in its own single-threaded process. No other unit test
-        // uses localtime/TZ; timestamps elsewhere use gmtime_r instead.
+        // Clock runs in its own single-threaded process. Timestamps elsewhere
+        // use gmtime_r; the meeting tests share this lock.
+        let _timezone = TIMEZONE.lock().unwrap_or_else(|poison| poison.into_inner());
         let previous_tz = env::var_os("TZ");
         let previous_dir = env::var_os("TZDIR");
         let dir = env::temp_dir().join(format!("seele-clock-test-{}", std::process::id()));

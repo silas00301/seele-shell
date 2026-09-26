@@ -30,4 +30,14 @@ assert.equal(calendar.color({ ...base, colorId: '4' }, calendars, { event: { '4'
 assert.equal(calendar.safeLink('javascript:alert(1)'), '')
 assert.equal(calendar.safeLink('https://evil@example.com/'), '')
 assert.equal(calendar.safeLink('https://meet.google.com/abc-defg-hij'), 'https://meet.google.com/abc-defg-hij')
+const free = { ...base, id: 'free', transparency: 'transparent' }
+const location = { ...base, id: 'location', eventType: 'workingLocation' }
+const blocks = calendar.busy([recurring, base, allDay, declined, free, location, secondary], ['one'], calendars, {},
+  Date.parse('2026-09-27T00:00:00+02:00') / 1000, Date.parse('2026-09-28T00:00:00+02:00') / 1000)
+assert.deepEqual(blocks.map(block => block.title), ['A', 'B'], 'busy time is opaque, timed, selected and in order')
+assert.equal(blocks[0].start, Date.parse(base.start.dateTime) / 1000)
+assert.equal(blocks[0].end, Date.parse(base.end.dateTime) / 1000)
+assert.equal(blocks[0].color, '#123456')
+assert.equal(calendar.busy([base], ['one'], calendars, {}, blocks[0].end, blocks[0].end + 60).length, 0, 'an event ending at the window start is outside it')
+assert.equal(calendar.busy([{ ...base, summary: '' }], ['one'], calendars, {}, 0, 4e9)[0].title, 'Busy')
 console.log('Calendar policy tests passed')

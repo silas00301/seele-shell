@@ -4,256 +4,647 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "../shared" as Shared
 
-// The clock worker owns dates, timezone rules and availability. This surface
-// sends absolute UTC selections; it never interprets a local wall-clock time.
+// The clock worker owns the local day, every zone's hours, working-hour fit,
+// suggestions and the copied text. This surface moves one absolute start
+// instant and draws what the worker measured; it never turns a wall-clock
+// time into an instant itself.
 FocusScope {
   id: panel
   required property var theme
   property var plan: ({})
+  // The calendar store once Google Calendar is set up. Its busy time is drawn
+  // here; the coordinator sends it to the worker with every request.
+  property var calendar: null
   property string error: ""
   property bool pending: false
   property bool copyPending: false
-  property real maximumHeight: theme.meetingMaximumHeight
   property bool popupHovered: false
-  readonly property bool ready: !!plan.date
-  readonly property bool dateDirty: dateInput.text !== (plan.date || "")
-  property int selectedMinute: Number(plan.minute || 0)
-  property int selectedDuration: Number(plan.duration || 60)
-  readonly property string hint: "← / → 15 min · Page Up / Down day · Ctrl+C copies"
+  property real now: Date.now() / 1000
+  property real maximumHeight: theme.meetingMaximumHeight
+  readonly property bool ready: plan.start !== undefined
+  readonly property var day: plan.day || ({})
+  readonly property real dayMinutes: day.minutes || 1440
+  readonly property var durations: [15, 30, 45, 60, 90, 120]
+  readonly property var durationLabels: ["15m", "30m", "45m", "1h", "1½h", "2h"]
+  // The selection moves at once; the worker's reading of it follows.
+  property real selectedStart: 0
+  property int selectedDuration: 60
+  // Day moves count from where the last reply put the selection, and add up
+  // while one is still being answered, so two Page Downs move two days.
+  property real shiftBase: 0
+  property int shiftDays: 0
+  // The band follows a drag without easing, and eases for every other move.
+  property bool dragging: false
+  readonly property bool calendarShown: !!calendar && calendar.configured
+  readonly property var busyBlocks: calendarShown && day.start !== undefined ? calendar.busy(day.start, day.end) : []
+  readonly property var conflictTitles: {
+    var titles = []
+    ;(plan.conflicts || []).forEach(function(pair) {
+      panel.busyBlocks.forEach(function(block) {
+        if (block.start === pair[0] && block.end === pair[1] && titles.indexOf(block.title) < 0) titles.push(block.title)
+      })
+    })
+    return titles
+  }
+  // The busy block under the pointer, named in the calendar's row: a block an
+  // hour long is too narrow to carry its own title.
+  readonly property var hoveredBlock: {
+    if (!grid.containsMouse || day.start === undefined) return null
+    var at = day.start + grid.mouseX / Math.max(1, grid.width) * dayMinutes * 60
+    for (var i = 0; i < busyBlocks.length; i++) if (busyBlocks[i].start <= at && at < busyBlocks[i].end) return busyBlocks[i]
+    return null
+  }
+  readonly property bool canCopy: ready && !pending && error === "" && !copyPending && !dateField.dirty
+  readonly property string hint: "←/→ 15 min · ⇧ hour · PgUp/PgDn day · F next fit · Ctrl+C copy"
+  implicitHeight: controls.implicitHeight + zones.height + footer.implicitHeight + theme.panelSpacing * 2
   signal requested(var selection)
   signal copyRequested(string summary)
+  signal openRequested(string url)
   signal managePins()
   signal closeRequested()
-  implicitHeight: controls.implicitHeight + theme.panelSpacing + zones.height
 
-  function choose(minute, duration, shift, date) {
-    selectedMinute = Math.max(0, Math.min(1439, minute))
-    selectedDuration = duration
-    requested({ date: date === undefined ? (plan.date || "") : date,
-      minute: selectedMinute, duration: duration, shift: shift || 0 })
+  function send(selection) {
+    requested(Object.assign({duration: selectedDuration}, selection))
   }
-  function resetNow() { choose(0, selectedDuration, 0, "") }
-  function copy() {
-    if (ready && !dateDirty && !pending && !error && !copyPending) copyRequested(plan.summary)
+  function select(start) {
+    if (!ready) return
+    selectedStart = start
+    shiftDays = 0
+    send({start: start})
   }
+  function move(slots) { select(selectedStart + slots * 900) }
+  function shiftDay(days) {
+    if (!ready) return
+    if (!pending || shiftDays === 0) { shiftBase = selectedStart; shiftDays = 0 }
+    shiftDays += days
+    send({start: shiftBase, days: shiftDays})
+  }
+  function goToDate(text) {
+    if (ready) send({start: selectedStart, date: text})
+  }
+  function resetNow() {
+    shiftDays = 0
+    send({})
+  }
+  function setDuration(minutes) {
+    selectedDuration = minutes
+    send(ready ? {start: selectedStart} : {})
+  }
+  function lengthen(step) {
+    var index = Math.max(0, Math.min(durations.length - 1, durations.indexOf(selectedDuration) + step))
+    if (durations[index] !== selectedDuration) setDuration(durations[index])
+  }
+  function nextFit() { if (plan.next) select(plan.next.start) }
+  function suggestion(index) {
+    var chosen = (plan.suggestions || [])[index]
+    if (chosen) select(chosen.start)
+  }
+  function copy() { if (canCopy) copyRequested(plan.summary) }
+  function openCalendar() { if (canCopy && calendarShown && plan.calendarUrl) openRequested(plan.calendarUrl) }
+  // A pointer position across the ribbons, as the start that centres the
+  // meeting under it on the day's quarter-hour grid. A pointer keeps the
+  // meeting inside the day it can see; the keyboard can step past midnight.
+  function startAt(x, width) {
+    var last = Math.max(0, Math.floor((dayMinutes - selectedDuration) / 15))
+    var slot = Math.round((x / Math.max(1, width) * dayMinutes - selectedDuration / 2) / 15)
+    return day.start + Math.max(0, Math.min(last, slot)) * 900
+  }
+  // Give the keyboard back to the planner. A focus scope hands active focus
+  // to whichever child last held it, so the date field lets go explicitly.
+  function takeKeys() {
+    dateField.focus = false
+    forceActiveFocus()
+  }
+  function position(epoch, width) { return (epoch - day.start) / 60 / dayMinutes * width }
+  function clock(epoch) { return Qt.formatTime(new Date(epoch * 1000), "HH:mm") }
+  function fitColor(fit) { return fit === "work" ? theme.green : fit === "edge" ? theme.yellow : theme.red }
+
+  // A planner opened again starts on its own keys, not in the date field.
+  onActiveFocusChanged: if (!activeFocus) dateField.focus = false
   onPlanChanged: {
-    selectedMinute = Number(plan.minute || 0)
-    selectedDuration = Number(plan.duration || 60)
-    if (!dateInput.activeFocus) dateInput.text = plan.date || ""
-  }
-  Keys.onPressed: event => {
-    if (event.key === Qt.Key_Escape) { closeRequested(); event.accepted = true }
-    else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_C) { copy(); event.accepted = true }
-    else if (!dateInput.activeFocus && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
-      if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) choose(selectedMinute + (event.key === Qt.Key_Left ? -15 : 15), selectedDuration)
-      else if (event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown) choose(selectedMinute, selectedDuration, event.key === Qt.Key_PageUp ? -1 : 1)
-      else if (event.key === Qt.Key_N) resetNow()
-      else return
-      event.accepted = true
-    }
+    if (!ready) return
+    selectedStart = plan.start
+    selectedDuration = plan.duration
+    shiftDays = 0
+    if (!dateField.activeFocus) dateField.text = day.label || ""
   }
 
-  component Label: Text {
+  Keys.onPressed: event => {
+    var control = event.modifiers & Qt.ControlModifier
+    var hour = event.modifiers & Qt.ShiftModifier
+    if (event.key === Qt.Key_Escape) closeRequested()
+    else if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier)) return
+    else if (control && event.key === Qt.Key_C) copy()
+    else if (control && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) openCalendar()
+    else if (control) return
+    else if (event.key === Qt.Key_Left || event.key === Qt.Key_H) move(hour ? -4 : -1)
+    else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) move(hour ? 4 : 1)
+    else if (event.key === Qt.Key_PageUp) shiftDay(-1)
+    else if (event.key === Qt.Key_PageDown) shiftDay(1)
+    else if (event.key === Qt.Key_N) resetNow()
+    else if (event.key === Qt.Key_F) nextFit()
+    else if (event.key === Qt.Key_D) dateField.forceActiveFocus()
+    else if (event.key === Qt.Key_Minus) lengthen(-1)
+    else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) lengthen(1)
+    else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_3) suggestion(event.key - Qt.Key_1)
+    else return
+    event.accepted = true
+  }
+
+  component Caption: Text {
     textFormat: Text.PlainText
     color: panel.theme.subtext
     font.family: panel.theme.fontFamily
     font.pixelSize: panel.theme.textCaption
+    elide: Text.ElideRight
   }
-  component Strip: Item {
-    id: strip
-    required property var slots
-    height: panel.theme.spaceLarge
+
+  component Dot: Rectangle {
+    property color tint: panel.theme.overlay
+    width: panel.theme.spaceSmall
+    height: width
+    radius: width / 2
+    color: tint
+  }
+
+  // One participant's hours across the local day: the cells the worker
+  // measured, the past dimmed, the present marked and the meeting outlined.
+  // The calendar's row lays its busy blocks on the same track instead.
+  component Ribbon: Item {
+    id: ribbon
+    property var cells: []
+    property var blocks: []
+    readonly property real nowX: panel.position(panel.now, width)
+    height: panel.theme.meetingRibbonHeight
+
+    Rectangle {
+      visible: ribbon.cells.length === 0
+      anchors.fill: parent
+      radius: 2
+      color: panel.theme.wellColor
+    }
     Repeater {
-      model: strip.slots
+      model: ribbon.cells
       Rectangle {
-        required property bool modelData
-        required property int index
-        objectName: "meetingSlot" + index
-        x: index * strip.width / 96
-        width: strip.width / 96 + panel.theme.hairline / 2
-        height: strip.height
-        color: modelData ? panel.theme.fillColor : panel.theme.wellColor
+        id: cell
+        required property var modelData
+        readonly property bool work: modelData.kind === "work"
+        x: modelData.from / panel.dayMinutes * ribbon.width + panel.theme.hairline / 2
+        width: Math.max(1, (modelData.to - modelData.from) / panel.dayMinutes * ribbon.width - panel.theme.hairline)
+        height: ribbon.height
+        radius: 2
+        color: work ? panel.theme.alpha(panel.theme.accent, 0.34)
+          : modelData.kind === "edge" ? panel.theme.alpha(panel.theme.accent, 0.13) : panel.theme.wellColor
+        Text {
+          anchors.centerIn: parent
+          visible: implicitWidth + 2 <= cell.width
+          text: cell.modelData.day || cell.modelData.label
+          textFormat: Text.PlainText
+          color: cell.modelData.day ? panel.theme.accent : cell.work ? panel.theme.text : panel.theme.subtext
+          font.family: panel.theme.fontFamily
+          font.pixelSize: panel.theme.textMicro
+          font.weight: cell.modelData.day ? panel.theme.weightStrong : panel.theme.weightRegular
+        }
       }
     }
+    Repeater {
+      model: ribbon.blocks
+      Rectangle {
+        id: block
+        required property var modelData
+        readonly property real from: Math.max(0, panel.position(modelData.start, ribbon.width))
+        x: from + panel.theme.hairline / 2
+        width: Math.max(2, Math.min(ribbon.width, panel.position(modelData.end, ribbon.width)) - from - panel.theme.hairline)
+        height: ribbon.height
+        radius: 2
+        // Google's colours arrive as strings; Qt.alpha takes either form.
+        color: Qt.alpha(modelData.color || panel.theme.accent, 0.72)
+        clip: true
+        Text {
+          anchors { fill: parent; leftMargin: 3; rightMargin: 2 }
+          visible: block.width > 24
+          verticalAlignment: Text.AlignVCenter
+          text: block.modelData.title
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: panel.theme.text
+          font.family: panel.theme.fontFamily
+          font.pixelSize: panel.theme.textMicro
+        }
+      }
+    }
+    // The past is dimmed: everything before now on today, all of an earlier day.
     Rectangle {
-      x: Math.min(parent.width - width, panel.selectedMinute / 1440 * parent.width)
-      width: panel.theme.hairline * 2
-      height: parent.height
-      color: panel.theme.accent
+      visible: panel.day.past === true || panel.day.today === true
+      width: panel.day.past ? ribbon.width : Math.max(0, ribbon.nowX)
+      height: ribbon.height
+      color: panel.theme.alpha(panel.theme.crust, 0.45)
+    }
+    Rectangle {
+      visible: panel.day.today === true
+      x: ribbon.nowX
+      width: panel.theme.hairline
+      height: ribbon.height
+      color: panel.theme.red
+    }
+    Rectangle {
+      x: panel.position(panel.selectedStart, ribbon.width) - 1
+      y: -2
+      width: Math.max(4, panel.selectedDuration / panel.dayMinutes * ribbon.width) + 2
+      height: ribbon.height + 4
+      radius: 3
+      color: panel.theme.alpha(panel.theme.accent, 0.12)
+      border.width: 2
+      border.color: panel.theme.accent
+      antialiasing: true
+      Behavior on x {
+        enabled: !panel.dragging
+        NumberAnimation { duration: panel.theme.durationFast; easing.type: Easing.OutCubic }
+      }
     }
   }
-  component Duration: Shared.SegmentChoice {
-    id: durationButton
-    required property int minutes
-    theme: panel.theme
-    width: parent ? parent.width / 3 : 0
-    height: parent ? parent.height : panel.theme.chipHeight
-    text: minutes + "m"
-    selected: minutes === panel.selectedDuration
-    Accessible.name: minutes + " minute meeting"
-    onClicked: panel.choose(panel.selectedMinute, minutes)
+
+  // A participant's name, where the meeting falls for them, and their hours.
+  component ZoneRow: Column {
+    id: zoneRow
+    property string label: ""
+    property string caption: ""
+    property string range: ""
+    property color rangeColor: panel.theme.text
+    property alias cells: zoneRibbon.cells
+    property alias blocks: zoneRibbon.blocks
+    width: parent ? parent.width : 0
+    spacing: panel.theme.spaceTight
+    Accessible.role: Accessible.StaticText
+    Accessible.name: label + ", " + range + ", " + caption
+    RowLayout {
+      width: parent.width
+      spacing: panel.theme.spaceMedium
+      Text {
+        text: zoneRow.label
+        textFormat: Text.PlainText
+        color: panel.theme.text
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textBody
+        font.weight: panel.theme.weightStrong
+        Layout.maximumWidth: zoneRow.width * 0.4
+        elide: Text.ElideRight
+      }
+      Caption { text: zoneRow.caption; Layout.fillWidth: true }
+      Text {
+        text: zoneRow.range
+        textFormat: Text.PlainText
+        color: zoneRow.rangeColor
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textBody
+        font.weight: panel.theme.weightMedium
+      }
+    }
+    Ribbon { id: zoneRibbon; width: parent.width }
+  }
+
+  // A suggested start: its local range over who, if anyone, it is awkward for.
+  component Suggestion: Button {
+    id: choice
+    required property var modelData
+    required property int index
+    readonly property bool chosen: modelData.start === panel.selectedStart
+    objectName: "meetingSuggestion" + index
+    hoverEnabled: true
+    focusPolicy: Qt.StrongFocus
+    leftPadding: panel.theme.spaceMedium
+    rightPadding: panel.theme.spaceMedium
+    Accessible.name: "Suggestion " + (index + 1) + ": " + modelData.range + ", " + modelData.caption
+    Keys.onReturnPressed: clicked()
+    Keys.onEnterPressed: clicked()
+    onClicked: { panel.select(modelData.start); panel.takeKeys() }
+    contentItem: Column {
+      spacing: 1
+      Row {
+        spacing: panel.theme.spaceSmall
+        Dot { anchors.verticalCenter: parent.verticalCenter; tint: panel.fitColor(choice.modelData.fit) }
+        Text {
+          text: choice.modelData.range
+          textFormat: Text.PlainText
+          color: choice.chosen ? panel.theme.accent : panel.theme.text
+          font.family: panel.theme.fontFamily
+          font.pixelSize: panel.theme.textBody
+          font.weight: panel.theme.weightStrong
+        }
+      }
+      Caption { width: choice.availableWidth; text: choice.modelData.caption }
+    }
+    background: Rectangle {
+      radius: panel.theme.radius
+      color: choice.down ? panel.theme.pressColor : choice.chosen ? panel.theme.selectedColor : panel.theme.cardColor
+      border.width: panel.theme.hairline
+      border.color: choice.visualFocus ? panel.theme.accent : panel.theme.cardBorder
+      Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
+      Shared.HoverWash { theme: panel.theme; hovered: choice.hovered }
+      Text {
+        anchors { right: parent.right; top: parent.top; margins: panel.theme.spaceSmall }
+        text: String(choice.index + 1)
+        color: panel.theme.overlay
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textMicro
+      }
+    }
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
 
   Column {
     id: controls
     width: parent.width
     spacing: panel.theme.panelSpacing
+
+    // The local day, typed as an ISO date or stepped a day at a time.
     RowLayout {
       width: parent.width
       spacing: panel.theme.spaceSmall
-      Shared.GlyphButton { theme: panel.theme; glyph: "󰅁"; text: "Previous UTC day · Page Up"; enabled: panel.ready && !panel.pending; onClicked: panel.choose(panel.selectedMinute, panel.selectedDuration, -1) }
+      Shared.GlyphButton {
+        theme: panel.theme
+        glyph: "󰅁"
+        text: "Previous day · Page Up"
+        enabled: panel.ready
+        onClicked: panel.shiftDay(-1)
+      }
       Shared.ValueField {
-        id: dateInput
+        id: dateField
         objectName: "meetingDate"
+        readonly property bool dirty: activeFocus && text !== (panel.day.date || "")
         theme: panel.theme
         Layout.fillWidth: true
-        placeholderText: "YYYY-MM-DD · UTC"
-        Accessible.name: "Meeting date in UTC, YYYY-MM-DD"
         horizontalAlignment: Text.AlignHCenter
-        onAccepted: { panel.choose(panel.selectedMinute, panel.selectedDuration, 0, text); scrubber.forceActiveFocus() }
+        placeholderText: "YYYY-MM-DD"
+        Accessible.name: "Meeting day, YYYY-MM-DD in this computer's timezone"
+        onActiveFocusChanged: {
+          text = activeFocus ? (panel.day.date || "") : (panel.day.label || "")
+          if (activeFocus) selectAll()
+        }
+        Keys.onPressed: event => {
+          if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            if (dirty) panel.goToDate(text.trim())
+            panel.takeKeys()
+          } else if (event.key === Qt.Key_Escape) panel.takeKeys()
+          else return
+          event.accepted = true
+        }
       }
-      Shared.GlyphButton { theme: panel.theme; glyph: "󰅂"; text: "Next UTC day · Page Down"; enabled: panel.ready && !panel.pending; onClicked: panel.choose(panel.selectedMinute, panel.selectedDuration, 1) }
-      Shared.ActionButton { objectName: "meetingNow"; theme: panel.theme; text: "Now"; onClicked: panel.resetNow() }
+      Shared.GlyphButton {
+        theme: panel.theme
+        glyph: "󰅂"
+        text: "Next day · Page Down"
+        enabled: panel.ready
+        onClicked: panel.shiftDay(1)
+      }
+      Shared.ActionButton {
+        objectName: "meetingNow"
+        theme: panel.theme
+        text: "Now"
+        onClicked: panel.resetNow()
+      }
     }
+
+    // What the selection is for this computer, and who it suits.
     Rectangle {
       width: parent.width
-      height: timeContent.implicitHeight + panel.theme.cardPadding * 2
-      color: panel.theme.cardColor
+      height: readout.implicitHeight + panel.theme.cardPadding * 2
       radius: panel.theme.radius
+      color: panel.theme.cardColor
       Shared.CardEdge { theme: panel.theme }
       Column {
-        id: timeContent
-        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-        anchors.margins: panel.theme.cardPadding
-        spacing: panel.theme.spaceSmall
+        id: readout
+        anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
+        spacing: panel.theme.spaceTight
         RowLayout {
           width: parent.width
-          Label { text: panel.ready ? panel.plan.time : "—"; font.pixelSize: panel.theme.textHero; font.weight: panel.theme.weightLight; color: panel.theme.text }
-          Label { text: "UTC"; font.pixelSize: panel.theme.textLead; color: panel.theme.accent; Layout.fillWidth: true }
+          spacing: panel.theme.spaceMedium
+          Text {
+            objectName: "meetingRange"
+            text: panel.ready ? panel.plan.range : "––:––"
+            textFormat: Text.PlainText
+            color: panel.theme.text
+            font.family: panel.theme.fontFamily
+            font.pixelSize: panel.theme.textHero
+            font.weight: panel.theme.weightLight
+          }
+          Item { Layout.fillWidth: true }
           Shared.SegmentWell {
             theme: panel.theme
-            Layout.preferredWidth: panel.theme.controlHeight * 4
-            Duration { minutes: 30 }
-            Duration { minutes: 60 }
-            Duration { minutes: 90 }
-          }
-        }
-        Label { width: parent.width; text: panel.ready ? "Ends " + panel.plan.end : "Loading meeting times…"; elide: Text.ElideRight }
-        Slider {
-          id: scrubber
-          objectName: "meetingTimeline"
-          width: parent.width
-          height: panel.theme.controlHeight
-          from: 0; to: 1439; stepSize: 15
-          value: panel.selectedMinute
-          snapMode: Slider.SnapAlways
-          focusPolicy: Qt.StrongFocus
-          Accessible.name: "Meeting start, minutes after midnight UTC"
-          Accessible.description: "Arrow keys move fifteen minutes. The lit strip fits the whole meeting into working hours in every zone."
-          onMoved: panel.choose(value, panel.selectedDuration)
-          background: Strip {
-            objectName: "meetingOverlap"
-            x: scrubber.leftPadding
-            y: (scrubber.height - height) / 2
-            width: scrubber.availableWidth
-            slots: panel.plan.overlap || []
-          }
-          handle: Rectangle {
-            x: scrubber.leftPadding + scrubber.visualPosition * (scrubber.availableWidth - width)
-            y: (scrubber.height - height) / 2
-            width: panel.theme.spaceMedium
-            height: panel.theme.chipHeight
-            radius: panel.theme.radiusSmall
-            color: scrubber.pressed ? panel.theme.text : panel.theme.accent
-            border.width: panel.theme.hairline
-            border.color: scrubber.activeFocus ? panel.theme.text : panel.theme.cardBorder
-            Shared.HoverWash { theme: panel.theme; hovered: scrubber.hovered }
-          }
-          HoverHandler { cursorShape: Qt.PointingHandCursor }
-        }
-        Item {
-          width: parent.width
-          height: axisLabel.implicitHeight
-          Label { id: axisLabel; anchors.right: parent.right; text: "24 UTC" }
-          Repeater {
-            model: ["00", "06", "12", "18"]
-            Label {
-              required property string modelData
-              required property int index
-              x: index * timeContent.width / 4 - (index ? implicitWidth / 2 : 0)
-              text: modelData
+            Layout.preferredWidth: panel.durations.length * (panel.theme.chipHeight + panel.theme.spaceTight)
+            Repeater {
+              model: panel.durations
+              Shared.SegmentChoice {
+                required property int modelData
+                required property int index
+                theme: panel.theme
+                objectName: "meetingDuration" + modelData
+                width: parent.width / panel.durations.length
+                height: parent.height
+                text: panel.durationLabels[index]
+                selected: modelData === panel.selectedDuration
+                Accessible.name: modelData + " minute meeting"
+                onClicked: { panel.setDuration(modelData); panel.takeKeys() }
+              }
             }
           }
         }
-        RowLayout {
+        Caption {
           width: parent.width
-          Label {
-            Layout.fillWidth: true
-            text: panel.dateDirty ? "Press Enter to apply the UTC date" : panel.pending ? "Updating…" : panel.ready && panel.plan.allWorking ? "Fits every zone’s working hours" : "Outside working hours in some zones"
-            color: panel.pending ? panel.theme.subtext : panel.ready && panel.plan.allWorking ? panel.theme.green : panel.theme.yellow
-            wrapMode: Text.Wrap
+          text: panel.ready ? panel.plan.zone + " · " + panel.plan.utc : "Reading this computer's timezone…"
+        }
+        Row {
+          width: parent.width
+          spacing: panel.theme.spaceSmall
+          Dot {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: panel.error === "" && panel.ready
+            tint: panel.fitColor(panel.plan.fit)
           }
-          Shared.ActionButton { objectName: "meetingCopy"; theme: panel.theme; text: "Copy times"; enabled: panel.ready && !panel.dateDirty && !panel.pending && !panel.error && !panel.copyPending; onClicked: panel.copy() }
+          Text {
+            objectName: "meetingStatus"
+            width: parent.width - panel.theme.spaceMedium * 2
+            text: panel.error || (panel.ready ? panel.plan.status : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: panel.error ? panel.theme.red : panel.theme.text
+            font.family: panel.theme.fontFamily
+            font.pixelSize: panel.theme.textLabel
+            font.weight: panel.theme.weightMedium
+          }
+        }
+        Text {
+          objectName: "meetingConflict"
+          visible: panel.conflictTitles.length > 0
+          width: parent.width
+          text: "󰃰  Overlaps " + panel.conflictTitles.join(", ")
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: panel.theme.yellow
+          font.family: panel.theme.fontFamily
+          font.pixelSize: panel.theme.textLabel
         }
       }
     }
-    Label {
-      width: parent.width
-      visible: panel.error !== ""
-      text: panel.error
-      color: panel.theme.red
-      wrapMode: Text.Wrap
-    }
+
+    // Up to three starts the worker found on this day, and the next opening
+    // after the selection when the next two weeks hold one.
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
-      label: "LOCAL + PINNED ZONES"
-      Shared.ActionButton { theme: panel.theme; text: "Manage pins"; implicitHeight: panel.theme.chipHeight; onClicked: panel.managePins() }
+      label: "SUGGESTED"
+      Shared.ActionButton {
+        objectName: "meetingNextFit"
+        theme: panel.theme
+        visible: !!panel.plan.next
+        implicitHeight: panel.theme.chipHeight
+        text: panel.plan.next ? (panel.plan.next.fit === "work" ? "Next fit · " : "Closest · ") + panel.plan.next.label + "  󰅂" : ""
+        onClicked: { panel.nextFit(); panel.takeKeys() }
+      }
     }
-    Label {
+    Item {
       width: parent.width
-      text: "Lit = whole meeting within Mon–Fri 09:00–17:00.\nA working-hours guide; no calendars are read."
-      wrapMode: Text.Wrap
+      height: panel.theme.detailRowHeight - panel.theme.spaceMedium
+      Row {
+        id: suggestions
+        anchors.fill: parent
+        spacing: panel.theme.spaceSmall
+        Repeater {
+          model: panel.plan.suggestions || []
+          Suggestion { width: (suggestions.width - suggestions.spacing * 2) / 3; height: suggestions.height }
+        }
+      }
+      Caption {
+        visible: panel.ready && (panel.plan.suggestions || []).length === 0
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        text: panel.day.past ? "This day has passed."
+          : panel.day.today ? "Nobody is working for the rest of today."
+          : "Nobody is working on this day."
+      }
+    }
+
+    Shared.SectionRule {
+      theme: panel.theme
+      width: parent.width
+      label: "ZONES"
+      Repeater {
+        model: [{tint: panel.theme.alpha(panel.theme.accent, 0.34), text: "Mon–Fri 09–17"},
+          {tint: panel.theme.alpha(panel.theme.accent, 0.13), text: "07–09 · 17–20"}]
+        Row {
+          id: legend
+          required property var modelData
+          spacing: panel.theme.spaceTight
+          Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10; height: 8; radius: 2; color: legend.modelData.tint }
+          Caption { text: legend.modelData.text; color: panel.theme.overlay }
+        }
+      }
     }
   }
-  Shared.SeeleListView {
+
+  // Every row reads the same instants left to right, so one pointer position
+  // is one start for all of them.
+  Shared.SeeleFlickable {
     id: zones
     objectName: "meetingZones"
+    theme: panel.theme
     anchors.top: controls.bottom
     anchors.topMargin: panel.theme.panelSpacing
     width: parent.width
-    height: Math.max(0, Math.min(contentHeight, panel.maximumHeight - controls.implicitHeight - panel.theme.panelSpacing))
-    model: panel.plan.rows || []
-    spacing: panel.theme.spaceSmall
+    height: Math.max(0, Math.min(contentHeight, panel.maximumHeight - controls.implicitHeight - footer.implicitHeight - panel.theme.panelSpacing * 2))
+    contentWidth: width
+    contentHeight: rows.implicitHeight + 4
     clip: true
-    theme: panel.theme
-    delegate: Rectangle {
-      id: zone
-      required property var modelData
-      Accessible.name: modelData.label + " " + modelData.id + " " + modelData.date + " " + modelData.time + " " + modelData.offset
-      width: ListView.view.width
-      height: zoneContent.implicitHeight + panel.theme.cardPadding * 2
-      radius: panel.theme.radius
-      color: panel.theme.cardColor
-      Shared.CardEdge { theme: panel.theme }
-      Column {
-        id: zoneContent
-        anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-        anchors.margins: panel.theme.cardPadding
-        spacing: panel.theme.spaceSmall
-        RowLayout {
-          width: parent.width
-          ColumnLayout {
-            Layout.fillWidth: true
-            spacing: panel.theme.spaceTight
-            Label { Layout.fillWidth: true; text: zone.modelData.label; color: panel.theme.text; font.pixelSize: panel.theme.textBody; font.weight: panel.theme.weightStrong; elide: Text.ElideRight }
-            Label { Layout.fillWidth: true; text: zone.modelData.date + " · " + zone.modelData.abbreviation + " · " + zone.modelData.offset; elide: Text.ElideRight }
-          }
-          Label { text: zone.modelData.time; color: zone.modelData.working ? panel.theme.accent : panel.theme.subtext; font.pixelSize: panel.theme.textDisplay; font.weight: panel.theme.weightLight }
+    Column {
+      id: rows
+      y: 2
+      width: zones.width
+      spacing: panel.theme.spaceMedium
+      ZoneRow {
+        objectName: "meetingCalendar"
+        visible: panel.calendarShown
+        label: "Your calendar"
+        caption: panel.hoveredBlock ? panel.hoveredBlock.title + " · " + panel.clock(panel.hoveredBlock.start) + "–" + panel.clock(panel.hoveredBlock.end)
+          : !panel.calendar || !panel.calendar.hasDay(panel.day.date || "")
+          ? (panel.calendar && panel.calendar.connected ? "Loading…" : "Not available offline")
+          : panel.calendar.stale ? "Offline · may be out of date" : panel.busyBlocks.length === 0 ? "Nothing booked" : ""
+        range: !panel.ready ? "" : panel.conflictTitles.length > 0 ? "Busy" : "Free"
+        rangeColor: panel.conflictTitles.length > 0 ? panel.theme.yellow : panel.theme.text
+        blocks: panel.busyBlocks
+      }
+      Repeater {
+        model: panel.plan.rows || []
+        ZoneRow {
+          required property var modelData
+          label: modelData.label
+          caption: (modelData.home ? "This computer · " : "") + modelData.caption
+          range: modelData.range
+          rangeColor: modelData.fit === "work" ? panel.theme.text : panel.fitColor(modelData.fit)
+          cells: modelData.cells
         }
-        Strip { width: parent.width; slots: zone.modelData.slots }
       }
     }
+    // A faint column follows the pointer where a click would put the meeting.
+    Rectangle {
+      visible: grid.containsMouse && !grid.pressed && panel.ready
+      x: panel.position(panel.startAt(grid.mouseX, grid.width), grid.width)
+      width: Math.max(4, panel.selectedDuration / panel.dayMinutes * grid.width)
+      height: rows.implicitHeight + 4
+      radius: 3
+      color: panel.theme.alpha(panel.theme.text, 0.05)
+      border.width: panel.theme.hairline
+      border.color: panel.theme.alpha(panel.theme.accent, 0.4)
+    }
+    MouseArea {
+      id: grid
+      objectName: "meetingGrid"
+      width: rows.width
+      height: rows.implicitHeight + 4
+      enabled: panel.ready
+      hoverEnabled: true
+      preventStealing: true
+      cursorShape: Qt.PointingHandCursor
+      function place() {
+        var start = panel.startAt(mouseX, width)
+        if (start !== panel.selectedStart) panel.select(start)
+      }
+      onPressed: { panel.dragging = true; panel.takeKeys(); place() }
+      onPositionChanged: if (pressed) place()
+      onReleased: panel.dragging = false
+      onCanceled: panel.dragging = false
+    }
     ScrollBar.vertical: Shared.SlimScrollBar { theme: panel.theme; popupHovered: panel.popupHovered }
+  }
+
+  RowLayout {
+    id: footer
+    anchors.top: zones.bottom
+    anchors.topMargin: panel.theme.panelSpacing
+    width: parent.width
+    spacing: panel.theme.spaceSmall
+    Shared.ActionButton {
+      objectName: "meetingEditZones"
+      theme: panel.theme
+      text: "Edit zones"
+      onClicked: panel.managePins()
+    }
+    Item { Layout.fillWidth: true }
+    Shared.ActionButton {
+      objectName: "meetingCalendarOpen"
+      theme: panel.theme
+      visible: panel.calendarShown
+      text: "Open in Google Calendar"
+      enabled: panel.canCopy
+      onClicked: panel.openCalendar()
+    }
+    Shared.ActionButton {
+      objectName: "meetingCopy"
+      theme: panel.theme
+      text: "Copy"
+      selected: true
+      enabled: panel.canCopy
+      onClicked: panel.copy()
+    }
   }
 }

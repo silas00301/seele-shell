@@ -45,6 +45,7 @@ Scope {
   function agenda(date) { return Calendar.agenda(events, selected, date) }
   function dots(date) { return Calendar.dots(events, calendars, selected, date) }
   function indicator(now) { return Calendar.indicator(events, selected, now) }
+  function busy(from, to) { return Calendar.busy(events, selected, calendars, colors, from, to) }
   function eventColor(event) { return Calendar.color(event, calendars, colors) }
   function meeting(event) { return Calendar.meeting(event) }
   function safeLink(value) { return Calendar.safeLink(value) }

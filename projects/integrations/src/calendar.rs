@@ -258,6 +258,10 @@ fn project_event(value: &Value, calendar_id: &str) -> Option<Value> {
         "conferenceData":{"entryPoints":video.into_iter().collect::<Vec<_>>()},
         "attendees":self_attendee.into_iter().collect::<Vec<_>>(),
         "reminders":value["reminders"],"colorId":value["colorId"],
+        // The meeting planner's busy time: an event its owner marked free is
+        // transparent, and a working location is not a commitment at all.
+        "transparency":if value["transparency"] == "transparent" { "transparent" } else { "opaque" },
+        "eventType":crate::common::clean(&value["eventType"],"",32),
     }))
 }
 
@@ -876,5 +880,10 @@ mod tests {
         assert!(!encoded.contains("other@example.com"));
         assert!(!encoded.contains("hidden"));
         assert_eq!(event["attendees"][0]["responseStatus"], "tentative");
+        assert_eq!(event["transparency"], "opaque");
+        let free = json!({"id":"free","transparency":"transparent","eventType":"workingLocation"});
+        let free = project_event(&free, "primary").unwrap();
+        assert_eq!(free["transparency"], "transparent");
+        assert_eq!(free["eventType"], "workingLocation");
     }
 }

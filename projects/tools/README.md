@@ -434,44 +434,103 @@ privacy, deadline and cancellation fixtures, and `cargo test -p seele-tools
 The clock's **Clocks / Plan meeting** selector shares the existing persistent
 pins. `seele-shellctl control meeting` and Vicinae's **Seele Meeting Planner**
 open the planning mode directly. The bar and live world clocks keep current
-time; a plan stays at the selected instant until **Now** is chosen. Nothing
-reads a calendar, creates an event, sends an invitation, or saves a meeting.
+time; a plan stays at the selected instant until **Now** is chosen.
 
-The source date and timeline are explicitly **UTC**. Enter an ISO date, drag the
-timeline or use Left/Right for fifteen-minute steps, Page Up/Down for days, and
-N for Now. The selected meeting lasts 30, 60 or 90 minutes. Each local/pinned
-row shows the actual date, time and UTC offset at that instant, plus a strip of
-start times that fit the entire duration inside Monday–Friday 09:00–17:00 local
-time. The top strip is their intersection. These fixed working hours are a
-guide, not a claim about anyone's calendar or holidays. Manage pins returns to
-the existing tzdata-backed city search; no timezone catalog is duplicated.
+The planner works on this computer's local day, from its first minute to the
+first minute of the next, so a daylight-saving day is 23 or 25 hours long. Each
+participant — this computer first, then the pinned zones in pin order — is an
+hour ribbon of its own local hours across that day: Monday–Friday 09:00–17:00
+is working time, 07:00–09:00 and 17:00–20:00 its shoulders, and everything else
+is off. A cell that begins a new local date names the weekday, a repeated hour
+appears twice and a skipped one not at all. One selection band crosses every
+ribbon; the present is marked and the past dimmed. The readout gives the local
+range, zone and UTC range with a plain sentence of who the meeting does not
+suit ("Early in Los Angeles · night in Tokyo").
 
-The UTC axis never guesses which occurrence of a repeated local time was meant
-and cannot accept a nonexistent local time. Row times, offsets and availability
-come from libc and the package's system IANA timezone database, including
-fractional offsets and half-hour DST transitions. **Copy times** / Ctrl+C emits
-both UTC endpoints, duration and the local date/time, IANA identity and offset
-for each participant; an end-date or offset transition is named explicitly.
-Copy waits for the newest validated projection and stays disabled for an
-unsubmitted date, a rejected request or a failed worker. Escape closes.
+Up to three **suggestions** rank the day's quarter-hour starts, best first. A
+participant's minute costs nothing in working hours, more the further a
+shoulder hour is from them, more again when off and most in the small hours; a
+minute already busy on your calendar costs as much as an early hour. Suggestions
+are at least the meeting or half an hour apart, and a start at which nobody is
+working suggests nothing. **Next fit** (or **Closest**, when the team never
+shares working hours) is the next free opening after the selection within 14
+days at the best fit those days offer. The fixed hours are a guide, not a claim
+about anyone's calendar or holidays.
+
+With Google Calendar configured, a **Your calendar** row shows the selected
+calendars' opaque, timed events on the same axis. Events marked free, all-day
+entries and working locations leave the day open; declined and cancelled events
+are not shown. The shell sends the worker bare `[start, end)` intervals, never
+titles, and names the events a selection overlaps itself. **Open in Google
+Calendar** opens Google's own event editor, prefilled with the UTC range and
+the summary; nothing is created until it is saved there. Without the calendar
+the row and that action are absent.
+
+Pointing at the ribbons centres the meeting under the pointer inside the day;
+dragging moves it. Keys: Left/Right or H/L move 15 minutes, Shift moves an
+hour, and a step past midnight opens the next day on the same grid. Page
+Up/Down move a day at the same local wall time, D edits the date as
+`YYYY-MM-DD`, N is Now, F is Next fit, 1–3 take a suggestion, -/+ change the
+length (15, 30, 45, 60, 90 or 120 minutes), Ctrl+C copies, Ctrl+Enter opens
+Google Calendar and Escape closes. **Edit zones** returns to the tzdata-backed
+city search; no timezone catalog is duplicated. **Copy** emits one heading line
+and one line per participant plus UTC, with a date only where it is not the
+heading's and both abbreviations when a transition falls inside the meeting:
+
+```text
+Tue 29 Sep 2026 · 1 h
+- Berlin: 16:00–17:00 CEST UTC+2
+- New York: 10:00–11:00 EDT UTC-4
+- Tokyo: Tue 29 Sep 23:00 – Wed 30 Sep 00:00 JST UTC+9
+- UTC: 14:00–15:00
+```
+
+Copy and Open wait for the newest validated projection and stay disabled for an
+unsubmitted date, a rejected request or a failed worker.
 
 `seele-clock watch` still emits its initial/current snapshots and accepts
 `refresh`. It additionally accepts one JSON line:
 
 ```json
-{"requestId":42,"meeting":{"date":"2026-10-25","minute":90,"duration":60,"shift":0}}
+{"requestId":42,"meeting":{"start":1790690400,"days":1,"duration":60,"busy":[[1790688600,1790692200]]}}
 ```
 
-It replies with `requestId` and either `meeting` or `meetingError`. Dates are
-strict Gregorian ISO dates from 1970 through 2100; minute is 0–1439 UTC;
-duration is one of 15, 30, 60, 90, 120 or 180; shift is -1, 0 or 1 UTC day.
-An empty/omitted date selects the current UTC minute. Invalid requests retain
-the last valid UI selection and do not terminate the worker. Oversized input
-lines are drained without retaining more than 4096 bytes. The shell coalesces
-scrubbing over 40 ms, permits one request in flight and discards stale replies.
-Working-hour strips use a per-minute prefix table and cache the day, duration
-and complete pin set, invalidating with timezone data or local-zone changes.
-The selected instant and copied summary are always recomputed.
+It replies with `requestId` and either `meeting` or `meetingError`. `start` is
+an instant, snapped back to its local day's quarter-hour grid; omitted, it is
+the next quarter hour. `date` (a strict ISO date from 1970 through 2100) and
+`days` (at most 366 either way) move the selection to another local day at the
+same wall time, resolving a skipped time to the first one after it and a
+repeated one to its first occurrence. `busy` holds at most 96 intervals.
+The reply carries the axis `day` (date, label, first and next-day instants,
+minutes, today, past), the local `range`, `zone` and `utc`, the overall `fit`
+(`work`, `edge` or `off`), `status`, the busy intervals the selection
+`conflicts` with, `rows` (id, label, home, range, caption, fit, note and the
+ribbon `cells` as minute offsets on the axis), `suggestions`, `next`,
+`summary` and `calendarUrl`.
+
+Offsets come from libc and the package's system IANA timezone database, read
+once per transition: hourly probes find each change and a binary search places
+it to the second, after which every reading is arithmetic, including fractional
+offsets and half-hour shifts. Participants are measured over the day and the
+Next fit horizon once per axis day, home zone and pin set, with per-minute
+prefix sums for fit and cost, and are invalidated with timezone data or
+local-zone changes. Invalid requests retain the last valid UI selection and do
+not terminate the worker. Oversized input lines are drained without retaining
+more than 8192 bytes. The shell coalesces pointer and key movement over 40 ms,
+permits one request in flight, discards stale replies, and asks again when the
+calendar's busy time changes.
+
+Validation: `tests/meeting-planner.py` drives the real resident binary through
+23- and 25-hour Berlin days, US spring gaps and autumn folds, Lord Howe's
+half-hour transition, Kathmandu's quarter-hour offset, day moves across
+transitions, a step past midnight, suggestions around busy time, Now, rejected
+requests, an oversized line and pin changes. Native tests pin the arithmetic
+with POSIX rules. `tests/meeting-planner.js` runs the production QML
+coordinator's request, busy-time and refresh logic; `tst_meetingplanner.qml`
+uses the actual component for keys, pointer placement, day moves, suggestions,
+date entry, copy and calendar eligibility, conflicts and bounded scrolling. The
+package installs/lints the component and runs all three alongside the existing
+`clock.sh` fixtures.
 
 ## Network activity
 
@@ -494,15 +553,6 @@ Closing destroys the worker; reopening creates a new observation session.
 Generation-bound QML callbacks reject late data or exit from a discarded
 worker, and a disappeared selection stays explicit until the user chooses.
 The worker reads local kernel counters only and keeps nothing on disk.
-
-Validation: `tests/meeting-planner.py` drives the real resident binary through
-US/EU spring gaps and autumn folds, Lord Howe's half-hour transition,
-Kathmandu's quarter-hour offset, midnight, leap days, full-duration working-hour
-boundaries, rejected requests and pin changes. `tests/meeting-planner.js` runs
-the production QML coordinator's request/reply logic; `tst_meetingplanner.qml`
-uses the actual component for date entry, scrubbing, keyboard shortcuts, copy
-eligibility and bounded scrolling. The package installs/lints the component and
-runs all three alongside the existing `clock.sh` fixtures.
 
 ## CPU, memory and local processes
 

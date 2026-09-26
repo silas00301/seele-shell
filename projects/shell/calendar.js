@@ -48,6 +48,19 @@ function indicator(events, selected, now) {
   var chosen = eligible[0], from = millis(start(chosen))
   return { event: chosen, extra: eligible.length - 1, text: from > now ? Math.max(1, Math.ceil((from-now)/60000)) + "m" : "Ongoing" }
 }
+// The time selected calendars hold, as blocks in epoch seconds overlapping
+// [from, to). An event marked free, an all-day entry and a working location
+// leave the day open; declined and cancelled events are not shown at all.
+function busy(events, selected, calendars, colors, from, to) {
+  return (events || []).filter(function(event) {
+    return selected.indexOf(event.calendar_id) >= 0 && visible(event) && !allDay(event)
+      && event.transparency !== "transparent" && event.eventType !== "workingLocation"
+  }).map(function(event) {
+    return { start: Math.floor(millis(start(event)) / 1000), end: Math.ceil(millis(end(event)) / 1000),
+      title: event.summary || "Busy", color: color(event, calendars, colors) }
+  }).filter(function(block) { return block.end > block.start && block.start < to && block.end > from })
+    .sort(function(a, b) { return a.start - b.start || a.end - b.end || a.title.localeCompare(b.title) })
+}
 function safeLink(value) {
   if (typeof value !== "string" || value.length > 4096 || !/^https:\/\/[^\s/@]+(?:[:/]|$)/i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) return ""
   return value
