@@ -56,8 +56,9 @@ no executable hooks. Listing is read-only and starts no desktop command.
 
 The selected ID and the complete shell palette are stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
-contain Ghostty, Fish, tmux, GTK and Hyprland includes and a copy of the
-Stylix-generated Vicinae TOML. Selection data includes the full Base16 palette
+contain Ghostty, Fish, tmux, X resources and Hyprland includes, copies of the
+Stylix-generated GTK, GtkSourceView, Qt/Kvantum, KDE, Spicetify and Zen assets,
+and the generated Vicinae TOML. Selection data includes the full Base16 palette
 for Neovim and its projection into Seele’s shared color roles. A directory lock
 serializes activation and switching; a complete generation is selected with an
 atomic `current` symlink replacement before atomically publishing the shell
@@ -71,14 +72,17 @@ Application reloads run after publication while still holding the lock. They
 have bounded output and two-second deadlines, never restart services or elevate,
 and report affected app names in the JSON `pending` array if they fail. A reload
 failure leaves the chosen theme saved. The current default tmux server is
-recolored if it exists, Ghostty's active desktop service uses systemd Reload,
+recolored if it exists, same-user Nix Ghostty processes receive SIGUSR2,
+X resources load through `xrdb`, KDE selects its named color scheme,
 Hyprland receives one Lua color update, and the desktop color preference and
 Vicinae theme follow the selected mode and palette. Vicinae uses the stable
 `seele-current` theme ID; its same-ID reload reads the newly published asset,
-and Home Manager points both light and dark preferences at that ID. GTK apps may need reopening, Fish
-updates on its next prompt, and non-service Ghostty instances need their own
-Reload Configuration action. No wallpaper, font, application content, managed
-config, or user account data is modified.
+and Home Manager points both light and dark preferences at that ID. GTK, Qt
+and Zen can need an application restart; Fish updates on its next prompt. The
+`serve` command binds loopback port 48725 and returns only the selected ID and
+Base16 palette to the packaged Spicetify extension. Its HTTP interface is
+read-only and carries no Spotify or account data. No wallpaper, font,
+application content, managed config, or user account data is modified.
 
 Run `python3 projects/config-tools/tests/themes.py target/debug/seele-theme`
 after building this crate. The package runs the same fixture against the

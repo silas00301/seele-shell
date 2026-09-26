@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     env, fs,
+    io::{Read, Write},
+    net::TcpListener,
     os::unix::fs::{symlink, PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
@@ -23,6 +25,8 @@ pub struct Theme {
     pub mode: String,
     pub palette: BTreeMap<String, String>,
     pub vicinae_theme: PathBuf,
+    #[serde(default)]
+    pub assets: BTreeMap<String, PathBuf>,
 }
 
 const BASE16_KEYS: [&str; 16] = [
@@ -164,6 +168,10 @@ impl Theme {
             .as_object_mut()
             .ok_or("Invalid theme")?
             .remove("vicinaeTheme");
+        value
+            .as_object_mut()
+            .ok_or("Invalid theme")?
+            .remove("assets");
         if let serde_json::Value::Object(colors) = serde_json::to_value(self.colors())? {
             value.as_object_mut().ok_or("Invalid theme")?.extend(colors);
         }
@@ -189,6 +197,12 @@ impl Catalog {
         if self.version != 2 || self.themes.is_empty() || self.themes.len() > 32 {
             return Err("Invalid theme catalog".into());
         }
+        if self.font_family.is_empty()
+            || self.font_family.len() > 80
+            || self.font_family.chars().any(char::is_control)
+        {
+            return Err("Invalid theme font".into());
+        }
         let mut ids = std::collections::BTreeSet::new();
         for t in &self.themes {
             if !matches!(t.mode.as_str(), "light" | "dark")
@@ -207,6 +221,19 @@ impl Catalog {
                     .iter()
                     .any(|key| !t.palette.get(*key).is_some_and(|c| valid_color(c)))
                 || !t.vicinae_theme.is_absolute()
+                || t.assets.iter().any(|(name, path)| {
+                    !matches!(
+                        name.as_str(),
+                        "gtkCss"
+                            | "gtkSourceView"
+                            | "zenChrome"
+                            | "zenContent"
+                            | "spicetify"
+                            | "kvantumConfig"
+                            | "kvantumSvg"
+                            | "kdeColors"
+                    ) || !path.is_absolute()
+                })
             {
                 return Err("Invalid theme palette".into());
             }
@@ -282,7 +309,7 @@ fn selected(state: &Path, catalog: &Catalog) -> Result<String> {
         Err(e) => Err(e.into()),
     }
 }
-fn files(t: &Theme) -> BTreeMap<&'static str, String> {
+fn files(t: &Theme, font_family: &str) -> BTreeMap<&'static str, String> {
     let c = t.colors();
     let mut files = BTreeMap::new();
     let mut ghostty = format!("background = {}\nforeground = {}\ncursor-color = {}\nselection-background = {}\nselection-foreground = {}\n", c.base, c.text, c.accent, c.surface, c.text);
@@ -290,6 +317,22 @@ fn files(t: &Theme) -> BTreeMap<&'static str, String> {
         ghostty.push_str(&format!("palette = {index}={color}\n"));
     }
     files.insert("ghostty", ghostty);
+    let p = &t.palette;
+    let mut xresources = format!(
+        "*.faceName: {font_family}\n*.faceSize: 12\n*.renderFont: true\n*foreground: {}\n*background: {}\n*cursorColor: {}\n",
+        p["base05"], p["base00"], p["base05"]
+    );
+    for (index, key) in [
+        "base00", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base05", "base02",
+        "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base07", "base09", "base0F",
+        "base01", "base02", "base04", "base06",
+    ]
+    .iter()
+    .enumerate()
+    {
+        xresources.push_str(&format!("*color{index}: {}\n", p[*key]));
+    }
+    files.insert("Xresources", xresources);
     files.insert("fish.fish", format!("set -g fish_color_normal {}\nset -g fish_color_command {}\nset -g fish_color_param {}\nset -g fish_color_quote {}\nset -g fish_color_error {}\nset -g fish_color_comment {}\nset -g fish_color_operator {}\nset -g fish_color_escape {}\nset -g fish_color_autosuggestion {}\nset -g fish_color_search_match --background={}\nset -g fish_pager_color_prefix {}\nset -g fish_pager_color_completion {}\nset -g fish_pager_color_description {}\nset -g fish_pager_color_selected_background --background={}\n",
         &c.text[1..], &c.accent[1..], &c.text[1..], &c.green[1..], &c.red[1..], &c.overlay[1..], &c.accent[1..], &c.yellow[1..], &c.overlay[1..], &c.surface[1..], &c.accent[1..], &c.text[1..], &c.subtext[1..], &c.surface[1..]));
     // Keep the existing tmux layout and plugin-provided text; recolor their
@@ -315,7 +358,14 @@ fn files(t: &Theme) -> BTreeMap<&'static str, String> {
     }
     files.insert("tmux.conf", tmux);
     files.insert("gtk.css", format!("@define-color theme_bg_color {};\n@define-color theme_fg_color {};\n@define-color theme_base_color {};\n@define-color theme_text_color {};\n@define-color theme_selected_bg_color {};\n@define-color theme_selected_fg_color {};\n@define-color accent_color {};\n@define-color accent_bg_color {};\n@define-color accent_fg_color {};\n@define-color window_bg_color {};\n@define-color window_fg_color {};\n@define-color view_bg_color {};\n@define-color view_fg_color {};\n@define-color headerbar_bg_color {};\n@define-color headerbar_fg_color {};\n@define-color card_bg_color {};\n@define-color popover_bg_color {};\n@define-color popover_fg_color {};\n", c.base, c.text, c.mantle, c.text, c.accent, c.base, c.accent, c.accent, c.base, c.base, c.text, c.mantle, c.text, c.mantle, c.text, c.surface, c.mantle, c.text));
-    files.insert("hyprland.lua", format!("hl.config({{general = {{col = {{active_border = 'rgba({}ff)', inactive_border = 'rgba({}ff)'}}}}}})\n", &c.accent[1..], &c.surface[1..]));
+    files.insert("hyprland.lua", format!(
+        "hl.config({{general = {{col = {{active_border = 'rgb({accent})', inactive_border = 'rgb({inactive})'}}}}, decoration = {{shadow = {{color = 'rgba({base}99)'}}}}, group = {{col = {{border_inactive = 'rgb({inactive})', border_active = 'rgb({accent})', border_locked_active = 'rgb({locked})'}}, groupbar = {{text_color = 'rgb({text})', col = {{active = 'rgb({accent})', inactive = 'rgb({inactive})'}}}}}}, misc = {{background_color = 'rgb({base})'}}}})\n",
+        accent = &p["base0D"][1..],
+        inactive = &p["base03"][1..],
+        locked = &p["base0C"][1..],
+        text = &p["base05"][1..],
+        base = &p["base00"][1..],
+    ));
     files
 }
 fn tool(catalog: &Catalog, name: &str, args: &[&str]) -> bool {
@@ -342,9 +392,25 @@ fn tool(catalog: &Catalog, name: &str, args: &[&str]) -> bool {
 fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
     let mut pending = vec![];
     if env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
-        && !tool(catalog, "hyprctl", &["eval", &files(t)["hyprland.lua"]])
+        && !tool(
+            catalog,
+            "hyprctl",
+            &["eval", &files(t, &catalog.font_family)["hyprland.lua"]],
+        )
     {
         pending.push("Window borders");
+    }
+    if env::var_os("DISPLAY").is_some()
+        && !tool(
+            catalog,
+            "xrdb",
+            &[
+                "-merge",
+                state.join("current/Xresources").to_str().unwrap_or(""),
+            ],
+        )
+    {
+        pending.push("X resources");
     }
     if tool(catalog, "tmux", &["has-session"])
         && !tool(
@@ -358,22 +424,22 @@ fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
     {
         pending.push("tmux");
     }
+    // Hyprland starts Ghostty directly, so its optional systemd desktop
+    // service is usually inactive. SIGUSR2 is Ghostty's config reload signal.
+    let uid = unsafe { libc::geteuid() }.to_string();
+    // Nix's GTK wrapper runs as `.ghostty-wrapped`, so `-x ghostty` misses
+    // it. Anchor the executable path instead of matching arbitrary arguments.
+    let ghostty = "^/nix/store/[a-z0-9]+-ghostty-[^/]+/bin/ghostty([[:space:]]|$)";
+    if tool(catalog, "pgrep", &["-u", &uid, "-f", ghostty])
+        && !tool(catalog, "pkill", &["-USR2", "-u", &uid, "-f", ghostty])
+    {
+        pending.push("Ghostty");
+    }
     if env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some() {
-        if tool(
-            catalog,
-            "systemctl",
-            &[
-                "--user",
-                "is-active",
-                "--quiet",
-                "app-com.mitchellh.ghostty.service",
-            ],
-        ) && !tool(
-            catalog,
-            "systemctl",
-            &["--user", "reload", "app-com.mitchellh.ghostty.service"],
-        ) {
-            pending.push("Ghostty");
+        if catalog.commands.contains_key("kdecolors")
+            && !tool(catalog, "kdecolors", &[&format!("Seele-{}", t.id)])
+        {
+            pending.push("KDE colors");
         }
         if !tool(
             catalog,
@@ -411,7 +477,7 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
         .permissions(fs::Permissions::from_mode(0o700))
         .prefix(".theme-")
         .tempdir_in(state)?;
-    for (name, content) in files(theme) {
+    for (name, content) in files(theme, &catalog.font_family) {
         atomic_write(&generation.path().join(name), content.as_bytes())?;
     }
     // Only data generated by Stylix enters the launcher theme; never execute it.
@@ -420,6 +486,25 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
         return Err("Invalid generated launcher theme".into());
     }
     atomic_write(&generation.path().join("vicinae.toml"), &launcher)?;
+    for (name, path) in &theme.assets {
+        let destination = match name.as_str() {
+            "gtkCss" => "gtk.css",
+            "gtkSourceView" => "gtksourceview.xml",
+            "zenChrome" => "zen-chrome.css",
+            "zenContent" => "zen-content.css",
+            "spicetify" => "spicetify.ini",
+            "kvantumConfig" => "kvantum.kvconfig",
+            "kvantumSvg" => "kvantum.svg",
+            "kdeColors" => "kde.colors",
+            _ => return Err("Invalid generated asset".into()),
+        };
+        let limit = if name == "kvantumSvg" { 262144 } else { 131072 };
+        let bytes = read_bounded(path, limit, false)?;
+        if bytes.is_empty() || std::str::from_utf8(&bytes).is_err() {
+            return Err("Invalid generated asset".into());
+        }
+        atomic_write(&generation.path().join(destination), &bytes)?;
+    }
     let mut selection = theme.display()?;
     selection["version"] = 2.into();
     selection["fontFamily"] = catalog.font_family.clone().into();
@@ -467,6 +552,57 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
     Ok(serde_json::json!({"id": id, "pending": pending}))
 }
 const PREFERENCES: &str = "preferences.json";
+
+// Spotify's Chromium renderer cannot read XDG state files. This loopback
+// endpoint exposes only the public palette so its packaged extension can
+// update the same Spicetify CSS variables without patching the Nix store.
+const PALETTE_PORT: u16 = 48725;
+fn serve(state: &Path) -> Result {
+    let port = env::var("SEELE_THEME_PALETTE_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(PALETTE_PORT);
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
+    for connection in listener.incoming() {
+        let Ok(mut stream) = connection else { continue };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+        let mut request = [0u8; 2048];
+        let Ok(size) = stream.read(&mut request) else {
+            continue;
+        };
+        let method = if request[..size].starts_with(b"GET /palette HTTP/1.") {
+            "GET"
+        } else if request[..size].starts_with(b"OPTIONS /palette HTTP/1.") {
+            "OPTIONS"
+        } else {
+            "OTHER"
+        };
+        let (status, body) = match method {
+            "GET" => match catalog_file().and_then(|catalog| {
+                let id = selected(state, &catalog)?;
+                let palette = &catalog.theme(&id)?.palette;
+                Ok(serde_json::to_vec(&serde_json::json!({
+                    "id": id,
+                    "palette": palette,
+                }))?)
+            }) {
+                Ok(body) => ("200 OK", body),
+                Err(_) => ("503 Service Unavailable", b"{}".to_vec()),
+            },
+            "OPTIONS" => ("204 No Content", Vec::new()),
+            _ => ("404 Not Found", b"{}".to_vec()),
+        };
+        let header = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, OPTIONS\r\nAccess-Control-Allow-Private-Network: true\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(&body);
+    }
+    Ok(())
+}
 
 /// The saved light and dark preferences. Before there were any, the one saved
 /// selection becomes the slot of its own mode and the other slot starts at
@@ -598,7 +734,7 @@ fn catalog_file() -> Result<Catalog> {
     catalog.validate()?;
     Ok(catalog)
 }
-const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset";
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
@@ -607,6 +743,9 @@ pub fn main() -> Result {
     }
     let state = xdg("XDG_STATE_HOME", ".local/state")?.join("seele-theme");
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if args == ["serve"] {
+        return serve(&state);
+    }
     if args == ["follow"] {
         // Wakes at the next boundary, and at least once a minute so that a
         // resumed laptop, a changed clock or new settings are seen promptly.

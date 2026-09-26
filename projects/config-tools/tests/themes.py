@@ -5,9 +5,11 @@ import copy
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 binary = str(Path(sys.argv[1]).resolve())
 with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
@@ -20,8 +22,22 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     env = {"PATH": os.environ.get("PATH", ""), "HOME": str(root), "XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state_home)}
     launcher = root / "stylix-vicinae.toml"
     launcher.write_text('[meta]\nname = "Stylix fixture"\nvariant = "light"\n[colors.core]\nbackground = "#eff1f5"\n')
+    asset_files = {}
+    for name, content in {
+        "gtkCss": "@define-color theme_bg_color #eff1f5;\n",
+        "gtkSourceView": '<style-scheme id="stylix"/>\n',
+        "zenChrome": ":root { --zen-primary-color: #eff1f5; }\n",
+        "zenContent": ":root { --color-accent-primary: #eff1f5; }\n",
+        "spicetify": "[base]\nmain = eff1f5\n",
+        "kvantumConfig": "[General]\nframe_width=2\n",
+        "kvantumSvg": '<svg xmlns="http://www.w3.org/2000/svg"/>\n',
+        "kdeColors": "[General]\nName=Fixture\n",
+    }.items():
+        path = root / name
+        path.write_text(content)
+        asset_files[name] = str(path)
     palette = {f"base{i:02X}": f"#{i * 4096:06x}" for i in range(16)}
-    theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=palette, vicinaeTheme=str(launcher))
+    theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=palette, vicinaeTheme=str(launcher), assets=asset_files)
     light = dict(theme, id="flexoki-light", name="Flexoki Light", mode="light", palette=dict(palette, base00="#eff1f5", base0D="#7287fd"))
     catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={})
     def save(value=catalog):
@@ -36,6 +52,37 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     call("set", "../../escape", ok=False)
     assert not state.exists()
     call("init")
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    serve_env = dict(env, SEELE_THEME_PALETTE_PORT=str(port))
+    server = subprocess.Popen([binary, "serve"], env=serve_env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    def palette_response():
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+            connection.sendall(b"GET /palette HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            chunks = []
+            while chunk := connection.recv(4096):
+                chunks.append(chunk)
+        headers, body = b"".join(chunks).split(b"\r\n\r\n", 1)
+        assert b"200 OK" in headers and b"Access-Control-Allow-Origin: *" in headers
+        return json.loads(body)
+    try:
+        for _ in range(40):
+            try:
+                first = palette_response()
+                break
+            except OSError:
+                assert server.poll() is None, server.stderr.read().decode()
+                time.sleep(0.05)
+        else:
+            raise AssertionError("Palette service did not start")
+        assert first == {"id": theme["id"], "palette": theme["palette"]}
+        call("set", light["id"])
+        assert palette_response() == {"id": light["id"], "palette": light["palette"]}
+    finally:
+        server.terminate()
+        server.wait(timeout=3)
+    call("set", theme["id"])
     assert (state / "selection.json").stat().st_mode & 0o777 == 0o600
     assert (state / "current").is_symlink()
     assert call("current")["id"] == theme["id"]
@@ -53,6 +100,9 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     assert light["palette"]["base00"] in (state / "current/gtk.css").read_text()
     assert unrelated.read_text() == "font-size = 13\n"
     assert (state / "current/vicinae.toml").read_bytes() == launcher.read_bytes()
+    for name, published in {"gtkCss": "gtk.css", "gtkSourceView": "gtksourceview.xml", "zenChrome": "zen-chrome.css", "zenContent": "zen-content.css", "spicetify": "spicetify.ini", "kvantumConfig": "kvantum.kvconfig", "kvantumSvg": "kvantum.svg", "kdeColors": "kde.colors"}.items():
+        assert (state / "current" / published).read_bytes() == Path(asset_files[name]).read_bytes()
+    assert "*background: #eff1f5" in (state / "current/Xresources").read_text()
     assert selection["palette"] == light["palette"] and selection["mode"] == "light" and selection["version"] == 2
     assert "vicinaeTheme" not in selection and "flavor" not in selection
     call("init")
@@ -122,15 +172,20 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     stub = root / "desktop tool"
     stub.write_text(f"#!{sys.executable}\n" + "import json,sys\n" + f"with open({str(log)!r}, 'a') as f: f.write(json.dumps(sys.argv[1:]) + '\\n')\n" + "print('error: synthetic')\n" + "sys.exit(0)\n")
     stub.chmod(0o700)
-    catalog["commands"] = {key: str(stub) for key in ("hyprctl", "tmux", "systemctl", "gsettings", "vicinae")}
+    catalog["commands"] = {key: str(stub) for key in ("hyprctl", "tmux", "pgrep", "pkill", "xrdb", "gsettings", "vicinae", "kdecolors")}
     save()
-    desktop_env = dict(env, HYPRLAND_INSTANCE_SIGNATURE="fixture", DBUS_SESSION_BUS_ADDRESS="fixture")
+    desktop_env = dict(env, HYPRLAND_INSTANCE_SIGNATURE="fixture", DBUS_SESSION_BUS_ADDRESS="fixture", DISPLAY="fixture")
     result = call("set", light["id"], environment=desktop_env)
     assert result["pending"] == ["Window borders"], result
     calls = [json.loads(line) for line in log.read_text().splitlines()]
-    assert ["--user", "reload", "app-com.mitchellh.ghostty.service"] in calls
+    uid = str(os.geteuid())
+    ghostty = "^/nix/store/[a-z0-9]+-ghostty-[^/]+/bin/ghostty([[:space:]]|$)"
+    assert ["-u", uid, "-f", ghostty] in calls
+    assert ["-USR2", "-u", uid, "-f", ghostty] in calls
     assert ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"] in calls
     assert ["vicinae://theme/set/seele-current"] in calls
     assert ["source-file", str(state / "current/tmux.conf")] in calls
+    assert ["-merge", str(state / "current/Xresources")] in calls
+    assert ["Seele-" + light["id"]] in calls
     assert call("current")["id"] == light["id"]
 print("Theme publication, persistence, concurrency, rollback, validation and reload fixtures passed")
