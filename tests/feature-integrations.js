@@ -55,6 +55,10 @@ const shellPatterns = {
   'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
   'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'collapsible Litra Glow controls': /label: "LITRA GLOW"[\s\S]*?collapsible: true[\s\S]*?root\.litraGlowRequest\(litraGroup\.modelData\.device, "mode"/,
+  'camera previews lease camera activity': /function cameraPreviewActivity\(source, active\)[\s\S]*?"camera-preview " \+ source \+ " " \+ \(active \? "on" : "off"\)/,
+  'inline camera preview owns a lease': /id: cameraPreviewLoader[\s\S]*?onActiveChanged: root\.cameraPreviewActivity\("panel", active\)/,
+  'preview window owns a lease': /id: cameraPreviewProcess[\s\S]*?root\.cameraPreviewActivity\("window", false\)/,
+  'Home Assistant icon-only button keeps the standard bar width': /width: Math\.max\(root\.barHeight, homeAssistantSummary\.implicitWidth \+ root\.spaceLarge\)/,
 };
 
 for (const [feature, pattern] of Object.entries(shellPatterns)) {

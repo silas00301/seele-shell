@@ -542,7 +542,12 @@ fn camera_devices() -> Vec<Value> {
             .split_whitespace()
             .find(|part| part.starts_with("/dev/video"))
         {
-            values.push(json!({"name":name,"device":device}));
+            // A camera commonly exposes a capture node and a metadata node.
+            // Only the former accepts the video-format query and belongs in
+            // the preview picker.
+            if output("v4l2-ctl", ["--device", device, "--get-fmt-video"]).is_some() {
+                values.push(json!({"name":name,"device":device}));
+            }
         }
     }
     values
@@ -743,11 +748,12 @@ pub(crate) fn graph_status(dump: &Value, gate: &mut crate::audio::StreamGate) ->
             && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
     });
     let camera_active = array.iter().any(|object| {
-        object
-            .pointer("/info/props/media.class")
-            .and_then(Value::as_str)
-            == Some("Video/Source")
-            && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
+        matches!(
+            object
+                .pointer("/info/props/media.class")
+                .and_then(Value::as_str),
+            Some("Video/Source" | "Stream/Input/Video")
+        ) && object.pointer("/info/state").and_then(Value::as_str) == Some("running")
     });
     json!({"microphoneActive":microphone_active,"cameraActive":camera_active,
         "screenRecording":screen_recording,"audioDevices":crate::audio::devices(dump),
@@ -1621,5 +1627,22 @@ mod volume_tests {
             assert_eq!(before, start, "incorrect volume at {start}%");
             assert_eq!(after - before, 5, "incorrect step from {start}%");
         }
+    }
+}
+
+#[cfg(test)]
+mod camera_tests {
+    use super::graph_status;
+    use crate::audio::StreamGate;
+    use serde_json::json;
+
+    #[test]
+    fn a_running_video_consumer_means_the_camera_is_in_use() {
+        let status = graph_status(
+            &json!([{"id":7,"info":{"state":"running","props":{"media.class":"Stream/Input/Video"}}}]),
+            &mut StreamGate::default(),
+        );
+        assert_eq!(status["cameraActive"], true);
+        assert_eq!(status["screenRecording"], false);
     }
 }

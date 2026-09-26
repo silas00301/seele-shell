@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -417,10 +417,12 @@ impl Requests {
 }
 
 /// The lights' owner. `camera` is the PipeWire watcher's camera activity,
-/// `None` while the graph is unknown; `publish` returns false once the
-/// status stream has closed.
+/// `previews` contains direct V4L2 preview leases, and `None` means that the
+/// graph alone is unknown. `publish` returns false once the status stream has
+/// closed.
 pub(crate) fn watch(
     camera: Arc<Mutex<Option<bool>>>,
+    previews: Arc<AtomicU8>,
     requests: Requests,
     publish: impl Fn(Value) -> bool,
 ) {
@@ -473,7 +475,11 @@ pub(crate) fn watch(
             }
             probed = Some(Instant::now());
         }
-        let active = *camera.lock().unwrap();
+        let active = if previews.load(Ordering::Acquire) != 0 {
+            Some(true)
+        } else {
+            *camera.lock().unwrap()
+        };
         if active != observed {
             observed = active;
             observed_since = Instant::now();
