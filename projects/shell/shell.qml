@@ -5518,26 +5518,16 @@ Shared.Theme {
           }
 
           BarItem {
-            width: Math.max(root.barHeight, homeAssistantSummary.implicitWidth + root.spaceLarge)
+            width: root.barHeight
             hovered: homeAssistantMouse.containsMouse
             active: root.panelHere("home-assistant", barWindow.modelData)
-            Row {
-              id: homeAssistantSummary
+            CenteredGlyph {
               anchors.centerIn: parent
-              spacing: root.spaceSmall
-              CenteredGlyph {
-                width: root.textStrong
-                height: root.barItemHeight
-                text: "󰋜"
-                color: !homeAssistantStore.configured || homeAssistantStore.connected ? root.subtext : root.yellow
-                font.pixelSize: root.textStrong
-              }
-              BarLabel {
-                visible: homeAssistantStore.summaryText !== ""
-                text: homeAssistantStore.summaryText
-                maximumWidth: root.rowHeight * 3
-                color: homeAssistantStore.connected ? root.subtext : root.yellow
-              }
+              width: root.textStrong
+              height: root.barItemHeight
+              text: "󰋜"
+              color: !homeAssistantStore.configured || homeAssistantStore.connected ? root.subtext : root.yellow
+              font.pixelSize: root.textStrong
             }
             MouseArea {
               id: homeAssistantMouse
