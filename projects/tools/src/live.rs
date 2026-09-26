@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::io;
 use std::process::Command;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
     mpsc::{self, SyncSender},
     Arc, Mutex,
 };
@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 const NETWORK: usize = 0;
 const BLUETOOTH: usize = 1;
+const CAMERA_PANEL: u8 = 1;
+const CAMERA_WINDOW: u8 = 2;
 #[derive(Default)]
 struct GroupFlag {
     dirty: AtomicBool,
@@ -196,6 +198,7 @@ fn watch_pipewire(
     sender: SyncSender<Event>,
     audio: Arc<Mutex<()>>,
     camera: Arc<Mutex<Option<bool>>>,
+    camera_previews: Arc<AtomicU8>,
 ) {
     let stop = crate::command::shutdown_signal();
     while stop.load(Ordering::Relaxed) == 0 {
@@ -245,8 +248,9 @@ fn watch_pipewire(
                         return;
                     }
                     let key = graph.volume_key();
-                    let patch = control::graph_status(graph.snapshot(), &mut gate);
+                    let mut patch = control::graph_status(graph.snapshot(), &mut gate);
                     *camera.lock().unwrap() = patch["cameraActive"].as_bool();
+                    patch["cameraActive"] = json!(camera_activity(&camera, &camera_previews));
                     let _guard = audio.lock().unwrap();
                     let patch = if key != volume_key {
                         volume_key = key;
@@ -270,8 +274,10 @@ fn watch_pipewire(
         *camera.lock().unwrap() = None;
         {
             let _guard = audio.lock().unwrap();
+            let mut graph = control::graph_status(&json!([]), &mut gate);
+            graph["cameraActive"] = json!(camera_activity(&camera, &camera_previews));
             let reset = control::merge_status([
-                control::graph_status(&json!([]), &mut gate),
+                graph,
                 json!({"volume":0,"muted":false,"microphoneVolume":0,"microphoneMuted":false}),
             ]);
             if sender.send(Event::Patch(reset)).is_err() {
@@ -280,6 +286,36 @@ fn watch_pipewire(
         }
         thread::sleep(Duration::from_secs(1));
     }
+}
+
+fn camera_activity(camera: &Mutex<Option<bool>>, previews: &AtomicU8) -> bool {
+    previews.load(Ordering::Acquire) != 0 || camera.lock().unwrap().unwrap_or(false)
+}
+
+fn camera_preview(command: &str, previews: &AtomicU8) -> Option<bool> {
+    let mut words = command.split_whitespace();
+    if words.next()? != "camera-preview" {
+        return None;
+    }
+    let owner = match words.next()? {
+        "panel" => CAMERA_PANEL,
+        "window" => CAMERA_WINDOW,
+        _ => return None,
+    };
+    let active = match words.next()? {
+        "on" => true,
+        "off" => false,
+        _ => return None,
+    };
+    if words.next().is_some() {
+        return None;
+    }
+    if active {
+        previews.fetch_or(owner, Ordering::AcqRel);
+    } else {
+        previews.fetch_and(!owner, Ordering::AcqRel);
+    }
+    Some(previews.load(Ordering::Acquire) != 0)
 }
 
 fn changed(previous: &mut Value, patch: Value) -> Option<Value> {
@@ -318,14 +354,21 @@ pub(crate) fn run() -> Result {
     }));
     let audio = Arc::new(Mutex::new(()));
     let camera = Arc::new(Mutex::new(None));
-    let (updates, guard, activity) = (sender.clone(), audio.clone(), camera.clone());
+    let camera_previews = Arc::new(AtomicU8::new(0));
+    let (updates, guard, activity, previews) = (
+        sender.clone(),
+        audio.clone(),
+        camera.clone(),
+        camera_previews.clone(),
+    );
     workers.push(thread::spawn(move || {
-        watch_pipewire(updates, guard, activity)
+        watch_pipewire(updates, guard, activity, previews)
     }));
     let (updates, requests) = (sender.clone(), crate::litra::Requests::default());
     let litra = requests.clone();
+    let (litra_camera, litra_previews) = (camera.clone(), camera_previews.clone());
     workers.push(thread::spawn(move || {
-        crate::litra::watch(camera, litra, |patch| {
+        crate::litra::watch(litra_camera, litra_previews, litra, |patch| {
             updates.send(Event::Patch(patch)).is_ok()
         })
     }));
@@ -339,6 +382,15 @@ pub(crate) fn run() -> Result {
             let command = command.trim();
             if let Some(request) = command.strip_prefix("litra ") {
                 requests.submit(request);
+                continue;
+            }
+            if let Some(active) = camera_preview(command, &camera_previews) {
+                if sender
+                    .send(Event::Patch(json!({"cameraActive": active})))
+                    .is_err()
+                {
+                    return;
+                }
                 continue;
             }
             if matches!(command, "audio" | "all") {

@@ -399,6 +399,10 @@ Shared.Theme {
     if (statusProcess.running) statusProcess.write("litra " + device + " " + key + " " + value + "\n")
   }
 
+  function cameraPreviewActivity(source, active) {
+    if (statusProcess.running) statusProcess.write("camera-preview " + source + " " + (active ? "on" : "off") + "\n")
+  }
+
   function toggleLitraGlowFold(device) {
     var folded = Object.assign({}, root.litraGlowFolded)
     if (folded[device]) delete folded[device]
@@ -928,7 +932,9 @@ Shared.Theme {
   }
 
   function openCameraPreview(device) {
+    if (cameraPreviewProcess.running || cameraPreviewLaunchTimer.running) return
     cameraPreviewLaunchTimer.device = String(device || "")
+    root.cameraPreviewActivity("window", true)
     root.controlPanel = ""
     cameraPreviewLaunchTimer.restart()
   }
@@ -1686,6 +1692,10 @@ Shared.Theme {
     stdout: SplitParser {
       onRead: data => root.parseSystemData(data)
     }
+    onStarted: {
+      root.cameraPreviewActivity("panel", cameraPreviewLoader.active)
+      root.cameraPreviewActivity("window", cameraPreviewProcess.running || cameraPreviewLaunchTimer.running)
+    }
     onExited: statusRestartTimer.restart()
   }
 
@@ -1843,7 +1853,19 @@ Shared.Theme {
     property string device: ""
 
     interval: 400
-    onTriggered: root.runControl("camera-preview", device)
+    onTriggered: {
+      cameraPreviewProcess.device = device
+      cameraPreviewProcess.running = true
+    }
+  }
+
+  Process {
+    id: cameraPreviewProcess
+
+    property string device: ""
+
+    command: ["cameraview", "-d", device]
+    onExited: root.cameraPreviewActivity("window", false)
   }
 
   Timer {
@@ -5496,7 +5518,7 @@ Shared.Theme {
           }
 
           BarItem {
-            width: homeAssistantSummary.implicitWidth + root.chipHeight
+            width: Math.max(root.barHeight, homeAssistantSummary.implicitWidth + root.spaceLarge)
             hovered: homeAssistantMouse.containsMouse
             active: root.panelHere("home-assistant", barWindow.modelData)
             Row {
@@ -10661,6 +10683,7 @@ Shared.Theme {
               active: cameraWindow.visible && root.systemData.cameraDevices.length > 0
               asynchronous: true
               source: "CameraPreview.qml"
+              onActiveChanged: root.cameraPreviewActivity("panel", active)
             }
             Binding {
               target: cameraPreviewLoader.item
