@@ -111,13 +111,14 @@ async function main() {
   }
 
   // Answers come back in the order they were asked for, which is what lets the
-  // shell trust the last one it sees.
-  for (let token = 20; token < 30; token++) {
-    send({ command: 'sample', id: 1, token, output: 'DP-2', x: (token - 20) / 10, y: 0, commit: token === 29 })
+  // shell trust the last one it sees. Fill the bounded queue exactly; asking
+  // beyond its documented capacity deliberately ends the production session.
+  for (let token = 20; token < 28; token++) {
+    send({ command: 'sample', id: 1, token, output: 'DP-2', x: (token - 20) / 8, y: 0, commit: token === 27 })
   }
   const ordered = []
-  for (let token = 20; token < 30; token++) ordered.push((await next(1, 'sample', token)).token)
-  assert.deepEqual(ordered, [20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+  for (let token = 20; token < 28; token++) ordered.push((await next(1, 'sample', token)).token)
+  assert.deepEqual(ordered, [20, 21, 22, 23, 24, 25, 26, 27])
 
   // An unknown output and a superseded session are both answered with silence
   // rather than with a wrong pixel.
