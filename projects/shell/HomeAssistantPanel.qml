@@ -118,79 +118,10 @@ Column {
     font.family: panel.theme.fontFamily
     font.pixelSize: panel.theme.textIcon
   }
-  // A device level is drawn as the Audio panel and the player draw theirs: a
-  // well carrying its own fill, named inside the track it sets. It stays a
-  // Slider so the keyboard and accessibility contract is Qt's.
-  component DeviceSlider: Slider {
-    id: level
-    required property string title
-    required property real current
-    property real minimum: 1
-    property real maximum: 100
-    property real step: 1
-    property string suffix: "%"
-    property real draft: current
-    signal committed(real value)
-    objectName: level.title
-    Accessible.name: level.title
-    implicitHeight: panel.theme.rowHeight
-    padding: 0
-    from: level.minimum
-    to: level.maximum
-    stepSize: level.step
-    live: true
-    opacity: level.enabled ? 1 : panel.theme.disabledOpacity
-    Binding on value {
-      value: level.current
-      when: !level.pressed
-      restoreMode: Binding.RestoreNone
-    }
-    onMoved: level.draft = level.value
-    onActiveFocusChanged: if (level.activeFocus) panel.reveal(level, homeViewport)
-    // Only user input commits. A state update never sends another request.
-    onPressedChanged: {
-      if (level.pressed) level.draft = level.value
-      else level.committed(level.draft)
-    }
-    Keys.onReleased: event => {
-      if (!event.isAutoRepeat && (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Home || event.key === Qt.Key_End)) level.committed(level.value)
-    }
-    background: Rectangle {
-      radius: panel.theme.radius
-      color: panel.theme.wellColor
-      border.width: 1
-      border.color: level.activeFocus ? panel.theme.accent : panel.theme.alpha(panel.theme.text, 0.05)
-      clip: true
-      antialiasing: true
-      Rectangle {
-        width: parent.width * level.visualPosition
-        height: parent.height
-        radius: parent.radius
-        color: panel.theme.fillColor
-        antialiasing: true
-      }
-      Text {
-        id: levelReadout
-        anchors { right: parent.right; rightMargin: panel.theme.spaceLarge; verticalCenter: parent.verticalCenter }
-        text: Math.round(level.value) + level.suffix
-        textFormat: Text.PlainText
-        color: panel.theme.subtext
-        font.family: panel.theme.fontFamily
-        font.pixelSize: panel.theme.textBody
-      }
-      Text {
-        anchors { left: parent.left; leftMargin: panel.theme.spaceLarge; right: levelReadout.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
-        text: level.title
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        color: panel.theme.text
-        font.family: panel.theme.fontFamily
-        font.pixelSize: panel.theme.textBody
-        font.weight: panel.theme.weightStrong
-      }
-    }
-    handle: Item {}
-    HoverHandler { cursorShape: level.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+  component DeviceSlider: Shared.DeviceSlider {
+    id: deviceLevel
+    theme: panel.theme
+    onActiveFocusChanged: if (activeFocus) panel.reveal(deviceLevel, homeViewport)
   }
 
   Shared.PanelHeader {
@@ -686,6 +617,7 @@ Column {
                         width: parent.width
                         title: "Color temperature"
                         suffix: " K"
+                        spectrum: panel.theme.temperatureSpectrum
                         step: 50
                         minimum: homeRow.payload.min_kelvin || 2000
                         maximum: homeRow.payload.max_kelvin || 6500

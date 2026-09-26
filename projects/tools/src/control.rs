@@ -1482,6 +1482,7 @@ pub fn run(arguments: &[String]) -> Result {
             };
             detached("cameraview", &["-d".into(), device])?;
         }
+        "litra-glow" => crate::litra::set(arg(1), arg(2), arg(3))?,
         "notification-action" => {
             let _: u32 = arg(1).parse().map_err(|_| "invalid notification id")?;
             if arg(2).is_empty() {

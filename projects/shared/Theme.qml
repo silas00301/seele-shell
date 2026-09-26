@@ -27,6 +27,10 @@ ShellRoot {
   property color iosOrange: "#ff9f0a"
   property color iosGreen: "#30d158"
   property color iosRed: "#ff453a"
+  // A light's colour temperature from warm (2700 K) through neutral to cool
+  // (6500 K), drawn along the track that sets it. It is the light's own
+  // colour, so like the privacy colours it stays outside the theme palette.
+  readonly property var temperatureSpectrum: ["#ff9a45", "#fff1e2", "#9fc2ff"]
   property string wallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || Palette.fallback.wallpaper
 
   // Shared shape and surface tokens. Hyprland rounds windows at 8px, so every
