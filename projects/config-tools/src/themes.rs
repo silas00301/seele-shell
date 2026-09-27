@@ -188,6 +188,8 @@ struct Catalog {
     wallpaper: String,
     themes: Vec<Theme>,
     commands: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    vesktop_dir: Option<PathBuf>,
 }
 fn valid_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
@@ -243,6 +245,9 @@ impl Catalog {
         }
         if self.commands.values().any(|p| !p.is_absolute()) {
             return Err("Theme tools must have absolute paths".into());
+        }
+        if self.vesktop_dir.as_ref().is_some_and(|p| !p.is_absolute()) {
+            return Err("Vesktop directory must be absolute".into());
         }
         Ok(())
     }
@@ -389,6 +394,110 @@ fn tool(catalog: &Catalog, name: &str, args: &[&str]) -> bool {
                     .contains("error"))
     })
 }
+const VESKTOP_BEGIN: &str = "/* Seele Themes begin */";
+const VESKTOP_END: &str = "/* Seele Themes end */";
+
+fn vesktop_css(theme: &Theme) -> String {
+    if theme.id.starts_with("catppuccin-") {
+        // The user's old Mocha theme was a fixed Vencord theme link. Load the
+        // matching official Catppuccin Discord theme through live QuickCSS.
+        return format!(
+            "@import url(\"https://catppuccin.github.io/discord/dist/{}.theme.css\");\n",
+            theme.id
+        );
+    }
+    let p = &theme.palette;
+    format!(
+        ".theme-dark, .theme-light, :root {{\n\
+         --background-primary: {base00} !important;\n\
+         --background-secondary: {base01} !important;\n\
+         --background-secondary-alt: {base02} !important;\n\
+         --background-tertiary: {base01} !important;\n\
+         --background-floating: {base02} !important;\n\
+         --background-base-lowest: {base00} !important;\n\
+         --background-base-lower: {base01} !important;\n\
+         --background-base-low: {base02} !important;\n\
+         --background-surface-high: {base03} !important;\n\
+         --background-surface-higher: {base03} !important;\n\
+         --text-normal: {base05} !important;\n\
+         --text-default: {base05} !important;\n\
+         --text-secondary: {base04} !important;\n\
+         --text-muted: {base03} !important;\n\
+         --interactive-normal: {base04} !important;\n\
+         --interactive-hover: {base05} !important;\n\
+         --interactive-active: {base07} !important;\n\
+         --brand-experiment: {base0D} !important;\n\
+         --button-filled-brand-background: {base0D} !important;\n\
+         }}\n",
+        base00 = p["base00"],
+        base01 = p["base01"],
+        base02 = p["base02"],
+        base03 = p["base03"],
+        base04 = p["base04"],
+        base05 = p["base05"],
+        base07 = p["base07"],
+        base0D = p["base0D"],
+    )
+}
+
+fn sync_vesktop(catalog: &Catalog, theme: &Theme) -> Result {
+    let Some(root) = &catalog.vesktop_dir else {
+        return Ok(());
+    };
+    let settings = root.join("settings/settings.json");
+    if settings.exists() {
+        let bytes = read_bounded(&settings, 1_048_576, false)?;
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        if let Some(links) = value.get_mut("themeLinks").and_then(|v| v.as_array_mut()) {
+            let original = links.len();
+            links.retain(|link| {
+                !link.as_str().is_some_and(|url| {
+                    url.starts_with("https://catppuccin.github.io/discord/dist/catppuccin-")
+                        && url.ends_with(".theme.css")
+                })
+            });
+            if links.len() != original {
+                atomic_write(&settings, &serde_json::to_vec_pretty(&value)?)?;
+            }
+        }
+    }
+    let quick_css = root.join("settings/quickCss.css");
+    fs::create_dir_all(quick_css.parent().ok_or("Invalid Vesktop path")?)?;
+    let existing = match fs::read_to_string(&quick_css) {
+        Ok(css) if css.len() <= 1_048_576 => css,
+        Ok(_) => return Err("Vesktop QuickCSS is too large".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let user_css = if let Some(start) = existing.find(VESKTOP_BEGIN) {
+        let end = existing[start..]
+            .find(VESKTOP_END)
+            .ok_or("Incomplete Seele Themes QuickCSS block")?
+            + start
+            + VESKTOP_END.len();
+        format!("{}{}", &existing[..start], &existing[end..])
+    } else {
+        existing
+    };
+    let content = format!(
+        "{}\n{}{}\n{}\n",
+        VESKTOP_BEGIN,
+        vesktop_css(theme),
+        VESKTOP_END,
+        user_css.trim_start_matches('\n')
+    );
+    // Vencord watches this file's inode and pushes edits into the renderer.
+    // Preserve the inode so a theme switch reaches an already-running Vesktop.
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&quick_css)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
 fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
     let mut pending = vec![];
     if env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
@@ -541,11 +650,14 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
         return Err(error.into());
     }
     let _ = generation.keep();
-    let pending = if live {
+    let mut pending = if live {
         reload(catalog, state, theme)
     } else {
         vec![]
     };
+    if sync_vesktop(catalog, theme).is_err() {
+        pending.push("Vesktop");
+    }
     if let Some(old) = previous {
         let _ = fs::remove_dir_all(state.join(old));
     }

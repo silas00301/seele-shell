@@ -81,8 +81,11 @@ and Home Manager points both light and dark preferences at that ID. GTK, Qt
 and Zen can need an application restart; Fish updates on its next prompt. The
 `serve` command binds loopback port 48725 and returns only the selected ID and
 Base16 palette to the packaged Spicetify extension. Its HTTP interface is
-read-only and carries no Spotify or account data. No wallpaper, font,
-application content, managed config, or user account data is modified.
+read-only and carries no Spotify or account data. When the catalog names a
+Vesktop directory, publication replaces the helper's marked block in QuickCSS
+in place so Vencord's file watcher repaints a running window. It removes only
+fixed Catppuccin Discord theme links and keeps other links and user CSS.
+No wallpaper, font, application content, or user account data is modified.
 
 Run `python3 projects/config-tools/tests/themes.py target/debug/seele-theme`
 after building this crate. The package runs the same fixture against the

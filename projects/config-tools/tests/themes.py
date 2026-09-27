@@ -39,7 +39,13 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     palette = {f"base{i:02X}": f"#{i * 4096:06x}" for i in range(16)}
     theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=palette, vicinaeTheme=str(launcher), assets=asset_files)
     light = dict(theme, id="flexoki-light", name="Flexoki Light", mode="light", palette=dict(palette, base00="#eff1f5", base0D="#7287fd"))
-    catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={})
+    vesktop = config / "vesktop"
+    vesktop_settings = vesktop / "settings"
+    vesktop_settings.mkdir(parents=True)
+    (vesktop_settings / "settings.json").write_text(json.dumps({"themeLinks": ["https://catppuccin.github.io/discord/dist/catppuccin-mocha.theme.css", "https://example.invalid/other.css"], "useQuickCss": True, "other": 7}))
+    quick_css = vesktop_settings / "quickCss.css"
+    quick_css.write_text(".user-rule { color: red; }\n")
+    catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={}, vesktopDir=str(vesktop))
     def save(value=catalog):
         catalog_file.write_text(json.dumps(value))
     def call(*args, ok=True, environment=env):
@@ -52,6 +58,11 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     call("set", "../../escape", ok=False)
     assert not state.exists()
     call("init")
+    assert "catppuccin-mocha.theme.css" in quick_css.read_text()
+    assert ".user-rule { color: red; }" in quick_css.read_text()
+    settings = json.loads((vesktop_settings / "settings.json").read_text())
+    assert settings == {"themeLinks": ["https://example.invalid/other.css"], "useQuickCss": True, "other": 7}
+    quick_css_inode = quick_css.stat().st_ino
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -79,6 +90,10 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
         assert first == {"id": theme["id"], "palette": theme["palette"]}
         call("set", light["id"])
         assert palette_response() == {"id": light["id"], "palette": light["palette"]}
+        assert quick_css.stat().st_ino == quick_css_inode, "Vencord watches the existing QuickCSS inode"
+        assert "--background-primary: #eff1f5" in quick_css.read_text()
+        assert "catppuccin-mocha.theme.css" not in quick_css.read_text()
+        assert ".user-rule { color: red; }" in quick_css.read_text()
     finally:
         server.terminate()
         server.wait(timeout=3)
