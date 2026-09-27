@@ -123,10 +123,14 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
         assert "--interactive-icon-hover: #575279" in css
         call("set", latte["id"])
         css = quick_css.read_text()
-        assert "catppuccin-latte.theme.css" in css
-        assert ".visual-refresh.theme-dark, .visual-refresh .theme-dark, .theme-dark {" in css
-        assert "--background-primary: #eff1f5" in css
+        assert "@import" not in css
+        assert ".visual-refresh:is(.theme-light,.theme-dark)" in css
+        assert "#303446" not in css
+        assert "--chat-background: #eff1f5" in css
         assert "--text-default: #4c4f69" in css
+        assert "--__header-bar-background: #e6e9ef" in css
+        assert "--background-surface-high: #eff1f5" in css
+        assert "--app-frame-background: #d6dbe4" in css
         call("set", light["id"])
     finally:
         server.terminate()

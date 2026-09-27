@@ -433,6 +433,11 @@ const VESKTOP_BEGIN: &str = "/* Seele Themes begin */";
 const VESKTOP_END: &str = "/* Seele Themes end */";
 
 fn vesktop_css(theme: &Theme) -> String {
+    if theme.id == "catppuccin-latte" {
+        // The upstream Latte import switches to Frappé when Discord retains
+        // its dark class. Ship its complete light branch for both classes.
+        return include_str!("catppuccin-latte.css").to_owned();
+    }
     let imported = if theme.id.starts_with("catppuccin-") {
         // The user's old Mocha theme was a fixed Vencord theme link. Load the
         // matching official Catppuccin Discord theme through live QuickCSS.
@@ -448,9 +453,7 @@ fn vesktop_css(theme: &Theme) -> String {
     // The official sheets choose a fallback flavor for Discord's opposite
     // appearance class. Project the selected palette only over that class;
     // leave the official matching branch untouched.
-    let selectors = if theme.id.starts_with("catppuccin-") && theme.mode == "light" {
-        ".visual-refresh.theme-dark, .visual-refresh .theme-dark, .theme-dark"
-    } else if theme.id.starts_with("catppuccin-") {
+    let selectors = if theme.id.starts_with("catppuccin-") {
         ".visual-refresh.theme-light, .visual-refresh .theme-light, .theme-light"
     } else {
         ".visual-refresh.theme-dark, .visual-refresh.theme-light, .visual-refresh .theme-dark, .visual-refresh .theme-light, .theme-dark, .theme-light, :root"
