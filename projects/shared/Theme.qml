@@ -273,6 +273,7 @@ ShellRoot {
   }
 
   FileView {
+    id: themeFile
     path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/seele-shell/theme.json"
     watchChanges: true
     printErrors: false
@@ -285,6 +286,15 @@ ShellRoot {
         console.warn("seele-shell/theme", error)
       }
     }
+  }
+
+  // The helper atomically replaces selection.json behind the Home Manager
+  // symlink. A watcher can remain attached to the old inode after that rename.
+  Timer {
+    interval: 1000
+    running: true
+    repeat: true
+    onTriggered: themeFile.reload()
   }
 
 }

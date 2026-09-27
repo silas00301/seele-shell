@@ -4,6 +4,7 @@ import concurrent.futures
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import subprocess
@@ -39,13 +40,23 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     palette = {f"base{i:02X}": f"#{i * 4096:06x}" for i in range(16)}
     theme = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=palette, vicinaeTheme=str(launcher), assets=asset_files)
     light = dict(theme, id="flexoki-light", name="Flexoki Light", mode="light", palette=dict(palette, base00="#eff1f5", base0D="#7287fd"))
+    latte = dict(theme, id="catppuccin-latte", name="Catppuccin Latte", mode="light", palette=dict(palette,
+        base00="#eff1f5", base01="#e6e9ef", base02="#dce0e8", base03="#9ca0b0",
+        base04="#6c6f85", base05="#4c4f69", base06="#4c4f69", base07="#4c4f69",
+        base0D="#8839ef"))
+    dawn = dict(theme, id="rose-pine-dawn", name="Rosé Pine Dawn", mode="light", palette=dict(palette,
+        base00="#faf4ed", base01="#fffaf3", base02="#f2e9de", base03="#9893a5",
+        base04="#797593", base05="#575279", base06="#575279", base07="#cecacd",
+        base0D="#907aa9"))
     vesktop = config / "vesktop"
     vesktop_settings = vesktop / "settings"
     vesktop_settings.mkdir(parents=True)
     (vesktop_settings / "settings.json").write_text(json.dumps({"themeLinks": ["https://catppuccin.github.io/discord/dist/catppuccin-mocha.theme.css", "https://example.invalid/other.css"], "useQuickCss": True, "other": 7}))
     quick_css = vesktop_settings / "quickCss.css"
     quick_css.write_text(".user-rule { color: red; }\n")
-    catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light], commands={}, vesktopDir=str(vesktop))
+    tmux_theme = root / "catppuccin_tmux.conf"
+    tmux_theme.write_text("set -g status-style bg=default\n")
+    catalog = dict(version=2, default=theme["id"], fontFamily="Maple Mono NF CN", wallpaper="/test/background.jpg", themes=[theme, light, dawn, latte], commands={}, vesktopDir=str(vesktop), tmuxTheme=str(tmux_theme))
     def save(value=catalog):
         catalog_file.write_text(json.dumps(value))
     def call(*args, ok=True, environment=env):
@@ -60,6 +71,9 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     call("init")
     assert "catppuccin-mocha.theme.css" in quick_css.read_text()
     assert ".user-rule { color: red; }" in quick_css.read_text()
+    mocha_css = quick_css.read_text()
+    assert ".visual-refresh.theme-light, .visual-refresh .theme-light, .theme-light {" in mocha_css
+    assert "--background-primary: #000000" in mocha_css
     settings = json.loads((vesktop_settings / "settings.json").read_text())
     assert settings == {"themeLinks": ["https://example.invalid/other.css"], "useQuickCss": True, "other": 7}
     quick_css_inode = quick_css.stat().st_ino
@@ -94,6 +108,26 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
         assert "--background-primary: #eff1f5" in quick_css.read_text()
         assert "catppuccin-mocha.theme.css" not in quick_css.read_text()
         assert ".user-rule { color: red; }" in quick_css.read_text()
+        call("set", dawn["id"])
+        css = quick_css.read_text()
+        assert "--text-strong: #575279" in css
+        assert "--input-text-default: #575279" in css
+        muted = re.search(r"--text-muted: (#[0-9a-f]{6})", css).group(1)
+        def luminance(color):
+            channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in channels]
+            return sum(x * weight for x, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+        assert (luminance("#faf4ed") + 0.05) / (luminance(muted) + 0.05) >= 4.5
+        assert f"--interactive-text-default: {muted}" in css
+        assert f"--input-placeholder-text-default: {muted}" in css
+        assert "--interactive-icon-hover: #575279" in css
+        call("set", latte["id"])
+        css = quick_css.read_text()
+        assert "catppuccin-latte.theme.css" in css
+        assert ".visual-refresh.theme-dark, .visual-refresh .theme-dark, .theme-dark {" in css
+        assert "--background-primary: #eff1f5" in css
+        assert "--text-default: #4c4f69" in css
+        call("set", light["id"])
     finally:
         server.terminate()
         server.wait(timeout=3)
@@ -112,11 +146,17 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     assert light["palette"]["base0D"][1:] in (state / "current/fish.fish").read_text()
     assert light["palette"]["base0D"][1:] in (state / "current/hyprland.lua").read_text()
     assert light["palette"]["base00"] in (state / "current/tmux.conf").read_text()
+    assert "set -g @thm_crust '#eff1f5'" in (state / "current/tmux.conf").read_text()
     assert light["palette"]["base00"] in (state / "current/gtk.css").read_text()
     assert unrelated.read_text() == "font-size = 13\n"
     assert (state / "current/vicinae.toml").read_bytes() == launcher.read_bytes()
-    for name, published in {"gtkCss": "gtk.css", "gtkSourceView": "gtksourceview.xml", "zenChrome": "zen-chrome.css", "zenContent": "zen-content.css", "spicetify": "spicetify.ini", "kvantumConfig": "kvantum.kvconfig", "kvantumSvg": "kvantum.svg", "kdeColors": "kde.colors"}.items():
+    for name, published in {"gtkCss": "gtk.css", "gtkSourceView": "gtksourceview.xml", "zenContent": "zen-content.css", "spicetify": "spicetify.ini", "kvantumConfig": "kvantum.kvconfig", "kvantumSvg": "kvantum.svg", "kdeColors": "kde.colors"}.items():
         assert (state / "current" / published).read_bytes() == Path(asset_files[name]).read_bytes()
+    zen_chrome = (state / "current/zen-chrome.css").read_text()
+    assert zen_chrome.startswith(Path(asset_files["zenChrome"]).read_text())
+    assert "--toolbarbutton-icon-fill: #005000" in zen_chrome
+    assert "--toolbox-textcolor: #005000" in zen_chrome
+    assert "#urlbar-input::placeholder" in zen_chrome
     assert "*background: #eff1f5" in (state / "current/Xresources").read_text()
     assert selection["palette"] == light["palette"] and selection["mode"] == "light" and selection["version"] == 2
     assert "vicinaeTheme" not in selection and "flavor" not in selection
@@ -200,6 +240,7 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     assert ["set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"] in calls
     assert ["vicinae://theme/set/seele-current"] in calls
     assert ["source-file", str(state / "current/tmux.conf")] in calls
+    assert ["source-file", str(tmux_theme)] in calls
     assert ["-merge", str(state / "current/Xresources")] in calls
     assert ["Seele-" + light["id"]] in calls
     assert call("current")["id"] == light["id"]

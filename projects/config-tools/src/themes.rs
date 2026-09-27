@@ -190,6 +190,8 @@ struct Catalog {
     commands: BTreeMap<String, PathBuf>,
     #[serde(default)]
     vesktop_dir: Option<PathBuf>,
+    #[serde(default)]
+    tmux_theme: Option<PathBuf>,
 }
 fn valid_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
@@ -248,6 +250,9 @@ impl Catalog {
         }
         if self.vesktop_dir.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err("Vesktop directory must be absolute".into());
+        }
+        if self.tmux_theme.as_ref().is_some_and(|p| !p.is_absolute()) {
+            return Err("Tmux theme must be absolute".into());
         }
         Ok(())
     }
@@ -346,6 +351,8 @@ fn files(t: &Theme, font_family: &str) -> BTreeMap<&'static str, String> {
     for (key, color) in [
         ("bg", &c.base),
         ("fg", &c.text),
+        ("mantle", &c.mantle),
+        ("crust", &c.crust),
         ("surface_0", &c.surface),
         ("surface_1", &c.surface),
         ("surface_2", &c.overlay.as_str()),
@@ -358,8 +365,36 @@ fn files(t: &Theme, font_family: &str) -> BTreeMap<&'static str, String> {
         ("blue", &c.terminal[4]),
         ("mauve", &c.terminal[5]),
         ("lavender", &c.accent),
+        ("rosewater", &c.subtext.as_str()),
+        ("flamingo", &c.subtext.as_str()),
+        ("pink", &c.terminal[5]),
+        ("maroon", &c.red),
+        ("peach", &c.terminal[9]),
+        ("teal", &c.terminal[6]),
+        ("sky", &c.terminal[6]),
+        ("sapphire", &c.terminal[4]),
+        ("subtext_0", &c.subtext.as_str()),
+        ("subtext_1", &c.subtext.as_str()),
     ] {
         tmux.push_str(&format!("set -g @thm_{key} '{color}'\n"));
+    }
+    // The plugin expands these into literal colors; clear them before
+    // sourcing it again so the rounded bar and modules follow this palette.
+    for key in [
+        "@catppuccin_window_left_separator",
+        "@catppuccin_window_right_separator",
+        "@catppuccin_window_current_left_separator",
+        "@catppuccin_window_current_middle_separator",
+        "@catppuccin_window_current_right_separator",
+        "@catppuccin_date_time_color",
+        "@catppuccin_status_date_time_icon_bg",
+        "@catppuccin_status_date_time_icon_fg",
+        "@catppuccin_status_date_time_text_fg",
+        "@catppuccin_status_session_icon_bg",
+        "@catppuccin_status_session_icon_fg",
+        "@catppuccin_status_session_text_fg",
+    ] {
+        tmux.push_str(&format!("set -ug {key}\n"));
     }
     files.insert("tmux.conf", tmux);
     files.insert("gtk.css", format!("@define-color theme_bg_color {};\n@define-color theme_fg_color {};\n@define-color theme_base_color {};\n@define-color theme_text_color {};\n@define-color theme_selected_bg_color {};\n@define-color theme_selected_fg_color {};\n@define-color accent_color {};\n@define-color accent_bg_color {};\n@define-color accent_fg_color {};\n@define-color window_bg_color {};\n@define-color window_fg_color {};\n@define-color view_bg_color {};\n@define-color view_fg_color {};\n@define-color headerbar_bg_color {};\n@define-color headerbar_fg_color {};\n@define-color card_bg_color {};\n@define-color popover_bg_color {};\n@define-color popover_fg_color {};\n", c.base, c.text, c.mantle, c.text, c.accent, c.base, c.accent, c.accent, c.base, c.base, c.text, c.mantle, c.text, c.mantle, c.text, c.surface, c.mantle, c.text));
@@ -398,17 +433,31 @@ const VESKTOP_BEGIN: &str = "/* Seele Themes begin */";
 const VESKTOP_END: &str = "/* Seele Themes end */";
 
 fn vesktop_css(theme: &Theme) -> String {
-    if theme.id.starts_with("catppuccin-") {
+    let imported = if theme.id.starts_with("catppuccin-") {
         // The user's old Mocha theme was a fixed Vencord theme link. Load the
         // matching official Catppuccin Discord theme through live QuickCSS.
-        return format!(
+        format!(
             "@import url(\"https://catppuccin.github.io/discord/dist/{}.theme.css\");\n",
             theme.id
-        );
-    }
+        )
+    } else {
+        String::new()
+    };
     let p = &theme.palette;
+    let c = theme.colors();
+    // The official sheets choose a fallback flavor for Discord's opposite
+    // appearance class. Project the selected palette only over that class;
+    // leave the official matching branch untouched.
+    let selectors = if theme.id.starts_with("catppuccin-") && theme.mode == "light" {
+        ".visual-refresh.theme-dark, .visual-refresh .theme-dark, .theme-dark"
+    } else if theme.id.starts_with("catppuccin-") {
+        ".visual-refresh.theme-light, .visual-refresh .theme-light, .theme-light"
+    } else {
+        ".visual-refresh.theme-dark, .visual-refresh.theme-light, .visual-refresh .theme-dark, .visual-refresh .theme-light, .theme-dark, .theme-light, :root"
+    };
     format!(
-        ".theme-dark, .theme-light, :root {{\n\
+        "{imported}{selectors} {{\n\
+         color-scheme: {mode};\n\
          --background-primary: {base00} !important;\n\
          --background-secondary: {base01} !important;\n\
          --background-secondary-alt: {base02} !important;\n\
@@ -419,13 +468,30 @@ fn vesktop_css(theme: &Theme) -> String {
          --background-base-low: {base02} !important;\n\
          --background-surface-high: {base03} !important;\n\
          --background-surface-higher: {base03} !important;\n\
-         --text-normal: {base05} !important;\n\
-         --text-default: {base05} !important;\n\
-         --text-secondary: {base04} !important;\n\
-         --text-muted: {base03} !important;\n\
-         --interactive-normal: {base04} !important;\n\
-         --interactive-hover: {base05} !important;\n\
-         --interactive-active: {base07} !important;\n\
+         --text-normal: {text} !important;\n\
+         --text-default: {text} !important;\n\
+         --text-strong: {text} !important;\n\
+         --text-secondary: {subtext} !important;\n\
+         --text-subtle: {subtext} !important;\n\
+         --text-muted: {subtext} !important;\n\
+         --chat-text-muted: {subtext} !important;\n\
+         --input-text-default: {text} !important;\n\
+         --input-placeholder-text-default: {subtext} !important;\n\
+         --channel-text-area-placeholder: {subtext} !important;\n\
+         --channels-default: {subtext} !important;\n\
+         --header-primary: {text} !important;\n\
+         --header-secondary: {subtext} !important;\n\
+         --interactive-normal: {subtext} !important;\n\
+         --interactive-hover: {text} !important;\n\
+         --interactive-active: {text} !important;\n\
+         --interactive-text-default: {subtext} !important;\n\
+         --interactive-text-hover: {text} !important;\n\
+         --interactive-text-active: {text} !important;\n\
+         --interactive-icon-default: {subtext} !important;\n\
+         --interactive-icon-hover: {text} !important;\n\
+         --interactive-icon-active: {text} !important;\n\
+         --control-secondary-text-default: {text} !important;\n\
+         --control-secondary-text-hover: {text} !important;\n\
          --brand-experiment: {base0D} !important;\n\
          --button-filled-brand-background: {base0D} !important;\n\
          }}\n",
@@ -433,9 +499,9 @@ fn vesktop_css(theme: &Theme) -> String {
         base01 = p["base01"],
         base02 = p["base02"],
         base03 = p["base03"],
-        base04 = p["base04"],
-        base05 = p["base05"],
-        base07 = p["base07"],
+        text = c.text,
+        subtext = c.subtext,
+        mode = theme.mode,
         base0D = p["base0D"],
     )
 }
@@ -521,17 +587,23 @@ fn reload(catalog: &Catalog, state: &Path, t: &Theme) -> Vec<&'static str> {
     {
         pending.push("X resources");
     }
-    if tool(catalog, "tmux", &["has-session"])
-        && !tool(
+    if tool(catalog, "tmux", &["has-session"]) {
+        let palette = state.join("current/tmux.conf");
+        let palette_ok = tool(
             catalog,
             "tmux",
-            &[
-                "source-file",
-                state.join("current/tmux.conf").to_str().unwrap_or(""),
-            ],
-        )
-    {
-        pending.push("tmux");
+            &["source-file", palette.to_str().unwrap_or("")],
+        );
+        let theme_ok = catalog.tmux_theme.as_ref().is_none_or(|theme| {
+            tool(
+                catalog,
+                "tmux",
+                &["source-file", theme.to_str().unwrap_or("")],
+            )
+        });
+        if !palette_ok || !theme_ok {
+            pending.push("tmux");
+        }
     }
     // Hyprland starts Ghostty directly, so its optional systemd desktop
     // service is usually inactive. SIGUSR2 is Ghostty's config reload signal.
@@ -612,7 +684,16 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
         if bytes.is_empty() || std::str::from_utf8(&bytes).is_err() {
             return Err("Invalid generated asset".into());
         }
-        atomic_write(&generation.path().join(destination), &bytes)?;
+        let mut content = bytes;
+        if name == "zenChrome" {
+            let c = theme.colors();
+            content.extend_from_slice(format!(
+                "\n:root {{ --toolbarbutton-icon-fill: {text} !important; --lwt-text-color: {text} !important; --toolbar-color: {text} !important; --tab-selected-textcolor: {text} !important; --toolbar-field-color: {text} !important; --toolbar-field-focus-color: {text} !important; --newtab-text-primary-color: {text} !important; }}\nzen-workspace {{ --toolbox-textcolor: {text} !important; }}\n#navigator-toolbox {{ color: {text} !important; }}\n#urlbar-input::placeholder {{ color: {subtext} !important; opacity: 1 !important; }}\n",
+                text = c.text,
+                subtext = c.subtext,
+            ).as_bytes());
+        }
+        atomic_write(&generation.path().join(destination), &content)?;
     }
     let mut selection = theme.display()?;
     selection["version"] = 2.into();
