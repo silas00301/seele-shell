@@ -71,6 +71,10 @@ fn update_profile(root: &File, name: &std::ffi::OsStr) -> io::Result<()> {
     }
     let mut value: Value =
         serde_json::from_slice(&bytes).map_err(|_| io::ErrorKind::InvalidData)?;
+    let system_color_scheme = value
+        .pointer("/browser/theme/color_scheme2")
+        .and_then(Value::as_i64)
+        == Some(0);
     let extensions = object(&mut value)?
         .entry("extensions")
         .or_insert(Value::Null);
@@ -83,6 +87,7 @@ fn update_profile(root: &File, name: &std::ffi::OsStr) -> io::Result<()> {
         && theme
             .get("pack")
             .is_none_or(|value| value.is_null() || value.as_str() == Some(""))
+        && system_color_scheme
         && before.mode() & 0o077 == 0
     {
         return Ok(());
@@ -90,6 +95,9 @@ fn update_profile(root: &File, name: &std::ffi::OsStr) -> io::Result<()> {
     theme.insert("system_theme".into(), Value::from(2));
     theme.insert("id".into(), Value::from(""));
     theme.remove("pack");
+    let browser = object(&mut value)?.entry("browser").or_insert(Value::Null);
+    let browser_theme = object(browser)?.entry("theme").or_insert(Value::Null);
+    object(browser_theme)?.insert("color_scheme2".into(), Value::from(0));
     let mut output = serde_json::to_vec(&value)?;
     output.push(b'\n');
     if running(root)
@@ -144,13 +152,17 @@ mod tests {
     #[test]
     fn changes_only_theme_fields_and_is_idempotent() {
         let root = tempfile::tempdir().unwrap();
-        let file=profile(root.path(),"Default",br#"{"extensions":{"theme":{"system_theme":1,"id":"old","pack":"old","other":true}},"keep":{"text":"\ud83e\udd80","enabled":false}}"#);
+        let file=profile(root.path(),"Default",br#"{"browser":{"theme":{"color_scheme2":2,"other":true}},"extensions":{"theme":{"system_theme":1,"id":"old","pack":"old","other":true}},"keep":{"text":"\ud83e\udd80","enabled":false}}"#);
         fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
         update(root.path()).unwrap();
         let value: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
         assert_eq!(
             value["extensions"]["theme"],
             serde_json::json!({"system_theme":2,"id":"","other":true})
+        );
+        assert_eq!(
+            value["browser"]["theme"],
+            serde_json::json!({"color_scheme2":0,"other":true})
         );
         assert_eq!(
             value["keep"],
