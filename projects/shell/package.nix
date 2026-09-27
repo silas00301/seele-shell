@@ -154,6 +154,11 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./SystemHealthPanel.qml} "$out/share/seele-shell/SystemHealthPanel.qml"
     substituteInPlace "$out/share/seele-shell/SystemHealthPanel.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubStore.qml} "$out/share/seele-shell/GitHubStore.qml"
+    install -m644 ${./CalendarStore.qml} "$out/share/seele-shell/CalendarStore.qml"
+    install -m644 ${./CalendarAgenda.qml} "$out/share/seele-shell/CalendarAgenda.qml"
+    substituteInPlace "$out/share/seele-shell/CalendarAgenda.qml" --replace-fail '"../shared"' '"shared"'
+    install -m644 ${./CalendarSettings.qml} "$out/share/seele-shell/CalendarSettings.qml"
+    substituteInPlace "$out/share/seele-shell/CalendarSettings.qml" --replace-fail '"../shared"' '"shared"'
     install -m644 ${./GitHubInboxStore.qml} "$out/share/seele-shell/GitHubInboxStore.qml"
     install -m644 ${./GitHubInboxPanel.qml} "$out/share/seele-shell/GitHubInboxPanel.qml"
     substituteInPlace "$out/share/seele-shell/GitHubInboxStore.qml" --replace-fail '../shared/ListModels.js' 'shared/ListModels.js'
@@ -260,6 +265,14 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix PATH : "$out/bin:${runtimePath}"
     makeWrapper ${integrations}/bin/seele-home-assistant "$out/bin/seele-home-assistant" \
       --prefix PATH : "${lib.makeBinPath [ pkgs.libsecret ]}"
+    makeWrapper ${integrations}/bin/seele-calendar "$out/bin/seele-calendar" \
+      --prefix PATH : "${
+        lib.makeBinPath [
+          pkgs.libsecret
+          pkgs.libnotify
+          pkgs.xdg-utils
+        ]
+      }"
     makeWrapper ${integrations}/bin/seele-github-inbox "$out/bin/seele-github-inbox" \
       --prefix PATH : "${
         lib.makeBinPath [
@@ -359,7 +372,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -411,7 +424,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-calendar seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -449,6 +462,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/health.js "$out/share/seele-shell/health.js"
     bash ${tests}/transfers-panel.sh "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shared" ${tests}/tst_transferspanel.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     bash ${tests}/github-inbox.sh "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/shared" ${tests}/tst_githubinbox.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    bash ${tests}/calendar-panel.sh "$out/share/seele-shell" "$out/share/seele-shell/shared" ${tests}/tst_calendarpanel.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/github.js "$out/share/seele-shell/github.js" "$out/share/seele-shell/GitHubStore.qml"
     node ${tests}/network-addresses.js "$out/share/seele-shell/network.js"
     node ${tests}/media.js "$out/share/seele-shell/media.js"

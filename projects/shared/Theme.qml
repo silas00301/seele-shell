@@ -250,8 +250,13 @@ ShellRoot {
   readonly property int themeSettingsWidth: 440
   readonly property int clockWidth: 480
   readonly property int clockRows: 7
-  // Keeps the UTC timeline and a few pinned zones visible without taking an output.
-  readonly property int meetingMaximumHeight: 570
+  readonly property int calendarMaximumHeight: 640
+  readonly property int calendarIndicatorWidth: 190
+  // Tall enough for the meeting readout, its suggestions, your calendar and
+  // four zones before the zone list scrolls, without taking an output.
+  readonly property int meetingMaximumHeight: 660
+  // An hour ribbon: a two-digit hour set in `textMicro` with room to breathe.
+  readonly property int meetingRibbonHeight: 18
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)

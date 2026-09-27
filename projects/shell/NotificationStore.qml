@@ -7,6 +7,7 @@ Item {
   id: store
 
   property bool restored: false
+  property bool calendarFocusQuiet: false
   property var controller: Notifications.createStore(
     function(view, dnd) {
       if (store.restored) retained.saved = store.controller.save()
@@ -47,7 +48,8 @@ Item {
     notification.tracked = true
     var id = notification.id
     var update = function() {
-      if (store.controller.find(id)) store.controller.receive(notification, Date.now() / 1000)
+      if (store.controller.find(id)) store.controller.receive(notification, Date.now() / 1000,
+        store.calendarFocusQuiet && notification.appName === "Seele Calendar")
     }
     var queue = function() { Qt.callLater(update) }
     // A replacement updates the existing object without emitting notification.
@@ -65,7 +67,8 @@ Item {
     notification.desktopEntryChanged.connect(queue)
     notification.closed.connect(function(reason) { store.controller.closed(id, Number(reason)) })
     store.controller.advance(Date.now() / 1000)
-    store.controller.receive(notification, Date.now() / 1000)
+    store.controller.receive(notification, Date.now() / 1000,
+      store.calendarFocusQuiet && notification.appName === "Seele Calendar")
   }
 
   Timer {
