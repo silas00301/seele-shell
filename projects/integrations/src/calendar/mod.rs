@@ -76,7 +76,7 @@ fn suspend_offset() -> Option<i64> {
 }
 
 enum Message {
-    Auth(u64, Result<(), &'static str>),
+    Auth(u64, Result<bool, &'static str>),
     Sync(u64, Result<Fetched, Failure>),
     Wallet(Result<(), &'static str>),
 }
@@ -243,7 +243,7 @@ impl Worker {
         let day = command["date"].as_str().and_then(date);
         match command["action"].as_str().unwrap_or("") {
             "setup" => self.setup(command["client_id"].as_str().unwrap_or("")),
-            "signin" => self.signin(),
+            "signin" => self.signin(command["client_secret"].as_str().unwrap_or("")),
             "cancel" => self.cancel_signin(),
             "select" => {
                 if let Some(id) = command["id"].as_str() {
@@ -274,10 +274,12 @@ impl Worker {
     }
 
     fn setup(&mut self, value: &str) {
+        if self.state.signed_in || self.auth.is_some() {
+            return;
+        }
         let id = value.trim();
         if id.is_empty() {
-            // A different client can only be chosen while signed out.
-            if !self.state.signed_in && self.auth.is_none() && !self.state.client_id.is_empty() {
+            if !self.state.client_id.is_empty() {
                 self.state.client_id.clear();
                 self.error.clear();
                 self.persist_or_report();
@@ -302,12 +304,16 @@ impl Worker {
         }
     }
 
-    fn signin(&mut self) {
+    fn signin(&mut self, secret: &str) {
         if self.state.client_id.is_empty() {
             self.error = "Enter a Google Desktop OAuth client ID first.".into();
             return;
         }
         if self.auth.is_some() {
+            return;
+        }
+        if secret.len() > 4096 || secret.chars().any(char::is_control) {
+            self.error = "That Google client secret is invalid.".into();
             return;
         }
         // A token stored now could be erased by the disconnect still clearing the wallet.
@@ -321,16 +327,36 @@ impl Worker {
         }
         self.auth_serial += 1;
         self.error.clear();
-        let (serial, messages, client_id) = (
+        let (serial, messages, client_id, saved_secret) = (
             self.auth_serial,
             self.messages.clone(),
             self.state.client_id.clone(),
+            self.state.has_client_secret,
         );
+        let provided = Zeroizing::new(secret.to_owned());
         self.auth = Some(tokio::spawn(async move {
-            let result = match signin(client_id).await {
-                Ok(refresh) => wallet("store", Some(&refresh)).await.map(|_| ()),
-                Err(error) => Err(error),
-            };
+            let result: Result<bool, &'static str> = async {
+                let secret = if !provided.is_empty() {
+                    provided
+                } else if saved_secret {
+                    Zeroizing::new(client_secret_wallet("lookup", None).await?)
+                } else {
+                    provided
+                };
+                if saved_secret && secret.is_empty() {
+                    return Err("Enter the Google client secret again.");
+                }
+                let refresh = signin(client_id, &secret).await?;
+                wallet("store", Some(&refresh)).await?;
+                if !secret.is_empty() {
+                    if let Err(error) = client_secret_wallet("store", Some(&secret)).await {
+                        let _ = wallet("clear", None).await;
+                        return Err(error);
+                    }
+                }
+                Ok(!secret.is_empty())
+            }
+            .await;
             let _ = messages.send(Message::Auth(serial, result));
         }));
     }
@@ -380,6 +406,7 @@ impl Worker {
         self.failures = 0;
         self.error.clear();
         self.tokens = Tokens::default();
+        let had_client_secret = self.state.has_client_secret;
         // The client ID is not a secret; keeping it makes signing in again one step.
         self.state = State {
             client_id: std::mem::take(&mut self.state.client_id),
@@ -389,10 +416,17 @@ impl Worker {
         self.persist_or_report();
         let messages = self.messages.clone();
         self.clearing = Some(tokio::spawn(async move {
-            let result = wallet("clear", None)
-                .await
-                .map(|_| ())
-                .map_err(|_| "The Google token could not be removed from the system wallet.");
+            let token = wallet("clear", None).await;
+            let secret = if had_client_secret {
+                client_secret_wallet("clear", None).await.map(|_| ())
+            } else {
+                Ok(())
+            };
+            let result = if token.is_ok() && secret.is_ok() {
+                Ok(())
+            } else {
+                Err("Google credentials could not be removed from the system wallet.")
+            };
             let _ = messages.send(Message::Wallet(result));
         }));
     }
@@ -437,6 +471,7 @@ impl Worker {
         let job = Job {
             serial: self.sync_serial,
             client_id: self.state.client_id.clone(),
+            has_client_secret: self.state.has_client_secret,
             account_id: self.state.account_id.clone(),
             calendars: self.state.selected.iter().cloned().collect(),
             windows: windows.into_iter().collect(),
@@ -501,8 +536,9 @@ impl Worker {
                 }
                 self.auth = None;
                 match result {
-                    Ok(()) => {
+                    Ok(has_client_secret) => {
                         self.state.signed_in = true;
+                        self.state.has_client_secret = has_client_secret;
                         self.expired = false;
                         self.online = None;
                         self.failures = 0;

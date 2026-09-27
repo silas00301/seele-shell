@@ -13,16 +13,27 @@ Testing, add the Google account as a test user. Seele requests only
 `https://www.googleapis.com/auth/calendar.readonly`; Google may require
 verification before broader publication.
 
-Open the calendar popup, select the gear, paste the Desktop client ID and
-select **Sign in with Google**. The worker opens the browser, waits up to five
-minutes on a temporary `127.0.0.1` listener for the callback carrying its
-random state, exchanges the code with PKCE, and stores the refresh token in the
-system Secret Service wallet. Other connections to that listener, such as a
-browser's speculative connection or favicon request, are answered and ignored.
-The first sign-in selects the account's primary calendar. The client ID and the
-choice of calendars are private user state, not secrets.
+Seele uses `http://127.0.0.1:<random-port>` as the redirect URI. It
+chooses the port when sign-in starts and listens only on that local address.
+There is no fixed redirect URI to enter in Google Cloud for a **Desktop app**
+client. A form asking for an authorized redirect URI belongs to a **Web
+application** client, which is the wrong client type for this flow.
 
-**Disconnect** removes the wallet entry and every account-specific cache entry
+Open the calendar popup, select the gear, and paste the Desktop client ID. On
+the sign-in step, enter the client secret from Google Cloud if your client has
+one, then select **Sign in with Google**. Google lists this secret as optional
+for Desktop clients using PKCE. The worker opens the browser, waits up to five
+minutes on a temporary `127.0.0.1` listener for the callback carrying its
+random state, exchanges the code with PKCE, and stores the refresh token and
+any client secret in separate system Secret Service wallet entries. It sends a
+saved client secret on later token refreshes. Other connections to that
+listener, such as a browser's speculative connection or favicon request, are
+answered and ignored.
+The first sign-in selects the account's primary calendar. The client ID and the
+choice of calendars and the presence of a client secret are private user state,
+not credentials. The client secret never enters that state file.
+
+**Disconnect** removes both wallet entries and every account-specific cache entry
 but keeps the client ID, so signing in again is one step; **Use another client
 ID** is offered while signed out. Signing in with a different account clears the
 old account's choices, cache and delivered-reminder keys. A locked wallet leaves
@@ -35,7 +46,7 @@ the calendar offline with a message that says so.
 | Command | Effect |
 | --- | --- |
 | `{"action":"setup","client_id":…}` | Saves a client ID; an empty one forgets it while signed out. |
-| `signin`, `cancel` | Starts or abandons the browser sign-in. |
+| `{"action":"signin","client_secret":…}`, `cancel` | Starts or abandons browser sign-in. The optional secret is accepted only in memory and saved to the wallet after Google grants access. An empty value reuses a saved secret. |
 | `{"action":"select","id":…,"selected":bool}` | Switches one calendar on or off, idempotently. |
 | `{"action":"day","date":"YYYY-MM-DD"}` | The day the agenda shows. |
 | `{"action":"browse","date":…}` | A month scrolled to, so its days get dots. |

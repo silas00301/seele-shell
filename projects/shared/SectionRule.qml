@@ -10,6 +10,10 @@ Item {
   property string label: ""
   property string detail: ""
   property color detailColor: sectionRule.theme.overlay
+  // Icon actions have more empty space around their ink than these small labels.
+  property real textBottomInset: 0
+  property real detailTrailingSpacing: sectionRule.theme.spaceMedium
+  property real trailingSpacing: sectionRule.theme.spaceMedium
   property bool collapsible: false
   property bool expanded: false
   default property alias trailing: sectionRuleTrailing.data
@@ -21,6 +25,7 @@ Item {
     theme: sectionRule.theme
     anchors.left: parent.left
     anchors.bottom: parent.bottom
+    anchors.bottomMargin: sectionRule.textBottomInset
     text: sectionRule.label
     textFormat: Text.PlainText
     color: sectionRule.collapsible && sectionRuleMouse.pressed
@@ -39,13 +44,14 @@ Item {
     anchors.right: sectionRuleChevron.left
     anchors.rightMargin: sectionRule.collapsible ? sectionRule.theme.spaceSmall : 0
     anchors.bottom: parent.bottom
-    spacing: sectionRule.theme.spaceMedium
+    spacing: sectionRule.trailingSpacing
   }
 
   Text {
     anchors.right: sectionRuleTrailing.left
-    anchors.rightMargin: sectionRuleTrailing.width > 0 ? sectionRule.theme.spaceMedium : 0
+    anchors.rightMargin: sectionRuleTrailing.width > 0 ? sectionRule.detailTrailingSpacing : 0
     anchors.bottom: parent.bottom
+    anchors.bottomMargin: sectionRule.textBottomInset
     text: sectionRule.detail
     textFormat: Text.PlainText
     color: sectionRule.detailColor

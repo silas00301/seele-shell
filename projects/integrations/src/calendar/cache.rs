@@ -32,6 +32,8 @@ impl Window {
 pub(super) struct State {
     pub(super) version: u32,
     pub(super) client_id: String,
+    /// Presence only; the value stays in Secret Service.
+    pub(super) has_client_secret: bool,
     pub(super) signed_in: bool,
     pub(super) account_id: String,
     pub(super) calendars: Vec<Value>,
@@ -112,6 +114,7 @@ pub(super) fn upgrade(state: State) -> State {
         version: STATE_VERSION,
         signed_in: state.signed_in || !state.account_id.is_empty(),
         client_id: state.client_id,
+        has_client_secret: state.has_client_secret,
         account_id: state.account_id,
         selected: state.selected,
         checked_at: state.checked_at,

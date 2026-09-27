@@ -398,6 +398,7 @@ fn job(calendars: &[&str], windows: &[(NaiveDate, NaiveDate)], full: bool) -> Jo
     Job {
         serial: 1,
         client_id: "id".into(),
+        has_client_secret: false,
         account_id: String::new(),
         calendars: calendars.iter().map(|v| (*v).into()).collect(),
         windows: windows.to_vec(),
@@ -825,6 +826,7 @@ async fn requests_never_leave_the_api_base() {
         http: &http,
         tokens: &tokens,
         client_id: "id",
+        has_client_secret: false,
         base: &base,
     };
     let foreign = Url::parse("http://127.0.0.1:9/calendar/v3/colors").unwrap();

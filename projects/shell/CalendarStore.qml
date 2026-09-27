@@ -40,7 +40,7 @@ Scope {
   }
   function setup(clientId) { send("setup", { client_id: clientId }) }
   function forgetClient() { send("setup", { client_id: "" }) }
-  function signin() { send("signin") }
+  function signin(clientSecret) { send("signin", { client_secret: clientSecret || "" }) }
   function cancelSignin() { send("cancel") }
   function refresh() { send("refresh") }
   function disconnect() { send("disconnect") }

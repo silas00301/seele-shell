@@ -299,13 +299,29 @@ fn subscriptions_bootstrap_reconnect_and_refresh_only_the_requested_source() {
     // Direct V4L2 previews do not necessarily wake PipeWire's Video/Source.
     // The shell leases their activity by owner so the privacy indicator and
     // camera-mode lights follow both the inline and detached previews.
-    writeln!(controller.0.stdin.as_mut().unwrap(), "camera-preview panel on").unwrap();
+    writeln!(
+        controller.0.stdin.as_mut().unwrap(),
+        "camera-preview panel on"
+    )
+    .unwrap();
     wait_for(&receiver, &mut state, |s| s["cameraActive"] == true);
-    writeln!(controller.0.stdin.as_mut().unwrap(), "camera-preview window on").unwrap();
-    writeln!(controller.0.stdin.as_mut().unwrap(), "camera-preview panel off").unwrap();
+    writeln!(
+        controller.0.stdin.as_mut().unwrap(),
+        "camera-preview window on"
+    )
+    .unwrap();
+    writeln!(
+        controller.0.stdin.as_mut().unwrap(),
+        "camera-preview panel off"
+    )
+    .unwrap();
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(state["cameraActive"], true);
-    writeln!(controller.0.stdin.as_mut().unwrap(), "camera-preview window off").unwrap();
+    writeln!(
+        controller.0.stdin.as_mut().unwrap(),
+        "camera-preview window off"
+    )
+    .unwrap();
     wait_for(&receiver, &mut state, |s| s["cameraActive"] == false);
     // Explicit audio acknowledgements are sent even when the value is equal.
     writeln!(controller.0.stdin.as_mut().unwrap(), "audio").unwrap();

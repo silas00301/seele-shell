@@ -30,7 +30,10 @@ FocusScope {
   readonly property color statusColor: status === "online" ? theme.green
     : status === "offline" || status === "expired" ? theme.yellow : theme.overlay
 
-  onVisibleChanged: if (!visible) confirmDisconnect = false
+  onVisibleChanged: if (!visible) {
+    confirmDisconnect = false
+    clientSecret.text = ""
+  }
   onConfirmDisconnectChanged: if (confirmDisconnect) disarm.restart()
   Timer { id: disarm; interval: 6000; onTriggered: settings.confirmDisconnect = false }
 
@@ -68,6 +71,9 @@ FocusScope {
 
       Explanation {
         text: "Seele reads Google Calendar through a Desktop OAuth client of your own. In Google Cloud, enable the Calendar API, create an OAuth client of type Desktop app, and paste its client ID here."
+      }
+      Explanation {
+        text: "Redirect URI: http://127.0.0.1:<port>. Seele chooses the port at sign-in. Desktop app clients do not need a redirect URI entered in Google Cloud. If Cloud asks for one, check the client type."
       }
       TextField {
         id: clientId
@@ -113,7 +119,7 @@ FocusScope {
       }
     }
 
-    // Step two: sign in with the saved client.
+    // Step two: sign in with the saved client and an optional Cloud client secret.
     Column {
       id: signinStep
       objectName: "calendarSignin"
@@ -124,16 +130,51 @@ FocusScope {
       Explanation {
         text: settings.signingIn
           ? "Finish signing in in your browser. This closes by itself after five minutes."
-          : "Signing in opens your browser. Seele asks Google for read-only access and keeps the token in your system wallet."
+          : "If Google gave your Desktop client a secret, enter it here. An empty field reuses a saved secret. Seele keeps credentials in the system wallet."
+      }
+      TextField {
+        id: clientSecret
+        objectName: "calendarClientSecret"
+        width: parent.width
+        implicitHeight: settings.theme.controlHeight
+        placeholderText: "Google OAuth client secret (optional)"
+        echoMode: TextInput.Password
+        enabled: !settings.signingIn
+        color: settings.theme.text
+        placeholderTextColor: settings.theme.overlay
+        selectionColor: settings.theme.selectedColor
+        selectedTextColor: settings.theme.text
+        font.family: settings.theme.fontFamily
+        font.pixelSize: settings.theme.textBody
+        leftPadding: settings.theme.cardPadding
+        rightPadding: settings.theme.cardPadding
+        selectByMouse: true
+        verticalAlignment: TextInput.AlignVCenter
+        Accessible.name: "Google OAuth client secret"
+        onAccepted: if (settings.store.ready && !settings.signingIn) {
+          settings.store.signin(text.trim())
+          text = ""
+        }
+        background: Rectangle {
+          color: settings.theme.wellColor
+          radius: settings.theme.radius
+          border.width: settings.theme.hairline
+          border.color: clientSecret.activeFocus ? settings.theme.accent : settings.theme.cardBorder
+          Behavior on border.color { ColorAnimation { duration: settings.theme.durationFast } }
+        }
       }
       Row {
         spacing: settings.theme.spaceSmall
         Shared.ActionButton {
+          objectName: "calendarSignIn"
           theme: settings.theme
           text: settings.signingIn ? "Waiting for Google…" : "Sign in with Google"
           selected: true
           enabled: settings.store.ready && !settings.signingIn
-          onClicked: settings.store.signin()
+          onClicked: {
+            settings.store.signin(clientSecret.text.trim())
+            clientSecret.text = ""
+          }
         }
         Shared.ActionButton {
           theme: settings.theme
@@ -145,7 +186,10 @@ FocusScope {
           theme: settings.theme
           visible: !settings.signingIn
           text: "Use another client ID"
-          onClicked: settings.store.forgetClient()
+          onClicked: {
+            clientSecret.text = ""
+            settings.store.forgetClient()
+          }
         }
       }
     }

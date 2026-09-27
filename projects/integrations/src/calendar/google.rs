@@ -12,18 +12,43 @@ pub(super) const MAX_PAGES: usize = 20;
 pub(super) const FETCH_CONCURRENCY: usize = 4;
 pub(super) const DESCRIPTION_LIMIT: usize = 4000;
 pub(super) const WALLET: [&str; 4] = ["application", "seele-google-calendar", "account", "primary"];
+pub(super) const SECRET_WALLET: [&str; 4] = [
+    "application",
+    "seele-google-calendar-client",
+    "account",
+    "primary",
+];
 // Partial responses keep payloads to the fields the worker projects. With
 // `maxAttendees=1` Google returns only the signed-in attendee, never the guest list.
 pub(super) const CALENDAR_FIELDS: &str = "nextPageToken,items(id,summary,summaryOverride,primary,backgroundColor,accessRole,timeZone,defaultReminders)";
 pub(super) const EVENT_FIELDS: &str = "nextPageToken,items(id,status,summary,start,end,location,description,htmlLink,hangoutLink,conferenceData(conferenceSolution(name),entryPoints(entryPointType,uri)),attendees(self,responseStatus),reminders,colorId,transparency,eventType)";
 
 pub(super) async fn wallet(action: &str, secret: Option<&str>) -> Result<String, &'static str> {
+    wallet_entry(action, secret, &WALLET).await
+}
+
+pub(super) async fn client_secret_wallet(
+    action: &str,
+    secret: Option<&str>,
+) -> Result<String, &'static str> {
+    wallet_entry(action, secret, &SECRET_WALLET).await
+}
+
+async fn wallet_entry(
+    action: &str,
+    secret: Option<&str>,
+    attributes: &[&str],
+) -> Result<String, &'static str> {
     let mut command = Command::new("secret-tool");
     command.arg(action);
     if action == "store" {
-        command.arg("--label=Seele Google Calendar");
+        command.arg(if attributes == SECRET_WALLET {
+            "--label=Seele Google Calendar client secret"
+        } else {
+            "--label=Seele Google Calendar"
+        });
     }
-    command.args(WALLET);
+    command.args(attributes);
     let bytes = crate::common::command(
         command,
         secret.unwrap_or("").as_bytes().to_vec(),
@@ -104,6 +129,7 @@ pub(super) async fn access_token(
     http: &reqwest::Client,
     tokens: &Tokens,
     client_id: &str,
+    has_client_secret: bool,
     renew: bool,
 ) -> Result<Zeroizing<String>, Failure> {
     // Holding the lock serialises concurrent fetches onto one exchange.
@@ -116,13 +142,29 @@ pub(super) async fn access_token(
     if refresh.is_empty() {
         return Err(Failure::Expired);
     }
+    let secret = if has_client_secret {
+        Zeroizing::new(
+            client_secret_wallet("lookup", None)
+                .await
+                .map_err(|_| Failure::Wallet)?,
+        )
+    } else {
+        Zeroizing::new(String::new())
+    };
+    if has_client_secret && secret.is_empty() {
+        return Err(Failure::Wallet);
+    }
+    let mut form = vec![
+        ("client_id", client_id),
+        ("refresh_token", refresh.as_str()),
+        ("grant_type", "refresh_token"),
+    ];
+    if !secret.is_empty() {
+        form.push(("client_secret", secret.as_str()));
+    }
     let response = http
         .post(TOKEN_ENDPOINT)
-        .form(&[
-            ("client_id", client_id),
-            ("refresh_token", refresh.as_str()),
-            ("grant_type", "refresh_token"),
-        ])
+        .form(&form)
         .send()
         .await
         .map_err(|_| Failure::Offline)?;
@@ -153,6 +195,7 @@ pub(super) struct Google<'a> {
     pub(super) http: &'a reqwest::Client,
     pub(super) tokens: &'a Tokens,
     pub(super) client_id: &'a str,
+    pub(super) has_client_secret: bool,
     pub(super) base: &'a Url,
 }
 
@@ -168,7 +211,14 @@ impl Google<'_> {
             return Err(Failure::Other("Invalid Google Calendar endpoint."));
         }
         for renew in [false, true] {
-            let token = access_token(self.http, self.tokens, self.client_id, renew).await?;
+            let token = access_token(
+                self.http,
+                self.tokens,
+                self.client_id,
+                self.has_client_secret,
+                renew,
+            )
+            .await?;
             let response = self
                 .http
                 .get(url.clone())
@@ -424,6 +474,7 @@ pub(super) fn normalize_time(endpoint: &mut Value, calendar_zone: &str) {
 pub(super) struct Job {
     pub(super) serial: u64,
     pub(super) client_id: String,
+    pub(super) has_client_secret: bool,
     pub(super) account_id: String,
     pub(super) calendars: Vec<String>,
     pub(super) windows: Vec<(NaiveDate, NaiveDate)>,
@@ -454,6 +505,7 @@ pub(super) async fn fetch(
         http: &http,
         tokens: &tokens,
         client_id: &job.client_id,
+        has_client_secret: job.has_client_secret,
         base: &job.base,
     };
     let calendars = google.calendars().await?;
@@ -560,7 +612,10 @@ pub(super) async fn request_path(stream: &mut TcpStream) -> Option<String> {
     (parts.next()? == "GET").then(|| parts.next().map(str::to_owned))?
 }
 
-pub(super) async fn signin(client_id: String) -> Result<Zeroizing<String>, &'static str> {
+pub(super) async fn signin(
+    client_id: String,
+    client_secret: &str,
+) -> Result<Zeroizing<String>, &'static str> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|_| "Local Google sign-in callback is unavailable.")?;
@@ -571,7 +626,7 @@ pub(super) async fn signin(client_id: String) -> Result<Zeroizing<String>, &'sta
     let verifier = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let nonce = Uuid::new_v4().to_string();
-    let redirect = format!("http://127.0.0.1:{port}/callback");
+    let redirect = format!("http://127.0.0.1:{port}");
     let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth")
         .map_err(|_| "Invalid sign-in endpoint.")?;
     url.query_pairs_mut()
@@ -621,7 +676,7 @@ pub(super) async fn signin(client_id: String) -> Result<Zeroizing<String>, &'sta
             .query_pairs()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();
-        if callback.path() != "/callback" || params.get("state") != Some(&nonce) {
+        if callback.path() != "/" || params.get("state") != Some(&nonce) {
             respond(
                 &mut stream,
                 "404 Not Found",
@@ -645,15 +700,19 @@ pub(super) async fn signin(client_id: String) -> Result<Zeroizing<String>, &'sta
         respond(&mut stream, "200 OK", SIGNED_IN_PAGE).await;
         break Zeroizing::new(code);
     };
+    let mut form = vec![
+        ("client_id", client_id.as_str()),
+        ("code", code.as_str()),
+        ("code_verifier", verifier.as_str()),
+        ("redirect_uri", redirect.as_str()),
+        ("grant_type", "authorization_code"),
+    ];
+    if !client_secret.is_empty() {
+        form.push(("client_secret", client_secret));
+    }
     let response = client()?
         .post(TOKEN_ENDPOINT)
-        .form(&[
-            ("client_id", client_id.as_str()),
-            ("code", code.as_str()),
-            ("code_verifier", verifier.as_str()),
-            ("redirect_uri", redirect.as_str()),
-            ("grant_type", "authorization_code"),
-        ])
+        .form(&form)
         .send()
         .await
         .map_err(|_| "Google sign-in exchange failed.")?;

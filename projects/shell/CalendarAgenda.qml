@@ -88,6 +88,9 @@ FocusScope {
       width: parent.width
       label: agenda.dayLabel
       detail: agenda.detail
+      textBottomInset: agenda.theme.spaceTight
+      detailTrailingSpacing: agenda.theme.spaceLarge
+      trailingSpacing: agenda.theme.spaceTight
       detailColor: agenda.offline || (agenda.status === "online" && agenda.account.stale) ? agenda.theme.yellow : agenda.theme.overlay
 
       Shared.GlyphButton {

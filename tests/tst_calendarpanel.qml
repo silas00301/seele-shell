@@ -34,7 +34,7 @@ Rectangle {
     function record(call) { calls = calls.concat([call]) }
     function setup(id) { record("setup:" + id) }
     function forgetClient() { record("forget") }
-    function signin() { record("signin") }
+    function signin(secret) { record(secret === "fixture-secret" ? "signin:secret" : "signin") }
     function cancelSignin() { record("cancel") }
     function refresh() { record("refresh") }
     function disconnect() { record("disconnect") }
@@ -173,6 +173,13 @@ Rectangle {
       status("signed-out")
       compare(child(settings, "calendarSignin").visible, true)
       compare(child(settings, "calendarSetup").visible, false)
+      var secret = child(settings, "calendarClientSecret")
+      compare(secret.echoMode, TextInput.Password)
+      secret.text = "fixture-secret"
+      waitForRendering(settings)
+      mouseClick(child(settings, "calendarSignIn"))
+      compare(store.calls, ["signin:secret"])
+      compare(secret.text, "")
     }
 
     function test_a_calendar_row_toggles_from_anywhere_on_it() {
