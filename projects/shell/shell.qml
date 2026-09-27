@@ -128,7 +128,8 @@ Shared.Theme {
   property var meetingSelection: ({})
   readonly property string calendarDay: Qt.formatDate(now, "yyyy-MM-dd")
   readonly property date calendarDate: new Date(calendarDay + "T12:00:00")
-  readonly property var calendarIndicator: calendarStore.indicator(now.getTime())
+  // The worker recomputes the bar's event on the minute; nothing here scans events.
+  readonly property var calendarIndicator: calendarStore.indicator
   property string calendarFocusId: ""
   property string calendarFocusDay: ""
   property bool calendarSettingsRequested: false
@@ -1936,7 +1937,7 @@ Shared.Theme {
       }
       routes.calendar = function(action, token) {
         calendarStore.healthToken = token
-        calendarStore.send("refresh")
+        calendarStore.retry()
       }
       integrationHealth.handlers=routes
       githubStore.refresh(false)
@@ -1993,10 +1994,8 @@ Shared.Theme {
   CalendarStore {
     id: calendarStore
     property int healthToken: 0
-    onHealthPublished: (state, success) => {
-      integrationHealth.publish("calendar", {state:state,summary:state === "healthy" ? "Connected" : state === "setup-required" ? "Sign in with Google" : "Offline calendar cache",lastSuccess:success,actions:["retry","settings"]})
-      if (healthToken) { integrationHealth.complete("calendar",healthToken,state === "healthy"); healthToken=0 }
-    }
+    onHealthPublished: (state, summary, success) => integrationHealth.publish("calendar", {state:state,summary:summary,lastSuccess:success,actions:["retry","settings"]})
+    onRetried: ok => { if (healthToken) { integrationHealth.complete("calendar",healthToken,ok); healthToken=0 } }
   }
   MicTestStore {
     id: micTest
@@ -5696,18 +5695,44 @@ Shared.Theme {
 
           BarItem {
             visible: root.calendarIndicator !== null
-            width: visible ? Math.min(root.calendarIndicatorWidth, eventBarLabel.implicitWidth + 14) : 0
+            width: visible ? Math.min(root.calendarIndicatorWidth, eventBarContent.implicitWidth + 14) : 0
             hovered: eventBarMouse.containsMouse
             active: root.panelHere("calendar", barWindow.modelData)
-            Text {
-              id: eventBarLabel
+            // The event's Google colour marks it; the words stay on theme text,
+            // so a pale calendar colour cannot make the title unreadable. Only
+            // the title elides, so the countdown is always the part that shows.
+            Row {
+              id: eventBarContent
               anchors.centerIn: parent
-              width: parent.width - root.spaceLarge
-              elide: Text.ElideRight
-              text: root.calendarIndicator ? (root.calendarIndicator.event.summary || "Event") + " · " + root.calendarIndicator.text + (root.calendarIndicator.extra ? " +" + root.calendarIndicator.extra : "") : ""
-              color: root.calendarIndicator ? calendarStore.eventColor(root.calendarIndicator.event) || root.accent : root.text
-              font.family: root.fontFamily
-              font.pixelSize: root.textLabel
+              spacing: 5
+              Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 6
+                height: 6
+                radius: 3
+                color: root.calendarIndicator && root.calendarIndicator.color || root.accent
+              }
+              Text {
+                id: eventBarTitle
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, root.calendarIndicatorWidth - 14 - 11 - eventBarWhen.implicitWidth)
+                text: root.calendarIndicator ? root.calendarIndicator.title : ""
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.text
+                font.family: root.fontFamily
+                font.pixelSize: root.textLabel
+              }
+              Text {
+                id: eventBarWhen
+                anchors.verticalCenter: parent.verticalCenter
+                readonly property var event: root.calendarIndicator
+                text: event ? event.label + (event.extra ? " +" + event.extra : "") : ""
+                color: event && event.label === "now" ? root.subtext : root.accent
+                font.family: root.fontFamily
+                font.pixelSize: root.textLabel
+                font.weight: root.weightMedium
+              }
             }
             MouseArea {
               id: eventBarMouse
@@ -5715,14 +5740,14 @@ Shared.Theme {
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onClicked: {
-                if (!root.calendarIndicator) return
-                var event = root.calendarIndicator.event
-                root.calendarFocusDay = Qt.formatDate(new Date(event.start.dateTime), "yyyy-MM-dd")
-                root.calendarFocusId = String(event.calendar_id) + ":" + String(event.id)
+                var event = root.calendarIndicator
+                if (!event) return
+                root.calendarFocusDay = event.day
+                root.calendarFocusId = event.key
                 if (root.controlPanel !== "calendar") root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent))
               }
             }
-            HoverTip { mouse: eventBarMouse; text: "Open calendar event" }
+            HoverTip { mouse: eventBarMouse; text: root.calendarIndicator ? root.calendarIndicator.detail : "" }
           }
 
           BarItem {
@@ -6591,14 +6616,26 @@ Shared.Theme {
       Connections {
         target: root
         function onCalendarFocusIdChanged() {
-          if (!calendarWindow.visible || !root.calendarFocusId) return
-          calendarWindow.selectedDate = root.calendarFocusDay
-          calendarAgenda.expandedId = root.calendarFocusId
-          var location = Time.moveCalendarDate(root.now, calendarWindow.agendaDay, 0)
-          if (location) calendarMonths.positionViewAtIndex(location.monthOffset + 60, ListView.Contain)
-          root.calendarFocusId = ""
-          root.calendarFocusDay = ""
+          if (calendarWindow.visible && root.calendarFocusId) calendarWindow.focusEvent()
         }
+      }
+
+      // The bar's event opens on its own day, unfolded.
+      function focusEvent() {
+        settingsOpen = false
+        if (!copyPending) {
+          selectedDate = root.calendarFocusDay && root.calendarFocusDay !== root.calendarDay ? root.calendarFocusDay : ""
+          copyStatus = ""
+        }
+        calendarAgenda.reveal(root.calendarFocusId)
+        showMonth(agendaDay)
+        root.calendarFocusId = ""
+        root.calendarFocusDay = ""
+      }
+
+      function showMonth(date) {
+        var location = Time.moveCalendarDate(root.now, date, 0)
+        calendarMonths.positionViewAtIndex(location ? location.monthOffset + 60 : 60, ListView.Beginning)
       }
 
       function copyCalendarDate(cell) {
@@ -6619,6 +6656,7 @@ Shared.Theme {
         if (!selection) return
         selectedDate = selection.date
         copyStatus = ""
+        calendarAgenda.expandedKey = ""
         calendarMonths.positionViewAtIndex(selection.monthOffset + 60, ListView.Contain)
       }
 
@@ -6666,19 +6704,18 @@ Shared.Theme {
       WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
       onVisibleChanged: if (visible) {
-        if (root.calendarSettingsRequested) settingsOpen = true
+        // The popup opens on the calendar unless Integration Health asked for settings.
+        settingsOpen = root.calendarSettingsRequested
         root.calendarSettingsRequested = false
-        if (!copyPending) {
-          selectedDate = root.calendarFocusDay || ""
+        calendarAgenda.expandedKey = ""
+        if (root.calendarFocusId) focusEvent()
+        else if (!copyPending) {
+          selectedDate = ""
           copyStatus = ""
         }
-        calendarAgenda.expandedId = root.calendarFocusId
-        root.calendarFocusDay = ""
-        root.calendarFocusId = ""
         calendarStore.forDay(agendaDay)
         Qt.callLater(function() {
-          var location = Time.moveCalendarDate(root.now, calendarWindow.agendaDay, 0)
-          calendarMonths.positionViewAtIndex(location ? location.monthOffset + 60 : 60, ListView.Beginning)
+          calendarWindow.showMonth(calendarWindow.agendaDay)
           calendarSurface.forceActiveFocus()
         })
       }
@@ -6688,7 +6725,13 @@ Shared.Theme {
         focus: true
         Keys.onPressed: event => {
           if (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ControlModifier)) return
-          if (event.key === Qt.Key_Escape) root.closeOverlays()
+          // Settings is a step inside the popup, so Escape steps back out of it first.
+          if (calendarWindow.settingsOpen) {
+            if (event.key !== Qt.Key_Escape) return
+            calendarWindow.settingsOpen = false
+            calendarSurface.forceActiveFocus()
+          }
+          else if (event.key === Qt.Key_Escape) root.closeOverlays()
           else if (event.key === Qt.Key_Left) calendarWindow.moveCalendarSelection(-1, false)
           else if (event.key === Qt.Key_Right) calendarWindow.moveCalendarSelection(1, false)
           else if (event.key === Qt.Key_Up) calendarWindow.moveCalendarSelection(-7, false)
@@ -6709,12 +6752,14 @@ Shared.Theme {
             id: calendarHeader
             width: parent.width
             glyph: "󰃭"
-            title: Qt.formatDate(root.now, "dddd")
-            detail: calendarWindow.copyStatus || (calendarWindow.selectedDate
-              ? calendarWindow.selectedDate + " · Enter to copy"
-              : Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now))
+            title: calendarWindow.settingsOpen ? "Google Calendar" : Qt.formatDate(root.now, "dddd")
+            detail: calendarWindow.settingsOpen ? "Account and calendars"
+              : calendarWindow.copyStatus || (calendarWindow.selectedDate
+                ? calendarWindow.selectedDate + " · Enter to copy"
+                : Qt.formatDate(root.now, "d MMMM yyyy") + " · week " + Time.isoWeek(root.now))
 
             Rectangle {
+              visible: !calendarWindow.settingsOpen
               width: 84
               height: root.controlHeight
               radius: root.radius
@@ -6732,40 +6777,53 @@ Shared.Theme {
                     calendarWindow.selectedDate = ""
                     calendarWindow.copyStatus = ""
                   }
+                  calendarAgenda.expandedKey = ""
                   calendarMonths.positionViewAtIndex(60, ListView.Beginning)
                 }
               }
             }
-          }
 
-          Row {
-            width: parent.width
-            spacing: root.spaceSmall
-            Shared.ActionButton {
+            Shared.GlyphButton {
               theme: root
-              text: calendarWindow.settingsOpen ? "Agenda" : "Calendar settings"
+              glyph: "󰒓"
+              text: calendarWindow.settingsOpen ? "Back to the calendar" : "Calendar settings"
               selected: calendarWindow.settingsOpen
               onClicked: calendarWindow.settingsOpen = !calendarWindow.settingsOpen
             }
-            Text { visible: calendarStore.stale; text: "Offline / stale"; color: root.yellow; font.family: root.fontFamily; font.pixelSize: root.textCaption }
           }
 
           CalendarSettings {
             id: calendarSettings
             visible: calendarWindow.settingsOpen
             width: parent.width
+            height: visible ? parent.height - calendarHeader.height - root.panelSpacing : 0
             theme: root
             store: calendarStore
+            popupHovered: calendarSurface.hovered
           }
 
           SeeleListView {
             id: calendarMonths
             width: parent.width
             visible: !calendarWindow.settingsOpen
-            // The list takes whatever the header and the gap under it leave,
-            // so a change to either cannot quietly clip the last week of a
-            // month or reserve a strip nothing draws in.
-            height: visible ? Math.max(root.rowHeight * 4 + root.spaceLarge, parent.height - calendarHeader.height - calendarAgenda.height - root.panelSpacing * 4 - root.textLabel) : 0
+            // Exactly one six-week month, so no month ever loses its last
+            // week, and the agenda under it takes everything that is left. A
+            // short output gives up month rows before the agenda's last two.
+            readonly property int monthHeight: root.chipHeight + root.spaceSmall + root.barItemHeight
+              + root.spaceSmall + 6 * root.controlHeight
+            height: visible ? Math.min(monthHeight, parent.height - calendarHeader.height
+              - root.panelSpacing * 2 - root.rowHeight * 2 - 32) : 0
+            // Months scrolled to are fetched too, so their days show dots
+            // before one is picked.
+            onContentYChanged: if (visible) calendarBrowse.restart()
+            Timer {
+              id: calendarBrowse
+              interval: 300
+              onTriggered: {
+                var at = calendarMonths.indexAt(calendarMonths.width / 2, calendarMonths.contentY + calendarMonths.height / 2)
+                if (at >= 0) calendarStore.browse(Qt.formatDate(Time.monthDate(root.calendarDate, at - 60), "yyyy-MM-15"))
+              }
+            }
             model: 121
             spacing: 8
             clip: true
@@ -6829,18 +6887,27 @@ Shared.Theme {
                       required property var modelData
                       readonly property string copyDate: Time.calendarCopyDate(modelData)
                       readonly property bool selected: copyDate !== "" && copyDate === calendarWindow.selectedDate
+                      // A lookup into the worker's per-day colours, not a scan of events.
+                      readonly property var marks: copyDate !== "" ? calendarStore.dots[copyDate] || null : null
                       width: monthGrid.width / 8
                       height: monthDelegate.cellHeight
+                      // The disc sits above the dots, so the number stays
+                      // centred in it with room for the dots beneath.
                       Rectangle {
-                        visible: !calendarCell.modelData.week && (calendarCell.modelData.today || calendarCell.selected)
-                        anchors.centerIn: parent
-                        width: root.chipHeight; height: width; radius: width / 2
-                        color: calendarCell.modelData.today ? root.accent : root.selectedColor
+                        id: calendarDisc
+                        visible: !calendarCell.modelData.week && calendarCell.copyDate !== ""
+                          && (calendarCell.modelData.today || calendarCell.selected || calendarDayMouse.containsMouse)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 2
+                        width: root.chipHeight - 4; height: width; radius: width / 2
+                        color: calendarCell.modelData.today ? root.accent
+                          : calendarCell.selected ? root.selectedColor : root.hoverColor
+                        border.width: calendarCell.selected && !calendarCell.modelData.today ? 1 : 0
+                        border.color: root.alpha(root.accent, 0.5)
                       }
                       Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        anchors.topMargin: 2
+                        anchors.verticalCenter: calendarDisc.verticalCenter
                         text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
                           : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
                         color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.crust : root.text
@@ -6848,19 +6915,27 @@ Shared.Theme {
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
                       }
+                      // One dot per calendar with events that day, in its
+                      // Google colour; a fourth and more become a count.
                       Row {
+                        visible: calendarCell.marks !== null
                         anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 2
+                        y: calendarDisc.y + calendarDisc.height + 2
+                        height: root.spaceTight
                         spacing: 2
-                        readonly property var marks: calendarStore.dots(calendarCell.copyDate)
                         Repeater {
-                          model: parent.marks.slice(0, 3)
-                          Rectangle { required property var modelData; width: root.spaceTight; height: width; radius: width / 2; color: modelData.color || root.accent }
+                          model: calendarCell.marks ? calendarCell.marks.colors : []
+                          Rectangle { required property var modelData; width: root.spaceTight; height: width; radius: width / 2; color: modelData || root.accent }
                         }
-                        Text { visible: parent.marks.length > 3; text: "+" + (parent.marks.length - 3); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textMicro }
+                        Text {
+                          visible: calendarCell.marks !== null && calendarCell.marks.more > 0
+                          anchors.verticalCenter: parent.verticalCenter
+                          text: calendarCell.marks ? "+" + calendarCell.marks.more : ""
+                          color: root.subtext
+                          font.family: root.fontFamily
+                          font.pixelSize: root.textMicro
+                        }
                       }
-                      HoverHandler { id: calendarDayHover; enabled: calendarCell.copyDate !== "" }
                       MouseArea {
                         id: calendarDayMouse
                         anchors.fill: parent
@@ -6870,10 +6945,15 @@ Shared.Theme {
                         onClicked: {
                           calendarWindow.selectedDate = calendarCell.copyDate
                           calendarWindow.copyStatus = ""
-                          calendarAgenda.expandedId = ""
+                          calendarAgenda.expandedKey = ""
                         }
+                        onDoubleClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
                       }
-                      HoverTip { mouse: calendarDayMouse; inOverlay: true; text: "Show " + calendarCell.copyDate + " · Enter to copy" }
+                      HoverTip {
+                        mouse: calendarDayMouse
+                        inOverlay: true
+                        text: calendarCell.copyDate ? Qt.formatDate(new Date(calendarCell.copyDate + "T12:00:00"), "dddd d MMMM") + " · double-click to copy" : ""
+                      }
                     }
                   }
                 }
@@ -6885,9 +6965,15 @@ Shared.Theme {
             id: calendarAgenda
             visible: !calendarWindow.settingsOpen
             width: parent.width
+            height: visible ? parent.height - calendarHeader.height - calendarMonths.height - root.panelSpacing * 2 : 0
             theme: root
             store: calendarStore
             day: calendarWindow.agendaDay
+            today: root.calendarDay
+            now: root.now.getTime()
+            popupHovered: calendarSurface.hovered
+            onSettingsRequested: calendarWindow.settingsOpen = true
+            onCopyRequested: calendarWindow.copyCalendarDate({ inMonth: true, date: calendarWindow.agendaDay })
           }
         }
       }
