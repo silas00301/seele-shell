@@ -8,6 +8,10 @@ function stackedRows(entries, expanded) { return Bridge.call("notifications.stac
 function localImage(source) { return Bridge.call("notifications.localImage",[source]) }
 function imageRoles(entry) { return Bridge.call("notifications.imageRoles",[entry]) }
 function bodyMarkup(body) { return Bridge.call("notifications.bodyMarkup",[body]) }
+// Each sender chooses its hints' D-Bus types, and Qt hands a nested variant or
+// a byte string to QML as an opaque wrapper the native boundary refuses along
+// with the whole notification. A stack tag crosses only as text or a number.
+function hintTag(value) { return typeof value === "string" || typeof value === "number" ? value : null }
 function fromNative(n, now) {
   var hints=n.hints || {}
   var entry=Bridge.call("notifications.fromNative",[{
@@ -15,7 +19,7 @@ function fromNative(n, now) {
     summary:n.summary,body:n.body,hasActionIcons:n.hasActionIcons,image:String(n.image || ""),
     urgency:Bridge.number(Number(n.urgency)),resident:n.resident,transient:n.transient,
     expireTimeout:Bridge.number(Number(n.expireTimeout)),hints:{value:Bridge.number(Number(hints.value)),
-      "x-dunst-stack-tag":hints["x-dunst-stack-tag"],"x-canonical-private-synchronous":hints["x-canonical-private-synchronous"]}
+      "x-dunst-stack-tag":hintTag(hints["x-dunst-stack-tag"]),"x-canonical-private-synchronous":hintTag(hints["x-canonical-private-synchronous"])}
   },now])
   // Preserve sender action insertion order and QObject identity outside JSON.
   // Qt serializes ordinary objects into QVariantMap. Null-prototype objects
