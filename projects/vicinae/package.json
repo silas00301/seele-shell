@@ -261,6 +261,21 @@
       "mode": "view"
     },
     {
+      "name": "presentation",
+      "title": "Seele Presentation Mode",
+      "description": "Hide toasts and personal bar details and keep the session awake, or end it",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "presentation",
+        "present",
+        "presenting",
+        "screen share",
+        "demo",
+        "privacy"
+      ]
+    },
+    {
       "name": "calculator",
       "title": "Seele Calculator",
       "description": "Open the private arithmetic and unit-conversion workbench",

@@ -20,6 +20,7 @@ Commands:
   color                     Freeze all screens and sample a colour
   quicklook <path>...       Preview highlighted files without opening them
   calculator                Toggle the private calculator workbench
+  presentation [on|off|toggle|status]  Hide toasts and personal bar details and stay awake
   color-lab                 Open the colour contrast and palette workbench
   control <panel>           Toggle a control panel
   bluetooth-pairing <token> Show the matching private Bluetooth request
@@ -108,6 +109,18 @@ pub fn run(arguments: &[String]) -> Result {
             call("previewFiles", &[paths.join("\n")])
         }
         "calculator" => call("toggleControl", &["calculator".into()]),
+        "presentation" => {
+            let action = rest.first().map_or("toggle", String::as_str);
+            if !matches!(action, "on" | "off" | "toggle" | "status") {
+                return Err("presentation takes on, off, toggle or status".into());
+            }
+            let response = ipc_output(&["presentation".into(), action.into()])?;
+            if response.trim() == "invalid" {
+                return Err("presentation action unavailable".into());
+            }
+            println!("{}", response.trim());
+            Ok(())
+        }
         "color-lab" => call("toggleControl", &["color-lab".into()]),
         "control" => call(
             "toggleControl",
