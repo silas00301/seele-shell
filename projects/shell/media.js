@@ -3,6 +3,19 @@
 // QObject properties and identity belong to Qt. Rust receives plain snapshots
 // and returns selected indexes; these adapters return the original live object.
 function metadata(player, key) { return player && player.metadata ? player.metadata[key] : null }
+// Metadata holds whatever each client put on the bus. The native boundary
+// refuses a whole call over one value it cannot inspect, and every selection
+// carries every player, so a nested variant, a byte string or an object-path
+// list from any one client would blank every media surface. Only text,
+// numbers and lists of text cross; anything else reads as absent.
+function text(value) { return typeof value === "string" ? value : null }
+function textList(value) {
+  if (typeof value === "string") return value
+  if (!value || typeof value !== "object" || typeof value.length !== "number") return null
+  var result = []
+  for (var i = 0; i < Math.min(value.length, 4096); i++) if (typeof value[i] === "string") result.push(value[i])
+  return result
+}
 function snapshot(player, kind) {
   if (!player) return null
   var result = {}
@@ -19,10 +32,10 @@ function snapshot(player, kind) {
     result.trackArtist = player.trackArtist
     result.trackAlbumArtist = player.trackAlbumArtist
     result.trackAlbum = player.trackAlbum
-    metadata["xesam:title"] = data["xesam:title"]
-    metadata["xesam:artist"] = data["xesam:artist"]
-    metadata["xesam:albumArtist"] = data["xesam:albumArtist"]
-    metadata["xesam:album"] = data["xesam:album"]
+    metadata["xesam:title"] = text(data["xesam:title"])
+    metadata["xesam:artist"] = textList(data["xesam:artist"])
+    metadata["xesam:albumArtist"] = textList(data["xesam:albumArtist"])
+    metadata["xesam:album"] = text(data["xesam:album"])
   }
   if (!kind || kind === "timing") {
     result.length = Bridge.number(player.length)
