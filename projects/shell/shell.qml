@@ -2077,6 +2077,13 @@ Shared.Theme {
       // `id` carries the minute count for a snooze, the way it carries the
       // notification for every other verb; the store validates the range.
       if (action === "snooze") return state.snooze(parseInt(id, 10), Date.now() / 1000) ? "ok" : "unavailable"
+      // `key` carries the minutes until the reminder, or "cancel".
+      if (action === "remind") {
+        var minutes = key === "cancel" ? 0 : Number(key)
+        if (key !== "cancel" && !(Number.isInteger(minutes) && minutes > 0)) return "unavailable"
+        var now = Date.now()
+        return state.remind(id, minutes > 0 ? Notifications.reminderDue(minutes, now) : 0, now / 1000) ? "ok" : "unavailable"
+      }
       return "unavailable"
     }
     function ping(): string { return "ok" }
@@ -3530,8 +3537,17 @@ Shared.Theme {
     property bool groupLead: false
     property int count: 1
     property int depth: 0
+    // The card is choosing when to remind: the preset chips stand in its
+    // button row until one is picked or the choice is put away.
+    property bool reminding: false
     signal toggled()
 
+    // A reminder brings back a notification that is still waiting, so it is
+    // offered in the panel, not on a toast that is about to leave or on history
+    // that has already been dealt with.
+    readonly property bool remindable: !notificationCard.popup && !notificationCard.history
+      && !notificationCard.stacked && !notificationCard.entry.transient
+    readonly property real remindAt: Number(notificationCard.entry.remind_at) || 0
     readonly property var appQuiet: Notifications.appQuiet(entry, root.systemData.notifications.quietApps || [])
     readonly property bool actionable: !notificationCard.stacked && !notificationCard.history && root.notificationActionable(entry)
     readonly property var offeredActions: notificationCard.history ? [] : Notifications.actions(entry)
@@ -3756,8 +3772,20 @@ Shared.Theme {
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             text: notificationCard.entry.urgency === 2 ? "Critical"
+              : notificationCard.entry.reminder ? "Reminder"
               : Notifications.permanent(notificationCard.entry) ? "Pinned" : "Ongoing"
-            tint: notificationCard.entry.urgency === 2 ? root.red : root.overlay
+            tint: notificationCard.entry.urgency === 2 ? root.red
+              : notificationCard.entry.reminder ? root.accent : root.overlay
+          }
+
+          // A reminder waiting to return says when, in the same place the
+          // card says how long it stays.
+          StatusChip {
+            visible: notificationCard.remindAt > 0
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            text: "󰀠 " + Notifications.reminderLabel(notificationCard.remindAt, root.now.getTime())
+            tint: root.accent
           }
 
           Text {
@@ -3914,6 +3942,7 @@ Shared.Theme {
           model: notificationCard.offeredActions
           delegate: NotificationButton {
             required property var modelData
+            visible: !notificationCard.reminding
             label: modelData.label
             controlAction: "notification-action"
             value: String(notificationCard.entry.id)
@@ -3922,12 +3951,38 @@ Shared.Theme {
           }
         }
         NotificationButton {
-          visible: !notificationCard.history && (notificationCard.entry.pinned || !Notifications.permanent(notificationCard.entry))
+          visible: !notificationCard.reminding && !notificationCard.history && (notificationCard.entry.pinned || !Notifications.permanent(notificationCard.entry))
           label: notificationCard.entry.pinned ? "Unpin" : "Keep visible"
           onClicked: notificationStore.controller.pin(notificationCard.entry.id)
         }
         NotificationButton {
-          visible: notificationCard.verificationCode !== ""
+          visible: notificationCard.remindable && !notificationCard.reminding
+          label: notificationCard.remindAt > 0 ? "Cancel reminder" : "Remind me"
+          onClicked: {
+            if (notificationCard.remindAt > 0) notificationStore.controller.remind(notificationCard.entry.id, 0, Date.now() / 1000)
+            else notificationCard.reminding = true
+          }
+        }
+        Repeater {
+          model: notificationCard.reminding ? Notifications.reminderChoices : []
+          delegate: NotificationButton {
+            required property var modelData
+            label: modelData.label
+            onClicked: {
+              var now = Date.now()
+              notificationCard.reminding = false
+              notificationStore.controller.remind(notificationCard.entry.id,
+                Notifications.reminderDue(modelData.minutes, now), now / 1000)
+            }
+          }
+        }
+        NotificationButton {
+          visible: notificationCard.reminding
+          label: "Cancel"
+          onClicked: notificationCard.reminding = false
+        }
+        NotificationButton {
+          visible: !notificationCard.reminding && notificationCard.verificationCode !== ""
           label: "Copy " + notificationCard.verificationCode
           controlAction: "copy-code"
           value: notificationCard.verificationCode

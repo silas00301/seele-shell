@@ -155,6 +155,39 @@ function harness() {
   h.store.group('desktop:org.chat',false);assert.equal(h.view.items.length,0);assert.equal(h.view.history.length,2);
   h.store.clear(true);assert.equal(h.view.history.length,0);
 }
+{
+  // Local times are Qt's: the morning preset is 09:00 tomorrow wherever the
+  // desktop is, and the label names the day only when it is not today.
+  const at = (y, m, d, h, min) => new Date(y, m, d, h, min).getTime();
+  const noon = at(2026, 8, 28, 12, 0);
+  assert.equal(notifications.reminderDue(15, noon), noon / 1000 + 900);
+  assert.equal(notifications.reminderDue(-1, noon), at(2026, 8, 29, 9, 0) / 1000);
+  assert.equal(notifications.reminderDue(-1, at(2026, 11, 31, 23, 30)), at(2027, 0, 1, 9, 0) / 1000, 'the morning crosses a year');
+  assert.equal(notifications.reminderLabel(at(2026, 8, 28, 14, 5) / 1000, noon), '14:05');
+  assert.equal(notifications.reminderLabel(at(2026, 8, 29, 9, 0) / 1000, noon), 'Tomorrow 09:00');
+  assert.equal(notifications.reminderLabel(at(2026, 9, 1, 9, 0) / 1000, noon), 'Thu 09:00');
+  assert.equal(notifications.reminderLabel(noon / 1000 - 60, noon), 'After quiet', 'a due reminder held by quiet says so');
+  assert.equal(notifications.reminderLabel(0, noon), '');
+  assert.deepEqual(Array.from(notifications.reminderChoices, c => c.label), ['15 min', '1 hour', '4 hours', 'Tomorrow 09:00']);
+
+  const h=harness(), n=h.make(1);
+  h.store.receive(n,1000);h.store.advance(1031);
+  assert.equal(h.view.popups.length,0);
+  assert.equal(h.store.remind(1,1000,1031),false,'a reminder must be ahead');
+  assert.equal(h.store.remind(1,1100,1031),true);
+  assert.equal(h.view.items[0].remind_at,1100);
+  h.store.advance(1100);
+  assert.equal(h.view.popups.length,1,'a due reminder toasts again');
+  assert.equal(h.view.popups[0].reminder,true);
+  assert.equal(h.arrivals,2);
+  h.store.advance(5000);
+  assert.equal(h.view.popups.length,1,'until it is hidden');
+  h.store.retire(1);
+  assert.equal(h.view.popups.length,0);assert.equal(h.view.items.length,1,'the notification stays waiting');
+  assert.equal(h.store.remind(1,5100,5000),true);assert.equal(h.store.remind(1,0,5000),true);
+  h.store.advance(5200);assert.equal(h.view.popups.length,0,'a cancelled reminder does not return');
+}
+console.log('notification reminders passed');
 console.log('notification stacks, lifecycle, urgency, transients, replacements, and actions passed');
 
 {

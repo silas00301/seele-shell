@@ -33,6 +33,31 @@ function popupDuration(entry) { return Bridge.call("notifications.popupDuration"
 // how much of it that is come from the same core the period itself lives in.
 function quietPeriod(dnd, until, minutes, now) { return Bridge.call("notifications.quietPeriod",[!!dnd,Bridge.number(until),Bridge.number(minutes),Bridge.number(now)]) }
 
+// A reminder is offered as a few lengths from now and one local morning. The
+// choice resolves to an absolute time only when it is made, so a card left open
+// cannot hand in a moment that has already passed; the policy checks the rest.
+var reminderChoices=[
+  {minutes:15,label:"15 min"},{minutes:60,label:"1 hour"},{minutes:240,label:"4 hours"},
+  {minutes:-1,label:"Tomorrow 09:00"}
+]
+function reminderDue(minutes, nowMs) {
+  if (minutes>0) return Math.floor(nowMs/1000)+minutes*60
+  var now=new Date(nowMs)
+  return new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,9,0,0).getTime()/1000
+}
+// When a pending reminder returns: the time alone today, the day in front of it
+// otherwise, and a plain statement once it has come due during a quiet period.
+function reminderLabel(at, nowMs) {
+  if (!(at>0)) return ""
+  if (at*1000<=nowMs) return "After quiet"
+  var when=new Date(at*1000), now=new Date(nowMs)
+  var time=("0"+when.getHours()).slice(-2)+":"+("0"+when.getMinutes()).slice(-2)
+  if (when.toDateString()===now.toDateString()) return time
+  var tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1)
+  if (when.toDateString()===tomorrow.toDateString()) return "Tomorrow "+time
+  return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][when.getDay()]+" "+time
+}
+
 // Qt owns live QObject handles and callback invocation. Rust owns all serializable
 // state, timing, quiet periods, replacement, pinning, history and grouping policy.
 function createStore(publish, arrived, now) {
@@ -69,6 +94,7 @@ function createStore(publish, arrived, now) {
   state.retire=function(id) { return apply("retire",[id]) }
   state.dismiss=function(id) { return apply("dismiss",[id]) }
   state.pin=function(id) { return apply("pin",[id]) }
+  state.remind=function(id,due,timestamp) { return apply("remind",[id,Bridge.number(due),Bridge.number(timestamp)]) }
   state.setAppQuiet=function(key,quiet) { return apply("setAppQuiet",[key,quiet]) }
   state.resumeApps=function() { return apply("resumeApps",[]) }
   state.setDnd=function(enabled) { return apply("setDnd",[enabled]) }
