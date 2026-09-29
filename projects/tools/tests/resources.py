@@ -29,6 +29,14 @@ with tempfile.TemporaryDirectory() as work:
         assert len(value['memoryHistory']) <= 60
         for row in value['rows']:
             assert set(row) == {'id','pid','name','state','threads','rss','virtualBytes','cpu'}
+        storage = value['storage']
+        assert storage['state'] in ('pending', 'current'), storage
+        assert len(storage['filesystems']) <= 32
+        assert len({fs['id'] for fs in storage['filesystems']}) == len(storage['filesystems'])
+        for fs in storage['filesystems']:
+            assert set(fs) == {'id','mount','source','fstype','total','used','available','readOnly'}
+            assert fs['mount'].startswith('/') and fs['source'].startswith('/dev/')
+            assert 0 <= fs['used'] <= fs['total'] and 0 <= fs['available'] <= fs['total']
         return value
     def request(value):
         worker.stdin.write(json.dumps(value).encode() + b'\n')
@@ -60,6 +68,16 @@ with tempfile.TemporaryDirectory() as work:
         for _ in range(4):
             value = request({'op':'sort','value':'cpu'})
         assert len(value['cpuHistory']) <= length + 1
+        # Storage samples on its own thread; every figure is statvfs's own.
+        until = time.monotonic() + 8
+        while value['storage']['state'] != 'current':
+            assert time.monotonic() < until, 'storage reading never arrived'
+            value = receive()
+        for fs in value['storage']['filesystems']:
+            stat = os.statvfs(fs['mount'])
+            unit = stat.f_frsize or stat.f_bsize
+            assert fs['total'] == stat.f_blocks * unit
+            assert fs['readOnly'] == bool(stat.f_flag & os.ST_RDONLY)
         worker.stdin.close()
         assert worker.wait(timeout=3) == 0
         assert not worker.stderr.read()

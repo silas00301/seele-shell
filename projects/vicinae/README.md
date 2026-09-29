@@ -251,7 +251,7 @@ EOF deadlines and cancellation. The native unit tests cover exact raw-byte
 preservation, recognized/encoded/duplicate keys, signing markers and invalid
 input. Both fixtures run in the package's existing check paths.
 
-The **Seele Resources** command opens the shell's live CPU and memory inspector,
-also listed under Seele Controls. Its search keywords include CPU, RAM,
-processes and performance. Readings exist only while the shell panel is open;
+The **Seele Resources** command opens the shell's live CPU, memory and storage
+inspector, also listed under Seele Controls. Its search keywords include CPU,
+RAM, disk, storage, processes and performance. Readings exist only while the shell panel is open;
 the launcher starts no separate monitor and offers no process termination action.

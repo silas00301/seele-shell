@@ -554,14 +554,32 @@ Generation-bound QML callbacks reject late data or exit from a discarded
 worker, and a disappeared selection stays explicit until the user chooses.
 The worker reads local kernel counters only and keeps nothing on disk.
 
-## CPU, memory and local processes
+## CPU, memory, storage and local processes
 
 `seele-resources` backs the Resources utility and `seele-shellctl resources`.
 A Loader creates one worker per open panel; closing destroys it, and captured
 session generations reject late output or exit signals after a rapid reopen.
-The worker reads only `/proc/stat`, `/proc/meminfo`, and each PID's `stat`.
+The worker reads only `/proc/stat`, `/proc/meminfo`, each PID's `stat`,
+`/proc/self/mountinfo` and `statvfs(3)` of the mount points it names.
 Names are kernel `comm` names, never command lines, environment or executable
 paths. Nothing is written, escalated, killed, or retained after the panel closes.
+
+Storage lists filesystems backed by a block device (`/dev/…`), one row per
+source device and filesystem type at its shortest mount point, so bind mounts,
+the read-only `/nix/store` view and btrfs subvolumes share their device's row.
+Pseudo and network filesystems never appear, nor do image formats that are full
+by construction (`squashfs`, `erofs`, `iso9660`, `udf`). Sizes are statvfs's
+own: used is `f_blocks - f_bfree`, available is `f_bavail`, so blocks reserved
+for root count as neither, and the meter shows used over used plus available as
+`df` does. It turns yellow at 85% and red at 95%, the thresholds of the
+Maintenance disk source. `ST_RDONLY` marks a read-only mount. The mount table is
+bounded to 1 MiB and 4,096 lines and at most 32 filesystems are published.
+Storage samples every five seconds on a thread of its own, so a filesystem that
+stalls inside `statvfs` leaves CPU, memory and processes updating; the group
+then reports `stale` once its reading is fifteen seconds old, `pending` before
+the first reading and `unavailable` when the mount table cannot be read. Mount
+points and sources lose control and direction characters and are otherwise
+shown as the kernel reports them.
 
 Sampling runs at most once a second, independently of query changes. The last
 60 readings live in memory. Missed wall-clock intervals insert bounded gaps and
@@ -578,7 +596,9 @@ is RSS pages multiplied by the kernel page size. RSS includes shared pages in
 each process and virtual size is an address-space size, not a memory charge.
 
 Version-1 newline JSON snapshots carry system readings, cadence and history
-capacity, bounded histories, rows, and an independently pinned selection.
+capacity, bounded histories, rows, an independently pinned selection, and
+`storage` (`state` plus `filesystems` with `id`, `mount`, `source`, `fstype`,
+`total`, `used`, `available` and `readOnly`).
 Requests are `query` (`text`, 128
 characters), `sort` (`value`: `cpu` or `memory`, descending), and `select` (`id`,
 `PID:starttime`; empty clears). Filtering and sorting run in Rust. Each scan
@@ -589,9 +609,12 @@ bounded to 4 KiB and EOF exits. The chart renderer is the shared
 `HistoryChart.qml`; QML owns bindings, focus, search debounce and rendering.
 
 Validation: `cargo test -p seele-tools --bin seele-resources` covers synthetic
-proc data, resets, PID reuse, disappearance, hotplug, bounds, sorting and gaps;
+proc data, resets, PID reuse, disappearance, hotplug, bounds, sorting and gaps,
+plus mount-table escapes, per-device selection, filters, a real `statvfs` and
+the storage states;
 `python3 projects/tools/tests/resources.py target/debug/seele-resources`
-exercises the real worker, privacy shape, cadence, projection and EOF cleanup.
+exercises the real worker, privacy shape, cadence, projection and EOF cleanup,
+and compares every published filesystem with Python's own `os.statvfs`.
 `tests/resources.sh` runs production panel/state and lifecycle fixtures in Qt,
 including keyboard search, sorting, stable selection, narrow rendering and
 late callbacks across close/reopen. Package checks run all three layers.
