@@ -373,6 +373,30 @@ data and Zint, with a development `magick`→`convert` shim and DejaVu Sans Mono
 That proves protocol/recognition behavior with synthetic fixtures; it does not
 prove Maple NF font rendering or compositor-level visual parity.
 
+## Low battery warnings
+
+The resident status monitor (`seele-control watch-status`) passes every battery
+list it publishes — system power supplies, OpenLogi devices and connected
+Bluetooth peripherals — through `battery_alert.rs`. A discharging device that
+reaches 15% raises one ordinary `Battery low` notification and one at 5%
+raises a critical `Battery almost empty`, which the shell keeps on screen until
+dismissed. Each crossing speaks once. A device re-arms only when it is seen
+charging or full, or climbs back to 25%, so a reading that wobbles around a
+threshold stays quiet; a device first seen already low warns once at its deepest
+level. Zero is treated as unknown, because the OpenLogi reading falls back to
+zero when it cannot parse a level, and names lose control and direction
+characters before they reach `notify-send` as arguments after `--`.
+
+What has been said is kept by `kind:name` in the private
+`$XDG_RUNTIME_DIR/seele-shell/battery-alerts.json` (mode 0600, at most 64
+devices, read through the runtime's private-file check). A shell reload
+therefore does not repeat a warning, and a reboot, which clears the runtime
+directory, starts fresh. No battery history is kept.
+
+Validation: `cargo test -p seele-tools --lib battery_alert` covers crossings,
+hysteresis, charging, a device that appears low, unknown readings, bounds,
+argument construction and reloading or rejecting the memory file.
+
 ## Bluetooth authorization
 
 Pairing notifications carry a random nonce; a bounded native reader retrieves

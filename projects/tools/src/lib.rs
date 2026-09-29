@@ -2,6 +2,7 @@
 mod agents;
 mod audio;
 mod audio_route;
+mod battery_alert;
 mod bluetooth;
 mod caffeinate;
 mod clean_link;

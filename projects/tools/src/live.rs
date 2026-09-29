@@ -406,6 +406,10 @@ pub(crate) fn run() -> Result {
         let _ = sender.send(Event::Closed);
     });
     let result = (|| -> Result {
+        let alerts = crate::command::runtime_home()
+            .join("seele-shell")
+            .join("battery-alerts.json");
+        let mut batteries = crate::battery_alert::Watch::load(&alerts);
         let mut previous = json!({});
         let mut stdout = seele_runtime::wire::nonblocking_stdout()?;
         while stop.load(Ordering::Relaxed) == 0 {
@@ -419,6 +423,17 @@ pub(crate) fn run() -> Result {
                 Event::Refresh(patch) => (patch, true),
                 Event::Closed => break,
             };
+            // Every battery list the shell draws also passes the low-battery
+            // policy, which speaks once per crossing and remembers it saying so.
+            if let Some(list) = patch.get("batteries").and_then(Value::as_array) {
+                let (warnings, changed) = batteries.observe(list);
+                if changed {
+                    let _ = batteries.save(&alerts);
+                }
+                for warning in warnings {
+                    let _ = crate::command::detached("notify-send", &warning.arguments());
+                }
+            }
             let delta = changed(&mut previous, patch.clone());
             if let Some(delta) = if force { Some(patch) } else { delta } {
                 let bytes = seele_runtime::wire::json_frame(&delta, 4 * 1024 * 1024)?;
