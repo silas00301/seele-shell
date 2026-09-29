@@ -339,6 +339,23 @@
       ]
     },
     {
+      "name": "sensors",
+      "title": "Seele Sensors",
+      "description": "View live temperatures, fan speeds and the limits their drivers report",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "sensors",
+        "temperature",
+        "thermal",
+        "fan",
+        "rpm",
+        "cpu",
+        "nvme",
+        "hwmon"
+      ]
+    },
+    {
       "name": "resources",
       "title": "Seele Resources",
       "description": "Inspect live CPU, memory and local processes",

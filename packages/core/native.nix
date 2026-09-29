@@ -56,6 +56,7 @@ let
   fixtures = {
     tools = ''
       python3 projects/tools/tests/network_activity.py "$out/bin/seele-network-activity"
+      python3 projects/tools/tests/sensors.py "$out/bin/seele-sensors"
       python3 projects/tools/tests/resources.py "$out/bin/seele-resources"
     '';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';

@@ -20,6 +20,7 @@ mod notes;
 mod nothing;
 mod pipewire;
 mod receiver;
+mod sensors;
 mod session;
 mod shellctl;
 mod vicinae;
@@ -45,6 +46,7 @@ pub enum Tool {
     Clock,
     NotesStore,
     NetworkActivity,
+    Sensors,
     NotesRun,
     YubikeyWatch,
     Lock,
@@ -76,6 +78,7 @@ const TOOLS: &[(&str, &str, Tool)] = &[
         "seele-network-activity",
         Tool::NetworkActivity,
     ),
+    ("sensors", "seele-sensors", Tool::Sensors),
     ("notes", "seele-notes-store", Tool::NotesStore),
     ("notes-run", "seele-notes-run", Tool::NotesRun),
     ("yubikey-watch", "seele-yubikey-watch", Tool::YubikeyWatch),
@@ -102,6 +105,7 @@ impl Tool {
             Self::ShellControl => shellctl::run(&arguments),
             Self::Clock => clock::run(&arguments),
             Self::NetworkActivity => network_activity::run(&arguments),
+            Self::Sensors => sensors::run(&arguments),
             Self::NotesStore => notes::run(&arguments),
             Self::NotesRun => launch::notes(&arguments),
             Self::YubikeyWatch => bluetooth::watch_yubikey(),

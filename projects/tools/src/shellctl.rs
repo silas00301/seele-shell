@@ -14,6 +14,7 @@ Commands:
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
   network-activity          Open live per-interface traffic
+  sensors                   Toggle live temperatures and fan speeds
   resources                 Toggle live CPU and memory inspector
   controls                  Toggle session controls
   uris                      Freeze all screens and pick a visible URI
@@ -91,6 +92,7 @@ pub fn run(arguments: &[String]) -> Result {
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
         "network-activity" => call("toggleControl", &["network-activity".into()]),
+        "sensors" => call("toggleControl", &["sensors".into()]),
         "resources" => call("toggleControl", &["resources".into()]),
         "controls" => call("toggleControls", &[]),
         "uris" => call("toggleUris", &[]),

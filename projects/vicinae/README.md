@@ -255,3 +255,8 @@ The **Seele Resources** command opens the shell's live CPU and memory inspector,
 also listed under Seele Controls. Its search keywords include CPU, RAM,
 processes and performance. Readings exist only while the shell panel is open;
 the launcher starts no separate monitor and offers no process termination action.
+
+The **Seele Sensors** command opens the shell's temperatures and fan speeds
+panel, also listed under Seele Controls. Its keywords include temperature,
+thermal, fan and hwmon. Like Resources, it reads nothing itself: the shell's
+worker samples only while that panel is open.

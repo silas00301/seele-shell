@@ -236,6 +236,9 @@ ShellRoot {
   readonly property int textWorkbenchEditorHeight: 240
   // A duplex chart and two rate columns retain their measure on this panel.
   readonly property int networkActivityWidth: 480
+  // A reading's label, its peak and limits, a state chip and its value share
+  // one line in the Sensors panel without eliding a typical driver label.
+  readonly property int sensorsWidth: 440
   // The calculator keeps its tape within one compact workbench.
   readonly property int calculatorWidth: 480
   readonly property int calculatorMaximumHeight: 620

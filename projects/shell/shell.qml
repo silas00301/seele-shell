@@ -333,8 +333,8 @@ Shared.Theme {
     if (panel === "clock") refreshClock()
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
-    // This panel owns local counters and needs no general device refresh.
-    if (panel === "network-activity") return
+    // These panels own local kernel readings and need no general device refresh.
+    if (panel === "network-activity" || panel === "sensors") return
     if (panel === "home-assistant") {
       homeAssistantStore.refresh()
       return
@@ -2041,6 +2041,10 @@ Shared.Theme {
   NetworkActivityStore {
     id: networkActivityStore
     panelOpen: root.controlPanel === "network-activity"
+  }
+  SensorsStore {
+    id: sensorsStore
+    panelOpen: root.controlPanel === "sensors"
   }
   ResourcesStore {
     id: resourcesStore
@@ -8895,6 +8899,53 @@ Shared.Theme {
     }
   }
 
+  // Temperatures and fans ------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: sensorsWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "sensors" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.sensorsWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: sensorsContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-sensors"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { sensorsPanel.forceActiveFocus() })
+      PanelSurface {
+        id: sensorsSurface
+        Column {
+          id: sensorsContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader {
+            id: sensorsHeader
+            width: parent.width
+            glyph: "󰔏"
+            title: "Sensors"
+            detail: sensorsStore.snapshot.summary || "Temperatures and fans on this machine"
+            detailColor: sensorsStore.snapshot.attention > 0 ? root.yellow : root.subtext
+          }
+          Shared.SeeleFlickable {
+            theme: root
+            width: parent.width
+            height: Math.min(sensorsPanel.implicitHeight, Math.max(root.controlHeight, modelData.height - root.barHeight - root.panelGap * 3 - root.panelMargin * 2 - sensorsHeader.height - root.panelSpacing))
+            contentHeight: sensorsPanel.implicitHeight
+            clip: true
+            SensorsPanel { id: sensorsPanel; theme: root; store: sensorsStore; width: parent.width }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: sensorsSurface.hovered }
+          }
+        }
+      }
+    }
+  }
+
   // Private text transforms ----------------------------------------------------
   Variants {
     model: Quickshell.screens
@@ -9038,7 +9089,21 @@ Shared.Theme {
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
           spacing: root.panelSpacing
           Keys.onEscapePressed: root.closeOverlays()
-          PanelHeader { width: parent.width; glyph: "󰍛"; title: "Resources"; detail: resourcesPanel.hint }
+          PanelHeader {
+            width: parent.width
+            glyph: "󰍛"
+            title: "Resources"
+            detail: resourcesPanel.hint
+            // Temperatures and fans are the same machine seen from its
+            // hardware, so they are one step away rather than one more tile.
+            Shared.ActionButton {
+              objectName: "openSensors"
+              theme: root
+              height: root.chipHeight
+              text: "Sensors  ↗"
+              onClicked: root.toggleControl("sensors", resourcesWindow.modelData.name, root.overlayAnchorX)
+            }
+          }
           ResourcesPanel { id: resourcesPanel; theme: root; store: resourcesStore; width: parent.width; maximumHeight: Math.min(root.resourcesMaximumHeight, resourcesWindow.modelData.height - root.barHeight - root.panelGap - root.panelMargin * 2 - root.panelHeaderHeight - root.panelSpacing - root.panelMargin) }
         }
       }
