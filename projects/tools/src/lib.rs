@@ -24,6 +24,7 @@ mod session;
 mod shellctl;
 mod vicinae;
 mod window_move;
+mod zoom;
 
 use std::{error::Error, path::Path, process::ExitCode};
 pub type Result<T = ()> = std::result::Result<T, Box<dyn Error + Send + Sync>>;

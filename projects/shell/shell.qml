@@ -136,6 +136,7 @@ Shared.Theme {
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
+  property var zoomOsd: ({ label: "1×", ratio: 0 })
   property bool headphonesOsdConnected: false
   property string headphonesOsdName: "Headphones"
   property string headphonesOsdKind: "headphones"
@@ -1450,6 +1451,24 @@ Shared.Theme {
     osdTimer.restart()
   }
 
+  // The level arrives measured and worded by the native helper, which read it
+  // back from Hyprland rather than remembering it. At 1x there is nothing to
+  // report, so an OSD still showing the zoom goes at once instead of lingering.
+  function showZoom(state) {
+    var shown = null
+    try { shown = JSON.parse(state) } catch (error) { return }
+    if (!shown || typeof shown.label !== "string" || typeof shown.ratio !== "number") return
+    if (!shown.zoomed) {
+      if (root.osdKind === "zoom" && root.osdOpen) {
+        osdTimer.stop()
+        root.osdOpen = false
+      }
+      return
+    }
+    root.zoomOsd = { label: shown.label, ratio: Math.max(0, Math.min(1, shown.ratio)) }
+    root.showTimedOsd("zoom")
+  }
+
   function handleYubikeyEvent(value) {
     var event = String(value || "").trim()
     if (!/^(GPG|U2F|MAC)_[01]$/.test(event)) return
@@ -2101,6 +2120,7 @@ Shared.Theme {
       if (muted !== "") root.patchSystemData({ microphoneMuted: muted === "muted" })
       root.showTimedOsd("microphone")
     }
+    function showZoom(state: string): void { root.showZoom(state) }
     function bluetoothPairingRequest(request: string): void { root.setBluetoothPairing(request) }
     function bluetoothPairingDismiss(): void { root.clearBluetoothPairing() }
     function close(): void { root.closeOverlays() }
@@ -11293,6 +11313,20 @@ Shared.Theme {
             ratio: root.audioFillRatio(levelOsd.level)
           }
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
+        }
+        // The zoom shares the level strip's shape. Its meter fills by octaves,
+        // so 2x, 4x and 8x divide it into thirds.
+        Row {
+          visible: root.osdKind === "zoom"
+          anchors.fill: parent; anchors.margins: 14; spacing: 12
+          Text { anchors.verticalCenter: parent.verticalCenter; text: "󰩣"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
+          MeterBar {
+            width: 205
+            height: 8
+            anchors.verticalCenter: parent.verticalCenter
+            ratio: root.zoomOsd.ratio
+          }
+          Text { anchors.verticalCenter: parent.verticalCenter; text: root.zoomOsd.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
         }
         Row {
           visible: root.osdKind === "airpods"

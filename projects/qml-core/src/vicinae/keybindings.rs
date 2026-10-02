@@ -33,6 +33,15 @@ fn modifiers(mask: u32) -> Vec<&'static str> {
         .filter_map(|(bit, name)| (mask & bit != 0).then_some(name))
         .collect()
 }
+/// Wheel binds are listed but cannot be typed: there is no key to send.
+fn typeable(key: &str) -> bool {
+    !(key.starts_with("mouse:")
+        || key.starts_with("code:")
+        || matches!(
+            key,
+            "mouse_up" | "mouse_down" | "mouse_left" | "mouse_right"
+        ))
+}
 fn label<'a>(table: &str, value: &'a str) -> &'a str {
     LABELS[table][value].as_str().unwrap_or(value)
 }
@@ -42,7 +51,7 @@ pub fn input(row: &Value) -> Result<Value, String> {
     }
     let key = string(row.get("key"), 256)?;
     let modifiers = modifiers(mask(row.get("modmask"))?);
-    if key.is_empty() || key.starts_with("mouse:") || key.starts_with("code:") {
+    if key.is_empty() || !typeable(key) {
         return Ok(json!([]));
     }
     if key.chars().any(char::is_control) {
@@ -110,7 +119,7 @@ pub fn snapshot(value: &Value) -> Result<Value, String> {
         };
         let index = result.len();
         result.push(json!({"id":format!("{shortcut}-{action}-{index}"),"shortcut":shortcut,"action":action,"description":description,"key":key,"modmask":mask,
-            "modifiers":modifiers(mask),"inputAllowed":!key.starts_with("code:")}));
+            "modifiers":modifiers(mask),"inputAllowed":typeable(key)}));
     }
     Ok(json!(result))
 }
@@ -140,5 +149,23 @@ mod tests {
             assert!(input(&value).is_err());
         }
         assert!(snapshot(&json!(vec![json!({}); MAX_ROWS + 1])).is_err());
+    }
+    #[test]
+    fn wheel_binds_are_listed_by_name_but_never_typed() {
+        let rows = snapshot(&json!([
+            {"key":"mouse_up","modmask":64,"description":"Zoom in around the pointer"},
+            {"key":"minus","modmask":64,"description":"__lua 7"},
+        ]))
+        .unwrap();
+        assert_eq!(rows[0]["shortcut"], "Super + Scroll Up");
+        assert_eq!(rows[0]["inputAllowed"], false);
+        assert_eq!(input(&rows[0]).unwrap(), json!([]));
+        assert_eq!(rows[1]["shortcut"], "Super + Minus");
+        assert_eq!(rows[1]["description"], "Zoom out around the pointer");
+        assert_eq!(rows[1]["inputAllowed"], true);
+        assert_eq!(
+            input(&rows[1]).unwrap(),
+            json!(["-M", "logo", "-k", "minus", "-m", "logo"])
+        );
     }
 }

@@ -88,6 +88,31 @@ native choices and forwards the selected identities. See the
 [Vicinae contract](../vicinae/README.md); `tests/vicinae.rs` exercises the actual
 binary against synthetic compositor commands, never the live desktop.
 
+## Screen zoom
+
+`seele-shellctl zoom <in|out|reset> [--fine]` zooms the output under the pointer
+through Hyprland's own `cursor:zoom_factor`, which magnifies the whole frame
+around the pointer. The option is the only record of the level: every request
+reads it back with `hyprctl getoption cursor:zoom_factor -j`, so nothing can
+drift from what the compositor draws, and writes it with one `hl.config` call
+through `hyprctl eval`, because `hyprctl keyword` is refused under a Lua
+configuration. Levels lie on a grid of quarter octaves between 1x and 8x: a
+key moves half an octave, a `--fine` scroll notch a quarter, so both meet at
+2x, 4x and 8x and stepping down always ends on exactly `1`, which Hyprland
+draws as the unzoomed frame. A level left off the grid steps to the next grid
+point in the requested direction. A private advisory lock in
+`$XDG_RUNTIME_DIR` serializes read, step and write so overlapping notches each
+count; it holds no level. Hyprland starts every session, and every
+configuration reload, at its default of 1.
+
+`zoom.rs` also words the OSD: the label, the octave-filled meter ratio and
+whether anything is zoomed at all. The shell's `showZoom` draws it in the level
+strip and withdraws it at 1x. The OSD is a layer surface on the output being
+magnified, so it is magnified with everything else and only on screen while the
+view includes the top of the output. `tests/screen-zoom.sh` drives the raw
+helper against a fake `hyprctl` that keeps the option in a file, and
+`tests/screen-zoom.js` runs the shell's own `showZoom` callback.
+
 ## Caffeinate
 
 `seele-caffeinate serve|request|watch` is the resident session service behind the
@@ -360,7 +385,7 @@ warnings`. `tests/ports.rs` exercises the port inspector against a synthetic
 `/proc` in a private temporary directory, recording the system manager, signal
 and authentication calls instead of performing them; the panel's own store is
 covered by `tests/ports.js` at the workspace root. Focused external fixtures are
-`tests/mic-sync.sh`, `tests/mic-test.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
+`tests/mic-sync.sh`, `tests/mic-test.sh`, `tests/screen-zoom.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
 `tests/agent-state.sh`, `tests/notes.py`, `tests/uri-picker.sh` and
 `tests/quicklook.sh`, which drives the raw Quick Look worker against synthetic
 files and fake Poppler tools. They use isolated fake desktop programs,
