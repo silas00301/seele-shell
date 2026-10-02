@@ -37,6 +37,7 @@ mod cache;
 mod content;
 mod google;
 mod reminders;
+mod scratchpad;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -45,6 +46,7 @@ use cache::*;
 use content::*;
 use google::*;
 use reminders::*;
+use scratchpad::*;
 use view::*;
 
 const REFRESH_EVERY: i64 = 300;
@@ -79,6 +81,7 @@ enum Message {
     Auth(u64, Result<bool, &'static str>),
     Sync(u64, Result<Fetched, Failure>),
     Wallet(Result<(), &'static str>),
+    Scratchpad(std::result::Result<Ledger, &'static str>),
 }
 
 /// Sends each section only when its content changed since the last line.
@@ -129,6 +132,12 @@ struct Worker {
     index_rev: u64,
     dots_rev: u64,
     publisher: Publisher,
+    scratch_dir: PathBuf,
+    scratch: Ledger,
+    scratch_loaded: bool,
+    scratch_busy: bool,
+    /// Tests set this so a developer config cannot open a note during a fixture.
+    scratch_off: bool,
 }
 
 impl Worker {
@@ -163,6 +172,11 @@ impl Worker {
             index_rev: 0,
             dots_rev: 0,
             publisher: Publisher::default(),
+            scratch_dir: scratchpad::directory(),
+            scratch: Ledger::default(),
+            scratch_loaded: false,
+            scratch_busy: false,
+            scratch_off: false,
         }
     }
 
@@ -557,6 +571,13 @@ impl Worker {
                     self.error = error.into();
                 }
             }
+            Message::Scratchpad(result) => {
+                self.scratch_busy = false;
+                if let Ok(ledger) = result {
+                    self.scratch = ledger;
+                    self.scratch_loaded = true;
+                }
+            }
         }
         self.pump(now);
     }
@@ -565,6 +586,7 @@ impl Worker {
         let now = Utc::now().timestamp();
         self.today = Local::now().date_naive();
         self.deliver_reminders(now, woke);
+        self.consider_scratchpad(now);
         if woke {
             // The network is probably back; do not wait out an offline backoff.
             self.failures = 0;
@@ -614,6 +636,46 @@ impl Worker {
                 self.error = "Calendar reminders could not be saved.".into();
             }
         }
+    }
+
+    fn consider_scratchpad(&mut self, now: i64) {
+        if self.scratch_off || self.scratch_busy {
+            return;
+        }
+        let config = load_config();
+        if !config.enabled() {
+            return;
+        }
+        if !self.scratch_loaded {
+            self.scratch = load_ledger(&self.scratch_dir);
+            self.scratch_loaded = true;
+        }
+        let (park, open) = plan(&self.state, &self.scratch, &config, now);
+        if park.is_none() && open.is_none() {
+            return;
+        }
+        self.scratch_busy = true;
+        let job = ScratchpadJob {
+            http: self.http.clone(),
+            tokens: self.tokens.clone(),
+            client_id: self.state.client_id.clone(),
+            has_client_secret: self.state.has_client_secret,
+            base: self.base.clone(),
+            signed_in: self.state.signed_in,
+            dir: self.scratch_dir.clone(),
+            ledger: self.scratch.clone(),
+            park,
+            open,
+            opener: config.opener,
+            now,
+        };
+        let sender = self.messages.clone();
+        tokio::spawn(async move {
+            let result = tokio::time::timeout(Duration::from_secs(20), scratchpad_pass(job))
+                .await
+                .unwrap_or(Err("Meeting scratchpad timed out."));
+            let _ = sender.send(Message::Scratchpad(result));
+        });
     }
 
     fn emit(&mut self) {
@@ -718,6 +780,88 @@ impl Worker {
             ));
         }
         self.publisher.changes(sections)
+    }
+}
+
+struct ScratchpadJob {
+    http: Option<reqwest::Client>,
+    tokens: Tokens,
+    client_id: String,
+    has_client_secret: bool,
+    base: Option<Url>,
+    signed_in: bool,
+    dir: PathBuf,
+    ledger: Ledger,
+    park: Option<Step>,
+    open: Option<Step>,
+    opener: String,
+    now: i64,
+}
+
+async fn scratchpad_pass(job: ScratchpadJob) -> Result<Ledger, &'static str> {
+    let ScratchpadJob {
+        http,
+        tokens,
+        client_id,
+        has_client_secret,
+        base,
+        signed_in,
+        dir,
+        mut ledger,
+        park,
+        open,
+        opener,
+        now,
+    } = job;
+    for step in [park, open].into_iter().flatten() {
+        let known = ledger.has(&step.key);
+        let guests = if known {
+            Guests::Listed(Vec::new())
+        } else {
+            meeting_guests(
+                http.as_ref(),
+                &tokens,
+                &client_id,
+                has_client_secret,
+                base.as_ref(),
+                signed_in,
+                &step,
+            )
+            .await
+        };
+        ledger = commit(&dir, ledger, &step, &guests, now, &opener)?;
+    }
+    Ok(ledger)
+}
+
+async fn meeting_guests(
+    http: Option<&reqwest::Client>,
+    tokens: &Tokens,
+    client_id: &str,
+    has_client_secret: bool,
+    base: Option<&Url>,
+    signed_in: bool,
+    step: &Step,
+) -> Guests {
+    let (Some(http), Some(base)) = (http, base) else {
+        return Guests::Unread;
+    };
+    if !signed_in || client_id.is_empty() {
+        return Guests::Unread;
+    }
+    let google = Google {
+        http,
+        tokens,
+        client_id,
+        has_client_secret,
+        base,
+    };
+    match google
+        .scratchpad_event(&step.calendar_id, &step.event_id)
+        .await
+    {
+        Ok(value) => Guests::Listed(project_attendees(&value)),
+        Err(_) => Guests::Unread,
     }
 }
 
