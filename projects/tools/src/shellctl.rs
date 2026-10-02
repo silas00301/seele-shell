@@ -16,6 +16,7 @@ Commands:
   network-activity          Open live per-interface traffic
   resources                 Toggle live CPU and memory inspector
   controls                  Toggle session controls
+  power                     Open session controls; never closes them
   uris                      Freeze all screens and pick a visible URI
   color                     Freeze all screens and sample a colour
   quicklook <path>...       Preview highlighted files without opening them
@@ -93,6 +94,7 @@ pub fn run(arguments: &[String]) -> Result {
         "network-activity" => call("toggleControl", &["network-activity".into()]),
         "resources" => call("toggleControl", &["resources".into()]),
         "controls" => call("toggleControls", &[]),
+        "power" => call("openPower", &[]),
         "uris" => call("toggleUris", &[]),
         "color" => call("toggleColor", &[]),
         "quicklook" => {
