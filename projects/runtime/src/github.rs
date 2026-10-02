@@ -103,25 +103,33 @@ fn plain(value: &Value, limit: usize) -> String {
         if c.is_control() || matches!(c, '\u{00ad}' | '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}') { ' ' } else { c }
     }).collect()
 }
-fn pull(item: &Value, host: &str) -> Option<Value> {
-    let url = safe_url(&item["url"], host)?;
-    let number = item["number"].as_u64().filter(|number| *number > 0)?;
-    let check = item["commits"]["nodes"]
+fn checks_state(item: &Value) -> &'static str {
+    match item["commits"]["nodes"]
         .as_array()
         .and_then(|nodes| nodes.last())
         .and_then(|node| node["commit"]["statusCheckRollup"]["state"].as_str())
-        .unwrap_or("UNKNOWN");
-    let checks = if ["SUCCESS", "FAILURE", "PENDING", "ERROR", "EXPECTED"].contains(&check) {
-        check
-    } else {
-        "UNKNOWN"
-    };
-    let review = item["reviewDecision"].as_str().unwrap_or("");
-    let review = if ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"].contains(&review) {
-        review
-    } else {
-        ""
-    };
+    {
+        Some("SUCCESS") => "SUCCESS",
+        Some("FAILURE") => "FAILURE",
+        Some("PENDING") => "PENDING",
+        Some("ERROR") => "ERROR",
+        Some("EXPECTED") => "EXPECTED",
+        _ => "UNKNOWN",
+    }
+}
+fn review_state(item: &Value) -> &'static str {
+    match item["reviewDecision"].as_str() {
+        Some("APPROVED") => "APPROVED",
+        Some("CHANGES_REQUESTED") => "CHANGES_REQUESTED",
+        Some("REVIEW_REQUIRED") => "REVIEW_REQUIRED",
+        _ => "",
+    }
+}
+fn pull(item: &Value, host: &str) -> Option<Value> {
+    let url = safe_url(&item["url"], host)?;
+    let number = item["number"].as_u64().filter(|number| *number > 0)?;
+    let checks = checks_state(item);
+    let review = review_state(item);
     Some(
         json!({"number": number, "title": plain(&item["title"], 256), "url": url,
         "repository": plain(&item["repository"]["nameWithOwner"], 200), "updatedAt": plain(&item["updatedAt"], 32),
@@ -198,22 +206,184 @@ fn snapshot(
         "authoredTotal": authored_total, "reviewTotal": review_total}),
     )
 }
+fn gh_json(cancelled: &AtomicUsize, args: &[String]) -> Result<Value, Failure> {
+    let output = capture(
+        Command::new("gh")
+            .args(args)
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_PAGER", "cat")
+            .env("NO_COLOR", "1")
+            .env_remove("GH_DEBUG"),
+        b"",
+        Limits {
+            timeout: Duration::from_secs(15),
+            output: 256 * 1024,
+        },
+        cancelled,
+    )
+    .map_err(|error| {
+        use std::io::ErrorKind;
+        Failure::error(match error.kind() {
+            ErrorKind::NotFound => "GitHub CLI is unavailable.",
+            ErrorKind::TimedOut => "GitHub took too long to respond. Try refreshing again.",
+            ErrorKind::InvalidData => "GitHub returned more data than this panel can display.",
+            _ => "GitHub could not be reached. Check your connection and account access, then refresh.",
+        })
+    })?;
+    if !output.status.success() {
+        return Err(failure(&String::from_utf8_lossy(&output.stderr)));
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|_| Failure::error("GitHub returned an unreadable response."))
+}
+fn github_host() -> String {
+    std::env::var("SEELE_GITHUB_HOST").unwrap_or_else(|_| "github.com".into())
+}
+fn pull_identity(url: &str, host: &str) -> Result<(String, String, u64), Failure> {
+    let url_value = Value::String(url.to_owned());
+    let url = safe_url(&url_value, host)
+        .ok_or_else(|| Failure::error("The focus pull request URL is invalid."))?;
+    let path = url
+        .strip_prefix("https://")
+        .and_then(|rest| rest.strip_prefix(host))
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or_else(|| Failure::error("The focus pull request URL is invalid."))?;
+    let mut parts = path.split('/');
+    let owner = parts.next().unwrap_or("");
+    let name = parts.next().unwrap_or("");
+    let kind = parts.next().unwrap_or("");
+    let number = parts.next().unwrap_or("").parse::<u64>().unwrap_or(0);
+    if kind != "pull" || number == 0 || owner.is_empty() || name.is_empty() {
+        return Err(Failure::error("The focus pull request URL is invalid."));
+    }
+    Ok((owner.to_owned(), name.to_owned(), number))
+}
+fn focus_query(owner: &str, name: &str, number: u64) -> String {
+    format!(
+        "query {{ repository(owner: \"{owner}\", name: \"{name}\") {{ pullRequest(number: {number}) {{ \
+number title url isDraft reviewDecision \
+commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} \
+reviews(last: 10) {{ nodes {{ submittedAt author {{ login }} body \
+comments(last: 5) {{ nodes {{ createdAt author {{ login }} body }} }} }} }} \
+comments(last: 10) {{ nodes {{ createdAt author {{ login }} body }} }} }} }} }}"
+    )
+}
+fn prose(value: &Value, limit: usize) -> String {
+    plain(value, limit)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+fn remember(notes: &mut Vec<(String, String, String)>, at: &Value, author: &Value, body: &Value) {
+    let body = prose(body, 280);
+    if body.is_empty() {
+        return;
+    }
+    let login = prose(author.get("login").unwrap_or(&Value::Null), 64);
+    notes.push((plain(at, 40), login, body));
+}
+fn latest_comment(pull: &Value) -> (String, String) {
+    let mut notes = Vec::new();
+    if let Some(reviews) = pull["reviews"]["nodes"].as_array() {
+        for review in reviews.iter().take(10) {
+            remember(
+                &mut notes,
+                &review["submittedAt"],
+                &review["author"],
+                &review["body"],
+            );
+            if let Some(comments) = review["comments"]["nodes"].as_array() {
+                for comment in comments.iter().take(5) {
+                    remember(
+                        &mut notes,
+                        &comment["createdAt"],
+                        &comment["author"],
+                        &comment["body"],
+                    );
+                }
+            }
+        }
+    }
+    if let Some(comments) = pull["comments"]["nodes"].as_array() {
+        for comment in comments.iter().take(10) {
+            remember(
+                &mut notes,
+                &comment["createdAt"],
+                &comment["author"],
+                &comment["body"],
+            );
+        }
+    }
+    notes.sort_by(|left, right| left.0.cmp(&right.0).then(left.2.cmp(&right.2)));
+    notes
+        .pop()
+        .map(|(_, author, body)| (author, body))
+        .unwrap_or_default()
+}
+fn focus_snapshot(
+    mut run: impl FnMut(&[String]) -> Result<Value, Failure>,
+    host: &str,
+    url: &str,
+) -> Result<Value, Failure> {
+    let host = hostname(host)?;
+    let (owner, name, number) = pull_identity(url, &host)?;
+    let query = focus_query(&owner, &name, number);
+    if query.contains("mutation") || query.contains("diff_hunk") {
+        return Err(Failure::error(
+            "GitHub could not be reached. Check your connection and account access, then refresh.",
+        ));
+    }
+    let result = run(&[
+        "api".into(),
+        "--hostname".into(),
+        host.clone(),
+        "graphql".into(),
+        "-f".into(),
+        format!("query={query}"),
+    ])?;
+    if let Some(errors) = result["errors"]
+        .as_array()
+        .filter(|errors| !errors.is_empty())
+    {
+        return Err(failure(
+            &errors
+                .iter()
+                .filter_map(|item| item["message"].as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        ));
+    }
+    let pull = &result["data"]["repository"]["pullRequest"];
+    if !pull.is_object() {
+        return Err(Failure::error("That pull request is not available."));
+    }
+    let canonical = safe_url(&pull["url"], &host)
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("https://{host}/{owner}/{name}/pull/{number}"));
+    let (comment_author, comment) = latest_comment(pull);
+    Ok(json!({
+        "state": "ready",
+        "message": "",
+        "host": host,
+        "number": number,
+        "title": plain(&pull["title"], 256),
+        "url": canonical,
+        "repository": format!("{owner}/{name}"),
+        "draft": pull["isDraft"] == true,
+        "checks": checks_state(pull),
+        "review": review_state(pull),
+        "comment": comment,
+        "commentAuthor": comment_author,
+        "updatedAt": crate::time::timestamp(),
+    }))
+}
 pub fn run(cancelled: &AtomicUsize) -> Value {
-    snapshot(|args| {
-        let output = capture(Command::new("gh").args(args).env("GH_PROMPT_DISABLED", "1")
-            .env("GH_PAGER", "cat").env("NO_COLOR", "1").env_remove("GH_DEBUG"), b"",
-            Limits { timeout: Duration::from_secs(15), output: 256 * 1024 }, cancelled).map_err(|error| {
-                use std::io::ErrorKind;
-                Failure::error(match error.kind() {
-                    ErrorKind::NotFound => "GitHub CLI is unavailable.",
-                    ErrorKind::TimedOut => "GitHub took too long to respond. Try refreshing again.",
-                    ErrorKind::InvalidData => "GitHub returned more data than this panel can display.",
-                    _ => "GitHub could not be reached. Check your connection and account access, then refresh.",
-                })
-            })?;
-        if !output.status.success() { return Err(failure(&String::from_utf8_lossy(&output.stderr))); }
-        serde_json::from_slice(&output.stdout).map_err(|_| Failure::error("GitHub returned an unreadable response."))
-    }, &std::env::var("SEELE_GITHUB_HOST").unwrap_or_else(|_| "github.com".into())).unwrap_or_else(|error| error.value())
+    snapshot(|args| gh_json(cancelled, args), &github_host()).unwrap_or_else(|error| error.value())
+}
+/// One configured pull request: check rollup and the newest review comment.
+pub fn focus(cancelled: &AtomicUsize, url: &str) -> Value {
+    focus_snapshot(|args| gh_json(cancelled, args), &github_host(), url)
+        .unwrap_or_else(|error| error.value())
 }
 #[cfg(test)]
 mod tests {
@@ -269,5 +439,58 @@ mod tests {
         for host in ["", "https://github.com", "a..b", "github.com/path"] {
             assert!(hostname(host).is_err());
         }
+    }
+    #[test]
+    fn focus_reads_one_pull_request_check_rollup_and_latest_comment() {
+        let payload = json!({"data": {"repository": {"pullRequest": {
+            "number": 183,
+            "title": "Return\nto the previous workspace",
+            "url": "https://github.com/silas00301/seele/pull/183",
+            "isDraft": false,
+            "reviewDecision": "CHANGES_REQUESTED",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]},
+            "reviews": {"nodes": [
+                {"submittedAt": "2026-10-01T10:00:00Z", "author": {"login": "older"}, "body": "first note",
+                 "comments": {"nodes": [{"createdAt": "2026-10-02T12:00:00Z", "author": {"login": "reviewer"}, "body": "latest inline\ncomment"}]}},
+                {"submittedAt": "2026-10-02T15:00:00Z", "author": {"login": "approver"}, "body": ""}
+            ]},
+            "comments": {"nodes": [
+                {"createdAt": "2026-10-02T11:00:00Z", "author": {"login": "thread"}, "body": "older conversation"}
+            ]}
+        }}}});
+        let mut calls = Vec::new();
+        let result = focus_snapshot(
+            |args| {
+                calls.push(args.to_vec());
+                Ok(payload.clone())
+            },
+            "github.com",
+            "https://github.com/silas00301/seele/pull/183",
+        )
+        .unwrap();
+        assert_eq!(calls.len(), 1);
+        let query = calls[0].last().unwrap();
+        assert!(query.starts_with("query="));
+        assert!(!query.contains("mutation"));
+        assert!(!query.contains("diff_hunk"));
+        assert!(query.contains("statusCheckRollup"));
+        assert_eq!(result["checks"], "PENDING");
+        assert_eq!(result["review"], "CHANGES_REQUESTED");
+        assert_eq!(result["comment"], "latest inline comment");
+        assert_eq!(result["commentAuthor"], "reviewer");
+        assert_eq!(result["repository"], "silas00301/seele");
+        assert_eq!(result["title"], "Return to the previous workspace");
+        assert!(focus_snapshot(
+            |_| Ok(json!({})),
+            "github.com",
+            "https://evil.example/org/repo/pull/1"
+        )
+        .is_err());
+        assert!(focus_snapshot(
+            |_| Ok(json!({"data": {"repository": null}})),
+            "github.com",
+            "https://github.com/silas00301/seele/pull/183"
+        )
+        .is_err());
     }
 }

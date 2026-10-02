@@ -2009,6 +2009,11 @@ Shared.Theme {
     onArrived: root.notificationPopupScreen = root.currentScreen()
   }
 
+  PrFocusStore {
+    id: prFocusStore
+    onActiveChanged: notificationStore.controller.setPrFocus(active, Date.now() / 1000)
+  }
+
   HomeAssistantStore {
     id: homeAssistantStore
     property int healthToken: 0
@@ -2064,6 +2069,13 @@ Shared.Theme {
     }
     function notificationStatus(): string {
       return JSON.stringify({ notifications: notificationStore.controller.view(), dnd: notificationStore.controller.dnd })
+    }
+    function prFocus(action: string): string {
+      if (action === "status") return JSON.stringify({ active: prFocusStore.active, url: prFocusStore.url, snapshot: prFocusStore.snapshot })
+      if (action === "enter") return prFocusStore.enter() ? "ok" : "unavailable"
+      if (action === "exit") return prFocusStore.exit() ? "ok" : "unavailable"
+      if (action === "toggle") return prFocusStore.toggle() ? "ok" : "unavailable"
+      return "unavailable"
     }
     function notificationCommand(action: string, id: string, key: string): string {
       var state = notificationStore.controller
@@ -8722,6 +8734,143 @@ Shared.Theme {
             anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
 
             PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
+
+            Rectangle {
+              id: prFocusEnter
+              visible: prFocusStore.configured && !prFocusStore.active
+              width: parent.width
+              implicitHeight: prFocusEnterRow.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: prFocusEnterMouse.pressed ? root.pressColor : prFocusEnterMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+              CardEdge {}
+              Row {
+                id: prFocusEnterRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: root.cardPadding
+                spacing: root.spaceTight
+                Text {
+                  id: prFocusEnterTitle
+                  text: "PR focus"
+                  color: root.text
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textBody
+                  font.weight: root.weightMedium
+                }
+                Text {
+                  id: prFocusEnterTarget
+                  text: prFocusStore.label
+                  color: root.subtext
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  anchors.verticalCenter: parent.verticalCenter
+                  elide: Text.ElideRight
+                  width: Math.max(0, parent.width - prFocusEnterTitle.implicitWidth - prFocusEnterHint.implicitWidth - root.spaceTight * 2)
+                }
+                Text {
+                  id: prFocusEnterHint
+                  text: "Enter"
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  font.weight: root.weightMedium
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+              }
+              MouseArea {
+                id: prFocusEnterMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: prFocusStore.enter()
+              }
+            }
+
+            Rectangle {
+              id: prFocusPin
+              visible: prFocusStore.active
+              width: parent.width
+              implicitHeight: prFocusPinBody.implicitHeight + root.cardPadding * 2
+              radius: root.radius
+              color: root.cardColor
+              CardEdge {}
+              Column {
+                id: prFocusPinBody
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: root.cardPadding
+                spacing: root.spaceTight
+                Row {
+                  width: parent.width
+                  spacing: root.spaceTight
+                  Text {
+                    id: prFocusPinTitle
+                    text: prFocusStore.label
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    font.weight: root.weightMedium
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.width - prFocusExit.implicitWidth - root.spaceTight)
+                  }
+                  Item { width: Math.max(0, parent.width - prFocusPinTitle.width - prFocusExit.implicitWidth - root.spaceTight); height: 1 }
+                  Text {
+                    id: prFocusExit
+                    text: "Exit"
+                    color: root.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    font.weight: root.weightMedium
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: prFocusStore.exit()
+                    }
+                  }
+                }
+                Text {
+                  width: parent.width
+                  visible: prFocusStore.snapshot.title !== ""
+                  text: prFocusStore.snapshot.title
+                  color: root.subtext
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                }
+                Text {
+                  width: parent.width
+                  text: prFocusStore.snapshot.state === "ready" || prFocusStore.snapshot.checks ? GitHub.checksLabel(prFocusStore.snapshot.checks) : (prFocusStore.snapshot.message || "Loading checks")
+                  color: {
+                    var checks = prFocusStore.snapshot.checks
+                    if (checks === "SUCCESS") return root.green
+                    if (checks === "FAILURE" || checks === "ERROR") return root.red
+                    if (checks === "PENDING" || checks === "EXPECTED") return root.yellow
+                    return root.subtext
+                  }
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  font.weight: root.weightMedium
+                  textFormat: Text.PlainText
+                }
+                Text {
+                  width: parent.width
+                  visible: prFocusStore.snapshot.state === "ready" || prFocusStore.snapshot.comment !== ""
+                  text: prFocusStore.snapshot.comment !== ""
+                    ? (prFocusStore.snapshot.commentAuthor ? prFocusStore.snapshot.commentAuthor + ": " : "") + prFocusStore.snapshot.comment
+                    : "No review comment"
+                  color: root.text
+                  font.family: root.fontFamily
+                  font.pixelSize: root.textCaption
+                  wrapMode: Text.WordWrap
+                  maximumLineCount: 3
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                }
+              }
+            }
 
             ControlCenterGrid {
               width: parent.width

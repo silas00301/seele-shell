@@ -33,6 +33,7 @@ Commands:
   voxtype                   Toggle voice dictation
   lock                      Lock the session
   notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
+  pr-focus [enter|exit|toggle|status]  Pin one configured pull request, or leave it
   health-publish <id>       Publish bounded health JSON from stdin
   health-status             Print registered current health metadata
   notification-status       Print notification state as JSON
@@ -184,6 +185,23 @@ pub fn run(arguments: &[String]) -> Result {
             Ok(())
         }
         "notification-status" => call("notificationStatus", &[]),
+        "pr-focus" => {
+            let action = rest.first().map(String::as_str).unwrap_or("toggle");
+            if !matches!(action, "enter" | "exit" | "toggle" | "status") {
+                return Err("pr-focus action must be enter, exit, toggle, or status".into());
+            }
+            let response = ipc_output(&["prFocus".into(), action.to_owned()])?;
+            if action == "status" {
+                if !quiet && !response.trim().is_empty() {
+                    println!("{}", response.trim_end());
+                }
+                return Ok(());
+            }
+            if response.trim() != "ok" {
+                return Err("pull request focus is unavailable".into());
+            }
+            Ok(())
+        }
         "notification" => {
             let action = rest.first().ok_or("notification action required")?;
             let id = rest.get(1).cloned().unwrap_or_default();
