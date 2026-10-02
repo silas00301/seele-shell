@@ -255,3 +255,7 @@ The **Seele Resources** command opens the shell's live CPU and memory inspector,
 also listed under Seele Controls. Its search keywords include CPU, RAM,
 processes and performance. Readings exist only while the shell panel is open;
 the launcher starts no separate monitor and offers no process termination action.
+
+- **Hermes** (`hermes.tsx`): opens the Shell's connection and local approval
+  panel. Chat, sessions, cancellation, sign-in and voice belong to the official
+  Hermes Desktop app opened from that panel; see `../integrations/HERMES.md`.

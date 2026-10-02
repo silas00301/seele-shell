@@ -60,6 +60,7 @@ let
     '';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';
     integrations = ''
+      python3 projects/integrations/tests/hermes.py "$out/bin/seele-hermes"
       python3 projects/integrations/tests/home_assistant.py "$out/bin/seele-home-assistant"
       python3 projects/integrations/tests/transfers.py "$out/bin/seele-transfers"
       python3 projects/integrations/tests/github.py "$out/bin/seele-github-inbox"

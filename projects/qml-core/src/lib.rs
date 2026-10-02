@@ -12,6 +12,7 @@ mod color_picker;
 mod focus;
 mod github;
 mod health;
+mod hermes;
 mod home_assistant;
 mod media;
 mod mic_test;
@@ -57,6 +58,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "notifications" => notifications::call(function, arguments),
         "github" => github::call(function, arguments),
         "health" => health::call(function, arguments),
+        "hermes" => hermes::call(function, arguments),
         "media" => media::call(function, arguments),
         "mic_test" => mic_test::call(function, arguments),
         "home_assistant" => home_assistant::call(function, arguments),

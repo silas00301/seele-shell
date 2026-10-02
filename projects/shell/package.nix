@@ -90,7 +90,7 @@ pkgs.stdenvNoCC.mkDerivation {
     pkgs.jq
     pkgs.makeBinaryWrapper
     pkgs.nodejs
-    pkgs.python3
+    (pkgs.python3.withPackages (ps: [ ps.pyside6 ]))
     pkgs.qt6.qtdeclarative
     (pkgs.zint-qt.override { withGUI = false; })
   ];
@@ -105,6 +105,10 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./TransfersStore.qml} "$out/share/seele-shell/TransfersStore.qml"
     install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
     substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./HermesStore.qml} "$out/share/seele-shell/HermesStore.qml"
+    install -m644 ${./HermesPanel.qml} "$out/share/seele-shell/HermesPanel.qml"
+    substituteInPlace "$out/share/seele-shell/HermesPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    substituteInPlace "$out/share/seele-shell/HermesStore.qml" --replace-fail 'import "../shared/Native.js"' 'import "shared/Native.js"'
     install -m644 ${./CaffeinateStore.qml} "$out/share/seele-shell/CaffeinateStore.qml"
     install -m644 ${./MeetingPlanner.qml} "$out/share/seele-shell/MeetingPlanner.qml"
     substituteInPlace "$out/share/seele-shell/MeetingPlanner.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
@@ -261,6 +265,8 @@ pkgs.stdenvNoCC.mkDerivation {
       --prefix QML2_IMPORT_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml" \
       --prefix QT_PLUGIN_PATH : "${pkgs.qt6.qtmultimedia}/lib/qt-6/plugins" \
       --prefix PATH : "$out/bin:${runtimePath}"
+    makeWrapper ${integrations}/bin/seele-hermes "$out/bin/seele-hermes" \
+      --prefix PATH : "${runtimePath}" --prefix PATH : "$out/bin"
     makeWrapper ${integrations}/bin/seele-transfers "$out/bin/seele-transfers" \
       --prefix PATH : "$out/bin:${runtimePath}"
     makeWrapper ${integrations}/bin/seele-home-assistant "$out/bin/seele-home-assistant" \
@@ -406,7 +412,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${tests}/tst_calculator.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
     qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLookMedia.qml"
-    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLook.qml" "$out/share/seele-shell/ResourcesState.qml" "$out/share/seele-shell/ResourcesStore.qml" "$out/share/seele-shell/ResourcesPanel.qml" "$out/share/seele-shell/NetworkActivityStore.qml" "$out/share/seele-shell/NetworkActivityPanel.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/ThemeStore.qml" "$out/share/seele-shell/ThemePanel.qml" "$out/share/seele-shell/ThemeSettingsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
+    qmllint -I ${nativeQml}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-shell/QuickLook.qml" "$out/share/seele-shell/ResourcesState.qml" "$out/share/seele-shell/ResourcesStore.qml" "$out/share/seele-shell/ResourcesPanel.qml" "$out/share/seele-shell/NetworkActivityStore.qml" "$out/share/seele-shell/NetworkActivityPanel.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml" "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/ColorLabPanel.qml" "$out/share/seele-shell/MeetingPlanner.qml" "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/HermesStore.qml" "$out/share/seele-shell/HermesPanel.qml" "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/PortsStore.qml" "$out/share/seele-shell/PortsPanel.qml" "$out/share/seele-shell/ThemeStore.qml" "$out/share/seele-shell/ThemePanel.qml" "$out/share/seele-shell/ThemeSettingsPanel.qml" "$out/share/seele-shell/CalculatorPanel.qml" "$out/share/seele-shell/AiActivityStore.qml" "$out/share/seele-shell/AiActivityPanel.qml" "$out/share/seele-shell/IntegrationHealthStore.qml" "$out/share/seele-shell/SystemHealthPanel.qml" "$out/share/seele-shell/MaintenanceStore.qml" "$out/share/seele-shell/MaintenancePanel.qml" "$out/share/seele-shell/DictationState.qml" "$out/share/seele-shell/shared/"*.qml "$out/share/seele-shell/shell.qml" "$out/share/seele-shell/shared/CenteredGlyph.qml" "$out/share/seele-shell/SystemState.qml" "$out/share/seele-shell/UriPicker.qml" "$out/share/seele-shell/ColorPicker.qml" "$out/share/seele-shell/HeadphonesIcon.qml" "$out/share/seele-shell/NotificationStore.qml" "$out/share/seele-shell/HomeAssistantStore.qml" "$out/share/seele-shell/HomeAssistantPanel.qml" "$out/share/seele-shell/GitHubStore.qml" "$out/share/seele-shell/GitHubInboxStore.qml" "$out/share/seele-shell/GitHubInboxPanel.qml" "$out/share/seele-shell/FocusTimer.qml" "$out/share/seele-shell/FocusPanel.qml" "$out/share/seele-shell/AiPrompt.qml" "$out/share/seele-shell/MicTestStore.qml" "$out/share/seele-shell/MicTestCard.qml"
     bash ${tests}/headphones-icon.sh \
       "$out/share/seele-shell/HeadphonesIcon.qml" \
       ${tests}/tst_headphones.qml \
@@ -424,7 +430,8 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    for command in seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-calendar seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    python3 ${tests}/hermes-panel.py "$out/share/seele-shell"
+    for command in seele-hermes seele-quicklook seele-resources seele-network-activity seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-theme seele-shell seele-home-assistant seele-calendar seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -443,7 +450,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
     node ${tests}/text-workbench.js "$out/share/seele-shell/TextWorkbenchSession.qml"
     python3 ${tests}/text-workbench-clipboard.py ${tools}/bin/seele-text-clipboard
-    node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/shell.qml"
+    node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/HermesStore.qml" "$out/share/seele-shell/HermesPanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/network-activity.js "$out/share/seele-shell/NetworkActivityStore.qml"
     bash ${tests}/network-activity.sh "$out/share/seele-shell" \
       ${tests}/tst_networkactivity.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml

@@ -365,6 +365,20 @@
         "light",
         "dark"
       ]
+    },
+    {
+      "name": "hermes",
+      "title": "Seele Hermes",
+      "description": "Remote Hermes Desktop connection and local rebuild approvals",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "hermes",
+        "agent",
+        "tailscale",
+        "approval",
+        "rebuild"
+      ]
     }
   ]
 }

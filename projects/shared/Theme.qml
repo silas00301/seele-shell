@@ -208,6 +208,8 @@ ShellRoot {
   readonly property int notesPickerHeight: 220
   readonly property int waveformWidth: 280
   // The home panel stays compact, with a viewport bounded by its output.
+  // Compact Hermes connection and explicit local rebuild approval.
+  readonly property int hermesWidth: 380
   readonly property int homeAssistantWidth: 420
   readonly property int homeAssistantMaximumHeight: 640
   // The GitHub inbox scrolls inside this bound, tall enough that an opened

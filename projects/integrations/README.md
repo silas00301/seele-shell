@@ -1,7 +1,9 @@
 # Native integration services
 
-This crate builds three independent Rust executables over one shared library:
+This crate builds four independent Rust executables over one shared library:
 
+- `seele-hermes serve|watch|request|publish` connects the official remote Desktop
+  lifecycle and tailnet-only, locally approved MCP tools. See `HERMES.md`.
 - `seele-github-inbox` owns the background GitHub notification inbox, bounded
   context collection, shared-broker triage, explicit Done and desktop actions.
   See `../github/README.md` for API limitations, state and focused fixtures.
@@ -50,7 +52,8 @@ readiness rather than uncancellable background I/O threads. Unchanged history
 is not rewritten, and unchanged transfer snapshots are suppressed between
 20-second heartbeats. EOF, SIGINT and
 SIGTERM shut down connection workers and reap keyring/desktop/notification
-helpers. No native machine activation is performed by this crate.
+helpers. Hermes can hand off a fixed rebuild to a local terminal only after explicit
+local approval; it never authenticates to a privileged service itself.
 
 Transfer destinations must be owned by the current user and not writable by
 other users or groups. A receipt is streamed into a private random temporary

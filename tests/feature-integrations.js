@@ -5,6 +5,9 @@ const shell = fs.readFileSync(process.argv[2], 'utf8');
 const pkg = fs.readFileSync(process.argv[3], 'utf8');
 
 const shellPatterns = {
+  'Hermes Desktop lifecycle store': /HermesStore\s*\{\s*id: hermesStore/,
+  'Hermes approval panel': /HermesPanel \{ theme: root; store: hermesStore/,
+  'Hermes metadata health': /integrationHealth\.publish\("hermes"/,
   'transfers store': /TransfersStore\s*\{\s*id: transfersStore/,
   'transfers history panel': /TransfersPanel\s*\{[\s\S]*?theme: root[\s\S]*?store: transfersStore/,
   'registered health store': /IntegrationHealthStore\s*\{\s*id: integrationHealth/,
@@ -95,6 +98,7 @@ assert.ok(!/WlrKeyboardFocus\.(OnDemand|Exclusive)/.test(notificationPopup),
   'notification toasts must never take keyboard focus away from the focused window');
 
 const packagedSources = [
+  'HermesStore.qml', 'HermesPanel.qml',
   'CaffeinateStore.qml',
   'CaffeinatePanel.qml',
   'health.js', 'IntegrationHealthStore.qml', 'SystemHealthPanel.qml',
@@ -135,6 +139,7 @@ assert.ok(pkg.includes('substituteInPlace "$out/share/seele-shell/FocusPanel.qml
   'Focus panel shared imports use the installed layout');
 
 const focusedTests = [
+  'hermes-panel.py',
   'health.js',
   'ai-prompt.js',
   'color-picker.js',
