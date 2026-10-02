@@ -137,7 +137,7 @@ fail()
     }
 
     fn run(&self, args: &[&str]) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_seele_drift"))
+        Command::new(env!("CARGO_BIN_EXE_seele-drift"))
             .args(args)
             .env("PATH", &self.path)
             .env("SEELE_DRIFT_LOG", &self.log)

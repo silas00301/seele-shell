@@ -2,7 +2,6 @@
 // decides which checks are drifted and is the only thing that can change the
 // machine; these guards keep a switch from turning into a command.
 const fs = require('node:fs');
-const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const source = fs.readFileSync(process.argv[2], 'utf8');
@@ -10,7 +9,7 @@ const store = fs.readFileSync(process.argv[3], 'utf8');
 const panel = fs.readFileSync(process.argv[4], 'utf8');
 const shell = fs.readFileSync(process.argv[5], 'utf8');
 
-const api = vm.runInNewContext(`${source}\n;({chosenIds, argumentsFor});`);
+const api = new Function(`${source}\nreturn {chosenIds, argumentsFor};`)();
 const checks = [
   {id: 'quad9-dot', drifted: true, unavailable: false},
   {id: 'podman-rootless', drifted: true, unavailable: false},

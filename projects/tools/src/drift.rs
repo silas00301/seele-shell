@@ -23,13 +23,13 @@ const STATUS_LIMIT: usize = 256 * 1024;
 const SYSTEM_CATALOG: &str = "/etc/seele/drift.json";
 const SYSTEMCTL: &str = "/run/current-system/sw/bin/systemctl";
 const RESOLVECTL: &str = "/run/current-system/sw/bin/resolvectl";
-const RUN0: &str = "/run/current-system/sw/bin/run0";
 const HELPER_NAME: &str = "seele-restore-drift";
 
 const QUAD9: &str = "quad9-dot";
 const PODMAN: &str = "podman-rootless";
 const REMOTE: &str = "remote-shell";
 
+#[derive(Debug)]
 struct DriftError {
     message: String,
     mutated: bool,
@@ -112,7 +112,7 @@ trait Acts: Reads {
     fn start_user_podman(&mut self) -> Result<(), String>;
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 struct CheckView {
     id: String,
     title: String,
@@ -129,7 +129,7 @@ struct Analysis {
     start_user: bool,
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 struct Report {
     version: u32,
     action: String,
