@@ -8,6 +8,11 @@ Item {
 
   property bool restored: false
   property bool calendarFocusQuiet: false
+  // The focus timer reports running here. Silence sync follows that edge and
+  // never starts or stops the timer.
+  property bool focusRunning: false
+  onFocusRunningChanged: if (restored) controller.setFocus(focusRunning, Date.now() / 1000)
+  onRestoredChanged: if (restored) controller.setFocus(focusRunning, Date.now() / 1000)
   property var controller: Notifications.createStore(
     function(view, dnd) {
       if (store.restored) retained.saved = store.controller.save()

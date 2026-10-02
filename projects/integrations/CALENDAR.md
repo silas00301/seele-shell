@@ -57,7 +57,10 @@ changed since the previous line: `account` (status, account, syncing, error,
 last sync), `calendars` (name, colour, role, selected, still loading),
 `dots` (day to up to three calendar colours and a count of the rest),
 `agenda` (the requested day, whether it is cached or loading, and its rows,
-already sorted and labelled), `indicator` (the bar's event, or null), `busy`
+already sorted and labelled), `indicator` (the bar's event, or null),
+`meeting` (the timed event underway now, with its key and end in unix seconds,
+or null — separate from the bar, which may be counting down to the next start),
+`busy`
 (opaque timed blocks with title and colour for the meeting planner), `coverage`
 (cached date windows) and a minute `heartbeat`. The source event cache stays
 inside the worker. `CalendarStore.qml` assigns a property only when its section

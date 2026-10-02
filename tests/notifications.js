@@ -403,6 +403,22 @@ for (const gap of ['\r','\n','\u2028','\u2029','🦀'.repeat(40)])
   assert.equal(context.quietMenuOpen,false);
   assert.equal(h.view.quietApps.length,0);
   assert.equal(h.view.items.length,0);
+  context.calendarStore = {meeting: {key: 'one:standup', end: 2500}};
+  context.Date = {now: () => 1000000};
+  h.store.setFocus(true, 1000);
+  context.chooseQuiet(-3);
+  assert.equal(h.view.focusSync, true);
+  assert.equal(h.view.dndReason, 'focus');
+  context.chooseQuiet(-4);
+  assert.equal(h.view.dndReason, 'meeting');
+  assert.equal(h.view.meetingKey, 'one:standup');
+  context.calendarStore = {meeting: null};
+  context.chooseQuiet(-4);
+  assert.equal(h.view.dndReason, 'meeting', 'a menu opened outside a meeting cannot arm one');
+  assert.match(shell, /minutes: -3, label: "Sync with focus"/);
+  assert.match(shell, /minutes: -4, label: "Until the current meeting ends"/);
+  assert.match(shell, /focusTimer\.timerState\.status === "running"/);
+  assert.match(shell, /Number\(meeting\.end\) > quietTick/);
 }
 console.log('Application silence identity, reload, action, transient and resume checks passed');
 

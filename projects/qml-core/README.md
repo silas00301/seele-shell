@@ -39,6 +39,13 @@ gone. Resuming never replays suppressed toasts and never changes global DND.
 These choices survive QML reloads in memory, disappear when the shell exits, and
 are bounded to 256 application keys of at most 512 bytes each.
 
+The same menu can sync silence with the focus timer while that timer is running,
+and can hold silence until a chosen meeting ends. Both are explicit choices.
+Focus enter and exit, and the meeting deadline, put back the silence from
+before the hold. A manual duration, an indefinite hold, or turning silence off
+replaces the hold instead of stacking with it. The policy never starts or stops
+the focus timer, and it never arms a meeting hold because a meeting is underway.
+
 Health's Rust policy validates private metadata and typed actions, derives stale
 state, and groups priority rows. Its thin Qt wrapper uses `localeCompare` for
 actual Qt locale collation, retaining registration order for equal labels.

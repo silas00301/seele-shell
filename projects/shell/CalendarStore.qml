@@ -19,6 +19,8 @@ Scope {
   property var dots: ({})
   property var agenda: ({ day: "", covered: false, loading: false, items: [] })
   property var indicator: null
+  // The timed event underway now, or null. Unix-second start and end.
+  property var meeting: null
   property var busyBlocks: []
   property var coverage: []
   property string requestedDay: ""
@@ -97,6 +99,7 @@ Scope {
     if (data.dots !== undefined) dots = data.dots
     if (data.agenda !== undefined) agenda = data.agenda
     if (data.indicator !== undefined) indicator = data.indicator
+    if (data.meeting !== undefined) meeting = data.meeting
     if (data.busy !== undefined) busyBlocks = data.busy
     if (data.coverage !== undefined) coverage = data.coverage
     // A restarted worker starts from today; tell it where the popup was.
@@ -116,6 +119,7 @@ Scope {
     onExited: {
       store.ready = false
       store.indicator = null
+      store.meeting = null
       store.publishHealth()
       store.finishRetry()
       restart.restart()

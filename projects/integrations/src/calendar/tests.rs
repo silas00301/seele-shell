@@ -375,6 +375,18 @@ fn indicator_counts_down_then_follows_the_soonest_ending_event() {
     );
     assert_eq!(running["detail"], "09:00–10:00 · 1 more event");
     assert_eq!(indicator(&state, &index, nine + 4200, today), Value::Null);
+    assert_eq!(
+        current_meeting(&state, &index, nine - 60),
+        Value::Null,
+        "a meeting that has not started is not current"
+    );
+    let during = current_meeting(&state, &index, nine + 300);
+    assert_eq!(
+        (during["key"].as_str(), during["end"].as_i64()),
+        (Some("one:a"), Some(nine + 3600)),
+        "the current meeting stays available while the bar counts down to the next start"
+    );
+    assert_eq!(current_meeting(&state, &index, nine + 4200), Value::Null);
 }
 
 #[test]

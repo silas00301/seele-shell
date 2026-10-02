@@ -1998,6 +1998,7 @@ Shared.Theme {
   NotificationStore {
     id: notificationStore
     calendarFocusQuiet: focusTimer.timerState.status === "running"
+    focusRunning: focusTimer.timerState.status === "running"
     onPublished: (view, dnd) => {
       root.systemData.apply({ notifications: view, dnd: dnd })
       var present = {}, unfolded = {}
@@ -10486,14 +10487,23 @@ Shared.Theme {
       // Every way silence can be set, in one menu, so the header carries one
       // control instead of a switch beside a well. A length starts a period
       // from now, zero holds the shell quiet with no end, and the way out only
-      // appears once there is something to leave.
+      // appears once there is something to leave. Two further rows appear only
+      // while they apply: syncing with the focus timer while that timer is
+      // running, and holding until the current meeting ends while one is
+      // underway. The meeting row is highlighted as a suggestion. Choosing it
+      // is what arms silence; opening the menu does not.
       readonly property var quietChoices: {
         var choices = [
           { minutes: 15, label: "For 15 minutes" },
           { minutes: 60, label: "For 1 hour" },
-          { minutes: 240, label: "For 4 hours" },
-          { minutes: 0, label: "Until I turn it off" }
+          { minutes: 240, label: "For 4 hours" }
         ]
+        var meeting = calendarStore.meeting
+        if (meeting && Number(meeting.end) > quietTick)
+          choices.push({ minutes: -4, label: "Until the current meeting ends", suggested: true, key: String(meeting.key || "") })
+        if (focusTimer.timerState.status === "running")
+          choices.push({ minutes: -3, label: "Sync with focus" })
+        choices.push({ minutes: 0, label: "Until I turn it off" })
         if (root.systemData.dnd) choices.push({ minutes: -1, label: "Turn off" })
         var count = (root.systemData.notifications.quietApps || []).length
         if (count > 0) choices.push({ minutes: -2, label: "Resume " + count + (count === 1 ? " quiet app" : " quiet apps") })
@@ -10553,12 +10563,22 @@ Shared.Theme {
 
       // Silence is set from one menu, so every way of setting it is one call:
       // a length starts a period from now, zero holds the shell quiet with no
-      // end, -1 ends global DND, and -2 resumes the separate app choices.
+      // end, -1 ends global DND, -2 resumes the separate app choices, -3 syncs
+      // with the running focus timer, and -4 holds until the current meeting
+      // ends. A meeting that is no longer underway is ignored, so a stale row
+      // cannot arm silence.
       function chooseQuiet(minutes) {
         quietMenuOpen = false
+        var now = Date.now() / 1000
         if (minutes === -2) notificationStore.controller.resumeApps()
-        else if (minutes > 0) notificationStore.controller.snooze(minutes, Date.now() / 1000)
-        else notificationStore.controller.setDnd(minutes === 0)
+        else if (minutes === -3) notificationStore.controller.setFocusSync(true)
+        else if (minutes === -4) {
+          var meeting = calendarStore.meeting
+          if (meeting && Number(meeting.end) > now)
+            notificationStore.controller.armMeeting(String(meeting.key || ""), Number(meeting.end), now)
+        }
+        else if (minutes > 0) notificationStore.controller.snooze(minutes, now)
+        else if (minutes >= -1) notificationStore.controller.setDnd(minutes === 0)
       }
 
       // Deferred, because the lists have not laid out their rows at the moment
@@ -10574,7 +10594,10 @@ Shared.Theme {
         if (!visible) quietMenuOpen = false
         remeasure()
       }
-      onQuietMenuOpenChanged: remeasure()
+      onQuietMenuOpenChanged: {
+        if (quietMenuOpen) quietTick = Date.now() / 1000
+        remeasure()
+      }
       onChromeHeightChanged: remeasure()
       onQuietMenuHeightChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
@@ -10597,7 +10620,7 @@ Shared.Theme {
       Timer {
         interval: 1000
         repeat: true
-        running: notificationWindow.visible && Number(root.systemData.notifications.dndUntil) > 0
+        running: notificationWindow.visible && (quietMenuOpen || Number(root.systemData.notifications.dndUntil) > 0)
         onRunningChanged: if (running) notificationWindow.quietTick = Date.now() / 1000
         onTriggered: notificationWindow.quietTick = Date.now() / 1000
       }
@@ -10732,7 +10755,12 @@ Shared.Theme {
                 mouse: quietMouse
                 inOverlay: true
                 text: notificationWindow.quietMenuOpen ? ""
-                  : notificationWindow.quietTimed
+                  : root.systemData.notifications.dndReason === "meeting" && notificationWindow.quietTimed
+                    ? "Quiet · until the meeting ends · "
+                      + Qt.formatDateTime(new Date(Number(root.systemData.notifications.dndUntil) * 1000), "HH:mm")
+                    : root.systemData.notifications.dndReason === "focus"
+                      ? "Quiet · with focus"
+                    : notificationWindow.quietTimed
                     ? "Quiet · " + notificationWindow.quiet.label + " · until "
                       + Qt.formatDateTime(new Date(Number(root.systemData.notifications.dndUntil) * 1000), "HH:mm")
                     : root.systemData.dnd ? "Quiet · until you turn it off" : "Silence notifications"
@@ -10892,11 +10920,18 @@ Shared.Theme {
 
                 required property var modelData
 
-                // A length is running, silence is held with no end, or neither.
-                // The choice that is on is the one the check belongs to.
-                readonly property bool selected: modelData.minutes > 0
-                  ? notificationWindow.quietTimed && Number(root.systemData.notifications.dndMinutes) === modelData.minutes
-                  : modelData.minutes === 0 && root.systemData.dnd && !notificationWindow.quietTimed
+                // A length is running, silence is held with no end, focus sync is
+                // on, or the current meeting was chosen. A manual period does
+                // not light the focus or meeting rows, and those holds do not
+                // light a preset.
+                readonly property string quietReason: root.systemData.notifications.dndReason || ""
+                readonly property bool selected: modelData.minutes === -3
+                  ? !!root.systemData.notifications.focusSync
+                  : modelData.minutes === -4
+                    ? quietReason === "meeting" && root.systemData.notifications.meetingKey === modelData.key
+                    : modelData.minutes > 0
+                      ? quietReason === "" && notificationWindow.quietTimed && Number(root.systemData.notifications.dndMinutes) === modelData.minutes
+                      : modelData.minutes === 0 && quietReason === "" && root.systemData.dnd && !notificationWindow.quietTimed
 
                 width: parent.width
                 height: root.controlHeight
@@ -10921,7 +10956,9 @@ Shared.Theme {
                   radius: root.radiusSmall
                   color: quietChoiceMouse.pressed ? root.pressColor : root.clearColor
                   border.width: 1
-                  border.color: quietChoice.activeFocus ? root.accent : root.alpha(root.accent, 0)
+                  border.color: quietChoice.activeFocus ? root.accent
+                    : quietChoice.modelData.suggested && !quietChoice.selected ? root.alpha(root.accent, 0.55)
+                    : root.alpha(root.accent, 0)
                   antialiasing: true
 
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
