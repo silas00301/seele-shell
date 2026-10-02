@@ -64,6 +64,12 @@ the successful package-diff review and explicit confirmation.
 
 `seele-pi-jj ABSOLUTE_JJ detect|revision` supplies Pi's asynchronous footer
 callbacks with bounded Jujutsu metadata from the inherited working directory.
+Both probes use `--ignore-working-copy`: repainting the footer never snapshots
+changed or untracked files and never adds an operation to repository history.
+The displayed bookmark or change ID comes from Jujutsu’s recorded workspace state.
 It uses fixed root/log arguments, two-second/64-KiB limits per child, and shared
 process-group cleanup; failures emit no repository output. `tests/pi.rs` covers
 exact argv, non-repository fallback, flood/timeout limits and error privacy.
+`python3 projects/repo-tools/tests/pi_readonly.py target/debug/seele-pi-jj`
+checks real dirty repositories for unchanged commit/operation identities and
+untracked-file preservation; the native package runs this fixture too.

@@ -31,14 +31,19 @@ pub fn revision(arguments: &[String], cancel: &AtomicUsize) -> Result<()> {
         return Err(2);
     }
     let repository = mode == "revision"
-        || run(Path::new(binary), &["root"], cancel)
-            .map_err(|_| 1)?
-            .is_some();
+        || run(
+            Path::new(binary),
+            &["root", "--ignore-working-copy"],
+            cancel,
+        )
+        .map_err(|_| 1)?
+        .is_some();
     let revision = if repository {
         run(
             Path::new(binary),
             &[
                 "log",
+                "--ignore-working-copy",
                 "--no-graph",
                 "--no-pager",
                 "--color=never",

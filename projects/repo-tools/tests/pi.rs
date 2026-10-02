@@ -37,7 +37,7 @@ fn native_jj_metadata_preserves_fixed_argv_and_non_repository_state() {
     );
     let calls = fs::read_to_string(root.path().join("calls")).unwrap();
     assert!(calls.starts_with(
-        "root\nlog --no-graph --no-pager --color=never -r @ -T if(self.local_bookmarks()"
+        "root --ignore-working-copy\nlog --ignore-working-copy --no-graph --no-pager --color=never -r @ -T if(self.local_bookmarks()"
     ));
     let binary = fixture(root.path(), "exit 1\n");
     let output = command(&binary, "detect", root.path());
