@@ -88,6 +88,16 @@ The terminal owns build output and completion; a successful handoff is not a
 successful rebuild. Git-backed fetching needs the committed child revisions to be available; a
 fetch failure fails the rebuild rather than falling back to the mutable checkout.
 
+## Capability discovery and approval outcomes
+
+`capabilities` reports the service allowlist, whether rebuild requests are
+configured, the required local approval, and connection metadata. It exposes
+no desktop or audio content. `rebuild_status` accepts only a request UUID and
+reports pending, denied, expired, consumed, stale or handed-off outcomes. These
+are at most 32 memory-only records, retired after five minutes; restart discards
+them. Unknown/retired requests never imply success, and `handed-off` still means
+only that the rebuild terminal opened. It never claims activation succeeded.
+
 ## Options and checks
 
 `seele.hermes` offers `enable`, `gatewayUrl`, `peer`, `port`, `flake`, `services`

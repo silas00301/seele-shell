@@ -61,6 +61,8 @@ pub fn catalog() -> Value {
                 required: Vec<&str>,
                 write: bool| json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},"annotations":{"readOnlyHint":!write,"destructiveHint":write,"openWorldHint":false}});
     json!([
+        tool("capabilities","Read the configured read/write permissions and metadata connection state; no secrets or desktop content.",json!({}),vec![],false),
+        tool("rebuild_status","Read one request's pending or terminal approval outcome. A handoff never claims rebuild success.",json!({"id":{"type":"string","maxLength":36}}),vec!["id"],false),
         tool("flake_info","Read the configured Seele flake revision and host profile; no source files or credentials.",json!({}),vec![],false),
         tool("host_info","Read NixOS version and architecture; no machine identifiers.",json!({}),vec![],false),
         tool("generations","List retained NixOS generations.",json!({}),vec![],false),
@@ -75,6 +77,7 @@ fn argument_keys(name: &str, args: &Value) -> Result<()> {
         .as_object()
         .ok_or("Tool arguments must be an object.")?;
     let allowed = match name {
+        "rebuild_status" => Some("id"),
         "generation_diff" => Some("generation"),
         "service_status" | "service_logs" => Some("unit"),
         _ => None,
@@ -110,6 +113,31 @@ pub async fn call(
 ) -> Result<Value> {
     argument_keys(name, args)?;
     match name {
+        "capabilities" => {
+            let mut state = state.lock().await;
+            let snapshot = state.snapshot(config);
+            Ok(
+                json!({"version":1,"host":"nerv","services":config.services,"allowRebuild":config.rebuild,"localApprovalRequired":true,"desktopState":snapshot["state"],"gatewayReachable":snapshot["reachable"],"capturesDesktop":false,"capturesAudio":false}),
+            )
+        }
+        "rebuild_status" => {
+            let id = args["id"]
+                .as_str()
+                .filter(|id| uuid::Uuid::parse_str(id).is_ok())
+                .ok_or("Invalid request identity.")?;
+            let mut state = state.lock().await;
+            state.expire();
+            let outcome = if state.pending.contains_key(id) {
+                "awaiting-local-approval"
+            } else {
+                state
+                    .outcomes
+                    .get(id)
+                    .map(|(_, outcome)| outcome.as_str())
+                    .unwrap_or("unknown-or-retired")
+            };
+            Ok(json!({"id":id,"state":outcome}))
+        }
         "flake_info" => Ok(
             json!({"host":"nerv","system":"x86_64-linux","revision":revision(config,cancel).await?}),
         ),

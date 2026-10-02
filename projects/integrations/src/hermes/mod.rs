@@ -89,6 +89,7 @@ pub(super) struct State {
     reported: Option<Instant>,
     reachable: bool,
     pending: BTreeMap<String, Pending>,
+    outcomes: BTreeMap<String, (Instant, String)>,
 }
 impl State {
     fn new() -> Self {
@@ -97,11 +98,36 @@ impl State {
             reported: None,
             reachable: false,
             pending: BTreeMap::new(),
+            outcomes: BTreeMap::new(),
         }
     }
     fn expire(&mut self) {
-        self.pending
-            .retain(|_, p| p.created.elapsed() < Duration::from_secs(120));
+        let expired = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.created.elapsed() >= Duration::from_secs(120))
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in expired {
+            self.pending.remove(&id);
+            self.finish(&id, "expired");
+        }
+        self.outcomes
+            .retain(|_, (at, _)| at.elapsed() < Duration::from_secs(300));
+    }
+    fn finish(&mut self, id: &str, outcome: &str) {
+        if self.outcomes.len() >= 32 {
+            if let Some(oldest) = self
+                .outcomes
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(id, _)| id.clone())
+            {
+                self.outcomes.remove(&oldest);
+            }
+        }
+        self.outcomes
+            .insert(id.into(), (Instant::now(), outcome.into()));
     }
     fn snapshot(&mut self, config: &Config) -> Value {
         self.expire();
@@ -178,9 +204,12 @@ async fn local(
         }
         Some("deny") => {
             let id = request["id"].as_str().ok_or("Invalid approval identity.")?;
-            if shared.lock().await.pending.remove(id).is_none() {
+            let mut state = shared.lock().await;
+            state.expire();
+            if state.pending.remove(id).is_none() {
                 return Err("This rebuild request is no longer pending.");
             }
+            state.finish(id, "denied");
             Ok(json!({"ok":true}))
         }
         Some("approve") => {
@@ -198,7 +227,9 @@ async fn local(
             };
             // Consume once before any await; recheck the revision approved by the
             // user immediately before handing the fixed rebuild to a terminal.
+            shared.lock().await.finish(id, "approval-consumed");
             if tools::revision(config, cancel.clone()).await? != pending.revision {
+                shared.lock().await.finish(id, "stale-revision");
                 return Err("The flake changed. Request and review a new rebuild.");
             }
             let mut command = Command::new("ghostty");
@@ -211,9 +242,14 @@ async fn local(
                     "switch",
                 ])
                 .arg(tools::immutable_flake(config, &pending.revision)?);
-            common::launch(command, Duration::from_secs(10), cancel)
+            if common::launch(command, Duration::from_secs(10), cancel)
                 .await
-                .map_err(|_| "Could not open the approved rebuild terminal.")?;
+                .is_err()
+            {
+                shared.lock().await.finish(id, "handoff-failed");
+                return Err("Could not open the approved rebuild terminal.");
+            }
+            shared.lock().await.finish(id, "handed-off");
             Ok(json!({"ok":true,"state":"handed-off"}))
         }
         _ => Err("Unknown Hermes control operation."),
@@ -344,6 +380,84 @@ pub async fn request(value: Value, watch: bool, cancel: CancellationToken) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn request_status_reports_denial_expiry_and_retirement_without_executing() {
+        let config = Config {
+            gateway: "http://hermes:9119".into(),
+            peer: "hermes".into(),
+            port: 8766,
+            flake: "/tmp/flake".into(),
+            services: vec!["nix-daemon.service".into()],
+            rebuild: false,
+        };
+        let state = Arc::new(Mutex::new(State::new()));
+        let id = uuid::Uuid::new_v4().to_string();
+        let arguments = json!({"id":id});
+        let read = || {
+            tools::call(
+                "rebuild_status",
+                &arguments,
+                &config,
+                &state,
+                CancellationToken::new(),
+            )
+        };
+        // Requests use opaque identities, and absent status never implies success.
+        assert_eq!(read().await.unwrap()["state"], "unknown-or-retired");
+        state.lock().await.pending.insert(
+            id.clone(),
+            Pending {
+                created: Instant::now(),
+                revision: "fixture".into(),
+            },
+        );
+        assert_eq!(read().await.unwrap()["state"], "awaiting-local-approval");
+        local(
+            json!({"op":"deny","id":id}),
+            &state,
+            &config,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(read().await.unwrap()["state"], "denied");
+        state.lock().await.pending.insert(
+            id.clone(),
+            Pending {
+                created: Instant::now() - Duration::from_secs(121),
+                revision: "fixture".into(),
+            },
+        );
+        assert_eq!(read().await.unwrap()["state"], "expired");
+        state.lock().await.outcomes.insert(
+            id.clone(),
+            (
+                Instant::now() - Duration::from_secs(301),
+                "handed-off".into(),
+            ),
+        );
+        assert_eq!(read().await.unwrap()["state"], "unknown-or-retired");
+        let capabilities = tools::call(
+            "capabilities",
+            &json!({}),
+            &config,
+            &state,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(capabilities["allowRebuild"], false);
+        assert_eq!(capabilities["localApprovalRequired"], true);
+        assert!(tools::call(
+            "capabilities",
+            &json!({"context":true}),
+            &config,
+            &state,
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+    }
     #[test]
     fn lifecycle_is_metadata_only_and_expires() {
         let mut state = State::new();

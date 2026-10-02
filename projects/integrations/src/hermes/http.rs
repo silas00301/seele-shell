@@ -234,7 +234,7 @@ mod tests {
             CancellationToken::new(),
         )
         .await;
-        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 9);
         for name in ["approve", "request_rebuild"] {
             let reply = rpc(
                 &invoke("tools/call", json!({"name":name,"arguments":{}})),
