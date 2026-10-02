@@ -104,9 +104,38 @@ impl Drop for Remote {
         }
     }
 }
+// Additional workspaces and non-colocated repositories have no discoverable
+// .git. Give GitHub CLI the backend of this workspace, only for that child.
+fn github(cancel: &AtomicUsize) -> Result<Command> {
+    let root = capture(
+        Command::new("jj").args(["git", "root", "--ignore-working-copy"]),
+        cancel,
+    )
+    .inspect_err(|_| {
+        eprintln!("Cannot find this Jujutsu workspace's Git backend.");
+    })?;
+    let root = root.trim_end_matches(['\r', '\n']);
+    if !std::path::Path::new(root).is_absolute() || root.contains(['\0', '\r', '\n']) {
+        eprintln!("Jujutsu returned an invalid Git backend path.");
+        return Err(1);
+    }
+    let mut command = Command::new("gh");
+    command.env("GIT_DIR", root);
+    // A caller's unrelated worktree/common directory or GitHub override must
+    // not combine with this backend and direct a PR at another repository.
+    for key in [
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GH_REPO",
+    ] {
+        command.env_remove(key);
+    }
+    Ok(command)
+}
 fn choose(cancel: &AtomicUsize) -> Result<Option<String>> {
     let values: Value = serde_json::from_str(&capture(
-        Command::new("gh").args(["pr", "list", "--json", "number,title"]),
+        github(cancel)?.args(["pr", "list", "--json", "number,title"]),
         cancel,
     )?)
     .map_err(|_| 1)?;
@@ -179,7 +208,7 @@ pub fn pr(args: &[String], cancel: &AtomicUsize) -> Result<()> {
                 return Err(1);
             }
             interactive(
-                Command::new("gh").args(["pr", "create", "--head", bookmark]),
+                github(cancel)?.args(["pr", "create", "--head", bookmark]),
                 cancel,
             )
         }
@@ -197,7 +226,7 @@ pub fn pr(args: &[String], cancel: &AtomicUsize) -> Result<()> {
                 return Err(2);
             }
             let details: Value = serde_json::from_str(&capture(
-                Command::new("gh").args([
+                github(cancel)?.args([
                     "pr",
                     "view",
                     &id,

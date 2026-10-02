@@ -77,6 +77,7 @@ let
     repo-tools = ''
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
+      python3 projects/repo-tools/tests/jj_workspace.py "$out/bin/jj-pr"
       python3 projects/repo-tools/tests/submodule.py "$out/bin/update-submodule"
     '';
     broker = ''
