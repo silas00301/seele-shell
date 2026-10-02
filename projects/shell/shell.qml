@@ -2050,6 +2050,10 @@ Shared.Theme {
     id: portsStore
     panelOpen: root.controlPanel === "ports"
   }
+  DriftStore {
+    id: driftStore
+    panelOpen: root.controlPanel === "drift"
+  }
   ThemeStore {
     id: themeStore
     panelOpen: root.themesOpen
@@ -3177,7 +3181,7 @@ Shared.Theme {
     readonly property real controlsY: mediaHeight + gap
     readonly property real devicesY: controlsY + controlsHeight + gap
 
-    height: devicesY + smallTileHeight * 9 + gap * 8
+    height: devicesY + smallTileHeight * 10 + gap * 9
 
     ControlTile {
       y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
@@ -3267,6 +3271,18 @@ Shared.Theme {
       glyph: Text { text: themeStore.appearanceGlyph; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
       onKnobClicked: themeStore.cycleAppearance()
       onActivated: root.toggleControl("themes", controlGrid.screenName)
+    }
+
+    ControlTile {
+      x: 0
+      y: controlGrid.devicesY + controlGrid.smallTileHeight * 9 + controlGrid.gap * 9
+      width: parent.width
+      height: controlGrid.smallTileHeight
+      label: "Fix me"
+      detail: driftStore.drifted ? driftStore.drifted + " drifted from the flake" : "Quad9, Podman and remote shell"
+      active: driftStore.drifted > 0
+      glyph: Text { text: "󰁨"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
+      onActivated: root.toggleControl("drift", controlGrid.screenName)
     }
 
     Rectangle {
@@ -8959,6 +8975,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰛳"; title: "Ports"; detail: portsPanel.hint }
           PortsPanel { id: portsPanel; theme: root; store: portsStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Fix me: flake versus what is running ---------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: driftWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "drift" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: driftContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-drift"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { driftPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: driftContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰁨"; title: "Fix me"; detail: driftPanel.hint }
+          DriftPanel { id: driftPanel; theme: root; store: driftStore; width: parent.width }
         }
       }
     }
