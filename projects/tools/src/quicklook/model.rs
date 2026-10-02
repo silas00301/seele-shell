@@ -66,8 +66,8 @@ const AUDIO: &[&str] = &[
     "ape", "wv",
 ];
 const VIDEO: &[&str] = &[
-    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ogv", "3gp", "ts",
-    "m2ts", "mts",
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ogv", "3gp", "m2ts",
+    "mts",
 ];
 const MARKDOWN: &[&str] = &["md", "markdown", "mdown", "mkd", "mdx"];
 /// Extensions worth trusting ahead of the content sniff, so an empty or
@@ -243,14 +243,70 @@ fn magic(head: &[u8]) -> Option<Kind> {
     if starts(b"\x1a\x45\xdf\xa3") {
         return Some(Kind::Video);
     }
-    if head.len() >= 12 && &head[4..8] == b"ftyp" {
-        // Audio and video share the box; only the brand separates them.
-        return Some(match &head[8..12] {
-            b"M4A " | b"M4B " | b"M4P " => Kind::Audio,
-            _ => Kind::Video,
-        });
+    file_type(head)
+}
+
+/// ISO BMFF images share their container with MP4. Inspect only the major and
+/// aligned compatible brands of the first FileTypeBox, never the minor version
+/// or bytes in the next box. Extended sizes are bounded by the existing sniff.
+fn file_type(head: &[u8]) -> Option<Kind> {
+    let head = &head[..head.len().min(SNIFF_BYTES)];
+    if head.get(4..8)? != b"ftyp" {
+        return None;
     }
-    None
+    let size = u32::from_be_bytes(head.get(..4)?.try_into().ok()?);
+    let (size, header) = if size == 1 {
+        let size = u64::from_be_bytes(head.get(8..16)?.try_into().ok()?);
+        (usize::try_from(size).ok()?, 16)
+    } else {
+        (size as usize, 8)
+    };
+    if size < header + 8 || (size - header - 8) % 4 != 0 {
+        return None;
+    }
+    let major = head.get(header..header + 4)?;
+    let compatible = head.get(header + 8..size.min(head.len()))?;
+    let image = |brand: &[u8]| {
+        matches!(
+            brand,
+            b"avif"
+                | b"avis"
+                | b"mif1"
+                | b"msf1"
+                | b"heic"
+                | b"heix"
+                | b"heim"
+                | b"heis"
+                | b"hevc"
+                | b"hevx"
+                | b"hevm"
+                | b"hevs"
+        )
+    };
+    Some(
+        if image(major)
+            || compatible
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|brand| image(brand))
+        {
+            Kind::Image
+        } else if matches!(major, b"M4A " | b"M4B " | b"M4P ") {
+            Kind::Audio
+        } else {
+            Kind::Video
+        },
+    )
+}
+
+/// Three MPEG-TS packet headers establish a transport stream instead of
+/// treating arbitrary non-text bytes with the ambiguous `.ts` suffix as video.
+fn transport_stream(head: &[u8]) -> bool {
+    [0, 188, 376].into_iter().all(|offset| {
+        head.get(offset..offset + 4)
+            .is_some_and(|header| header[0] == 0x47 && header[3] & 0x30 != 0)
+    })
 }
 
 /// Whether a head of bytes reads as text. A NUL is decisive, and so is a
@@ -266,7 +322,7 @@ fn textual(head: &[u8]) -> bool {
     // that decoded rather than rejecting the whole file for the cut.
     let text = match std::str::from_utf8(head) {
         Ok(text) => text,
-        Err(error) if error.valid_up_to() > 0 => {
+        Err(error) if error.error_len().is_none() && error.valid_up_to() > 0 => {
             // `valid_up_to` is exactly the length that decoded.
             match std::str::from_utf8(&head[..error.valid_up_to()]) {
                 Ok(text) => text,
@@ -312,6 +368,15 @@ pub fn classify(name: &str, head: &[u8], directory: bool) -> Kind {
     }
     if listed(AUDIO) {
         return Kind::Audio;
+    }
+    if extension == "ts" {
+        return if textual(head) {
+            Kind::Text
+        } else if transport_stream(head) {
+            Kind::Video
+        } else {
+            Kind::Binary
+        };
     }
     if listed(VIDEO) {
         return Kind::Video;
@@ -401,11 +466,11 @@ mod tests {
     fn magic_outranks_a_wrong_extension_and_brands_separate_audio_from_video() {
         assert_eq!(classify("notes.txt", b"%PDF-1.7\n", false), Kind::Pdf);
         assert_eq!(
-            classify("clip.mp4", b"\x00\x00\x00\x18ftypM4A ", false),
+            classify("clip.mp4", &ftyp(b"M4A ", &[*b"isom"]), false),
             Kind::Audio
         );
         assert_eq!(
-            classify("clip.m4a", b"\x00\x00\x00\x18ftypisom", false),
+            classify("clip.m4a", &ftyp(b"isom", &[]), false),
             Kind::Video
         );
         assert_eq!(classify("sheet.png", b"GIF89a", false), Kind::Animation);
@@ -424,6 +489,121 @@ mod tests {
         assert_eq!(
             classify("anything", b"RIFF\x00\x00\x00\x00WAVE", false),
             Kind::Audio
+        );
+    }
+
+    fn ftyp(major: &[u8; 4], compatible: &[[u8; 4]]) -> Vec<u8> {
+        let mut bytes = ((16 + compatible.len() * 4) as u32).to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(major);
+        bytes.extend_from_slice(&[0; 4]);
+        for brand in compatible {
+            bytes.extend_from_slice(brand);
+        }
+        bytes
+    }
+
+    #[test]
+    fn typescript_text_and_transport_streams_share_a_suffix_not_a_preview() {
+        for name in ["index.ts", "types.d.ts", "INDEX.TS"] {
+            assert_eq!(
+                classify(name, b"export const answer = 42;\n", false),
+                Kind::Text
+            );
+            assert_eq!(classify(name, b"", false), Kind::Text);
+        }
+        // UTF-8 source can accidentally have sync-shaped bytes at the packet
+        // cadence. Text wins the ambiguous extension before probing packets.
+        let mut source = vec![b' '; 188 * 3];
+        for line in source.as_chunks_mut::<188>().0 {
+            line[..4].copy_from_slice(b"Get ");
+            line[187] = b'\n';
+        }
+        assert_eq!(classify("source.ts", &source, false), Kind::Text);
+        let mut transport = vec![0xff; 188 * 3];
+        for packet in transport.as_chunks_mut::<188>().0 {
+            packet[..4].copy_from_slice(&[0x47, 0x40, 0x11, 0x10]);
+        }
+        assert_eq!(classify("recording.ts", &transport, false), Kind::Video);
+        assert_eq!(
+            classify("damaged.ts", &[0, 0xff, 0x47], false),
+            Kind::Binary
+        );
+        assert_eq!(classify("renamed.ts", b"%PDF-1.7\n", false), Kind::Pdf);
+    }
+
+    #[test]
+    fn image_file_type_brands_do_not_open_the_video_player() {
+        for brand in [*b"avif", *b"heic", *b"heix", *b"mif1"] {
+            assert_eq!(
+                classify("image.dat", &ftyp(&brand, &[]), false),
+                Kind::Image
+            );
+        }
+        assert_eq!(
+            classify("image.dat", &ftyp(b"isom", &[*b"avif"]), false),
+            Kind::Image
+        );
+        assert_eq!(
+            classify("audio.dat", &ftyp(b"M4A ", &[]), false),
+            Kind::Audio
+        );
+        assert_eq!(
+            classify("video.dat", &ftyp(b"isom", &[]), false),
+            Kind::Video
+        );
+    }
+
+    #[test]
+    fn file_type_brand_checks_respect_box_boundaries_and_alignment() {
+        let mut next_box = ftyp(b"isom", &[]);
+        next_box.extend_from_slice(b"avif");
+        assert_eq!(classify("clip", &next_box, false), Kind::Video);
+        let mut minor_version = ftyp(b"isom", &[]);
+        minor_version[12..16].copy_from_slice(b"avif");
+        assert_eq!(classify("clip", &minor_version, false), Kind::Video);
+        assert_eq!(
+            classify("clip", &ftyp(b"isom", &[*b"xavi", *b"fxxx"]), false),
+            Kind::Video
+        );
+
+        let mut extended = 1u32.to_be_bytes().to_vec();
+        extended.extend_from_slice(b"ftyp");
+        extended.extend_from_slice(&28u64.to_be_bytes());
+        extended.extend_from_slice(b"mif1\0\0\0\0heic");
+        assert_eq!(classify("image", &extended, false), Kind::Image);
+
+        let mut large = ftyp(b"isom", &[]);
+        large.resize(SNIFF_BYTES, 0);
+        large.extend_from_slice(b"avif");
+        let size = (large.len() as u32).to_be_bytes();
+        large[..4].copy_from_slice(&size);
+        assert_eq!(classify("clip", &large, false), Kind::Video);
+
+        for size in [0u32, 8, 12, 17] {
+            let mut malformed = ftyp(b"avif", &[]);
+            malformed[..4].copy_from_slice(&size.to_be_bytes());
+            assert_eq!(classify("blob", &malformed, false), Kind::Binary);
+        }
+        // Truncated base/extended headers cannot panic or invent a brand.
+        for length in 1..16 {
+            assert_eq!(file_type(&ftyp(b"avif", &[])[..length]), None);
+        }
+        for length in 1..24 {
+            assert_eq!(file_type(&extended[..length]), None);
+        }
+    }
+
+    #[test]
+    fn a_text_prefix_does_not_hide_invalid_utf8_inside_a_file() {
+        assert_eq!(classify("binary.ts", b"ASCII\xffmore", false), Kind::Binary);
+        assert_eq!(classify("binary.ts", b"ASCII\xc3x", false), Kind::Binary);
+        let mut cut = vec![b' '; SNIFF_BYTES - 1];
+        cut.push(0xc3);
+        assert_eq!(classify("source.ts", &cut, false), Kind::Text);
+        assert_eq!(
+            classify("source.ts", "const grüße = 1;".as_bytes(), false),
+            Kind::Text
         );
     }
 

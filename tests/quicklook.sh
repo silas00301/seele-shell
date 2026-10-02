@@ -54,6 +54,20 @@ const readline = require('node:readline')
 
 const files = process.env.QUICKLOOK_FILES
 const runtime = process.env.XDG_RUNTIME_DIR
+// Real worker classification must feed source text into the reply and hand
+// ISO BMFF still images to Qt by path, rather than selecting its video body.
+fs.writeFileSync(path.join(files, 'source.ts'), 'export const answer = 42;\n')
+const imageHeader = brand => {
+  const bytes = Buffer.alloc(24)
+  bytes.writeUInt32BE(24)
+  bytes.write('ftyp', 4)
+  bytes.write(brand, 8)
+  bytes.write('mif1', 16)
+  bytes.write(brand, 20)
+  return bytes
+}
+fs.writeFileSync(path.join(files, 'photo.avif'), imageHeader('avif'))
+fs.writeFileSync(path.join(files, 'photo.heic'), imageHeader('heic'))
 const calls = () => fs.existsSync(process.env.PDF_CALLS)
   ? fs.readFileSync(process.env.PDF_CALLS, 'utf8').trim().split('\n').filter(Boolean)
   : []
@@ -101,12 +115,16 @@ async function main() {
     path.join(files, 'folder'),
     '/dev/zero',
     'relative/path',
+    path.join(files, 'source.ts'),
+    path.join(files, 'photo.avif'),
+    path.join(files, 'photo.heic'),
   ] })
   const opened = await next(messages, m => m.id === 1 && m.event === 'items')
   const kinds = opened.items.map(item => item.kind)
   assert.deepEqual(kinds, [
     'text', 'unavailable', 'markdown', 'image', 'pdf', 'pdf',
     'binary', 'directory', 'unavailable', 'unavailable',
+    'text', 'image', 'image',
   ])
 
   // Content is shown to the one account that already owns it, but never the
@@ -118,6 +136,9 @@ async function main() {
   // A file the panel draws itself is described, never read into the reply.
   assert.equal(opened.items[3].text, undefined)
   assert.equal(opened.items[6].text, undefined)
+  assert.equal(opened.items[10].text, 'export const answer = 42;\n')
+  assert.equal(opened.items[11].text, undefined)
+  assert.equal(opened.items[12].text, undefined)
 
   assert.equal(opened.items[4].pages, 7)
   assert.equal(opened.items[4].error, '')
