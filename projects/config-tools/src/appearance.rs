@@ -13,10 +13,10 @@
 //! `zone1970.tab` stands in for it, which is close enough to decide when the
 //! desktop turns dark and says nothing a timezone does not already say.
 use serde::{Deserialize, Serialize};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+
+/// The timezone's reference city is shared with the weather worker, which
+/// uses the same place as its default location; `seele-runtime` owns it.
+pub use seele_runtime::timezone::{place, place_in, zone, Place};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -352,94 +352,6 @@ pub fn daylight(latitude: f64, longitude: f64, now: i64) -> Plan {
     plan_from(boundaries, now, fallback)
 }
 
-/// Where the sun is reckoned from: the timezone's reference city.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Place {
-    pub zone: String,
-    pub label: String,
-    pub latitude: f64,
-    pub longitude: f64,
-}
-
-fn zoneinfo() -> PathBuf {
-    env::var_os("TZDIR").map(PathBuf::from).unwrap_or_else(|| {
-        ["/etc/zoneinfo", "/usr/share/zoneinfo"]
-            .into_iter()
-            .map(PathBuf::from)
-            .find(|path| path.join("zone1970.tab").is_file())
-            .unwrap_or_else(|| PathBuf::from("/usr/share/zoneinfo"))
-    })
-}
-
-/// The system timezone's name: `TZ` when it names a zone, else the zone
-/// `/etc/localtime` links into.
-pub fn zone() -> Option<String> {
-    if let Some(value) = env::var_os("TZ") {
-        let value = value.to_string_lossy();
-        let value = value.trim_start_matches(':');
-        if !value.is_empty() && !value.starts_with('/') {
-            return Some(value.to_owned());
-        }
-    }
-    let target = fs::read_link("/etc/localtime").ok()?;
-    let target = target.to_string_lossy();
-    let (_, zone) = target.rsplit_once("zoneinfo/")?;
-    (!zone.is_empty()).then(|| zone.to_owned())
-}
-
-/// ISO 6709 `±DDMM±DDDMM` or `±DDMMSS±DDDMMSS`, as the tz tables write it.
-fn coordinates(value: &str) -> Option<(f64, f64)> {
-    let split = value[1..].find(['+', '-'])? + 1;
-    let angle = |part: &str, degree_digits: usize| -> Option<f64> {
-        let sign = match part.as_bytes().first()? {
-            b'+' => 1.0,
-            b'-' => -1.0,
-            _ => return None,
-        };
-        let digits = &part[1..];
-        if !digits.bytes().all(|byte| byte.is_ascii_digit())
-            || !(digits.len() == degree_digits + 2 || digits.len() == degree_digits + 4)
-        {
-            return None;
-        }
-        let degrees: f64 = digits[..degree_digits].parse().ok()?;
-        let minutes: f64 = digits[degree_digits..degree_digits + 2].parse().ok()?;
-        let seconds: f64 = digits
-            .get(degree_digits + 2..)
-            .filter(|rest| !rest.is_empty())
-            .map_or(Some(0.0), |rest| rest.parse().ok())?;
-        Some(sign * (degrees + minutes / 60.0 + seconds / 3600.0))
-    };
-    Some((angle(&value[..split], 2)?, angle(&value[split..], 3)?))
-}
-
-/// The reference city of `zone` from the tz tables under `directory`.
-pub fn place_in(directory: &Path, zone: &str) -> Option<Place> {
-    for table in ["zone1970.tab", "zone.tab"] {
-        let Ok(text) = fs::read_to_string(directory.join(table)) else {
-            continue;
-        };
-        for line in text.lines().filter(|line| !line.starts_with('#')) {
-            let fields: Vec<&str> = line.split('\t').collect();
-            if fields.len() >= 3 && fields[2] == zone {
-                let (latitude, longitude) = coordinates(fields[1])?;
-                let label = zone.rsplit('/').next().unwrap_or(zone).replace('_', " ");
-                return Some(Place {
-                    zone: zone.to_owned(),
-                    label,
-                    latitude,
-                    longitude,
-                });
-            }
-        }
-    }
-    None
-}
-
-pub fn place() -> Option<Place> {
-    place_in(&zoneinfo(), &zone()?)
-}
-
 /// What the schedule says now, or `None` while it is off or has no place.
 pub fn plan(auto: &Auto, calendar: &dyn Calendar, place: Option<&Place>, now: i64) -> Option<Plan> {
     match auto.source {
@@ -621,40 +533,6 @@ mod tests {
             next.at > at(2026, 12, 22, 0, 0),
             "the next change is tomorrow's sunrise"
         );
-    }
-
-    #[test]
-    fn a_timezone_names_its_reference_city() {
-        let directory =
-            std::env::temp_dir().join(format!("seele-zone-test-{}", std::process::id()));
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join("zone1970.tab"),
-            "# comment\nDE,DK,NO,SE,SJ\t+5230+01322\tEurope/Berlin\tmost of Germany\n\
-             US\t+404251-0740023\tAmerica/New_York\tEastern (most areas)\n\
-             AR\t-3436-05827\tAmerica/Argentina/Buenos_Aires\tBuenos Aires (BA, CF)\n",
-        )
-        .unwrap();
-        let berlin = place_in(&directory, "Europe/Berlin").unwrap();
-        assert_eq!(berlin.label, "Berlin");
-        assert!(
-            (berlin.latitude - 52.5).abs() < 1e-9
-                && (berlin.longitude - (13.0 + 22.0 / 60.0)).abs() < 1e-9
-        );
-        let new_york = place_in(&directory, "America/New_York").unwrap();
-        assert!((new_york.latitude - (40.0 + 42.0 / 60.0 + 51.0 / 3600.0)).abs() < 1e-9);
-        assert!(new_york.longitude < -74.0, "west is negative");
-        let buenos_aires = place_in(&directory, "America/Argentina/Buenos_Aires").unwrap();
-        assert_eq!(buenos_aires.label, "Buenos Aires");
-        assert!(buenos_aires.latitude < 0.0, "south is negative");
-        assert_eq!(
-            place_in(&directory, "Etc/UTC"),
-            None,
-            "an offset zone has no city and no sun"
-        );
-        fs::remove_dir_all(&directory).unwrap();
-        assert_eq!(coordinates("+5230"), None);
-        assert_eq!(coordinates("5230+01322"), None);
     }
 
     #[test]
