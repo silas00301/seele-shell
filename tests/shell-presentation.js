@@ -22,4 +22,10 @@ for(const name of ['bluetoothIcon','bluetoothDetail','bluetoothSignal']){assert.
 for(const name of ['batteryCharging','batteryIcon','batteryColor']){assert.equal(current[name](batteries[1]),baseline[name](batteries[1]),name);comparisons++;}
 for(const count of [i*999.5,i*1e6+250000,i*1e9+150000000]){assert.equal(current.formatTokens(count),baseline.formatTokens(count));comparisons++;}
 }console.log('PASS '+comparisons+' baseline/native presentation comparisons');}
+current.agentData={launchers:[{id:'cursor',name:'Cursor'}],subscriptions:[{id:'cursor',name:'Cursor',limits:[{usedPercent:60}]}]};
+current.systemData.agentStates={cursor:{active:true,status:'working'}};
+assert.deepEqual(JSON.parse(JSON.stringify(current.activeAgents())),[{id:'cursor',name:'Cursor',status:'working'}]);
+assert.deepEqual(JSON.parse(JSON.stringify(current.agentIndicators())),[{id:'cursor',name:'Cursor'}]);
+assert.deepEqual(JSON.parse(JSON.stringify(current.menuBarCapacities())),[{id:'cursor',name:'Cursor',free:40}]);
+assert.equal(current.agentMark('cursor'),'cursor.svg');assert.equal(current.agentBadge('cursor'),'CU');
 console.log('Shell native token/reset/capacity/device presentation checks passed');

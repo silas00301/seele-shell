@@ -185,6 +185,7 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./quicklook.js} "$out/share/seele-shell/quicklook.js"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude.svg} "$out/share/seele-shell/claude.svg"
+    install -m644 ${./cursor.svg} "$out/share/seele-shell/cursor.svg"
     install -m644 ${./openai.svg} "$out/share/seele-shell/openai.svg"
     install -m644 ${./opencode.svg} "$out/share/seele-shell/opencode.svg"
     install -m644 ${./pi.svg} "$out/share/seele-shell/pi.svg"
@@ -367,7 +368,7 @@ pkgs.stdenvNoCC.mkDerivation {
     ! grep -Fq 'import "../shared"' "$out/share/seele-shell/shell.qml"
     test -f "$out/share/seele-shell/SystemState.qml"
     test -f "$out/share/seele-shell/seele.svg"
-    for mark in claude openai opencode pi; do
+    for mark in claude cursor openai opencode pi; do
       test -f "$out/share/seele-shell/$mark.svg"
     done
     test -s "$out/share/seele-shell/shared/grain.png"
@@ -430,6 +431,10 @@ pkgs.stdenvNoCC.mkDerivation {
     "$out/bin/seele-shellctl" --help >/dev/null
     test -x ${tools}/bin/seele-stop-listener
     bash ${tests}/agent-state.sh "$out/libexec/seele-shell/seele-agent-state"
+    bash ${tests}/cursor-agent.sh \
+      "$out/libexec/seele-shell/seele-agent-hook" \
+      "$out/libexec/seele-shell/seele-control" \
+      "$out/libexec/seele-shell/seele-agent"
     bash ${tests}/harness-status.sh \
       "$out/share/seele-shell/pi-status.ts" \
       "$out/share/seele-shell/opencode-status.ts" \

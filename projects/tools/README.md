@@ -76,6 +76,45 @@ counts and bytes and reject symlink, hardlink and foreign-owner records. The
 host-event parity and hostile-file tests live in `tests/harness-status.sh` at
 the workspace root.
 
+## Cursor agent integration
+
+`seele-agent cursor` launches `cursor-agent` in Ghostty from the focused window's
+working directory, with the same CPU fallback and focus action as the other
+harnesses. `SEELE_SHELL_CURSOR` pins its executable. The cockpit and menu bar
+identify both CLI and editor conversations as `cursor`; an idle editor never
+becomes a CPU-inferred agent. CLI discovery recognizes the normal launcher and
+SEA process names, not shell/worker subprocesses.
+
+On `nerv`, the parent installs `/etc/cursor/hooks.json` at Cursor's system layer,
+which merges with the user's and project's hooks without owning either file.
+`seele-agent-hook cursor host-event` consumes `sessionStart`,
+`beforeSubmitPrompt`, `stop` and `sessionEnd`. Start/stop mean input, submission
+means working, and end removes the conversation record. A late fire-and-forget
+start preserves an already-submitted turn. Cursor supplies `session_id` at
+start/end and `conversation_id` during a turn; both map to the same bounded
+SHA-256 key. The hook walks ancestors to the CLI or editor process, never using
+an untrusted payload PID, so session focus returns to its owning terminal or
+editor. Hooks return empty JSON: they approve nothing, inject no context and
+request no follow-up. Cursor exposes no permission-wait event, so a mid-turn
+approval pause remains working rather than claiming a known input state.
+
+Input is bounded to 1 MiB and two seconds; only event and conversation identity
+are deserialized. Prompts, attachments, email and transcript paths are discarded,
+never logged or persisted, and no transcript is opened. Metadata remains private.
+CodexBar's default provider selection is `both cursor`; unavailable providers
+produce no invented subscription. On Linux, Cursor usage needs a signed-in
+editor or CodexBar's separately configured session, not merely CLI login.
+Cursor costs, when supplied by CodexBar, are remote account-wide dashboard data,
+not local CLI token logs. No credential is managed by this integration.
+
+Sources: [Cursor hooks](https://cursor.com/docs/agent/hooks) and
+[CodexBar Cursor provider](https://github.com/steipete/CodexBar/blob/main/docs/cursor.md).
+The pinned CLI's hook loader also confirms the Linux system path and schema.
+`tests/cursor-agent.sh` drives synthetic CLI/editor owners, concurrent identities,
+late starts, cleanup, focus, fallback discovery and exact launch arguments without
+a real desktop or model account. `tests/agent-state.sh` covers subscription
+collection and `tests/shell-presentation.js` covers the mark and capacity row.
+
 ## Launcher window moves
 
 `seele-control vicinae-desktop` includes each eligible window's `moveWindow`
