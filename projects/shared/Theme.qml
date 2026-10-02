@@ -171,9 +171,19 @@ ShellRoot {
   readonly property color cardBorder: alpha(text, 0.06)
   readonly property color separatorColor: alpha(text, 0.09)
   // Motion. Only in-surface state changes animate, and they share one pair of
-  // durations so the whole shell settles at the same speed.
+  // durations so the whole shell settles at the same speed. A finish cue is
+  // the exception that has to be read without looking at the bar: it comes in
+  // on `durationFast`, holds for `durationGlance`, and leaves on
+  // `durationSettle`.
   readonly property int durationFast: 110
   readonly property int durationNormal: 180
+  readonly property int durationGlance: 560
+  readonly property int durationSettle: 480
+  // How far a screen-edge finish cue reaches in from the bezel, as a fraction
+  // of the shorter side, and how strong the Done colour is at that bezel. The
+  // light falls off inside the rim, so the work in the middle stays put.
+  readonly property real edgeCueReach: 0.1
+  readonly property real edgeCueAlpha: 0.82
   // Disabled actions stay legible while clearly withdrawing interaction.
   readonly property real disabledOpacity: 0.45
   // A track the pointer has to hit is drawn thin and targeted tall: the strip

@@ -11,6 +11,8 @@ const shellPatterns = {
   'system health panel': /SystemHealthPanel\s*\{\s*id:\s*healthContent/,
   'focus panel uses resident timer': /FocusPanel\s*\{\s*id: focusContent\s*theme: root\s*timer: focusTimer/,
   'focus timer store': /FocusTimer\s*\{\s*\n\s*id: focusTimer/,
+  'focus exit cue plays when the timer completes': /onCompleted:\s*\{\s*focusExitCue\.play\(\)/,
+  'focus exit cue is one input-transparent rim': /namespace: "seele-shell-focus-exit"\s+WlrLayershell\.keyboardFocus: WlrKeyboardFocus\.None/,
   'quick AI prompt controller': /AiPrompt\s*\{\s*\n\s*id: aiPrompt/,
   'quick AI prompt IPC': /function togglePrompt\(\): void \{ root\.togglePrompt\(\) \}/,
   'screen colour picker controller': /ColorPicker\s*\{\s*\n\s*id: colorPicker/,
@@ -94,6 +96,13 @@ assert.ok(notificationPopup.includes('WlrLayershell.keyboardFocus: WlrKeyboardFo
 assert.ok(!/WlrKeyboardFocus\.(OnDemand|Exclusive)/.test(notificationPopup),
   'notification toasts must never take keyboard focus away from the focused window');
 
+const focusExit = shell.slice(shell.indexOf('namespace: "seele-shell-focus-exit"') - 800, shell.indexOf('namespace: "seele-shell-focus-exit"') + 180);
+assert.ok(focusExit.includes('mask: Region {}'), 'the focus exit rim must pass pointer input');
+assert.ok(focusExit.includes('WlrLayershell.keyboardFocus: WlrKeyboardFocus.None'),
+  'the focus exit rim must not take keyboard focus');
+assert.ok(!/WlrKeyboardFocus\.(OnDemand|Exclusive)/.test(focusExit),
+  'the focus exit rim must not ask Hyprland for keyboard focus when it maps');
+
 const packagedSources = [
   'CaffeinateStore.qml',
   'CaffeinatePanel.qml',
@@ -107,6 +116,8 @@ const packagedSources = [
   'quicklook.js',
   'FocusTimer.qml',
   'FocusPanel.qml',
+  'FocusExitCue.qml',
+  'FocusExitRim.qml',
   'focus.js',
   'HomeAssistantStore.qml',
   'HomeAssistantPanel.qml',
@@ -143,6 +154,7 @@ const focusedTests = [
   'quicklook.sh',
   'focus.js',
   'focus-timer.sh',
+  'focus-exit-cue.sh',
   'panel-layouts.js',
   'shell-load.sh',
   'home-assistant-store.js',
