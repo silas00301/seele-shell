@@ -23,7 +23,9 @@ FocusScope {
     {id: "base64-encode", label: "Base64 encode", hint: "Encode UTF-8 text with the standard Base64 alphabet and padding."},
     {id: "base64-decode", label: "Base64 decode", hint: "Standard padded Base64 only. Whitespace and non-UTF-8 bytes are rejected."},
     {id: "lines-clean", label: "Clean lines", hint: "Trim each line, remove blank lines and use LF endings. Preview before copying."},
-    {id: "lines-unique", label: "Unique lines", hint: "Keep the first occurrence of each exact line, in its original order."}
+    {id: "lines-unique", label: "Unique lines", hint: "Keep the first occurrence of each exact line, in its original order."},
+    {id: "base64url-encode", label: "Base64url encode", hint: "Encode UTF-8 text with the URL-safe Base64 alphabet, without padding."},
+    {id: "base64url-decode", label: "Base64url decode", hint: "URL-safe Base64 with no padding or complete padding. Whitespace and non-UTF-8 bytes are rejected."}
   ]
   readonly property string mode: modes[choice].id
   readonly property bool canCopy: result.valid === true && !previewTimer.running && !clipboardBusy
@@ -76,7 +78,8 @@ FocusScope {
     if (event.key === Qt.Key_Escape) { dismissed(); event.accepted = true }
     else if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) { copy(); event.accepted = true }
     else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) { paste(); event.accepted = true }
-    else if ((event.modifiers & Qt.AltModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_8) { choice = event.key - Qt.Key_1; event.accepted = true }
+    else if ((event.modifiers & Qt.AltModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) { choice = event.key - Qt.Key_1; event.accepted = true }
+    else if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_0) { choice = 9; event.accepted = true }
   }
   Timer { id: previewTimer; interval: 200; onTriggered: panel.preview() }
   Component.onCompleted: { previewTimer.restart(); focusInput() }
@@ -93,7 +96,7 @@ FocusScope {
       detail: "Local transforms · cleared when closed"
       Shared.GlyphButton { theme: panel.theme; glyph: "󰅖"; text: "Close · Esc"; onClicked: panel.dismissed() }
     }
-    Shared.SectionRule { theme: panel.theme; width: parent.width; label: "Transform"; detail: "Alt + 1–8" }
+    Shared.SectionRule { theme: panel.theme; width: parent.width; label: "Transform"; detail: "Alt + 1–9, 0" }
     Shared.SegmentWell {
       theme: panel.theme
       width: parent.width
@@ -107,6 +110,7 @@ FocusScope {
           model: panel.modes
           delegate: Shared.SegmentChoice {
             id: modeButton
+            objectName: "workbenchMode-" + modelData.id
             required property var modelData
             required property int index
             theme: panel.theme

@@ -450,7 +450,7 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/text-workbench.sh "$out/share/seele-shell" \
       ${tests}/tst_textworkbench.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
-    node ${tests}/text-workbench.js "$out/share/seele-shell/TextWorkbenchSession.qml"
+    node ${tests}/text-workbench.js "$out/share/seele-shell/TextWorkbenchSession.qml" "$out/share/seele-shell/TextWorkbenchPanel.qml"
     python3 ${tests}/text-workbench-clipboard.py ${tools}/bin/seele-text-clipboard
     node ${tests}/caffeinate.js "$out/share/seele-shell/CaffeinateStore.qml" "$out/share/seele-shell/CaffeinatePanel.qml" "$out/share/seele-shell/shell.qml"
     node ${tests}/presenting.js "$out/share/seele-shell/shell.qml"
