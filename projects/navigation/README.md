@@ -14,7 +14,7 @@ keyboard handling.
 | `gg` / `G` | First / last row in a list, or first / last control in a panel. |
 | `Ctrl+d` / `Ctrl+u` | Move half a page through a list or scrollable outside text entry. |
 | `/` | Focus the panel's search field. |
-| `i` | Focus its first editable field. |
+| `i` | Focus the primary editor (the note body in Notes), or the first editable field. |
 | `Enter` / `Space` | Activate the focused action; existing controls keep their own Space behavior. |
 | `Menu` / `Shift+F10` | Secondary action on a custom target that accepts right-click. |
 | `Shift+Enter` | Middle-click action when the target has one. |
@@ -33,6 +33,9 @@ Menu opens its menu, and `+`/`-` sends its scroll action. In the calendar, `y`
 copies the focused date. Notes' sidebar divider adjusts with `h`/`l`, and its
 playback track seeks five seconds at a time. Deliberately opened panels take
 Wayland keyboard focus immediately; toasts, OSDs and other passive layers do not.
+Incoming Bluetooth pairing requests remain passive. Open Bluetooth from the bar,
+Control Center or launcher to take keyboard control of the pending request;
+confirmation starts on Reject. That focus permission ends with the request.
 
 ## Authoring
 
@@ -40,6 +43,8 @@ Wayland keyboard focus immediately; toasts, OSDs and other passive layers do not
 shares `onTriggered` between pointer and keyboard activation. Set
 `activateOnPress` for an action whose pointer timing is intentionally on press.
 Use `onKeyPressed` for additional keys without replacing its activation handler.
+Mark the primary editable input with `keyboardEdit: true` when `i` should enter
+it instead of an earlier search field; `/` follows `keyboardSearch` separately.
 If the parent already handles activation, keep one tab stop on that parent;
 secondary actions still need an explicit key or a separate focusable target.
 Continuous gestures need an explicit keyboard implementation on the owning

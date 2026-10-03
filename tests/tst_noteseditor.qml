@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtTest
 import Seele.Markdown
 import "shared" as Shared
@@ -42,6 +43,8 @@ TestCase {
     function alpha(color, opacity) { return Qt.rgba(color.r, color.g, color.b, opacity) }
   }
 
+  TextField { id: search; property bool keyboardSearch: true; width: 120; height: 24 }
+
   MarkdownEditor {
     id: editor
 
@@ -82,6 +85,15 @@ TestCase {
     editor.load("", false)
     editor.focusBody()
     verify(editor.area.activeFocus)
+  }
+
+  function test_edit_and_search_have_distinct_targets() {
+    suite.forceActiveFocus()
+    keyClick(Qt.Key_I)
+    verify(editor.area.activeFocus)
+    suite.forceActiveFocus()
+    keyClick(Qt.Key_Slash)
+    verify(search.activeFocus)
   }
 
   function test_03_typing_reports_exactly_what_is_there() {

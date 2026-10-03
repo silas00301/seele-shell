@@ -18,6 +18,11 @@ Item {
     function alpha(color, value) { return Qt.rgba(color.r, color.g, color.b, value) }
   }
   Shared.KeyboardNavigation { id: navigation; theme: theme }
+  SignalSpy { id: focusChanges; target: navigation; signalName: "focusItemChanged" }
+  Component {
+    id: temporaryAction
+    Shared.ActionArea { width: 100; height: 30; x: 400; y: 400 }
+  }
   TextField { id: query; x: 20; y: 20; width: 200; property bool keyboardSearch: true }
   Rectangle {
     x: 20; y: 80; width: 100; height: 40
@@ -90,6 +95,27 @@ Item {
       right.forceActiveFocus()
       keyClick(Qt.Key_Return)
       compare(scene.primary, 1)
+    }
+    function test_focus_target_destruction() {
+      var target = temporaryAction.createObject(scene)
+      target.forceActiveFocus()
+      // Establish the indicator through navigation, then destroy its target
+      // as a virtualized row or a closed panel would.
+      keyClick(Qt.Key_Q)
+      compare(navigation.focusItem, target)
+      var indicator = navigation.indicator
+      focusChanges.clear()
+      target.destroy()
+      wait(1)
+      compare(navigation.focusItem, null)
+      compare(focusChanges.count, 1)
+      verify(navigation.indicator !== null)
+      compare(navigation.indicator, indicator)
+      verify(!navigation.indicator.shown)
+      first.forceActiveFocus()
+      keyClick(Qt.Key_L)
+      compare(navigation.indicator.parent, right)
+      verify(navigation.indicator.visible)
     }
     function test_press_action_does_not_double_activate() {
       first.activateOnPress = true
@@ -197,10 +223,14 @@ Item {
       keyClick(Qt.Key_G, Qt.ShiftModifier)
       keyClick(Qt.Key_Return)
       compare(scene.selected, 99)
+      verify(navigation.indicator !== null && navigation.indicator.visible)
+      compare(navigation.indicator.parent, navigation.focusItem)
       keyClick(Qt.Key_G)
       keyClick(Qt.Key_G)
       keyClick(Qt.Key_Return)
       compare(scene.selected, 0)
+      verify(navigation.indicator !== null && navigation.indicator.visible)
+      compare(navigation.indicator.parent, navigation.focusItem)
     }
   }
 }

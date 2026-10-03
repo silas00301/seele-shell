@@ -63,7 +63,14 @@ Navigator::~Navigator() {
 }
 void Navigator::indicate(QQuickItem *item) {
   if (focusItem_ == item) return;
+  QObject::disconnect(focusDestroyed_);
   focusItem_ = item;
+  if (item) focusDestroyed_ = connect(item, &QObject::destroyed, this, [this] {
+    // QPointer is already null when destroyed is emitted; notify explicitly
+    // so the QML indicator detaches and hides even without another key event.
+    focusItem_ = nullptr;
+    emit focusItemChanged();
+  });
   emit focusItemChanged();
 }
 void Navigator::focus(QQuickItem *item) {
@@ -234,7 +241,12 @@ bool Navigator::eventFilter(QObject *object, QEvent *event) {
     releases_[key->key()] = 0; return true;
   }
   if (key->key() == Qt::Key_I && modifiers == Qt::NoModifier) {
-    for (auto *item : targets(window)) if (input(item)) { focus(item); break; }
+    const auto items = targets(window);
+    auto preferred = std::find_if(items.begin(), items.end(), [](auto *item) {
+      return input(item) && item->property("keyboardEdit").toBool();
+    });
+    if (preferred != items.end()) focus(*preferred);
+    else for (auto *item : items) if (input(item)) { focus(item); break; }
     releases_[key->key()] = 0; return true;
   }
   // Slash needs Shift on the configured German layout. Match the resulting

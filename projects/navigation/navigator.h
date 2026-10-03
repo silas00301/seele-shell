@@ -23,6 +23,7 @@ protected:
 private:
   bool forwarding_ = false;
   QPointer<QQuickItem> focusItem_;
+  QMetaObject::Connection focusDestroyed_;
   QPointer<QQuickWindow> window_;
   QHash<int, int> releases_;
   QElapsedTimer prefix_;

@@ -236,6 +236,7 @@ Shared.Theme {
   readonly property bool bluetoothReceiverActive: bluetoothReceiverIntent >= 0 ? bluetoothReceiverIntent === 1 : !!systemData.bluetoothReceiver
   property string bluetoothForget: ""
   property var pairingRequest: ({})
+  property string pairingKeyboardToken: ""
   property string pairingScreen: ""
   readonly property bool pairingPrompting: !!(pairingRequest && pairingRequest.token)
   property string agentError: ""
@@ -299,6 +300,7 @@ Shared.Theme {
   }
 
   function closeOverlays() {
+    pairingKeyboardToken = ""
     barKeyboardOpen = false
     aiPrompt.close()
     uriPicker.close()
@@ -379,6 +381,10 @@ Shared.Theme {
   }
 
   function toggleControl(panel, screen, anchorX) {
+    if (panel === "bluetooth" && pairingPrompting) {
+      focusBluetoothPairing(screen)
+      return
+    }
     if (panel === "meeting") {
       if (controlPanel !== "clock") toggleControl("clock", screen, anchorX)
       setMeetingPlanning(true)
@@ -852,6 +858,7 @@ Shared.Theme {
   }
 
   function clearBluetoothPairing() {
+    root.pairingKeyboardToken = ""
     root.pairingLoadToken = ""
     root.pairingRequest = ({})
     root.pairingScreen = ""
@@ -864,6 +871,16 @@ Shared.Theme {
     bluetoothPairingAnswerProcess.stdinEnabled = true
     bluetoothPairingAnswerProcess.running = true
     root.clearBluetoothPairing()
+  }
+
+  // Opening Bluetooth is the deliberate keyboard entry into a pending prompt.
+  // Bind that intent to this request so the next device cannot inherit it.
+  function focusBluetoothPairing(screen) {
+    var token = String((root.pairingRequest || {}).token || "")
+    if (!token || token !== root.pairingLoadToken) return
+    root.closeOverlays()
+    root.pairingScreen = screen || root.currentScreen()
+    root.pairingKeyboardToken = token
   }
 
   Process {
@@ -11066,6 +11083,9 @@ Shared.Theme {
       required property var modelData
       readonly property string kind: String((root.pairingRequest || {}).kind || "confirm")
       readonly property string deviceName: String((root.pairingRequest || {}).name || "This device")
+      readonly property bool keyboardActive: visible && root.pairingKeyboardToken !== ""
+        && root.pairingKeyboardToken === String((root.pairingRequest || {}).token || "")
+        && root.pairingKeyboardToken === root.pairingLoadToken
       screen: modelData
       visible: root.pairingPrompting && root.pinnedScreen(root.pairingScreen, modelData)
       exclusionMode: ExclusionMode.Ignore
@@ -11073,16 +11093,33 @@ Shared.Theme {
       implicitHeight: pairingCard.implicitHeight + 44
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
-      // Only the models that ask this end to type a code need the keyboard, so
-      // the prompt takes focus only then and gives it straight back.
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      // An incoming device never takes the keyboard. Code entry retains its
+      // click-to-focus path; opening Bluetooth deliberately focuses this request.
+      WlrLayershell.keyboardFocus: keyboardActive ? WlrKeyboardFocus.Exclusive
+        : visible && root.pairingWantsCode() ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-bluetooth-pairing"
-      onVisibleChanged: if (visible && root.pairingWantsCode()) Qt.callLater(function() {
-        pairingCodeField.forceActiveFocus()
-        pairingCodeField.selectAll()
-      })
+      function focusInitial() {
+        if (!visible || (!keyboardActive && !root.pairingWantsCode())) return
+        Qt.callLater(function() {
+          if (!pairingWindow.visible) return
+          if (root.pairingWantsCode()) {
+            pairingCodeField.forceActiveFocus()
+            pairingCodeField.selectAll()
+          } else if (pairingWindow.keyboardActive) {
+            if (pairingWindow.kind === "display") pairingDismissMouse.forceActiveFocus()
+            else pairingRejectMouse.forceActiveFocus()
+          }
+        })
+      }
+      onVisibleChanged: focusInitial()
+      onKeyboardActiveChanged: focusInitial()
+      onKindChanged: focusInitial()
 
       PanelSurface {
+        Keys.onEscapePressed: {
+          if (pairingWindow.kind === "display") root.clearBluetoothPairing()
+          else root.answerBluetoothPairing("reject", "")
+        }
         Column {
           id: pairingCard
 

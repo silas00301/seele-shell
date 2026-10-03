@@ -543,6 +543,10 @@ ShellRoot {
 
                 Keys.onPressed: function(event) {
                   if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
+                    if (event.key === Qt.Key_Escape) {
+                      root.powerMenuOpen = false
+                      root.pendingPowerAction = ""
+                    }
                     root.passwordText = ""
                     event.accepted = true
                   }
