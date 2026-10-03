@@ -96,7 +96,8 @@ reach it from the launcher's root search.
   grouped by modifier chord with the shortcut as the row's tag and the command
   it runs beneath its description. Enter closes the launcher and inputs the
   shortcut, Shift+Enter copies it, Ctrl+Shift+C copies the command, and Ctrl+R
-  reloads.
+  reloads. A wheel binding such as Super + Scroll Up is listed and copied but
+  has no key to input, so its tag is dimmed and Enter is not offered.
 - **Seele NixOS Generations** (`generations.tsx`): every generation retained by
   the system profile. The list shows its age, NixOS version, and kernel, and the
   running one is tagged. Enter opens a review whose metadata panel holds the

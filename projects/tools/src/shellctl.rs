@@ -32,6 +32,7 @@ Commands:
   volume <up|down|mute>     Change volume and show its OSD
   microphone <up|down|mute> Change the microphone and show its OSD
   microphone-state <muted|live> Show a device mute OSD
+  zoom <in|out|reset> [--fine]  Zoom the screen around the pointer and show its OSD
   notes                     Open Seele Notes for quick capture into the vault
   voxtype                   Toggle voice dictation
   lock                      Lock the session
@@ -178,6 +179,12 @@ pub fn run(arguments: &[String]) -> Result {
             "showMicrophone",
             &[rest.first().ok_or("muted or live required")?.clone()],
         ),
+        // The zoom is Hyprland's; the shell only reports it. Zooming does not
+        // depend on the shell answering, so a quiet call cannot undo a step.
+        "zoom" => {
+            let shown = crate::zoom::apply(crate::zoom::request(rest)?)?;
+            ipc(true, &["showZoom".into(), shown.to_string()])
+        }
         "notes" => detached("seele-notes", &[]),
         "voxtype" => {
             let result = output("seele-control", ["voxtype"]).ok_or("voxtype control failed")?;

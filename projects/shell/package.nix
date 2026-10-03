@@ -518,6 +518,8 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/bluetooth-pairing.js "$out/share/seele-shell/shell.qml"
     bash ${tests}/control-actions.sh "$out/libexec/seele-shell/seele-control"
     bash ${tests}/mic-sync.sh "$out/libexec/seele-shell/seele-mic-sync" "$out/libexec/seele-shell/seele-shellctl"
+    bash ${tests}/screen-zoom.sh "$out/libexec/seele-shell/seele-shellctl"
+    node ${tests}/screen-zoom.js "$out/share/seele-shell/shell.qml"
     PATH="${runtimePath}:$PATH" bash ${tests}/mic-test.sh "$out/libexec/seele-shell/seele-mic-test"
 
     runHook postInstallCheck
