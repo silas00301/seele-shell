@@ -160,6 +160,13 @@ const panels: Entry[] = [
     keywords: ["cpu", "memory", "ram", "process", "performance"],
   },
   {
+    title: "Sensors",
+    subtitle: "Live temperatures and fan speeds",
+    icon: Icon.Gauge,
+    args: ["sensors"],
+    keywords: ["temperature", "thermal", "fan", "hwmon"],
+  },
+  {
     title: "Transfers",
     subtitle: "Send files to personal devices and view received files",
     icon: Icon.Download,

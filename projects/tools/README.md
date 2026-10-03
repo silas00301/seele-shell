@@ -617,6 +617,64 @@ Generation-bound QML callbacks reject late data or exit from a discarded
 worker, and a disappeared selection stays explicit until the user chooses.
 The worker reads local kernel counters only and keeps nothing on disk.
 
+## Sensors
+
+`seele-sensors` is a JSON-lines worker owned by one open Sensors panel, reached
+from the Resources header, `seele-shellctl sensors` and the Vicinae **Seele
+Sensors** command. It reads `/sys/class/hwmon` every two seconds and exits on
+stdin EOF. For each hwmon device it reads the chip `name`, an optional `label`,
+the canonical `device` link (and an NVMe controller's `model`), and every
+`tempN_*` and `fanN_*` channel's input, label, `enable`, `fault`, alarm flags,
+`max`, `crit` and fan `min`. It writes nothing, reads no other attribute, and
+persists nothing. `SEELE_SENSORS_SYSFS` selects a synthetic tree for fixtures.
+
+Each version-1 snapshot carries `rows`, `summary`, `attention`, `skipped`,
+`limited`, `error`, `elapsed` and `cadenceSeconds`. A row is one device with a
+stable `chip@canonical-device-path` identity, a title, the chip and device name
+as detail, and its readings. A reading carries formatted `value`, session
+`peak` and `limits`, a `state` (`normal`, `stopped`, `high`, `critical`,
+`alarm`, `fault`, `disabled` or `unavailable`), a short `status`, and a meter
+`ratio` only when the driver states a limit to measure against.
+
+- Limits are the driver's own. A `max` or `crit` of zero or below is a limit
+  the chip does not have, and no threshold is invented where none is stated, so
+  a CPU whose driver publishes no limits never turns amber. An alarm flag
+  outranks the comparison, because the chip compares against the limit it
+  enforces in hardware.
+- A faulted, disabled or unreadable channel (a sleeping sensor answers
+  `ENODATA`) stays in its row as what it is, never a zero, and keeps the peak it
+  had.
+- Devices are ordered by what they are (CPU, GPU, mainboard, memory, NVMe,
+  network, thermal zones, the rest) and then by identity, never by reading, so
+  a row does not move while the pointer travels to it.
+- Titles prefer the hwmon `label`, then the NVMe model, then a family name for
+  the chip. Driver and firmware strings pass the shared visible-character filter,
+  lose control characters and are bounded to 48 characters; a chip name outside
+  the ABI's alphabet is skipped.
+- `drivetemp` devices are counted and left alone. The driver sends an ATA or
+  SCSI command for each read, and its documentation warns that this can reset a
+  drive's spin-down timer; an inspector must not keep a disk awake.
+- Peaks belong to one driver instance: a device whose hwmon directory is
+  replaced starts again, and a device that disappears takes its peaks with it.
+  `{"op":"reset"}` clears every peak and emits at once.
+- Discovery reads at most 1024 directory entries, 64 devices after sorting by
+  name, and 64 channels of each kind per device, each attribute under a small
+  byte bound, and reports `limited` when anything was left out.
+
+NVIDIA's driver publishes no hwmon device, so its GPU does not appear; the panel
+shows what the kernel's sensor interface holds rather than querying vendor
+tools.
+
+Validation: the unit tests cover limits and alarm precedence, broken channels,
+naming and sanitization, `drivetemp`, stable ordering, peaks across reset and
+rebinding, and discovery bounds. `tests/sensors.py` drives the real executable
+against a synthetic hwmon class with symlinked devices through peaks, a crossed
+limit, Reset, a rebind under a new hwmon number, a vanished class directory,
+EOF and oversized input. `tests/sensors.js` checks the store's process
+ownership and late-callback refusal, and `tests/sensors.sh` runs
+`tst_sensors.qml` against the production panel and store for states, meters,
+captions, keyboard Reset and Retry.
+
 ## CPU, memory and local processes
 
 `seele-resources` backs the Resources utility and `seele-shellctl resources`.
