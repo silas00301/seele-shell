@@ -2158,6 +2158,9 @@ Shared.Theme {
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
     function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
+    // A maintenance action opens Power from wherever it was asked; it never
+    // closes a Power panel that is already showing.
+    function openPower(): void { if (root.controlPanel !== "system") root.toggleControl("system") }
     function launchAgent(id: string, prompt: string): void { root.runAgent(id, prompt) }
     function refreshAgents(): void { root.refreshAgents() }
     function updateStatus(json: string): void { root.parseSystemData(json) }

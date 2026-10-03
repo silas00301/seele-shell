@@ -56,7 +56,7 @@ fn scope(value: Option<&str>, default: &str) -> Result<&'static str> {
         _ => Err("invalid_service_scope"),
     }
 }
-fn report(
+pub(crate) fn report(
     key: &str,
     title: String,
     explanation: &str,
@@ -138,6 +138,12 @@ pub fn collect(
         "flake" => flake(cfg, executor),
         "certificates" => certificates(cfg, executor, now),
         "inputs" => inputs(cfg, executor, now),
+        "restart" => Ok(crate::restart::report(
+            Path::new(crate::restart::BOOTED),
+            Path::new(crate::restart::CURRENT),
+        )?
+        .into_iter()
+        .collect()),
         _ => Err("unknown_source"),
     }
 }
