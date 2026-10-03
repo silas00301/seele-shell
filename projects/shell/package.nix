@@ -450,7 +450,8 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell/shared/CenteredGlyph.qml" \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${tests}/tst_centeredglyph.qml
-    python3 ${tests}/hermes-panel.py "$out/share/seele-shell"
+    QML_IMPORT_PATH="${pkgs.qt6.qtdeclarative}/lib/qt-6/qml:$QML_IMPORT_PATH" \
+      python3 ${tests}/hermes-panel.py "$out/share/seele-shell"
     for command in seele-hermes seele-quicklook seele-resources seele-network-activity seele-sensors seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-drift seele-theme seele-shell seele-home-assistant seele-calendar seele-weather seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
