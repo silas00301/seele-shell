@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -137,7 +137,11 @@ fail()
     }
 
     fn run(&self, args: &[&str]) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_seele-drift"))
+        self.run_binary(Path::new(env!("CARGO_BIN_EXE_seele-drift")), args)
+    }
+
+    fn run_binary(&self, binary: &Path, args: &[&str]) -> std::process::Output {
+        Command::new(binary)
             .args(args)
             .env("PATH", &self.path)
             .env("SEELE_DRIFT_LOG", &self.log)
@@ -201,28 +205,66 @@ fn diff_only_reads_and_reports_three_checks() {
 }
 
 #[test]
-fn apply_restores_only_the_selected_podman_check() {
+fn apply_restores_only_the_selected_podman_check_with_a_trusted_helper() {
     let fixture = Fixture::new("podman", PODMAN_UNITS);
     let output = fixture.run(&["apply", "podman-rootless"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let helper = Path::new(env!("CARGO_BIN_EXE_seele-drift"))
+        .parent()
+        .unwrap()
+        .join("seele-restore-drift");
+    let trusted_owner = fs::metadata(helper).unwrap().uid() == 0;
+    assert_eq!(output.status.success(), trusted_owner);
     let body = json(&output);
     assert_eq!(body["action"], "apply");
-    assert_eq!(body["ok"], true);
+    assert_eq!(body["ok"], trusted_owner);
     assert_eq!(body["mutated"], true);
-    assert_eq!(body["restored"], serde_json::json!(["podman-rootless"]));
+    assert_eq!(
+        body["restored"],
+        if trusted_owner {
+            serde_json::json!(["podman-rootless"])
+        } else {
+            serde_json::json!([])
+        }
+    );
     let changes: Vec<_> = lines(&fixture.log)
         .into_iter()
         .filter(|line| !is_read(line))
         .collect();
-    assert_eq!(changes.len(), 2, "{changes:?}");
+    assert_eq!(
+        changes.len(),
+        if trusted_owner { 2 } else { 1 },
+        "{changes:?}"
+    );
     assert_eq!(changes[0], "systemctl --user start podman.socket");
-    assert!(changes[1].starts_with("run0 "), "{changes:?}");
-    assert!(changes[1].ends_with(" podman-rootless"), "{changes:?}");
-    assert!(changes[1].contains("seele-restore-drift"), "{changes:?}");
+    if trusted_owner {
+        assert!(changes[1].starts_with("run0 "), "{changes:?}");
+        assert!(changes[1].ends_with(" podman-rootless"), "{changes:?}");
+        assert!(changes[1].contains("seele-restore-drift"), "{changes:?}");
+    } else {
+        assert_eq!(body["error"], "The drift helper is missing.");
+    }
+}
+
+#[test]
+fn a_user_owned_helper_never_reaches_run0() {
+    let units = HEALTHY_UNITS.replace(
+        "\"system:sshd.service\": {\"LoadState\":\"loaded\",\"ActiveState\":\"inactive\",\"UnitFileState\":\"disabled\"}",
+        "\"system:sshd.service\": {\"LoadState\":\"loaded\",\"ActiveState\":\"active\",\"UnitFileState\":\"enabled\"}",
+    );
+    let fixture = Fixture::new("untrusted-helper", &units);
+    let worker = fixture.path.join("seele-drift");
+    fs::copy(env!("CARGO_BIN_EXE_seele-drift"), &worker).unwrap();
+    let helper = fixture.path.join("seele-restore-drift");
+    fs::write(&helper, "untrusted helper must never execute").unwrap();
+    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+    if unsafe { libc::geteuid() } == 0 {
+        std::os::unix::fs::chown(&helper, Some(65534), None).unwrap();
+    }
+    assert_ne!(fs::metadata(&helper).unwrap().uid(), 0);
+    let output = fixture.run_binary(&worker, &["apply", "remote-shell"]);
+    assert!(!output.status.success(), "user-owned helper reached run0");
+    assert_eq!(json(&output)["error"], "The drift helper is missing.");
+    assert!(lines(&fixture.log).iter().all(|line| is_read(line)));
 }
 
 #[test]

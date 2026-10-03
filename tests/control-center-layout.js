@@ -167,6 +167,8 @@ TestCase {
   readonly property var panels: ["system-health", "drift", "transfers", "resources", "network-activity", "ports", "calculator", "color-lab", "text-workbench"]
 
   function init() {
+    prFocusStore.configured = false
+    prFocusStore.active = false
     controlCenterWindow.modelData = {width: 1920, height: 1080, name: "fixture"}
     controlCenterWindow.dragging = false
     root.systemData = Object.assign({}, root.systemData, {headphones: {connected: false}})
@@ -308,6 +310,40 @@ TestCase {
     verify(find(controlCenterContent, item => item.label === "Wi-Fi").activeFocus)
     for (var index = 0; index < 20 && !tile("Text").activeFocus; ++index) keyClick(Qt.Key_Tab)
     verify(tile("Text").activeFocus, "Tab reaches the last utility")
+  }
+
+  function test_pr_focus_keyboard_data() {
+    return [{tag: "return", key: Qt.Key_Return},
+            {tag: "enter", key: Qt.Key_Enter},
+            {tag: "space", key: Qt.Key_Space}]
+  }
+
+  function test_pr_focus_keyboard(data) {
+    prFocusStore.configured = true
+    wait(20)
+    keyClick(Qt.Key_Tab)
+    verify(prFocusEnter.activeFocus, "Tab reaches the PR focus card first")
+    keyClick(data.key)
+    tryCompare(prFocusStore, "active", true)
+    tryCompare(prFocusExit, "activeFocus", true)
+    keyClick(data.key)
+    tryCompare(prFocusStore, "active", false)
+    tryCompare(prFocusEnter, "activeFocus", true)
+    keyClick(Qt.Key_Tab)
+    verify(find(controlCenterContent, item => item.label === "Wi-Fi").activeFocus)
+    keyClick(Qt.Key_Backtab)
+    verify(prFocusEnter.activeFocus, "Backtab returns from the grid to PR focus")
+  }
+
+  function test_pr_focus_arrow_navigation() {
+    prFocusStore.configured = true
+    wait(20)
+    keyClick(Qt.Key_Down)
+    verify(prFocusEnter.activeFocus, "The first arrow reaches the PR focus card")
+    keyClick(Qt.Key_Down)
+    verify(find(controlCenterContent, item => item.label === "Wi-Fi").activeFocus)
+    keyClick(Qt.Key_Up)
+    verify(prFocusEnter.activeFocus, "Up returns from the grid to PR focus")
   }
 
   function test_keyboard_scrolls_a_short_output() {

@@ -710,15 +710,7 @@ fn analyze_remote(reads: &impl Reads) -> Analysis {
     }
     let tail_blocked = !matches!(tail, Class::Loaded(_));
     let ssh_blocked = matches!(ssh, Class::Unreadable);
-    if ops.is_empty() && (tail_blocked || ssh_blocked) && !problems.is_empty() {
-        return unavailable(REMOTE, TITLE, &sentence(problems.clone()));
-    }
-    if ops.is_empty()
-        && problems.iter().any(|problem| {
-            problem.contains("not installed") || problem.contains("could not be read")
-        })
-        && !ssh_enabled
-    {
+    if tail_blocked || ssh_blocked {
         return unavailable(REMOTE, TITLE, &sentence(problems));
     }
     let after = remote_after(ssh_active, ssh_enabled && ssh_active);
@@ -866,7 +858,11 @@ fn helper_path() -> Result<PathBuf, String> {
         .ok_or("The drift helper is missing.")?
         .join(HELPER_NAME);
     let metadata = fs::metadata(&path).map_err(|_| "The drift helper is missing.")?;
-    if metadata.is_file() && metadata.mode() & 0o111 != 0 && metadata.mode() & 0o022 == 0 {
+    if metadata.is_file()
+        && metadata.uid() == 0
+        && metadata.mode() & 0o111 != 0
+        && metadata.mode() & 0o022 == 0
+    {
         Ok(path)
     } else {
         Err("The drift helper is missing.".into())
@@ -1330,6 +1326,45 @@ Current DNS Server: 192.168.1.1
         assert!(error.mutated);
         assert_eq!(machine.elevated, vec![QUAD9.to_string()]);
         assert!(error.restored.is_empty());
+    }
+
+    #[test]
+    fn unavailable_remote_units_never_propose_or_apply_changes() {
+        for absent in [false, true] {
+            for active in [false, true] {
+                let mut machine = Fake::healthy();
+                machine.units.insert(
+                    (false, "tailscaled.service".into()),
+                    if absent {
+                        Probe::Ready(missing())
+                    } else {
+                        Probe::Failed
+                    },
+                );
+                machine.units.insert(
+                    (false, "sshd.service".into()),
+                    Probe::Ready(loaded(active, true)),
+                );
+                let item = analyze_remote(&machine);
+                assert!(item.view.unavailable);
+                assert!(!item.view.drifted);
+                assert!(item.ops.is_empty());
+                assert!(system_plan(&catalog(), REMOTE, &machine).is_empty());
+                let report = apply(&catalog(), &[REMOTE.into()], &mut machine).unwrap();
+                assert!(!report.mutated);
+                assert!(machine.elevated.is_empty());
+            }
+        }
+        let mut machine = Fake::healthy();
+        machine
+            .units
+            .insert((false, "sshd.service".into()), Probe::Failed);
+        machine.units.insert(
+            (false, "tailscaled.service".into()),
+            Probe::Ready(loaded(false, false)),
+        );
+        assert!(analyze_remote(&machine).view.unavailable);
+        assert!(system_plan(&catalog(), REMOTE, &machine).is_empty());
     }
 
     #[test]

@@ -331,9 +331,11 @@ accepts. It reads `/etc/seele/drift.json` and ignores a caller-supplied
 catalog. Each id expands to a fixed command: restart `systemd-resolved` and
 revert links that hold `~.`, stop and disable a rootful Podman or Docker
 socket and start the user socket, or enable Tailscale and disable OpenSSH at
-boot without stopping a session that is already open. The helper is found
-beside the worker's own executable and must be a regular executable that is
-not group- or world-writable.
+boot without stopping a session that is already open. Remote repair is unavailable
+when Tailscale is missing or either service's state cannot be read, including
+when OpenSSH starts at boot. Both the preview and the privileged recheck apply
+this rule. The helper is found beside the worker's own executable and must be
+a root-owned regular executable that is not group- or world-writable.
 
 The user command honours `SEELE_DRIFT_EXPECTATIONS` so tests can point at a
 catalog without writing `/etc`. The helper does not. `tests/drift.rs` runs

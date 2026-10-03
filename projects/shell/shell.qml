@@ -3546,8 +3546,7 @@ Shared.Theme {
       var dx = event.key === Qt.Key_Left ? -1 : event.key === Qt.Key_Right ? 1 : 0
       var dy = event.key === Qt.Key_Up ? -1 : event.key === Qt.Key_Down ? 1 : 0
       if (dx === 0 && dy === 0) return
-      controlGrid.moveFocus(controlGrid.Window.activeFocusItem, dx, dy)
-      event.accepted = true
+      event.accepted = controlGrid.moveFocus(controlGrid.Window.activeFocusItem, dx, dy)
     }
 
 
@@ -9293,26 +9292,48 @@ Shared.Theme {
 
               width: parent.width
               spacing: root.panelSpacing
+              readonly property Item prFocusAction: prFocusEnter.visible ? prFocusEnter : prFocusExit.visible ? prFocusExit : null
               // The panel opens with the keyboard on itself rather than on a
               // tile, so a pointer user never sees a focus ring they did not
               // ask for; the first arrow or Tab steps onto the first module.
               Keys.onEscapePressed: root.closeOverlays()
               Keys.onPressed: event => {
+                if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
                 if ([Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down].indexOf(event.key) < 0) return
-                controlCenterGrid.focusFirst()
-                event.accepted = true
+                if ((controlCenterContent.activeFocus || event.key === Qt.Key_Up) && controlCenterContent.prFocusAction) {
+                  controlCenterContent.prFocusAction.forceActiveFocus(Qt.TabFocusReason)
+                  event.accepted = true
+                } else if (controlCenterContent.activeFocus || (event.key === Qt.Key_Down && (prFocusEnter.activeFocus || prFocusExit.activeFocus))) {
+                  controlCenterGrid.focusFirst()
+                  event.accepted = true
+                }
               }
 
               PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
 
               Rectangle {
                 id: prFocusEnter
+                activeFocusOnTab: true
                 visible: prFocusStore.configured && !prFocusStore.active
                 width: parent.width
                 implicitHeight: prFocusEnterRow.implicitHeight + root.cardPadding * 2
                 radius: root.radius
-                color: prFocusEnterMouse.pressed ? root.pressColor : prFocusEnterMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+                color: prFocusEnterMouse.pressed ? root.pressColor : root.cardColor
+                function activate() {
+                  var hadFocus = activeFocus
+                  prFocusStore.enter()
+                  if (hadFocus) Qt.callLater(function() { prFocusExit.forceActiveFocus(Qt.TabFocusReason) })
+                }
+                Keys.onPressed: event => {
+                  if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+                  if ([Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space].indexOf(event.key) < 0) return
+                  if (!event.isAutoRepeat) prFocusEnter.activate()
+                  event.accepted = true
+                }
+                HoverHandler { id: prFocusEnterHover }
+                HoverWash { hovered: prFocusEnterHover.hovered }
                 CardEdge {}
+                FocusRing { shown: prFocusEnter.activeFocus }
                 Row {
                   id: prFocusEnterRow
                   anchors.left: parent.left
@@ -9351,9 +9372,8 @@ Shared.Theme {
                 MouseArea {
                   id: prFocusEnterMouse
                   anchors.fill: parent
-                  hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: prFocusStore.enter()
+                  onClicked: prFocusEnter.activate()
                 }
               }
   
@@ -9377,6 +9397,7 @@ Shared.Theme {
                     spacing: root.spaceTight
                     Text {
                       id: prFocusPinTitle
+                      anchors.verticalCenter: parent.verticalCenter
                       text: prFocusStore.label
                       color: root.text
                       font.family: root.fontFamily
@@ -9386,17 +9407,15 @@ Shared.Theme {
                       width: Math.min(implicitWidth, parent.width - prFocusExit.implicitWidth - root.spaceTight)
                     }
                     Item { width: Math.max(0, parent.width - prFocusPinTitle.width - prFocusExit.implicitWidth - root.spaceTight); height: 1 }
-                    Text {
+                    Shared.ActionButton {
                       id: prFocusExit
+                      theme: root
                       text: "Exit"
-                      color: root.accent
-                      font.family: root.fontFamily
-                      font.pixelSize: root.textCaption
-                      font.weight: root.weightMedium
-                      MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: prFocusStore.exit()
+                      implicitHeight: root.chipHeight
+                      onClicked: {
+                        var hadFocus = activeFocus
+                        prFocusStore.exit()
+                        if (hadFocus) Qt.callLater(function() { prFocusEnter.forceActiveFocus(Qt.TabFocusReason) })
                       }
                     }
                   }

@@ -13,7 +13,10 @@ check rollup and the newest review or conversation comment, with no diff hunks
 and no writes. The Control Center shows that pin while focus is on and removes
 it on exit. Desktop toasts that are not @-mentions wait in the inbox until
 focus ends; a body or summary that @-mentions someone, or that says "mentioned
-you", still toasts. Nothing is posted to chat or email.
+you", still toasts. Nothing is posted to chat or email. Tab or the first arrow
+reaches the PR focus action before the Control Center grid. Enter or Space
+enters focus and moves keyboard focus to Exit; leaving focus returns it to the
+entry card. Down enters the grid and Up from its top returns to the PR action.
 
 ## Notification inbox
 
