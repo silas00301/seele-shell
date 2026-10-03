@@ -154,6 +154,31 @@ notification server through `notify-send`, which applies Do Not Disturb. While
 the focus timer runs, Calendar reminders enter the notification panel without a
 toast; this temporary rule does not change saved notification preferences.
 
+## Meeting scratchpad
+
+On `nerv`, one recurring meeting can open a local note. The Home Manager option
+`seele.meetingScratchpad.event` names it by Google event id, exact title, or
+both. An id also matches the expanded instance `<id>_YYYYMMDDTHHMMSSZ`. With
+both fields empty, no config file is installed and this does nothing. `asuka`
+does not import the feature.
+
+From two minutes before the start until the meeting ends, the worker writes
+one mode-0600 markdown file under `$XDG_STATE_HOME/seele-meetings` and opens it
+with the configured opener. The file carries the title, the attendees, and
+empty Who, What and When sections. A meeting that has already ended, noticed
+within six hours, still gets the file and does not open a window. Ending
+records the same path in `ledger.json` and does not rewrite a note that was
+already written, so text typed during the meeting stays. Delivered keys are
+kept for 45 days. The note is not part of the Obsidian vault, and nothing is
+mailed or posted.
+
+Attendees come from one `events.get` for that occurrence, with
+`maxAttendees=40` and only the attendee fields. Declined guests are omitted.
+That response is not merged into the calendar cache; the ordinary event list
+still uses `maxAttendees=1`. A failed lookup still opens the note and says the
+attendees could not be read. All-day events and calendars that are switched
+off are ignored.
+
 ## Links
 
 Join links come from the event's video conference entry, its Google Meet link,

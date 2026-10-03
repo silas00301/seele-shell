@@ -335,6 +335,42 @@ impl Google<'_> {
             })
             .collect())
     }
+
+    /// One occurrence's guest list for the meeting note. The list sync stays
+    /// at `maxAttendees=1`; this request is not merged into the cache.
+    pub(super) async fn scratchpad_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+    ) -> Result<Value, Failure> {
+        if !scratchpad_id(calendar_id) || !scratchpad_id(event_id) {
+            return Err(Failure::Other("Invalid meeting."));
+        }
+        let mut url = self.base.clone();
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| Failure::Other("Invalid calendar endpoint."))?;
+            segments.pop_if_empty();
+            segments.push("calendars");
+            segments.push(calendar_id);
+            segments.push("events");
+            segments.push(event_id);
+        }
+        url.query_pairs_mut()
+            .append_pair("fields", "attendees(displayName,email,responseStatus,self)")
+            .append_pair("maxAttendees", "40");
+        self.get(&url).await
+    }
+}
+
+fn scratchpad_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 512
+        && !value.contains(['/', '\\', '?', '#'])
+        && value
+            .chars()
+            .all(|character| !character.is_control() && character != ' ')
 }
 
 pub(super) fn visible(event: &Value) -> bool {
