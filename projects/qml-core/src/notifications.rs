@@ -768,14 +768,17 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                 if popup {
                     effects.push(json!({"operation":"arrived","entry":entry,"fresh":true}));
                 }
-                state.current.insert(0, Record {
-                    remaining: popup_duration(&entry),
-                    entry,
-                    clock: time,
-                    popup,
-                    deferred: held,
-                    skip_history: false,
-                });
+                state.current.insert(
+                    0,
+                    Record {
+                        remaining: popup_duration(&entry),
+                        entry,
+                        clock: time,
+                        popup,
+                        deferred: held,
+                        skip_history: false,
+                    },
+                );
             }
             effects.push(json!({"operation":"publish"}));
         }
@@ -1123,24 +1126,22 @@ mod tests {
     fn transient_focus_quiet_keeps_calendar_reminders_in_panel() {
         let mut state = new_state(1000.0).unwrap();
         let reminder = json!({"id":1,"app_name":"Seele Calendar","summary":"Meeting","timeout":-1,"urgency":1});
-        state_call(&mut state, "receive", &[
-            reminder,
-            json!(1000),
-            json!(false),
-            json!(true),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[reminder, json!(1000), json!(false), json!(true)],
+        )
         .unwrap();
         assert_eq!(state.current.len(), 1);
         assert!(!state.current[0].popup);
         assert!(state.quiet_apps.is_empty());
         let next =
             json!({"id":2,"app_name":"Seele Calendar","summary":"Next","timeout":-1,"urgency":1});
-        state_call(&mut state, "receive", &[
-            next,
-            json!(1001),
-            json!(false),
-            json!(false),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[next, json!(1001), json!(false), json!(false)],
+        )
         .unwrap();
         assert!(state.current[0].popup);
         assert!(!state.current[1].popup);
@@ -1286,11 +1287,11 @@ mod tests {
     fn pull_request_focus_defers_unrelated_notifications_and_keeps_mentions() {
         let mut state = new_state(1000.0).unwrap();
         let ordinary = json!({"id":1,"app_name":"Mail","summary":"Build finished","body":"user@example.com passed","timeout":5000,"urgency":1});
-        state_call(&mut state, "receive", &[
-            ordinary.clone(),
-            json!(1000),
-            json!(false),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[ordinary.clone(), json!(1000), json!(false)],
+        )
         .unwrap();
         assert!(
             state.current[0].popup,
@@ -1302,11 +1303,11 @@ mod tests {
             "entering focus leaves a toast already on screen"
         );
         let unrelated = json!({"id":2,"app_name":"Chat","summary":"Standup moved","body":"See the calendar","timeout":5000,"urgency":1});
-        state_call(&mut state, "receive", &[
-            unrelated,
-            json!(1002),
-            json!(false),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[unrelated, json!(1002), json!(false)],
+        )
         .unwrap();
         let mention = json!({"id":3,"app_name":"GitHub","summary":"Review","body":"@silas please look","timeout":5000,"urgency":1});
         state_call(&mut state, "receive", &[mention, json!(1003), json!(false)]).unwrap();
@@ -1351,11 +1352,11 @@ mod tests {
                 .popup
         );
         let transient = json!({"id":5,"app_name":"Volume","summary":"Muted","body":"","timeout":1000,"urgency":1,"transient":true});
-        state_call(&mut state, "receive", &[
-            transient,
-            json!(1005),
-            json!(false),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[transient, json!(1005), json!(false)],
+        )
         .unwrap();
         state_call(&mut state, "advance", &[json!(1010)]).unwrap();
         assert!(
@@ -1399,11 +1400,11 @@ mod tests {
         state_call(&mut state, "restore", &[json!({"quietApps":keys})]).unwrap();
         assert_eq!(state.quiet_apps.len(), MAX_QUIET_APPS);
         let entry = json!({"id":1,"app_name":"new","summary":"hello","timeout":-1,"urgency":1});
-        state_call(&mut state, "receive", &[
-            entry.clone(),
-            json!(1000),
-            json!(false),
-        ])
+        state_call(
+            &mut state,
+            "receive",
+            &[entry.clone(), json!(1000), json!(false)],
+        )
         .unwrap();
         assert_eq!(
             state_call(&mut state, "setAppQuiet", &[json!("app:new"), json!(true)]).unwrap()["result"],
@@ -1581,11 +1582,15 @@ mod tests {
         );
         assert!(state.history.is_empty());
         let before = state.current.len();
-        let response = state_call(&mut state, "receive", &[
-            json!({"id":999,"body":"x".repeat(MAX_ENTRY_BYTES)}),
-            json!(0),
-            json!(false),
-        ])
+        let response = state_call(
+            &mut state,
+            "receive",
+            &[
+                json!({"id":999,"body":"x".repeat(MAX_ENTRY_BYTES)}),
+                json!(0),
+                json!(false),
+            ],
+        )
         .unwrap();
         assert_eq!(
             response["effects"][0],

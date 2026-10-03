@@ -423,11 +423,15 @@ Keys 1/2/3 start presets, Space pauses/resumes (or starts 25 minutes), Delete
 cancels, and Escape closes the panel. Presets explicitly replace a running timer.
 
 The deadline includes time spent suspended. A completed session sends one desktop
-notification and retains its Done indicator until dismissed or restarted. It does
-not change Do Not Disturb or start another session automatically. State survives
-QML reloads in memory, but is never written to disk and resets on shell exit.
-`tests/focus.js` checks the production deadline state machine, pause/resume,
-completion, invalid input, clock rollback, and reload restoration.
+notification, plays one screen-edge wash in the Done green, and retains its Done
+indicator until dismissed or restarted. The wash maps on each output only while
+it plays, takes no keyboard focus, and passes pointer input through. Pause and
+cancel do not play it. It does not change Do Not Disturb or start another session
+automatically. State survives QML reloads in memory, but is never written to disk
+and resets on shell exit. `tests/focus.js` checks the production deadline state
+machine, pause/resume, completion, invalid input, clock rollback, and reload
+restoration. `tests/focus-exit-cue.sh` checks that the wash is green at the bezel,
+clear in the middle, and gone after it finishes.
 
 The native [Calculator workbench](projects/shell/CALCULATOR.md) provides local
 arithmetic, unit conversions and a private calculation tape through the Control

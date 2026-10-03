@@ -658,6 +658,10 @@ mod tests {
         let open = plan(&state, &Ledger::default(), &weekly(), start)
             .1
             .unwrap();
+        let opener = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|directory| directory.join("true"))
+            .find(|path| path.is_file())
+            .expect("true must be available in the test environment");
         let ledger = commit(
             dir.path(),
             Ledger::default(),
@@ -667,7 +671,7 @@ mod tests {
                 email: "ada@example.com".into(),
             }]),
             start,
-            "/bin/true",
+            opener.to_str().unwrap(),
         )
         .unwrap();
         let path = PathBuf::from(&ledger.opened[&open.key].path);

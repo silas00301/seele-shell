@@ -26,9 +26,48 @@ import "github.js" as GitHub
 Shared.Theme {
   id: root
 
+  FocusExitCue {
+    id: focusExitCue
+    theme: root
+  }
+
   FocusTimer {
     id: focusTimer
-    onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+    // Completion is the exit. Pause and cancel leave the cue alone: one was
+    // asked for, the other is a break. The notification stays for the inbox;
+    // the rim is what can be seen without looking at the bar, including while
+    // Do Not Disturb has the toast.
+    onCompleted: {
+      focusExitCue.play()
+      Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+    }
+  }
+
+  // One rim per output, mapped only while the cue plays. An empty mask is the
+  // whole window passing pointer input, and keyboard focus stays None so
+  // mapping the surface cannot take the keys. The namespace is left out of
+  // the Hyprland blur rule: the light is the cue, and frosting it would turn
+  // the edge into a pane of glass.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      anchors { top: true; bottom: true; left: true; right: true }
+      visible: focusExitCue.playing
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      mask: Region {}
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-focus-exit"
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+      FocusExitRim {
+        anchors.fill: parent
+        theme: root
+        strength: focusExitCue.strength
+      }
+    }
   }
 
   QuickLook {
