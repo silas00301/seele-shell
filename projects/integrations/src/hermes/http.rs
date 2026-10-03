@@ -1,5 +1,5 @@
-//! Stateless Streamable HTTP MCP, exposed only on this node's Tailscale IP.
-//! Every request authenticates its real TCP peer through tailscaled; forwarded
+//! Stateless Streamable HTTP MCP on loopback and this node's Tailscale IP.
+//! Remote requests authenticate their real TCP peer through tailscaled; forwarded
 //! headers, DNS lookalikes and approval operations cannot grant authority.
 use super::{tools, Config, Shared, LIMIT};
 use crate::common::{self, Result};
@@ -82,7 +82,7 @@ async fn respond(stream: &mut TcpStream, code: &str, body: &[u8]) -> std::io::Re
     stream.write_all(format!("HTTP/1.1 {code}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n",body.len()).as_bytes()).await?;
     stream.write_all(body).await
 }
-fn headers(bytes: &[u8]) -> Result<(usize, usize)> {
+fn headers(bytes: &[u8], local_port: Option<u16>) -> Result<(usize, usize)> {
     let end = bytes
         .windows(4)
         .position(|b| b == b"\r\n\r\n")
@@ -97,6 +97,7 @@ fn headers(bytes: &[u8]) -> Result<(usize, usize)> {
         return Err("Only POST /mcp is supported.");
     }
     let mut length = None;
+    let mut host = None;
     for line in lines.filter(|l| !l.is_empty()) {
         let (name, value) = line.split_once(':').ok_or("Invalid HTTP header.")?;
         if name.is_empty()
@@ -109,6 +110,9 @@ fn headers(bytes: &[u8]) -> Result<(usize, usize)> {
         if name.eq_ignore_ascii_case("transfer-encoding") || name.eq_ignore_ascii_case("origin") {
             return Err("Browser and chunked requests are refused.");
         }
+        if name.eq_ignore_ascii_case("host") && host.replace(value.trim()).is_some() {
+            return Err("Duplicate Host header.");
+        }
         if name.eq_ignore_ascii_case("content-length") {
             if length.is_some() {
                 return Err("Duplicate content length.");
@@ -119,6 +123,16 @@ fn headers(bytes: &[u8]) -> Result<(usize, usize)> {
                     .parse::<usize>()
                     .map_err(|_| "Invalid content length.")?,
             );
+        }
+    }
+    // A browser must not reach the unauthenticated loopback endpoint by
+    // rebinding an attacker-controlled hostname to 127.0.0.1.
+    if let Some(port) = local_port {
+        let host = host.ok_or("Missing local Host header.")?;
+        if host != format!("127.0.0.1:{port}")
+            && !host.eq_ignore_ascii_case(&format!("localhost:{port}"))
+        {
+            return Err("Invalid local Host header.");
         }
     }
     let length = length
@@ -133,7 +147,12 @@ async fn client(
     state: Shared,
     cancel: CancellationToken,
 ) -> std::io::Result<()> {
-    if !authorized(peer, &config.peer, cancel.clone()).await {
+    let local = stream.local_addr()?.ip().is_loopback();
+    if if local {
+        !peer.ip().is_loopback()
+    } else {
+        !authorized(peer, &config.peer, cancel.clone()).await
+    } {
         return respond(&mut stream, "403 Forbidden", b"{}").await;
     }
     let mut data = Vec::new();
@@ -149,7 +168,8 @@ async fn client(
                 return Err(std::io::ErrorKind::InvalidData.into());
             }
             if data.windows(4).any(|b| b == b"\r\n\r\n") {
-                let (end, size) = headers(&data).map_err(|_| std::io::ErrorKind::InvalidData)?;
+                let (end, size) = headers(&data, local.then_some(stream.local_addr()?.port()))
+                    .map_err(|_| std::io::ErrorKind::InvalidData)?;
                 if data.len() >= end + size {
                     return serde_json::from_slice::<Value>(&data[end..end + size])
                         .map_err(std::io::Error::other);
@@ -176,6 +196,43 @@ async fn client(
     .map_err(|_| std::io::ErrorKind::TimedOut)?
 }
 pub async fn serve(config: Config, state: Shared, cancel: CancellationToken) -> Result<()> {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, config.port))
+        .await
+        .map_err(|_| "Could not bind the local MCP endpoint.")?;
+    let slots = Arc::new(tokio::sync::Semaphore::new(8));
+    let stop = cancel.child_token();
+    let remote_stop = stop.clone();
+    let remote_config = config.clone();
+    let remote_state = state.clone();
+    let remote_slots = slots.clone();
+    let remote = tokio::spawn(async move {
+        // Tailscale can start late or lose its address. Keep loopback and
+        // Desktop lifecycle available while the tailnet listener retries.
+        while !remote_stop.is_cancelled() {
+            let _ = tailnet(
+                remote_config.clone(),
+                remote_state.clone(),
+                remote_stop.clone(),
+                remote_slots.clone(),
+            )
+            .await;
+            tokio::select! {
+                _ = remote_stop.cancelled() => break,
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {},
+            }
+        }
+    });
+    let result = listen(listener, config, state, stop.clone(), slots).await;
+    stop.cancel();
+    let _ = remote.await;
+    result
+}
+async fn tailnet(
+    config: Config,
+    state: Shared,
+    cancel: CancellationToken,
+    slots: Arc<tokio::sync::Semaphore>,
+) -> Result<()> {
     let mut cmd = Command::new("tailscale");
     cmd.args(["ip", "-4"]);
     let bytes = common::command(cmd, vec![], Duration::from_secs(5), 1024, cancel.clone())
@@ -189,7 +246,15 @@ pub async fn serve(config: Config, state: Shared, cancel: CancellationToken) -> 
     let listener = TcpListener::bind((ip, config.port))
         .await
         .map_err(|_| "Could not bind the tailnet-only MCP endpoint.")?;
-    let slots = Arc::new(tokio::sync::Semaphore::new(8));
+    listen(listener, config, state, cancel, slots).await
+}
+async fn listen(
+    listener: TcpListener,
+    config: Config,
+    state: Shared,
+    cancel: CancellationToken,
+    slots: Arc<tokio::sync::Semaphore>,
+) -> Result<()> {
     let mut tasks = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
@@ -210,7 +275,6 @@ mod tests {
     #[tokio::test]
     async fn mcp_initialization_catalog_and_permission_boundary() {
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp/flake".into(),
@@ -274,7 +338,7 @@ mod tests {
     #[test]
     fn bounded_http_rejects_smuggling_and_browser_origins() {
         assert_eq!(
-            headers(b"POST /mcp HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}"),
+            headers(b"POST /mcp HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}", None),
             Ok((41, 2))
         );
         for extra in [
@@ -284,7 +348,41 @@ mod tests {
             "Content-Length: 65537",
             " Origin: https://evil.test\r\nContent-Length: 2",
         ] {
-            assert!(headers(format!("POST /mcp HTTP/1.1\r\n{extra}\r\n\r\n").as_bytes()).is_err());
+            assert!(headers(
+                format!("POST /mcp HTTP/1.1\r\n{extra}\r\n\r\n").as_bytes(),
+                None
+            )
+            .is_err());
         }
+    }
+    #[test]
+    fn loopback_rejects_dns_rebinding_and_duplicate_hosts() {
+        for host in ["127.0.0.1:8766", "localhost:8766", "LOCALHOST:8766"] {
+            assert!(headers(
+                format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\nContent-Length: 2\r\n\r\n{{}}")
+                    .as_bytes(),
+                Some(8766)
+            )
+            .is_ok());
+        }
+        for host in [
+            "evil.test:8766",
+            "localhost:80",
+            "127.0.0.1",
+            "localhost:8766\r\nHost: evil.test",
+            "localhost:8766\r\nOrigin: null",
+        ] {
+            assert!(headers(
+                format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\nContent-Length: 2\r\n\r\n{{}}")
+                    .as_bytes(),
+                Some(8766)
+            )
+            .is_err());
+        }
+        assert!(headers(
+            b"POST /mcp HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}",
+            Some(8766)
+        )
+        .is_err());
     }
 }

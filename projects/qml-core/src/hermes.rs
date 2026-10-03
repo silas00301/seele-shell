@@ -13,18 +13,35 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         "speaking" => ("Speaking", "accent", "󰕾"),
         _ => ("Disconnected", "overlay", "󰚩"),
     };
+    let connected = matches!(phase, "idle" | "listening" | "thinking" | "speaking");
+    let detail = if connected {
+        "Connected through Hermes Desktop"
+    } else if snapshot["desktop"] == true {
+        "Connect in Hermes Desktop · Settings → Gateway"
+    } else {
+        "Open Hermes Desktop to connect"
+    };
     let pending = snapshot["pending"]
         .as_array()
         .filter(|v| v.len() <= 4)
         .cloned()
         .unwrap_or_default();
     Ok(
-        json!({"label":label,"tint":tint,"glyph":glyph,"active":matches!(phase,"listening"|"thinking"|"speaking"),"pending":pending,"detail":if snapshot["reachable"]==true {"Gateway available over Tailscale"} else {"Gateway unavailable · check Tailscale and Hermes Desktop"},"health":if phase!="disconnected" {"healthy"} else if snapshot["reachable"]==true {"degraded"} else {"disconnected"}}),
+        json!({"label":label,"tint":tint,"glyph":glyph,"active":matches!(phase,"listening"|"thinking"|"speaking"),"pending":pending,"detail":detail,"health":if connected {"healthy"} else {"disconnected"}}),
     )
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_connection_does_not_depend_on_anonymous_default_gateway_probe() {
+        let view = call(
+            "project",
+            &[json!({"state":"idle","desktop":true,"reachable":false})],
+        )
+        .unwrap();
+        assert_eq!(view["detail"], "Connected through Hermes Desktop");
+    }
     #[test]
     fn phases_are_distinct_and_unknown_is_disconnected() {
         for phase in ["idle", "listening", "thinking", "speaking"] {

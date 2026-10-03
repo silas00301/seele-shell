@@ -104,10 +104,11 @@ with tempfile.TemporaryDirectory() as work:
     assert avoided["conflicts"] == busy
     assert avoided["next"] is None or avoided["next"]["start"] >= busy[0][1]
 
-    # Now is the next quarter hour of this computer's day.
+    # Now is the next quarter hour, which can be midnight on the next day.
     now = plan()
     moment = time.time()
-    assert moment - 60 < now["start"] < moment + 960 and now["day"]["today"]
+    assert moment - 60 < now["start"] < moment + 960
+    assert now["day"]["today"] == (now["day"]["start"] <= moment < now["day"]["end"])
     assert "UTC" in now["summary"] and "Kathmandu" in now["summary"]
     assert "ctz=Europe%2FBerlin" in now["calendarUrl"]
     assert all(suggestion["start"] >= now["start"] for suggestion in now["suggestions"])

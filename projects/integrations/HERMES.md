@@ -46,17 +46,26 @@ opens the actual application. Vicinae's Hermes command opens the same panel.
 Idle, listening, thinking and speaking come from Desktop's real transport,
 active-work, wake-word and playback stores. The active session is an opaque
 SHA-256 identity. A missing heartbeat for 15 seconds becomes disconnected.
+The panel automatically follows Desktop's selected gateway address and its
+authenticated transport. It never probes the Nix default anonymously or requires
+a separate browser login. The address appears in the panel; change it in
+Desktop's Settings → Gateway. The bridge removes URL credentials, query and
+fragment before publication, and the native service rejects those fields if
+present. The address and connection health expire with the heartbeat. Older
+Desktop builds can still report connection state without an address.
 No prompt, title, transcript, screenshot or audio reaches the Shell service.
 Wake word and voice remain explicit Desktop features; Seele enables neither.
 
 ## nerv tools
 
 `seele-hermes` serves stateless Streamable HTTP MCP at
-`http://nerv:8766/mcp`. It binds only nerv's actual Tailscale IPv4 address,
-authenticates the real TCP peer through `tailscale whois` on every request,
-requires the configured `peer` (`hermes` by default), and rejects browser
-Origins. Prefer the full tailnet node DNS name when naming the peer. Grant a
-Tailscale ACL from Hermes to nerv on that port. Incoming SSH is unnecessary.
+`http://nerv:8766/mcp` for remote clients. It binds nerv's actual Tailscale
+IPv4 address and authenticates the real TCP peer through `tailscale whois` on
+every remote request. The nerv profile permits `kaworu`; the reusable module
+default remains `hermes`. It rejects browser Origins. Prefer the full tailnet
+node DNS name when naming the peer. Grant a Tailscale ACL from Hermes to nerv
+on that port. Incoming SSH is unnecessary. The nerv profile points metadata
+queries at `~/seele`, its actual checkout.
 
 In the **server's** Hermes MCP settings, add:
 
@@ -66,7 +75,18 @@ mcp_servers:
     url: http://nerv:8766/mcp
 ```
 
-Restart/reload the server agent's MCP configuration using its normal workflow.
+Local clients use `http://127.0.0.1:8766/mcp` with the same tools and rebuild
+approval rules. This listener accepts local processes without credentials,
+checks the Host header against its loopback address or localhost and port, and
+rejects browser Origins. It never binds a LAN or wildcard address. Local access
+and Desktop lifecycle remain available while the Tailscale listener retries.
+The local endpoint is for any account on this machine; it does not grant the
+separate same-user control socket's approval operations.
+
+Register the remote URL in the Hermes profile used by Desktop and Telegram.
+The green Desktop connection indicator does not register MCP tools. Reload the
+server agent's MCP configuration using its normal workflow; Telegram supports
+`/reload-mcp` for its current profile.
 See [official MCP configuration](https://hermes-agent.nousresearch.com/docs/features/mcp).
 
 Tools read the configured flake's Jujutsu revision, host platform and NixOS
@@ -75,8 +95,9 @@ status/journal lines. Logs are bounded and redacted. `services` is an explicit
 allowlist (initially `nix-daemon.service`); normal journal permissions apply.
 There is no arbitrary command, arbitrary path or desktop-context endpoint.
 
-Rebuild requests are disabled by default. Set `seele.hermes.allowRebuild = true`
-locally to let the server **request** a fixed `nerv` rebuild. Each request pins
+The reusable module disables rebuild requests by default; the `nerv` profile
+enables `seele.hermes.allowRebuild` so clients can **request** a fixed `nerv`
+rebuild. Each request pins
 the checkout's current Jujutsu commit, expires in 120 seconds, and appears in
 the local panel. Deny discards it. Approve consumes it once, rechecks the current
 revision, and opens `seele-rebuild os switch git+file://…?rev=<approved>&submodules=1#nerv`

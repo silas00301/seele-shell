@@ -236,7 +236,6 @@ mod tests {
     #[test]
     fn approved_flake_is_an_encoded_immutable_git_revision() {
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp/flake with spaces?#".into(),
@@ -260,7 +259,6 @@ mod tests {
     #[tokio::test]
     async fn writes_and_non_allowlisted_reads_fail_closed() {
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp".into(),

@@ -36,6 +36,25 @@ Column {
         font.family: panel.theme.fontFamily
         font.pixelSize: panel.theme.textCaption
       }
+      Text {
+        width: parent.width
+        visible: text !== ""
+        text: panel.store.snapshot.gateway || ""
+        textFormat: Text.PlainText
+        wrapMode: Text.WrapAnywhere
+        color: panel.theme.subtext
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textCaption
+      }
+      Text {
+        width: parent.width
+        text: "Address follows Desktop · Change it in Settings → Gateway"
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        color: panel.theme.subtext
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textCaption
+      }
       Shared.ActionButton { theme: panel.theme; width: parent.width; text: "Open Hermes Desktop"; onClicked: panel.store.openDesktop() }
     }
   }

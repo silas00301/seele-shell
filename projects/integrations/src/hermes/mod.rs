@@ -22,7 +22,6 @@ use tokio_util::sync::CancellationToken;
 const LIMIT: usize = 65536;
 #[derive(Clone)]
 pub struct Config {
-    pub gateway: String,
     pub peer: String,
     pub port: u16,
     pub flake: PathBuf,
@@ -31,18 +30,6 @@ pub struct Config {
 }
 impl Config {
     fn load() -> Result<Self> {
-        let gateway =
-            std::env::var("SEELE_HERMES_GATEWAY").unwrap_or_else(|_| "http://hermes:9119".into());
-        let url = url::Url::parse(&gateway).map_err(|_| "Invalid Hermes gateway URL.")?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err("Invalid Hermes gateway URL.");
-        }
         let peer = std::env::var("SEELE_HERMES_PEER").unwrap_or_else(|_| "hermes".into());
         if peer.is_empty()
             || peer.len() > 253
@@ -68,7 +55,6 @@ impl Config {
             return Err("The Hermes flake directory must be absolute.");
         }
         Ok(Self {
-            gateway,
             peer,
             flake,
             services,
@@ -87,7 +73,6 @@ struct Pending {
 pub(super) struct State {
     report: Value,
     reported: Option<Instant>,
-    reachable: bool,
     pending: BTreeMap<String, Pending>,
     outcomes: BTreeMap<String, (Instant, String)>,
 }
@@ -96,7 +81,6 @@ impl State {
         Self {
             report: json!({}),
             reported: None,
-            reachable: false,
             pending: BTreeMap::new(),
             outcomes: BTreeMap::new(),
         }
@@ -139,13 +123,14 @@ impl State {
         } else {
             "disconnected"
         };
-        json!({"version":1,"state":phase,"reachable":self.reachable,"desktop":live,"gateway":config.gateway,"session":if live { self.report["session"].as_str().unwrap_or("") } else { "" },"pending":self.pending.iter().map(|(id,p)| json!({"id":id,"revision":p.revision,"remaining":120u64.saturating_sub(p.created.elapsed().as_secs())})).collect::<Vec<_>>(),"allowRebuild":config.rebuild})
+        json!({"version":1,"state":phase,"reachable":live && phase != "disconnected","desktop":live,"gateway":if live { self.report["gateway"].as_str().unwrap_or("") } else { "" },"session":if live { self.report["session"].as_str().unwrap_or("") } else { "" },"pending":self.pending.iter().map(|(id,p)| json!({"id":id,"revision":p.revision,"remaining":120u64.saturating_sub(p.created.elapsed().as_secs())})).collect::<Vec<_>>(),"allowRebuild":config.rebuild})
     }
     fn publish(&mut self, report: &Value) -> Result<()> {
         if !report.is_object()
-            || report
-                .as_object()
-                .is_some_and(|m| m.keys().any(|k| !matches!(k.as_str(), "state" | "session")))
+            || report.as_object().is_some_and(|m| {
+                m.keys()
+                    .any(|k| !matches!(k.as_str(), "state" | "session" | "gateway"))
+            })
         {
             return Err("Invalid Hermes lifecycle report.");
         }
@@ -166,7 +151,27 @@ impl State {
         {
             return Err("Invalid Hermes session identity.");
         }
-        self.report = json!({"state":phase,"session":session});
+        // Metadata only. Never let URL credentials or query tokens reach a snapshot.
+        let gateway = match report.get("gateway") {
+            None => "",
+            Some(Value::String(value)) if value.is_empty() => "",
+            Some(Value::String(value)) if value.len() <= 2048 => {
+                let url = url::Url::parse(value).map_err(|_| "Invalid Hermes gateway address.")?;
+                if !matches!(url.scheme(), "http" | "https")
+                    || url.host_str().is_none()
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.query().is_some()
+                    || url.fragment().is_some()
+                    || value.chars().any(char::is_control)
+                {
+                    return Err("Invalid Hermes gateway address.");
+                }
+                value.as_str()
+            }
+            _ => return Err("Invalid Hermes gateway address."),
+        };
+        self.report = json!({"state":phase,"session":session,"gateway":gateway});
         self.reported = Some(Instant::now());
         Ok(())
     }
@@ -312,22 +317,8 @@ pub async fn serve(cancel: CancellationToken) -> Result<()> {
     let state = Arc::new(Mutex::new(State::new()));
     let mut tasks = tokio::task::JoinSet::new();
     tasks.spawn(http::serve(config.clone(), state.clone(), cancel.clone()));
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|_| "Could not prepare Hermes health checks.")?;
-    let poll_state = state.clone();
-    let poll_url = format!("{}/api/status", config.gateway.trim_end_matches('/'));
-    let poll_cancel = cancel.clone();
-    tasks.spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(10));
-        loop { tokio::select! {_=poll_cancel.cancelled()=>break, _=tick.tick()=>{
-            let reachable = match http.get(&poll_url).send().await { Ok(r) if r.status().is_success()=>common::response_json(r).await.is_ok_and(|v| v["gateway_running"] == true), _=>false };
-            poll_state.lock().await.reachable = reachable;
-        }} } Ok(())
-    });
+    // Desktop owns the authenticated transport. An anonymous probe of the
+    // configured default cannot establish the health of its selected gateway.
     let slots = Arc::new(tokio::sync::Semaphore::new(16));
     let mut failed = false;
     loop {
@@ -383,7 +374,6 @@ mod tests {
     #[tokio::test]
     async fn request_status_reports_denial_expiry_and_retirement_without_executing() {
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp/flake".into(),
@@ -459,6 +449,53 @@ mod tests {
         .is_err());
     }
     #[test]
+    fn desktop_owns_gateway_address_and_health_until_heartbeat_expires() {
+        let config = Config {
+            peer: "hermes".into(),
+            port: 8766,
+            flake: "/tmp/flake".into(),
+            services: vec![],
+            rebuild: false,
+        };
+        let mut state = State::new();
+        state
+            .publish(&json!({"state":"idle","gateway":"https://selected.example/hermes/"}))
+            .unwrap();
+        let snapshot = state.snapshot(&config);
+        assert_eq!(snapshot["gateway"], "https://selected.example/hermes/");
+        assert_eq!(snapshot["reachable"], true);
+        for bad in [
+            "https://user:secret@example.com",
+            "https://example.com/?token=secret",
+            "https://example.com/#secret",
+            "file:///tmp/socket",
+            "https://example.com/\n",
+        ] {
+            assert!(state
+                .publish(&json!({"state":"idle","gateway":bad}))
+                .is_err());
+        }
+        assert!(state
+            .publish(&json!({"state":"idle","gateway":42}))
+            .is_err());
+        assert_eq!(state.snapshot(&config)["gateway"], snapshot["gateway"]);
+        state
+            .publish(&json!({"state":"disconnected","gateway":"https://other.example/"}))
+            .unwrap();
+        assert_eq!(state.snapshot(&config)["reachable"], false);
+        state
+            .publish(&json!({"state":"thinking","gateway":"https://other.example/"}))
+            .unwrap();
+        assert_eq!(state.snapshot(&config)["gateway"], "https://other.example/");
+        state.reported = Some(Instant::now() - Duration::from_secs(16));
+        assert_eq!(state.snapshot(&config)["gateway"], "");
+        assert_eq!(state.snapshot(&config)["reachable"], false);
+        // Old Desktop builds still publish a valid phase without an address.
+        state.publish(&json!({"state":"idle"})).unwrap();
+        assert_eq!(state.snapshot(&config)["reachable"], true);
+        assert_eq!(state.snapshot(&config)["gateway"], "");
+    }
+    #[test]
     fn lifecycle_is_metadata_only_and_expires() {
         let mut state = State::new();
         assert!(state
@@ -472,7 +509,6 @@ mod tests {
             .publish(&json!({"state":"idle","session":"bad\nname"}))
             .is_err());
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp/flake".into(),
@@ -486,7 +522,6 @@ mod tests {
     #[tokio::test]
     async fn remote_cannot_approve_and_local_approval_is_single_use() {
         let config = Config {
-            gateway: "http://hermes:9119".into(),
             peer: "hermes".into(),
             port: 8766,
             flake: "/tmp/flake".into(),

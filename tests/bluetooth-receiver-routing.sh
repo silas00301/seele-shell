@@ -23,6 +23,8 @@ cleanup() {
 trap cleanup EXIT
 export XDG_RUNTIME_DIR="$work/run" XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_CACHE_HOME="$work/cache"
 export PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR" PIPEWIRE_REMOTE=pipewire-0
+pipewire_root=$(dirname "$(dirname "$(readlink -f "$(command -v pipewire)")")")
+export PIPEWIRE_CONFIG_DIR="$pipewire_root/share/pipewire"
 export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
 export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$work/no-system-bus"
 export SEELE_CONTROL_NO_STATUS=1
@@ -93,5 +95,9 @@ for _ in $(seq 1 100); do
   sleep 0.05
 done
 test "$(receiver_links)" = 0
+for _ in $(seq 1 100); do
+  if pw-dump | jq -e 'all(.[]; .type != "PipeWire:Interface:Link")' >/dev/null; then break; fi
+  sleep 0.05
+done
 pw-dump | jq -e 'all(.[]; .type != "PipeWire:Interface:Link")' >/dev/null
 echo 'PASS: receiver on links the phone source to playback; off removes every link'

@@ -31,8 +31,8 @@ Rectangle {
   Shared.Theme { id: theme }
   QtObject {
     id: store
-    property var snapshot: ({session: "opaque"})
-    property var projection: ({label: "Thinking", detail: "Connected over Tailscale", pending: [{id: "one", revision: "0123456789abcdef", remaining: 120}]})
+    property var snapshot: ({session: "opaque", gateway: "https://selected.example/hermes/"})
+    property var projection: ({label: "Thinking", detail: "Connected through Hermes Desktop", pending: [{id: "one", revision: "0123456789abcdef", remaining: 120}]})
     property bool busy: false
     property string error: ""
     property string received: ""
@@ -66,6 +66,7 @@ Rectangle {
         point = label.mapToScene(QPoint(int(label.width()/2), int(label.height()/2)))
         QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(int(point.x()), int(point.y())))
         QTest.qWait(20)
+    assert find_text(panel, 'https://selected.example/hermes/') is not None
     click('Open Hermes Desktop')
     assert store.property('received') == 'desktop'
     click('Deny')
