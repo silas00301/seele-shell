@@ -243,6 +243,7 @@
                   node tests/focus.js projects/shell/focus.js
                   bash tests/focus-timer.sh ${quickshell}/bin/quickshell projects/shell
                   node tests/panel-layouts.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  node tests/control-center-layout.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   PYTHONDONTWRITEBYTECODE=1 ${
                     pkgs.python3.withPackages (ps: [ ps.aiohttp ])
                   }/bin/python3 projects/integrations/tests/home_assistant.py target/debug/seele-home-assistant
@@ -254,6 +255,7 @@
                   node tests/home-assistant-store.js projects/shell/HomeAssistantStore.qml
                   PYTHONDONTWRITEBYTECODE=1 ${pkgs.python3}/bin/python3 projects/runtime/tests/github.py target/debug/seele-github-status
                   bash tests/github-inbox.sh projects/shell/GitHubInboxPanel.qml projects/shared tests/tst_githubinbox.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  bash tests/weather-card.sh projects/shell projects/shared tests/tst_weathercard.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   node tests/github.js projects/shell/github.js projects/shell/GitHubStore.qml
                   node tests/network-addresses.js projects/shell/network.js
                   node tests/media.js projects/shell/media.js

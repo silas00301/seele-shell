@@ -192,6 +192,7 @@ fn quiet_period(dnd: bool, until: f64, minutes: f64, now: f64) -> Value {
 }
 fn permanent(entry: &Value) -> bool {
     truthy(entry.get("pinned"))
+        || truthy(entry.get("reminder"))
         || entry.get("timeout").and_then(Value::as_f64) == Some(0.0)
         || entry.get("urgency").and_then(Value::as_f64) == Some(2.0)
 }
@@ -238,6 +239,26 @@ struct Record {
 const MAX_ENTRIES: usize = 4096;
 const MAX_ENTRY_BYTES: usize = 256 * 1024;
 const MAX_RETAINED_BYTES: usize = 4 * 1024 * 1024;
+// A reminder is for later today or the next few days, not a calendar. The
+// notification it belongs to lives in memory, so a longer promise could not be
+// kept across the restart that would eventually come first anyway.
+const MAX_REMINDER_DELAY: f64 = 7.0 * 86400.0;
+// Reminder state rides on the entry, so the panel reads it where it reads
+// everything else about the notification and a replacement can carry it over.
+const REMINDER_KEYS: [&str; 2] = ["remind_at", "reminder"];
+fn reminder_at(entry: &Value) -> Option<f64> {
+    entry
+        .get("remind_at")
+        .and_then(Value::as_f64)
+        .filter(|at| at.is_finite() && *at > 0.0)
+}
+fn forget_reminder(entry: &mut Value) {
+    if let Some(entry) = entry.as_object_mut() {
+        for key in REMINDER_KEYS {
+            entry.remove(key);
+        }
+    }
+}
 fn weight(value: &Value) -> usize {
     32usize.saturating_add(match value {
         Value::String(text) => text.len().saturating_mul(6),
@@ -301,7 +322,7 @@ impl State {
         json!({"count":items.len(),"items":items,"popups":self.current.iter().filter(|r|r.popup).map(|r|&r.entry).collect::<Vec<_>>(),"history":self.history,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"quietApps":self.quiet_apps})
     }
     fn save(&self) -> Value {
-        let metadata: serde_json::Map<_, _> = self.current.iter().map(|record| (string(record.entry.get("id")), json!({"time":record.entry["time"],"pinned":record.entry["pinned"],"popup":record.popup&&permanent(&record.entry)}))).collect();
+        let metadata: serde_json::Map<_, _> = self.current.iter().map(|record| (string(record.entry.get("id")), json!({"time":record.entry["time"],"pinned":record.entry["pinned"],"popup":record.popup&&permanent(&record.entry),"remindAt":reminder_at(&record.entry),"reminder":truthy(record.entry.get("reminder"))}))).collect();
         json!({"history":self.history,"dnd":self.dnd,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"metadata":metadata,"quietApps":self.quiet_apps})
     }
     fn advance(&mut self, timestamp: f64, effects: &mut Vec<Value>) {
@@ -312,6 +333,34 @@ impl State {
             self.dnd_until = 0.0;
             self.dnd_minutes = 0.0;
             changed = true;
+        }
+        // A reminder that comes due while the shell is quiet waits for the
+        // quiet to end rather than being spent on a toast nobody is shown.
+        // Silencing one application does not hold it: the reminder was asked
+        // for by the user, not sent by the app.
+        let mut due = Vec::new();
+        let mut index = 0;
+        while index < self.current.len() {
+            if !self.dnd
+                && reminder_at(&self.current[index].entry).is_some_and(|at| at <= timestamp)
+            {
+                due.push(self.current.remove(index));
+            } else {
+                index += 1;
+            }
+        }
+        let returned = due.len();
+        for mut record in due.into_iter().rev() {
+            forget_reminder(&mut record.entry);
+            record.entry["reminder"] = json!(true);
+            record.popup = true;
+            record.remaining = popup_duration(&record.entry);
+            record.clock = timestamp;
+            self.current.insert(0, record);
+            changed = true;
+        }
+        for record in &self.current[..returned] {
+            effects.push(json!({"operation":"arrived","entry":record.entry,"fresh":false}));
         }
         for record in &mut self.current {
             let elapsed = (timestamp - record.clock).max(0.0);
@@ -342,6 +391,11 @@ impl State {
     fn retire(&mut self, index: usize, effects: &mut Vec<Value>) {
         let record = &mut self.current[index];
         record.popup = false;
+        // Hiding the toast is the answer to the reminder, so it stops holding
+        // the notification permanent and the panel stops calling it one.
+        if let Some(entry) = record.entry.as_object_mut() {
+            entry.remove("reminder");
+        }
         if truthy(record.entry.get("transient")) {
             effects.push(json!({"operation":"dismiss","id":record.entry["id"]}));
         }
@@ -428,7 +482,11 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                         else {
                             continue;
                         };
-                        state.restored.insert(id.clone(),json!({"time":time,"pinned":truthy(entry.get("pinned")),"popup":truthy(entry.get("popup"))}));
+                        let remind_at = entry
+                            .get("remindAt")
+                            .and_then(Value::as_f64)
+                            .filter(|at| at.is_finite() && *at > 0.0);
+                        state.restored.insert(id.clone(),json!({"time":time,"pinned":truthy(entry.get("pinned")),"popup":truthy(entry.get("popup")),"remindAt":remind_at,"reminder":truthy(entry.get("reminder"))}));
                     }
                 }
                 effects.push(json!({"operation":"publish"}));
@@ -452,6 +510,13 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
             if let Some(index) = state.find(entry.get("id")) {
                 let mut record = state.current.remove(index);
                 entry["pinned"] = record.entry["pinned"].clone();
+                // A sender updating its notification in place keeps the
+                // reminder the user set on it.
+                for key in REMINDER_KEYS {
+                    if let Some(value) = record.entry.get(key) {
+                        entry[key] = value.clone();
+                    }
+                }
                 let fresh = entry["summary"] != record.entry["summary"]
                     || entry["body"] != record.entry["body"];
                 let duration = entry["timeout"] != record.entry["timeout"]
@@ -496,6 +561,12 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                 if let Some(saved) = &restored {
                     entry["time"] = saved["time"].clone();
                     entry["pinned"] = json!(truthy(saved.get("pinned")));
+                    if let Some(at) = saved.get("remindAt").and_then(Value::as_f64) {
+                        entry["remind_at"] = json!(at);
+                    }
+                    if truthy(saved.get("reminder")) {
+                        entry["reminder"] = json!(true);
+                    }
                 }
                 let popup = !state.dnd
                     && !suppress_popup
@@ -534,6 +605,9 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     record.entry["actions"] = json!({});
                     record.entry["image"] = json!("");
                     record.entry["pinned"] = json!(false);
+                    // A reminder belongs to a notification still waiting. Once
+                    // it is dismissed or withdrawn there is nothing to return.
+                    forget_reminder(&mut record.entry);
                     state.history.insert(0, record.entry);
                     state.history.truncate(100);
                 }
@@ -566,6 +640,30 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                         }
                         effects.push(json!({"operation":"publish"}));
                     }
+                }
+            }
+        }
+        // Sets or cancels the one reminder a notification can carry. `due` is an
+        // absolute time, so Qt keeps local dates ("tomorrow morning") and the
+        // policy only checks that the time is ahead and within reach. A null
+        // or zero time cancels.
+        "remind" => {
+            result = json!(false);
+            let now = timestamp(args.get(2))?;
+            let due = args.get(1).and_then(Value::as_f64).unwrap_or(0.0);
+            if let Some(index) = state.find(args.first()) {
+                let record = &mut state.current[index];
+                let cancel = due == 0.0;
+                let valid = due.is_finite() && due > now && due - now <= MAX_REMINDER_DELAY;
+                if !truthy(record.entry.get("transient")) && (cancel || valid) {
+                    if let Some(entry) = record.entry.as_object_mut() {
+                        entry.remove("remind_at");
+                    }
+                    if !cancel {
+                        record.entry["remind_at"] = json!(due);
+                    }
+                    result = json!(true);
+                    effects.push(json!({"operation":"publish"}));
                 }
             }
         }
@@ -749,6 +847,143 @@ mod tests {
         .unwrap();
         assert!(state.current[0].popup);
         assert!(!state.current[1].popup);
+    }
+    fn chat(id: u32, summary: &str) -> Value {
+        json!({"id":id,"app_name":"Chat","summary":summary,"body":"","timeout":-1,"urgency":1,"transient":false,"actions":{},"pinned":false,"time":1000})
+    }
+    fn arrivals(response: &Value) -> Vec<Value> {
+        response["effects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["operation"] == "arrived")
+            .map(|e| e["entry"]["id"].clone())
+            .collect()
+    }
+    #[test]
+    fn reminders_return_a_waiting_notification_once() {
+        let mut state = new_state(1000.0).unwrap();
+        for id in [1, 2] {
+            state_call(
+                &mut state,
+                "receive",
+                &[chat(id, "Hello"), json!(1000), json!(false)],
+            )
+            .unwrap();
+        }
+        state_call(&mut state, "advance", &[json!(1031)]).unwrap();
+        assert!(state.current.iter().all(|r| !r.popup));
+        let remind = |state: &mut State, id: u32, due: Value, now: f64| {
+            state_call(state, "remind", &[json!(id), due, json!(now)]).unwrap()["result"].clone()
+        };
+        // Only a time ahead, within a week, on a notification still waiting.
+        assert_eq!(remind(&mut state, 1, json!(1031), 1031.0), false);
+        assert_eq!(
+            remind(
+                &mut state,
+                1,
+                json!(1031.0 + MAX_REMINDER_DELAY + 1.0),
+                1031.0
+            ),
+            false
+        );
+        assert_eq!(remind(&mut state, 9, json!(2000), 1031.0), false);
+        assert_eq!(remind(&mut state, 1, json!(2000), 1031.0), true);
+        assert_eq!(state.view()["items"][1]["remind_at"], json!(2000.0));
+        // An in-place update from the sender keeps the reminder.
+        state_call(
+            &mut state,
+            "receive",
+            &[chat(1, "Hello again"), json!(1500), json!(false)],
+        )
+        .unwrap();
+        assert_eq!(state.current[0].entry["remind_at"], json!(2000.0));
+        assert!(
+            arrivals(&state_call(&mut state, "advance", &[json!(1999)]).unwrap()).is_empty(),
+            "nothing returns before its time"
+        );
+        // Due: the notification moves to the top and toasts until it is hidden.
+        let response = state_call(&mut state, "advance", &[json!(2000)]).unwrap();
+        assert_eq!(arrivals(&response), vec![json!(1)]);
+        assert_eq!(state.current[0].entry["id"], 1);
+        assert!(state.current[0].popup && state.current[0].entry["reminder"] == true);
+        assert!(state.current[0].entry.get("remind_at").is_none());
+        state_call(&mut state, "advance", &[json!(9000)]).unwrap();
+        assert!(state.current[0].popup, "a reminder toast does not time out");
+        assert!(arrivals(&state_call(&mut state, "advance", &[json!(9001)]).unwrap()).is_empty());
+        state_call(&mut state, "retire", &[json!(1)]).unwrap();
+        assert!(!state.current[0].popup && state.current[0].entry.get("reminder").is_none());
+        // Cancelling clears it; zero is the cancel value.
+        assert_eq!(remind(&mut state, 2, json!(9500), 9001.0), true);
+        assert_eq!(remind(&mut state, 2, json!(0), 9001.0), true);
+        assert!(arrivals(&state_call(&mut state, "advance", &[json!(9600)]).unwrap()).is_empty());
+    }
+    #[test]
+    fn reminders_wait_out_quiet_and_end_with_their_notification() {
+        let mut state = new_state(1000.0).unwrap();
+        for id in [1, 2] {
+            state_call(
+                &mut state,
+                "receive",
+                &[chat(id, "Hello"), json!(1000), json!(false)],
+            )
+            .unwrap();
+            state_call(&mut state, "remind", &[json!(id), json!(1100), json!(1000)]).unwrap();
+        }
+        state_call(&mut state, "setAppQuiet", &[json!("app:chat"), json!(true)]).unwrap();
+        state_call(&mut state, "snooze", &[json!(5), json!(1000)]).unwrap();
+        assert!(arrivals(&state_call(&mut state, "advance", &[json!(1200)]).unwrap()).is_empty());
+        assert_eq!(
+            state.current[1].entry["remind_at"],
+            json!(1100.0),
+            "a due reminder is held while quiet"
+        );
+        // The quiet period ends at 1300; application silence does not hold it.
+        let response = state_call(&mut state, "advance", &[json!(1300)]).unwrap();
+        assert_eq!(arrivals(&response), vec![json!(2), json!(1)]);
+        assert_eq!(
+            state.current[0].entry["id"], 2,
+            "due reminders keep their order at the top"
+        );
+        // Dismissing or withdrawing the notification ends its reminder.
+        state_call(
+            &mut state,
+            "receive",
+            &[chat(3, "Later"), json!(1300), json!(false)],
+        )
+        .unwrap();
+        state_call(&mut state, "remind", &[json!(3), json!(1400), json!(1300)]).unwrap();
+        state_call(&mut state, "closed", &[json!(3), json!(2)]).unwrap();
+        assert!(
+            state.history[0].get("remind_at").is_none()
+                && state.history[0].get("reminder").is_none()
+        );
+        assert!(arrivals(&state_call(&mut state, "advance", &[json!(1500)]).unwrap()).is_empty());
+    }
+    #[test]
+    fn reminders_survive_a_shell_reload() {
+        let mut state = new_state(1000.0).unwrap();
+        state_call(
+            &mut state,
+            "receive",
+            &[chat(1, "Hello"), json!(1000), json!(false)],
+        )
+        .unwrap();
+        state_call(&mut state, "remind", &[json!(1), json!(1100), json!(1000)]).unwrap();
+        let saved = state.save();
+        let mut reloaded = new_state(1050.0).unwrap();
+        state_call(&mut reloaded, "restore", &[saved]).unwrap();
+        state_call(
+            &mut reloaded,
+            "receive",
+            &[chat(1, "Hello"), json!(1050), json!(true)],
+        )
+        .unwrap();
+        assert_eq!(reloaded.current[0].entry["remind_at"], json!(1100.0));
+        assert_eq!(
+            arrivals(&state_call(&mut reloaded, "advance", &[json!(1100)]).unwrap()),
+            vec![json!(1)]
+        );
     }
     #[test]
     fn application_silence_is_bounded_and_resumes_at_capacity() {

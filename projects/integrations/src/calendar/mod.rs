@@ -41,6 +41,7 @@ mod reminders;
 mod tests;
 mod view;
 
+use crate::common::{next_tick, suspend_offset, Publisher};
 use cache::*;
 use content::*;
 use google::*;
@@ -54,51 +55,10 @@ const STALE_AFTER: i64 = 600;
 const RETRY_AFTER: i64 = 30;
 const PALETTE_EVERY: i64 = 86_400;
 
-#[cfg(target_os = "linux")]
-fn suspend_offset() -> Option<i64> {
-    fn read(clock: libc::clockid_t) -> Option<i64> {
-        let mut value = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
-        if unsafe { libc::clock_gettime(clock, &mut value) } == 0 {
-            Some(value.tv_sec * 1_000_000_000 + value.tv_nsec)
-        } else {
-            None
-        }
-    }
-    Some(read(libc::CLOCK_BOOTTIME)? - read(libc::CLOCK_MONOTONIC)?)
-}
-
-#[cfg(not(target_os = "linux"))]
-fn suspend_offset() -> Option<i64> {
-    None
-}
-
 enum Message {
     Auth(u64, Result<bool, &'static str>),
     Sync(u64, Result<Fetched, Failure>),
     Wallet(Result<(), &'static str>),
-}
-
-/// Sends each section only when its content changed since the last line.
-#[derive(Default)]
-struct Publisher {
-    sent: BTreeMap<&'static str, String>,
-}
-
-impl Publisher {
-    fn changes(&mut self, sections: Vec<(&'static str, Value)>) -> Option<Value> {
-        let mut line = Map::new();
-        for (name, value) in sections {
-            let encoded = value.to_string();
-            if self.sent.get(name) != Some(&encoded) {
-                self.sent.insert(name, encoded);
-                line.insert(name.to_owned(), value);
-            }
-        }
-        (!line.is_empty()).then_some(Value::Object(line))
-    }
 }
 
 struct Worker {
@@ -719,13 +679,6 @@ impl Worker {
         }
         self.publisher.changes(sections)
     }
-}
-
-/// Wall-clock minute boundaries, so countdowns and reminders land on the
-/// minute; capped so a resume from suspend is noticed within seconds.
-fn next_tick() -> Duration {
-    let into_minute = Utc::now().timestamp_millis().rem_euclid(60_000) as u64;
-    Duration::from_millis((60_000 - into_minute + 20).min(15_000))
 }
 
 pub async fn run() {

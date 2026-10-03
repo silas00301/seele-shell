@@ -1,6 +1,6 @@
 # Native integration services
 
-This crate builds three independent Rust executables over one shared library:
+This crate builds independent Rust executables over one shared library:
 
 - `seele-github-inbox` owns the background GitHub notification inbox, bounded
   context collection, shared-broker triage, explicit Done and desktop actions.
@@ -11,6 +11,10 @@ This crate builds three independent Rust executables over one shared library:
 - `seele-transfers serve|request|select FILE...|watch` owns the private desktop
   transfer service and its provider-neutral protocol. The Taildrop adapter is
   the only module that knows Tailscale LocalAPI routes or progress fields.
+- `seele-calendar` owns the read-only Google Calendar worker; see
+  `CALENDAR.md`.
+- `seele-weather` owns the clock popup's Open-Meteo forecast: the place, a
+  private cache, units, conditions and every label. See `WEATHER.md`.
 
 QML owns rendering, focus and Qt objects; the native services own integration
 policy and I/O. Home Assistant and Transfers retain their existing JSON field

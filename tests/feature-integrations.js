@@ -33,6 +33,9 @@ const shellPatterns = {
   'shuffle control': /Media\.toggleShuffle\(/,
   'repeat control': /Media\.cycleRepeat\(/,
   'calendar copy': /Time\.calendarCopyDate\(/,
+  'weather store': /WeatherStore\s*\{\s*\n\s*id: weatherStore/,
+  'weather line in the clock popup': /WeatherCard\s*\{\s*\n\s*id: calendarWeather[\s\S]{0,300}?store: weatherStore/,
+  'weather Integration Health retry': /routes\.weather = function\(action, token\) \{ weatherStore\.retry\(token\) \}/,
   'world-clock copy': /copyClockTimestamp\(/,
   'network address rows': /Network\.addresses\(/,
   'per-player volume': /PlayerVolume\.adjust\(/,
@@ -58,6 +61,8 @@ const shellPatterns = {
   'theme picker leaves the bar and takes focus only when opened': /namespace: "seele-shell-themes"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,
   'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
+  'screen zoom OSD IPC': /function showZoom\(state: string\): void \{ root\.showZoom\(state\) \}/,
+  'screen zoom OSD strip': /visible: root\.osdKind === "zoom"[\s\S]*?ratio: root\.zoomOsd\.ratio[\s\S]*?text: root\.zoomOsd\.label/,
   'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'collapsible Litra Glow controls': /label: "LITRA GLOW"[\s\S]*?collapsible: true[\s\S]*?root\.litraGlowRequest\(litraGroup\.modelData\.device, "mode"/,
   'camera previews lease camera activity': /function cameraPreviewActivity\(source, active\)[\s\S]*?"camera-preview " \+ source \+ " " \+ \(active \? "on" : "off"\)/,
@@ -125,6 +130,8 @@ const packagedSources = [
   'MicTestStore.qml',
   'MicTestCard.qml',
   'mic-test.js',
+  'WeatherStore.qml',
+  'WeatherCard.qml',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -163,6 +170,7 @@ const focusedTests = [
   'mic-test.js',
   'mic-test.sh',
   'vicinae-views.cjs',
+  'weather-card.sh',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);
