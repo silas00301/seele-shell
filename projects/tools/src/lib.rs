@@ -9,6 +9,7 @@ mod clean_link;
 mod clock;
 mod command;
 mod control;
+pub mod drift;
 mod daemon;
 mod grain;
 mod launch;
