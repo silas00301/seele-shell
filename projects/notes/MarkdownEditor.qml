@@ -13,6 +13,9 @@ Item {
   id: editorRoot
 
   required property var theme
+  // `i` edits the note. The sidebar search field is an earlier text input,
+  // and `/` is what focuses that.
+  readonly property bool keyboardEdit: true
   property bool sourceMode: false
   property bool readOnly: false
   property string placeholder: "Start writing…"

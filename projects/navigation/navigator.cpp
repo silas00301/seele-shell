@@ -10,6 +10,13 @@ bool input(QQuickItem *item) {
   return item && item->flags().testFlag(QQuickItem::ItemAcceptsInputMethod)
       && !item->property("readOnly").toBool();
 }
+bool editTarget(QQuickItem *item) {
+  // The mark sits on the writing surface, which may wrap the field that actually
+  // takes focus (a TextArea inside a flickable).
+  for (auto *cursor = item; cursor; cursor = cursor->parentItem())
+    if (cursor->property("keyboardEdit").toBool()) return true;
+  return false;
+}
 QQuickItem *scope(QQuickWindow *window) {
   // A Qt popup is a focus boundary: do not walk its obscured parent controls.
   for (auto *item = window->activeFocusItem(); item; item = item->parentItem()) {
@@ -234,7 +241,15 @@ bool Navigator::eventFilter(QObject *object, QEvent *event) {
     releases_[key->key()] = 0; return true;
   }
   if (key->key() == Qt::Key_I && modifiers == Qt::NoModifier) {
-    for (auto *item : targets(window)) if (input(item)) { focus(item); break; }
+    // A writing surface marks itself `keyboardEdit`. Search is also editable,
+    // and in tree order it sits ahead of the Notes body, which `/` already opens.
+    QQuickItem *fallback = nullptr;
+    for (auto *item : targets(window)) {
+      if (!input(item)) continue;
+      if (editTarget(item)) { focus(item); fallback = nullptr; break; }
+      if (!fallback) fallback = item;
+    }
+    if (fallback) focus(fallback);
     releases_[key->key()] = 0; return true;
   }
   // Slash needs Shift on the configured German layout. Match the resulting

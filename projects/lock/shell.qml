@@ -602,6 +602,15 @@ ShellRoot {
                 }
 
                 Keys.onPressed: function(event) {
+                  // Escape reaches this field, not the surface behind it. A menu
+                  // opened from the pointer closes before the draft is cleared.
+                  if (event.key === Qt.Key_Escape && root.powerMenuOpen) {
+                    root.powerMenuOpen = false
+                    root.pendingPowerAction = ""
+                    root.focusPassword()
+                    event.accepted = true
+                    return
+                  }
                   if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
                     root.passwordText = ""
                     event.accepted = true
