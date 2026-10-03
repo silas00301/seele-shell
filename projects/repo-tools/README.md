@@ -29,7 +29,11 @@ installs Nix or adds another distribution to PATH.
   and Gum selection. It validates API branch/repository metadata, quotes Jujutsu
   revision literals, uses exact fetch patterns and removes temporary fork remotes
   on success, failure or cancellation. Picker output is captured while terminal
-  input and stderr remain attached to the existing interactive terminal.
+  input and stderr remain attached to the existing interactive terminal. GitHub
+  commands use the current Jujutsu workspace's Git backend even without a `.git`
+  directory. Their scoped environment replaces `GIT_DIR` and removes inherited
+  `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, and `GH_REPO`, so another
+  shell's repository overrides cannot redirect this workspace's PR operations.
 
 Run from the shell root:
 
@@ -38,6 +42,7 @@ cargo test -p seele-repo-tools
 cargo build -p seele-repo-tools
 PYTHONDONTWRITEBYTECODE=1 python3 projects/repo-tools/tests/check.py target/debug/seele-check
 PYTHONDONTWRITEBYTECODE=1 python3 projects/repo-tools/tests/protocol.py target/debug
+PYTHONDONTWRITEBYTECODE=1 python3 projects/repo-tools/tests/jj_workspace.py target/debug/jj-pr
 PYTHONDONTWRITEBYTECODE=1 python3 projects/repo-tools/tests/submodule.py target/debug/update-submodule
 ```
 

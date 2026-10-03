@@ -11,7 +11,13 @@
     "XF86AudioNext": "Next Track",
     "XF86AudioPrev": "Previous Track",
     "mouse:272": "Mouse Left",
-    "mouse:273": "Mouse Right"
+    "mouse:273": "Mouse Right",
+    "mouse_up": "Scroll Up",
+    "mouse_down": "Scroll Down",
+    "mouse_left": "Scroll Left",
+    "mouse_right": "Scroll Right",
+    "plus": "Plus",
+    "minus": "Minus"
   },
   "fallbackDescriptions": {
     "Super + Mouse Left": "Move the focused window",
@@ -59,6 +65,11 @@
     "Super + N": "Open notifications",
     "Super + Escape": "Open session controls",
     "Super + K": "Search Hyprland keybindings",
+    "Super + Scroll Up": "Zoom in around the pointer",
+    "Super + Scroll Down": "Zoom out around the pointer",
+    "Super + Plus": "Zoom in around the pointer",
+    "Super + Minus": "Zoom out around the pointer",
+    "Super + 0": "Reset the screen zoom",
     "Super + 1": "Focus workspace 1",
     "Super + Shift + 1": "Move the focused window to workspace 1",
     "Super + 2": "Focus workspace 2",

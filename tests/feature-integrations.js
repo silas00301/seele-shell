@@ -58,6 +58,8 @@ const shellPatterns = {
   'theme picker leaves the bar and takes focus only when opened': /namespace: "seele-shell-themes"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,
   'microphone test card': /MicTestCard \{ theme: root; store: micTest/,
+  'screen zoom OSD IPC': /function showZoom\(state: string\): void \{ root\.showZoom\(state\) \}/,
+  'screen zoom OSD strip': /visible: root\.osdKind === "zoom"[\s\S]*?ratio: root\.zoomOsd\.ratio[\s\S]*?text: root\.zoomOsd\.label/,
   'Audio panel keyboard access': /namespace: "seele-shell-audio"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.OnDemand/,
   'collapsible Litra Glow controls': /label: "LITRA GLOW"[\s\S]*?collapsible: true[\s\S]*?root\.litraGlowRequest\(litraGroup\.modelData\.device, "mode"/,
   'camera previews lease camera activity': /function cameraPreviewActivity\(source, active\)[\s\S]*?"camera-preview " \+ source \+ " " \+ \(active \? "on" : "off"\)/,

@@ -337,20 +337,14 @@ assert.match(floating, /WlrLayershell\.layer: WlrLayer\.Overlay/, 'above the cli
 assert.doesNotMatch(panel, /store\.apply\(|text: "Apply"/, 'moving switches; there is no apply step');
 assert.doesNotMatch(source + panel, /query|showAll|toggleAll/, 'the switcher is never filtered');
 
-// The tile has a row of its own and the grid is tall enough to hold it. The
-// row count is read from the grid rather than fixed here, so a module added
-// later moves this assertion along with it instead of breaking it.
+// The tile is a module tile, laid out by the grid's own two-column row
+// beside Camera rather than at a counted offset, so a module added later
+// cannot push it past a height nobody recounted.
 const grid = shell.slice(shell.indexOf('component ControlCenterGrid:'),
   shell.indexOf('component IconButton:', shell.indexOf('component ControlCenterGrid:')));
-const [, gridRows, gridGaps] = grid.match(/height: devicesY \+ smallTileHeight \* (\d+) \+ gap \* (\d+)/).map(Number);
-assert.equal(gridGaps, gridRows - 1, 'the grid spaces its own rows');
-const tileRows = [...grid.matchAll(/y: controlGrid\.devicesY \+ controlGrid\.smallTileHeight \* (\d+) \+ controlGrid\.gap \* \1\b[\s\S]*?label: "([^"]+)"/g)]
-  .map(match => ({row: Number(match[1]), label: match[2]}));
-const themesRow = tileRows.find(tile => tile.label === 'Themes');
-assert.ok(themesRow, 'the Themes tile sits on a grid row');
-assert.deepEqual(tileRows.filter(tile => tile.row === themesRow.row).map(tile => tile.label), ['Themes'],
-  'no other module shares the Themes row');
-assert.ok(themesRow.row < gridRows, 'the grid is tall enough to show the Themes row');
+assert.doesNotMatch(grid, /smallTileHeight \*|devicesY/, 'the grid measures itself');
+const moduleRow = grid.slice(grid.indexOf('columns: 2'), grid.indexOf('columns: 4'));
+assert.match(moduleRow, /label: "Camera"[\s\S]*label: "Themes"/, 'Themes shares the module row with Camera');
 assert.doesNotMatch(grid.slice(grid.indexOf('label: "Themes"') - 400, grid.indexOf('label: "Themes"') + 400),
   /\u{f03d8}/u, 'the palette mark belongs to Colour Lab; Themes carries its own');
 

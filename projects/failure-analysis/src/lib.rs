@@ -1,6 +1,7 @@
 pub mod collect;
 pub mod generator;
 pub mod privacy;
+pub mod rb;
 pub mod report;
 pub mod text;
 pub mod ui;

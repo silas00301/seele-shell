@@ -1,5 +1,6 @@
 pub mod model;
 pub mod publishers;
+pub mod restart;
 pub mod service;
 use model::Result;
 use std::{

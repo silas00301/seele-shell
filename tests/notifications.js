@@ -5,6 +5,32 @@ const assert = require('node:assert/strict');
 const notifications = {Bridge:nativeBridge()};
 vm.createContext(notifications);
 vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), notifications);
+
+// The Qt boundary (projects/qml/functions-boundary.h) refuses a whole call when
+// any argument is not JSON-shaped. The subprocess stand-in would serialize an
+// opaque value instead, so the fixture applies the same rule to every call.
+// HostWrapper stands for a Qt value QML sees only as an opaque object, such as
+// QDBusVariant or QDBusArgument; ArrayBuffer and URL are how QByteArray and QUrl
+// arrive. Script objects of any prototype convert to QVariantMap and pass.
+class HostWrapper {}
+function jsonShaped(value, depth = 0) {
+  if (depth > 64) return false;
+  if (value === null || value === undefined) return true;
+  if (['string', 'number', 'boolean'].includes(typeof value)) return true;
+  if (typeof value !== 'object') return false;
+  if (value instanceof HostWrapper || value instanceof ArrayBuffer || value instanceof URL) return false;
+  return Object.values(value).every(item => jsonShaped(item, depth + 1));
+}
+const guarded = (call) => (operation, args) => {
+  assert.ok(jsonShaped(args), `${operation} must send only JSON-shaped arguments`);
+  return call(operation, args);
+};
+notifications.Bridge.call = guarded(notifications.Bridge.call);
+const notificationState = notifications.Bridge.notificationState;
+notifications.Bridge.notificationState = (now) => {
+  const policy = notificationState(now);
+  return {call: guarded(policy.call.bind(policy))};
+};
 const code = (body, summary = '') => notifications.verificationCode({body, summary});
 assert.equal(code('Your verification code is 012345'), '012345');
 assert.equal(code('Use <b>123456</b> to sign in'), '123456');
@@ -188,6 +214,18 @@ function harness() {
   h.store.advance(5200);assert.equal(h.view.popups.length,0,'a cancelled reminder does not return');
 }
 console.log('notification reminders passed');
+{
+  // A sender chooses each hint's D-Bus type. Qt hands a nested variant or a byte
+  // string to QML as an opaque wrapper, and the notification must still arrive.
+  const h=harness();
+  h.store.receive(h.make(1,{hints:{'x-dunst-stack-tag':new HostWrapper(),value:new HostWrapper()}}),1000);
+  h.store.receive(h.make(2,{hints:{'x-canonical-private-synchronous':new ArrayBuffer(4)}}),1000);
+  assert.equal(h.view.items.length,2,'opaque hints read as absent rather than dropping the notification');
+  assert.equal(h.view.items.find(item => item.id===1).progress,-1,'an opaque progress hint shows no progress');
+  const tagged=h.make(3,{hints:{'x-dunst-stack-tag':7}}), retagged=h.make(4,{hints:{'x-dunst-stack-tag':7}});
+  h.store.receive(tagged,1000);h.store.receive(retagged,1000);
+  assert.equal(h.view.items.length,3,'a numeric stack tag still replaces its predecessor');
+}
 console.log('notification stacks, lifecycle, urgency, transients, replacements, and actions passed');
 
 {
