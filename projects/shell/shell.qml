@@ -70,6 +70,13 @@ Shared.Theme {
   // panel closing, and the resolver falls back when the selected MPRIS client
   // leaves the bus.
   property var selectedMediaPlayer: null
+  // Presentation mode (SIL-55). Chosen by hand, or implied while the screen is
+  // shared, it holds toasts back and takes personal text off the bar. It never
+  // writes Do Not Disturb, so ending it has nothing to restore; the one piece
+  // of state it owns is the keep-awake session it may have started.
+  readonly property var presentingState: Bridge.call("presenting.state",
+    [presentingRetained.manual, !!root.systemData.screenRecording])
+  readonly property bool presenting: presentingState.active
   // A module being dragged between the Control Center and the menu bar.
   // `dragKind` is "add" when it came from the panel and "remove" when it was
   // pulled off the bar; `dragOverBar` is the live drop decision.
@@ -2059,6 +2066,34 @@ Shared.Theme {
   CaffeinateStore {
     id: caffeinateStore
   }
+
+  // A shell reload mid-talk must not put the details back on the bar, so the
+  // choice and the session it started survive reloads the way pins do.
+  PersistentProperties {
+    id: presentingRetained
+    reloadableId: "seele-presenting"
+    property bool manual: false
+    property real caffeinateStarted: 0
+  }
+
+  // Keeping the session awake borrows Caffeinate's single session: one is
+  // started only when none is running, and only that one is ended again.
+  function setPresenting(on) {
+    if (presentingRetained.manual === !!on) return
+    presentingRetained.manual = !!on
+    var now = Date.now() / 1000
+    if (on) {
+      presentingRetained.caffeinateStarted = 0
+      if (Bridge.call("presenting.claim", [caffeinateStore.session])) {
+        caffeinateStore.send({ op: "start", mode: "manual" })
+        presentingRetained.caffeinateStarted = now
+      }
+    } else {
+      if (Bridge.call("presenting.owns", [presentingRetained.caffeinateStarted, caffeinateStore.session, now]))
+        caffeinateStore.stop()
+      presentingRetained.caffeinateStarted = 0
+    }
+  }
   NetworkActivityStore {
     id: networkActivityStore
     panelOpen: root.controlPanel === "network-activity"
@@ -2099,6 +2134,14 @@ Shared.Theme {
       // notification for every other verb; the store validates the range.
       if (action === "snooze") return state.snooze(parseInt(id, 10), Date.now() / 1000) ? "ok" : "unavailable"
       return "unavailable"
+    }
+    // on, off or toggle; any verb answers with the mode's state afterwards.
+    function presentation(action: string): string {
+      if (action === "on") root.setPresenting(true)
+      else if (action === "off") root.setPresenting(false)
+      else if (action === "toggle") root.setPresenting(!presentingRetained.manual)
+      else if (action !== "status") return "invalid"
+      return JSON.stringify(root.presentingState)
     }
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
@@ -4291,6 +4334,7 @@ Shared.Theme {
       }
       screen: modelData
       visible: !uriPicker.presented && !colorPicker.presented && !root.systemData.dnd
+        && !root.presenting
         && root.controlPanel !== "notifications"
         && entries.length > 0
         && root.pinnedScreen(root.notificationPopupScreen, modelData)
@@ -4358,7 +4402,8 @@ Shared.Theme {
     property string icon: ""
     property color iconColor: root.accent
     readonly property bool paused: !!barMediaArt.player && !barMediaArt.player.isPlaying
-    readonly property bool hasArt: barMediaArtImage.status === Image.Ready
+    // Artwork names the track as plainly as its title does.
+    readonly property bool hasArt: barMediaArtImage.status === Image.Ready && !root.presenting
 
     width: 16
     height: 16
@@ -5861,7 +5906,9 @@ Shared.Theme {
                 height: parent.height
                 maximumWidth: 190
                 color: root.subtext
-                text: root.windowLabel(parent.parent.window)
+                // A title can carry a subject line or a document name; the
+                // application alone says what is on screen without reading it.
+                text: root.presenting ? root.windowAppName(parent.parent.window) : root.windowLabel(parent.parent.window)
               }
             }
             MouseArea {
@@ -5871,7 +5918,7 @@ Shared.Theme {
               cursorShape: Qt.PointingHandCursor
               onPressed: root.toggleApplication(parent.window, barWindow.modelData.name, root.barItemCenter(parent))
             }
-            HoverTip { mouse: activeWindowMouse; text: root.windowTitle(activeWindowMouse.parent.window) }
+            HoverTip { mouse: activeWindowMouse; text: root.presenting ? "" : root.windowTitle(activeWindowMouse.parent.window) }
           }
 
           BarItem {
@@ -5890,7 +5937,7 @@ Shared.Theme {
                 font.pixelSize: root.textStrong
               }
               BarLabel {
-                visible: homeAssistantStore.summaryText !== ""
+                visible: homeAssistantStore.summaryText !== "" && !root.presenting
                 text: homeAssistantStore.summaryText
                 maximumWidth: root.rowHeight * 3
                 color: homeAssistantStore.connected ? root.subtext : root.yellow
@@ -5989,7 +6036,7 @@ Shared.Theme {
                 id: eventBarTitle
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, root.calendarIndicatorWidth - 14 - 11 - eventBarWhen.implicitWidth)
-                text: root.calendarIndicator ? root.calendarIndicator.title : ""
+                text: root.calendarIndicator ? (root.presenting ? "Event" : root.calendarIndicator.title) : ""
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.text
@@ -6020,7 +6067,7 @@ Shared.Theme {
                 if (root.controlPanel !== "calendar") root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent))
               }
             }
-            HoverTip { mouse: eventBarMouse; text: root.calendarIndicator ? root.calendarIndicator.detail : "" }
+            HoverTip { mouse: eventBarMouse; text: root.calendarIndicator && !root.presenting ? root.calendarIndicator.detail : "" }
           }
 
           BarItem {
@@ -6122,6 +6169,35 @@ Shared.Theme {
             MouseArea { id: screenRecordingIndicator; anchors.fill: parent; hoverEnabled: true }
             HoverTip { mouse: screenRecordingIndicator; text: "Screen is being recorded" }
           }
+
+          // The mode says it is on, in the one place the bar still speaks
+          // plainly, and a click ends a mode chosen by hand. One implied by a
+          // share ends with the share.
+          BarItem {
+            visible: root.presenting
+            width: visible ? presentingBarLabel.implicitWidth + root.spaceLarge : 0
+            hovered: presentingMouse.containsMouse
+            Text {
+              id: presentingBarLabel
+              anchors.centerIn: parent
+              text: "󰐯 " + root.presentingState.label
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textBody
+              font.weight: root.weightStrong
+            }
+            MouseArea {
+              id: presentingMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: root.presentingState.manual ? Qt.PointingHandCursor : Qt.ArrowCursor
+              onClicked: if (root.presentingState.manual) root.setPresenting(false)
+            }
+            HoverTip {
+              mouse: presentingMouse
+              text: root.presentingState.detail + (root.presentingState.manual ? " · click to stop presenting" : "")
+            }
+          }
         }
 
         Row {
@@ -6154,11 +6230,12 @@ Shared.Theme {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 maximumWidth: 175
+                visible: !root.presenting
                 text: root.mediaLabel(parent.parent.player)
               }
             }
             BarModuleArea { id: deviceMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: deviceMediaMouse; text: root.mediaLabel(deviceMediaItem.player) }
+            HoverTip { mouse: deviceMediaMouse; text: root.presenting ? "Now Playing" : root.mediaLabel(deviceMediaItem.player) }
           }
 
           BarItem {
@@ -6185,11 +6262,12 @@ Shared.Theme {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 maximumWidth: 175
+                visible: !root.presenting
                 text: root.mediaLabel(parent.parent.player)
               }
             }
             BarModuleArea { id: spotifyMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: spotifyMediaMouse; text: root.mediaLabel(spotifyMediaItem.player) }
+            HoverTip { mouse: spotifyMediaMouse; text: root.presenting ? "Now Playing" : root.mediaLabel(spotifyMediaItem.player) }
           }
 
           // The bar is anchored to its right edge, so the tray grows leftward

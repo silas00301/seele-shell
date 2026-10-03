@@ -63,6 +63,10 @@ reach it from the launcher's root search.
   [`projects/caffeinate/README.md`](../caffeinate/README.md) for the inhibition
   boundary, task identity and the protocol.
 
+- **Seele Presentation Mode** (`presentation.tsx`): a no-view toggle that runs
+  `seele-shellctl presentation toggle`. The shell's bar says whether the mode
+  is on, so the command shows nothing of its own.
+
 - **Seele Controls** (`seele.tsx`): the live view. Its first section carries the
   output and microphone level, Do Not Disturb, Wi-Fi, Bluetooth, Tailscale, and
   the privacy row, each showing its own state as a coloured tag rather than as
