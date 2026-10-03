@@ -48,6 +48,7 @@
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
           packages = {
+            navigation = import ./projects/navigation/package.nix { inherit pkgs; };
             qml-core = import ./packages/core/native.nix {
               inherit pkgs;
               name = "qml-core";
@@ -276,7 +277,8 @@
                   node tests/status-patches.js projects/shell/shell.qml
                   node tests/shell-presentation.js projects/shell/shell.qml
                   node tests/palette.js projects/shared/Palette.js projects/shared/Theme.qml projects/lock/shell.qml projects/greeter/shell.qml projects/polkit/shell.qml
-                  bash tests/palette.sh projects/shared tests/tst_palette.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  bash tests/palette.sh projects/shared tests/tst_palette.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
+                  node tests/auth-navigation.js projects/shared ${nativeQml}/lib/qt-6/qml projects/lock/shell.qml projects/greeter/shell.qml
                   QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software qmltestrunner \
                     -import ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     -import ${nativeQml}/lib/qt-6/qml -input tests/tst_nativefunctions.qml

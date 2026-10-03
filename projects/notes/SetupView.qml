@@ -171,10 +171,10 @@ ColumnLayout {
           }
         }
 
-        MouseArea {
+        Shared.ActionArea {
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
-          onClicked: {
+          onTriggered: {
             directories.currentIndex = directoryRow.index
             setup.store.listDirectory(directoryRow.modelData.path)
           }

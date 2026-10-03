@@ -84,6 +84,8 @@ Shared.Theme {
     }
   }
 
+  property bool barKeyboardOpen: false
+  property string barKeyboardScreen: ""
   property bool agentsOpen: false
   // The theme picker floats on its own: it is not one of the control panels,
   // so opening it leaves whatever panel is open where it is, and closing
@@ -234,6 +236,7 @@ Shared.Theme {
   readonly property bool bluetoothReceiverActive: bluetoothReceiverIntent >= 0 ? bluetoothReceiverIntent === 1 : !!systemData.bluetoothReceiver
   property string bluetoothForget: ""
   property var pairingRequest: ({})
+  property string pairingKeyboardToken: ""
   property string pairingScreen: ""
   readonly property bool pairingPrompting: !!(pairingRequest && pairingRequest.token)
   property string agentError: ""
@@ -297,6 +300,8 @@ Shared.Theme {
   }
 
   function closeOverlays() {
+    pairingKeyboardToken = ""
+    barKeyboardOpen = false
     aiPrompt.close()
     uriPicker.close()
     colorPicker.close()
@@ -357,6 +362,13 @@ Shared.Theme {
     Quickshell.execDetached(["seele-control", "launcher-toggle"])
   }
 
+  function toggleBar() {
+    var open = !barKeyboardOpen
+    closeOverlays()
+    barKeyboardScreen = currentScreen()
+    barKeyboardOpen = open
+  }
+
   function toggleAgents(screen, anchorX) {
     var shouldOpen = !agentsOpen
     var nextAnchor = requestedOverlayAnchor(anchorX)
@@ -369,6 +381,10 @@ Shared.Theme {
   }
 
   function toggleControl(panel, screen, anchorX) {
+    if (panel === "bluetooth" && pairingPrompting) {
+      focusBluetoothPairing(screen)
+      return
+    }
     if (panel === "meeting") {
       if (controlPanel !== "clock") toggleControl("clock", screen, anchorX)
       setMeetingPlanning(true)
@@ -842,6 +858,7 @@ Shared.Theme {
   }
 
   function clearBluetoothPairing() {
+    root.pairingKeyboardToken = ""
     root.pairingLoadToken = ""
     root.pairingRequest = ({})
     root.pairingScreen = ""
@@ -854,6 +871,16 @@ Shared.Theme {
     bluetoothPairingAnswerProcess.stdinEnabled = true
     bluetoothPairingAnswerProcess.running = true
     root.clearBluetoothPairing()
+  }
+
+  // Opening Bluetooth is the deliberate keyboard entry into a pending prompt.
+  // Bind that intent to this request so the next device cannot inherit it.
+  function focusBluetoothPairing(screen) {
+    var token = String((root.pairingRequest || {}).token || "")
+    if (!token || token !== root.pairingLoadToken) return
+    root.closeOverlays()
+    root.pairingScreen = screen || root.currentScreen()
+    root.pairingKeyboardToken = token
   }
 
   Process {
@@ -2249,6 +2276,7 @@ Shared.Theme {
     }
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
+    function toggleBar(): void { root.toggleBar() }
     function toggleAgents(): void { root.toggleAgents() }
     function togglePrompt(): void { root.togglePrompt() }
     function toggleThemes(): void { root.toggleThemes() }
@@ -2647,6 +2675,17 @@ Shared.Theme {
   component ModuleDragArea: MouseArea {
     id: moduleDrag
 
+    activeFocusOnTab: !parent.activeFocusOnTab && (module === "" || (module === "media" && root.nowPlayingPlayer() !== null))
+    Keys.onPressed: event => {
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      if (event.key === Qt.Key_P && moduleDrag.module !== "") {
+        if (!event.isAutoRepeat) root.setBarModulePinned(moduleDrag.module, !root.barModulePinned(moduleDrag.module))
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        if (!event.isAutoRepeat) moduleDrag.activated({button: Qt.LeftButton, modifiers: event.modifiers, x: width / 2, y: height / 2})
+      } else return
+      event.accepted = true
+    }
+
     property string module: ""
     property real originX: 0
     property real originY: 0
@@ -2697,6 +2736,17 @@ Shared.Theme {
   // `mouse.modifiers` is always empty up here.
   component BarModuleArea: MouseArea {
     id: barModuleArea
+
+    activeFocusOnTab: enabled
+    Keys.onPressed: event => {
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      if (event.key === Qt.Key_P && barModuleArea.module !== "") {
+        if (!event.isAutoRepeat) root.setBarModulePinned(barModuleArea.module, !root.barModulePinned(barModuleArea.module))
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        if (!event.isAutoRepeat) barModuleArea.activated({button: Qt.LeftButton, modifiers: event.modifiers, x: width / 2, y: height / 2})
+      } else return
+      event.accepted = true
+    }
 
     property string module: ""
     property real originY: 0
@@ -2794,6 +2844,15 @@ Shared.Theme {
       }
 
       MouseArea {
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Slider
+        Accessible.name: audioLevelRow.microphone ? "Microphone volume" : "Output volume"
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+          if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right) return
+          root.adjustAudio(event.key === Qt.Key_Right ? 1 : -1, audioLevelRow.microphone)
+          event.accepted = true
+        }
         anchors.fill: parent
         hoverEnabled: true
         function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
@@ -2885,7 +2944,13 @@ Shared.Theme {
     Accessible.description: controlLevel.shown + "%"
     Keys.onPressed: event => {
       if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
-      if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+      if (event.key === Qt.Key_P && !event.isAutoRepeat) {
+        root.setBarModulePinned("audio", !root.barModulePinned("audio"))
+        event.accepted = true
+      } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && !event.isAutoRepeat) {
+        root.toggleControl("audio", root.overlayScreen)
+        event.accepted = true
+      } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
         root.adjustAudio(event.key === Qt.Key_Right ? 1 : -1, controlLevel.microphone)
         event.accepted = true
       } else if (!event.isAutoRepeat && event.key === Qt.Key_Space) {
@@ -2964,12 +3029,13 @@ Shared.Theme {
         font.pixelSize: root.textSubhead
       }
 
-      MouseArea {
+      Shared.ActionArea {
         id: controlLevelMuteMouse
+        activeFocusOnTab: false // Space on the owning control performs this action.
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.toggleAudioMute(controlLevel.microphone)
+        onTriggered: root.toggleAudioMute(controlLevel.microphone)
       }
 
       HoverTip {
@@ -3087,6 +3153,16 @@ Shared.Theme {
       MouseArea {
         id: applicationLevelMouse
 
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Slider
+        Accessible.name: "Application volume"
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+          if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right) return
+          root.commitStreamVolume(applicationLevelRow.stream.id, Math.max(0, Math.min(root.audioTrackMaximum, applicationLevelRow.shown + (event.key === Qt.Key_Right ? 5 : -5))))
+          event.accepted = true
+        }
+
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
@@ -3129,13 +3205,13 @@ Shared.Theme {
         font.pixelSize: root.textIcon
       }
 
-      MouseArea {
+      Shared.ActionArea {
         id: applicationMuteMouse
 
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.toggleStreamMute(applicationLevelRow.stream)
+        onTriggered: root.toggleStreamMute(applicationLevelRow.stream)
       }
 
       HoverTip {
@@ -3171,7 +3247,10 @@ Shared.Theme {
     Accessible.description: connectivityRow.detail
     Keys.onPressed: event => {
       if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      if (event.key === Qt.Key_P && connectivityRow.module !== "") {
+        root.setBarModulePinned(connectivityRow.module, !root.barModulePinned(connectivityRow.module))
+        event.accepted = true
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
         connectivityRow.opened()
         event.accepted = true
       } else if (event.key === Qt.Key_Space) {
@@ -3215,13 +3294,14 @@ Shared.Theme {
         font.pixelSize: root.textBody
       }
 
-      MouseArea {
+      Shared.ActionArea {
         id: connectivityKnobMouse
+        activeFocusOnTab: false // Space on the owning control performs this action.
         anchors.fill: parent
         enabled: connectivityRow.toggleEnabled && !connectivityRow.busy
         hoverEnabled: true
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: connectivityRow.toggled()
+        onTriggered: connectivityRow.toggled()
       }
     }
 
@@ -3303,7 +3383,10 @@ Shared.Theme {
     Accessible.description: controlTile.detail
     Keys.onPressed: event => {
       if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
-      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      if (event.key === Qt.Key_P && controlTile.module !== "") {
+        root.setBarModulePinned(controlTile.module, !root.barModulePinned(controlTile.module))
+        event.accepted = true
+      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
         controlTile.activated()
         event.accepted = true
       } else if (event.key === Qt.Key_Space) {
@@ -3342,14 +3425,15 @@ Shared.Theme {
           HoverWash { hovered: controlTileKnob.containsMouse }
         }
         Loader { anchors.centerIn: parent; sourceComponent: controlTile.glyph }
-        MouseArea {
+        Shared.ActionArea {
           id: controlTileKnob
+          activeFocusOnTab: false // The owning row exposes its knob through Space.
           objectName: "controlTileKnob"
           anchors.fill: parent
           enabled: controlTile.knob
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: controlTile.knobClicked()
+          onTriggered: controlTile.knobClicked()
         }
       }
 
@@ -4085,13 +4169,13 @@ Shared.Theme {
       }
     }
 
-    MouseArea {
+    Shared.ActionArea {
       id: notificationOpenMouse
       anchors.fill: parent
       enabled: notificationCard.pressable
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: {
+      onTriggered: {
         if (notificationCard.stacked) notificationCard.toggled()
         else root.activateNotification(notificationCard.entry.id)
       }
@@ -4226,12 +4310,12 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textLabel
             }
-            MouseArea {
+            Shared.ActionArea {
               id: notificationCollapseMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: notificationCard.toggled()
+              onTriggered: notificationCard.toggled()
             }
             HoverTip { mouse: notificationCollapseMouse; inOverlay: true; text: "Close the stack" }
           }
@@ -4252,12 +4336,12 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textLabel
             }
-            MouseArea {
+            Shared.ActionArea {
               id: notificationUnfoldMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleNotificationUnfolded(notificationCard.entry.id)
+              onTriggered: root.toggleNotificationUnfolded(notificationCard.entry.id)
             }
             HoverTip { mouse: notificationUnfoldMouse; inOverlay: true; text: notificationCard.unfolded ? "Show less" : "Show the whole notification" }
           }
@@ -4281,12 +4365,12 @@ Shared.Theme {
 
             Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-            MouseArea {
+            Shared.ActionArea {
               id: notificationDismissMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
+              onTriggered: {
                 if (notificationCard.stacked || notificationCard.collapsible) notificationStore.controller.group(notificationCard.group, false)
                 else if (notificationCard.popup) root.retireNotificationPopup(notificationCard.entry.id)
                 else root.dismissNotification(notificationCard.entry.id)
@@ -4665,7 +4749,7 @@ Shared.Theme {
 
     FocusRing { shown: mediaButton.activeFocus }
 
-    MouseArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: mediaButton.activated() }
+    Shared.ActionArea { id: mediaButtonMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: mediaButton.activated() }
     HoverTip { mouse: mediaButtonMouse; inOverlay: true; text: mediaButton.hint }
   }
 
@@ -4819,14 +4903,14 @@ Shared.Theme {
         font.pixelSize: root.textSubhead
       }
 
-      MouseArea {
+      Shared.ActionArea {
         id: playerLevelMuteMouse
 
         anchors.fill: parent
         enabled: playerLevel.writable
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: playerLevel.silence()
+        onTriggered: playerLevel.silence()
       }
 
       HoverTip {
@@ -5440,11 +5524,11 @@ Shared.Theme {
                 id: uriHover
                 onHoveredChanged: uriPicker.hoveredUri = hovered ? uriHint.text : ""
               }
-              MouseArea {
+              Shared.ActionArea {
                 id: uriLinkMouse
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+                onTriggered: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
               }
             }
           }
@@ -5477,11 +5561,11 @@ Shared.Theme {
             SurfaceEdge { radius: root.radiusSmall - 1 }
             SurfaceGrain { inset: root.radiusSmall / 3 }
             HoverHandler { id: uriNumberHover }
-            MouseArea {
+            Shared.ActionArea {
               id: uriNumberMouse
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+              onTriggered: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
             }
           }
 
@@ -5523,11 +5607,11 @@ Shared.Theme {
             SurfaceEdge { radius: root.radiusSmall - 1 }
             SurfaceGrain { inset: root.radiusSmall / 3 }
             HoverHandler { id: codeHover }
-            MouseArea {
+            Shared.ActionArea {
               id: codeMouse
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
+              onTriggered: mouse => uriPicker.launch(uriHint, !!(mouse.modifiers & Qt.ControlModifier))
             }
           }
 
@@ -5662,7 +5746,7 @@ Shared.Theme {
         Keys.onPressed: event => colorPicker.key(event)
       }
 
-      MouseArea {
+      Shared.ActionArea {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
@@ -5672,7 +5756,7 @@ Shared.Theme {
         // under a pointer that has not moved, which is what seeds the first
         // reading instead of asking the user to wiggle the mouse for it.
         onContainsMouseChanged: if (containsMouse) colorPicker.aim(colorWindow.modelData.name, mouseX / width, mouseY / height)
-        onClicked: colorPicker.commit("hex")
+        onTriggered: colorPicker.commit("hex")
       }
 
       // The lens magnifies the frozen pixels already uploaded for the image
@@ -5949,6 +6033,9 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Top
       WlrLayershell.namespace: "seele-shell-bar"
+      readonly property bool keyboardActive: root.barKeyboardOpen && root.pinnedScreen(root.barKeyboardScreen, modelData)
+      WlrLayershell.keyboardFocus: keyboardActive ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      onKeyboardActiveChanged: if (keyboardActive) barSurface.forceActiveFocus()
       mask: Region {
         width: barWindow.width
         height: barWindow.dragging ? barWindow.height : root.barHeight
@@ -5956,6 +6043,7 @@ Shared.Theme {
 
       Rectangle {
         id: barSurface
+        Keys.onEscapePressed: root.barKeyboardOpen = false
         anchors { top: parent.top; left: parent.left; right: parent.right }
         height: root.barHeight
         // The strip is the one surface that is always on screen, so it is the
@@ -5985,12 +6073,12 @@ Shared.Theme {
               smooth: true
               mipmap: true
             }
-            MouseArea {
+            Shared.ActionArea {
               id: menuMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleLauncher("apps")
+              onTriggered: root.toggleLauncher("apps")
             }
             HoverTip { mouse: menuMouse; text: "Applications" }
           }
@@ -6040,12 +6128,12 @@ Shared.Theme {
                 }
               }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: workspaceMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.activateWorkspace(parent.modelData)
+                onTriggered: root.activateWorkspace(parent.modelData)
               }
               HoverTip { mouse: workspaceMouse; text: "Workspace " + modelData }
             }
@@ -6078,12 +6166,13 @@ Shared.Theme {
                 text: root.presenting ? root.windowAppName(parent.parent.window) : root.windowLabel(parent.parent.window)
               }
             }
-            MouseArea {
+            Shared.ActionArea {
               id: activeWindowMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onPressed: root.toggleApplication(parent.window, barWindow.modelData.name, root.barItemCenter(parent))
+              activateOnPress: true
+              onTriggered: root.toggleApplication(parent.window, barWindow.modelData.name, root.barItemCenter(parent))
             }
             HoverTip { mouse: activeWindowMouse; text: root.presenting ? "" : root.windowTitle(activeWindowMouse.parent.window) }
           }
@@ -6110,12 +6199,12 @@ Shared.Theme {
                 color: homeAssistantStore.connected ? root.subtext : root.yellow
               }
             }
-            MouseArea {
+            Shared.ActionArea {
               id: homeAssistantMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
+              onTriggered: root.toggleControl("home-assistant", barWindow.modelData.name, root.barItemCenter(parent))
             }
             HoverTip { mouse: homeAssistantMouse; text: !homeAssistantStore.configured ? "Set up Home Assistant" : homeAssistantStore.connected ? "Home Assistant" : "Home Assistant · last known reading" }
           }
@@ -6129,7 +6218,7 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
-            MouseArea { id: voxtypeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("voxtype") }
+            Shared.ActionArea { id: voxtypeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.runControl("voxtype") }
             HoverTip { mouse: voxtypeMouse; text: "Voxtype: " + dictation.status }
           }
         }
@@ -6153,13 +6242,13 @@ Shared.Theme {
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            MouseArea {
+            Shared.ActionArea {
               id: clockMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               acceptedButtons: Qt.LeftButton | Qt.RightButton
-              onClicked: mouse => root.toggleControl(mouse.button === Qt.RightButton ? "focus" : "clock", barWindow.modelData.name, root.barItemCenter(parent))
+              onTriggered: mouse => root.toggleControl(mouse.button === Qt.RightButton ? "focus" : "clock", barWindow.modelData.name, root.barItemCenter(parent))
             }
             HoverTip { mouse: clockMouse; text: "Time zones · Right click for focus timer" }
           }
@@ -6176,7 +6265,7 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textStrong
             }
-            MouseArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: dateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: dateMouse; text: "Calendar" }
           }
 
@@ -6221,12 +6310,12 @@ Shared.Theme {
                 font.weight: root.weightMedium
               }
             }
-            MouseArea {
+            Shared.ActionArea {
               id: eventBarMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
+              onTriggered: {
                 var event = root.calendarIndicator
                 if (!event) return
                 root.calendarFocusDay = event.day
@@ -6250,12 +6339,12 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textLabel
             }
-            MouseArea {
+            Shared.ActionArea {
               id: focusBarMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.toggleControl("focus", barWindow.modelData.name, root.barItemCenter(parent))
+              onTriggered: root.toggleControl("focus", barWindow.modelData.name, root.barItemCenter(parent))
             }
             HoverTip { mouse: focusBarMouse; text: "Focus timer · " + focusTimer.timerState.status }
           }
@@ -6276,12 +6365,12 @@ Shared.Theme {
                 font.pixelSize: root.textStrong
               }
             }
-            MouseArea {
+            Shared.ActionArea {
               id: microphoneMutedIndicator
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
+              onTriggered: {
                 root.patchSystemData({ microphoneMuted: false })
                 root.runControl("microphone", "mute")
               }
@@ -6298,12 +6387,12 @@ Shared.Theme {
               width: 9; height: 9; radius: 4.5
               color: root.iosOrange
             }
-            MouseArea {
+            Shared.ActionArea {
               id: microphoneActiveIndicator
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: {
+              onTriggered: {
                 root.patchSystemData({ microphoneMuted: true })
                 root.runControl("microphone", "mute")
               }
@@ -6320,7 +6409,7 @@ Shared.Theme {
               width: 9; height: 9; radius: 4.5
               color: root.iosGreen
             }
-            MouseArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("camera", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: cameraActiveIndicator; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("camera", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: cameraActiveIndicator; text: "Camera in use" }
           }
 
@@ -6353,12 +6442,12 @@ Shared.Theme {
               font.pixelSize: root.textBody
               font.weight: root.weightStrong
             }
-            MouseArea {
+            Shared.ActionArea {
               id: presentingMouse
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: root.presentingState.manual ? Qt.PointingHandCursor : Qt.ArrowCursor
-              onClicked: if (root.presentingState.manual) root.setPresenting(false)
+              onTriggered: if (root.presentingState.manual) root.setPresenting(false)
             }
             HoverTip {
               mouse: presentingMouse
@@ -6460,8 +6549,18 @@ Shared.Theme {
                 implicitWidth: 16; implicitHeight: 16
                 source: parent.modelData.icon
               }
-              MouseArea {
+              Shared.ActionArea {
                 id: trayMouse
+                onKeyPressed: event => {
+                  if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && event.modifiers === Qt.ShiftModifier)) {
+                    if (!event.isAutoRepeat) openContextMenu()
+                  } else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Minus) {
+                    parent.modelData.scroll(event.key === Qt.Key_Plus ? 15 : -15, false)
+                  } else if (event.key === Qt.Key_P && event.modifiers === Qt.NoModifier) {
+                    if (!event.isAutoRepeat) root.toggleTrayItemHidden(parent.modelData)
+                  } else return
+                  event.accepted = true
+                }
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
@@ -6470,7 +6569,7 @@ Shared.Theme {
                 function openContextMenu() {
                   root.openTrayItemMenu(parent.modelData, barWindow.modelData.name, root.barItemCenter(parent))
                 }
-                onClicked: function(mouse) {
+                onTriggered: function(mouse) {
                   if (mouse.button === Qt.MiddleButton) root.toggleTrayItemHidden(parent.modelData)
                   else if (parent.modelData.onlyMenu) openContextMenu()
                   else parent.modelData.activate()
@@ -6497,7 +6596,7 @@ Shared.Theme {
                 font.family: root.fontFamily
                 font.pixelSize: root.textLead
               }
-              MouseArea { id: trayExpandMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.trayPinned = !root.trayPinned }
+              Shared.ActionArea { id: trayExpandMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.trayPinned = !root.trayPinned }
               HoverTip {
                 mouse: trayExpandMouse
                 text: root.trayPinned ? "Keep the tray open · click to unpin"
@@ -6561,7 +6660,7 @@ Shared.Theme {
                   }
                 }
               }
-              MouseArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent)) }
+              Shared.ActionArea { id: agentBadgeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent)) }
               // The mark is the only thing on the strip naming this session, so
               // the tip is what spells it out.
               HoverTip { mouse: agentBadgeMouse; text: modelData.name + " · " + root.agentStatusText(modelData.status) }
@@ -6647,13 +6746,14 @@ Shared.Theme {
                 }
               }
             }
-            MouseArea {
+            Shared.ActionArea {
               id: aiMouse
+              activateOnPress: true
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-              onPressed: function(mouse) {
+              onTriggered: function(mouse) {
                 if (mouse.button === Qt.RightButton) root.runAgent("pi", "")
                 else if (mouse.button === Qt.MiddleButton) root.refreshAgents()
                 else root.toggleAgents(barWindow.modelData.name, root.barItemCenter(parent))
@@ -6774,7 +6874,7 @@ Shared.Theme {
             hovered: controlCenterMouse.containsMouse
             active: root.panelHere("control-center", barWindow.modelData)
             Text { anchors.centerIn: parent; text: "󰘮"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-            MouseArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("control-center", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: controlCenterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("control-center", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: controlCenterMouse; text: "Control Center" }
           }
 
@@ -6785,7 +6885,7 @@ Shared.Theme {
             active: root.panelHere("system-health", barWindow.modelData)
             Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + root.healthAttentionCount; color: root.healthTint; font.family: root.fontFamily; font.pixelSize: root.textBody }
             HoverHandler { id: healthBarHover }
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("system-health", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleControl("system-health", barWindow.modelData.name, root.barItemCenter(parent)) }
           }
 
           BarItem {
@@ -6794,7 +6894,7 @@ Shared.Theme {
             active: root.panelHere("transfers", barWindow.modelData)
             hovered: transfersMouse.containsMouse
             Text { id: transfersLabel; anchors.centerIn: parent; text: transfersStore.barText; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
-            MouseArea { id: transfersMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("transfers", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: transfersMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleControl("transfers", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: transfersMouse; text: "Transfers · active, new or failed" }
           }
 
@@ -6811,7 +6911,7 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textIcon
             }
-            MouseArea { id: hermesMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("hermes", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: hermesMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleControl("hermes", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: hermesMouse; text: "Hermes · " + hermesStore.projection.label }
           }
 
@@ -6823,7 +6923,7 @@ Shared.Theme {
             active: root.panelHere("caffeinate", barWindow.modelData)
             hovered: caffeinateMouse.containsMouse
             Text { id: caffeinateLabel; anchors.centerIn: parent; text: caffeinateStore.barText; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody }
-            MouseArea { id: caffeinateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("caffeinate", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: caffeinateMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleControl("caffeinate", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: caffeinateMouse; text: caffeinateStore.hoverText }
           }
 
@@ -6839,7 +6939,7 @@ Shared.Theme {
               Text { visible: githubStore.snapshot.reviewTotal > 0; anchors.verticalCenter: parent.verticalCenter; text: githubStore.snapshot.reviewTotal; color: githubStore.snapshot.stale ? root.subtext : root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption }
             }
             HoverHandler { id: githubBarHover }
-            MouseArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: githubBarMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleControl("github", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: githubBarMouse; text: "GitHub · notifications, pull requests and requested reviews" }
           }
 
@@ -6871,7 +6971,7 @@ Shared.Theme {
               }
               Text { visible: Number(root.systemData.notifications.count || 0) > 0; anchors.verticalCenter: parent.verticalCenter; text: String(root.systemData.notifications.count); color: root.text; font.family: root.fontFamily; font.pixelSize: root.textCaption; font.weight: root.weightStrong }
             }
-            MouseArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("notifications", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: notificationMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("notifications", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: notificationMouse; text: "Notifications · " + (root.systemData.dnd ? "do not disturb" : root.systemData.notifications.count || 0) }
           }
 
@@ -6903,7 +7003,7 @@ Shared.Theme {
                 font.pixelSize: root.textLabel
               }
             }
-            MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("battery", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("battery", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: batteryMouse; text: "Battery · " + (batteryBarItem.entry ? batteryBarItem.entry.name + " " + Number(batteryBarItem.entry.percent) + "%" : "unavailable") }
           }
 
@@ -6929,7 +7029,7 @@ Shared.Theme {
             hovered: sessionMouse.containsMouse
             active: root.panelHere("system", barWindow.modelData)
             Text { anchors.centerIn: parent; text: "󰐥"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-            MouseArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onPressed: root.toggleControl("system", barWindow.modelData.name, root.barItemCenter(parent)) }
+            Shared.ActionArea { id: sessionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; activateOnPress: true; onTriggered: root.toggleControl("system", barWindow.modelData.name, root.barItemCenter(parent)) }
             HoverTip { mouse: sessionMouse; text: "Power and session" }
           }
         }
@@ -7091,12 +7191,12 @@ Shared.Theme {
                   }
                 }
 
-                MouseArea {
+                Shared.ActionArea {
                   id: applicationActionMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.quitApplication(parent.modelData.force)
+                  onTriggered: root.quitApplication(parent.modelData.force)
                 }
               }
             }
@@ -7121,7 +7221,7 @@ Shared.Theme {
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-focus"
       onVisibleChanged: if (visible) Qt.callLater(function() { focusContent.forceActiveFocus() })
 
@@ -7239,7 +7339,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-calendar"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
       onVisibleChanged: if (visible) {
         // The popup opens on the calendar unless Integration Health asked for settings.
@@ -7313,12 +7413,12 @@ Shared.Theme {
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-              MouseArea {
+              Shared.ActionArea {
                 id: todayMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
+                onTriggered: {
                   if (!calendarWindow.copyPending) {
                     calendarWindow.selectedDate = ""
                     calendarWindow.copyStatus = ""
@@ -7496,16 +7596,21 @@ Shared.Theme {
                           font.pixelSize: root.textMicro
                         }
                       }
-                      MouseArea {
+                      Shared.ActionArea {
                         id: calendarDayMouse
                         anchors.fill: parent
                         enabled: calendarCell.copyDate !== "" && !calendarWindow.copyPending
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
+                        onTriggered: {
                           calendarWindow.selectedDate = calendarCell.copyDate
                           calendarWindow.copyStatus = ""
                           calendarAgenda.expandedKey = ""
+                        }
+                        onKeyPressed: event => {
+                          if (event.key !== Qt.Key_Y || event.modifiers !== Qt.NoModifier) return
+                          if (!event.isAutoRepeat) calendarWindow.copyCalendarDate(calendarCell.modelData)
+                          event.accepted = true
                         }
                         onDoubleClicked: calendarWindow.copyCalendarDate(calendarCell.modelData)
                       }
@@ -7714,7 +7819,7 @@ Shared.Theme {
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-clock"
       onVisibleChanged: if (visible) Qt.callLater(function() {
         if (!clockWindow.copyPending) clockWindow.copyStatus = ""
@@ -7818,13 +7923,13 @@ Shared.Theme {
                 font.family: root.fontFamily
                 font.pixelSize: root.textHero
                 font.weight: root.weightLight
-                MouseArea {
+                Shared.ActionArea {
                   id: localTimeCopyMouse
                   anchors.fill: parent
                   enabled: !clockWindow.copyPending
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: clockWindow.copyClockTimestamp(undefined, "local time")
+                  onTriggered: clockWindow.copyClockTimestamp(undefined, "local time")
                 }
                 HoverTip { mouse: localTimeCopyMouse; inOverlay: true; text: "Copy local ISO timestamp" }
               }
@@ -7932,13 +8037,13 @@ Shared.Theme {
                     Text { id: zoneTimeText; width: parent.width; text: timezoneRow.modelData.time; color: timezoneRow.pinned ? root.accent : root.text; font.family: root.fontFamily; font.pixelSize: root.textDisplay; font.weight: root.weightLight; horizontalAlignment: Text.AlignRight }
                     Text { id: zoneDateText; width: parent.width; text: timezoneRow.modelData.day; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption; horizontalAlignment: Text.AlignRight }
                   }
-                  MouseArea {
+                  Shared.ActionArea {
                     id: zoneTimeCopyMouse
                     anchors.fill: parent
                     enabled: !clockWindow.copyPending
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
+                    onTriggered: {
                       timezoneList.currentIndex = timezoneRow.index
                       clockWindow.copyClockTimestamp(timezoneRow.modelData.offset, timezoneRow.modelData.label)
                     }
@@ -7980,9 +8085,11 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-tray-menu"
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
       PanelSurface {
+        focus: trayMenuWindow.visible
+        Keys.onEscapePressed: root.closeTrayMenu()
         Column {
           anchors.fill: parent
           anchors.margins: root.panelMargin
@@ -8021,12 +8128,12 @@ Shared.Theme {
                 font.pixelSize: root.textLabel
                 font.weight: root.weightStrong
               }
-              MouseArea {
+              Shared.ActionArea {
                 id: trayHideMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
+                onTriggered: {
                   root.toggleTrayItemHidden(root.activeTrayItem)
                   root.closeTrayMenu()
                 }
@@ -8037,7 +8144,7 @@ Shared.Theme {
               color: trayMenuCloseMouse.pressed ? root.pressColor : trayMenuCloseMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "󰅖"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
-              MouseArea { id: trayMenuCloseMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.closeTrayMenu() }
+              Shared.ActionArea { id: trayMenuCloseMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.closeTrayMenu() }
             }
           }
 
@@ -8110,13 +8217,13 @@ Shared.Theme {
                 font.pixelSize: root.textSubhead
               }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: trayMenuEntryMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 enabled: !parent.modelData.isSeparator && parent.modelData.enabled
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: {
+                onTriggered: {
                   if (parent.modelData.hasChildren) {
                     parent.modelData.display(trayMenuWindow, 10, parent.y + parent.height)
                   } else {
@@ -8156,7 +8263,7 @@ Shared.Theme {
         height: agentsWindow.active ? agentsWindow.height : 0
       }
       WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: active ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: active ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-agents"
 
       PanelSurface {
@@ -8203,7 +8310,7 @@ Shared.Theme {
                 color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : root.clearColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
-                MouseArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.refreshAgents() }
+                Shared.ActionArea { id: refreshMouse; anchors.fill: parent; enabled: !root.agentRefreshing; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.refreshAgents() }
                 HoverTip { mouse: refreshMouse; text: "Refresh usage"; inOverlay: true }
               }
             }
@@ -8233,13 +8340,13 @@ Shared.Theme {
                     font.weight: agentsTab.selected ? root.weightStrong : root.weightRegular
                   }
 
-                  MouseArea {
+                  Shared.ActionArea {
                     id: tabMouse
                     anchors.fill: parent
                     enabled: !agentsTab.selected
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: agentsWindow.tab = agentsTab.modelData
+                    onTriggered: agentsWindow.tab = agentsTab.modelData
                   }
                 }
               }
@@ -8338,12 +8445,12 @@ Shared.Theme {
                       }
                     }
 
-                    MouseArea {
+                    Shared.ActionArea {
                       id: agentIndicatorMouse
                       anchors.fill: parent
                       hoverEnabled: true
                       cursorShape: agentIndicator.running ? Qt.PointingHandCursor : Qt.ArrowCursor
-                      onClicked: if (agentIndicator.running) root.focusAgent(agentIndicator.modelData.id)
+                      onTriggered: if (agentIndicator.running) root.focusAgent(agentIndicator.modelData.id)
                     }
                     HoverTip {
                       mouse: agentIndicatorMouse
@@ -8398,12 +8505,12 @@ Shared.Theme {
                 font.pixelSize: root.textStrong
               }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: osSessionMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.startOsSession()
+                onTriggered: root.startOsSession()
               }
             }
 
@@ -8592,12 +8699,12 @@ Shared.Theme {
                         font.weight: metricPeriod.selected ? root.weightStrong : root.weightRegular
                       }
 
-                      MouseArea {
+                      Shared.ActionArea {
                         id: metricPeriodMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.agentMetricPeriod = metricPeriod.modelData.id
+                        onTriggered: root.agentMetricPeriod = metricPeriod.modelData.id
                       }
                     }
                   }
@@ -8858,7 +8965,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-system-health"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { healthSurface.forceActiveFocus() })
 
       PanelSurface {
@@ -8909,7 +9016,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-github"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
       PanelSurface {
         id: githubSurface
@@ -8977,14 +9084,14 @@ Shared.Theme {
                 color: (githubWindow.tab === "notifications" ? !githubInbox.snapshot.refreshing : githubStore.canRefresh) ? root.text : root.subtext
               }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: githubRefreshMouse
 
                 anchors.fill: parent
                 hoverEnabled: true
                 enabled: githubWindow.tab === "notifications" ? !githubInbox.snapshot.refreshing : githubStore.canRefresh
                 cursorShape: Qt.PointingHandCursor
-                onClicked: githubWindow.tab === "notifications" ? githubInbox.send("refresh") : githubStore.refresh(true)
+                onTriggered: githubWindow.tab === "notifications" ? githubInbox.send("refresh") : githubStore.refresh(true)
               }
 
               HoverTip { mouse: githubRefreshMouse; text: "Refresh GitHub"; inOverlay: true }
@@ -9026,13 +9133,13 @@ Shared.Theme {
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                 }
 
-                MouseArea {
+                Shared.ActionArea {
                   id: githubTabMouse
 
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: {
+                  onTriggered: {
                     root.githubTab = githubTab.modelData.id
                     githubList.currentIndex = 0
                     githubSurface.forceActiveFocus()
@@ -9173,12 +9280,12 @@ Shared.Theme {
 
               HoverHandler { id: githubPullHover }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: githubPullMouse
 
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
+                onTriggered: {
                   githubList.currentIndex = githubPullRow.index
                   githubStore.openPull(githubPullRow.modelData.url)
                 }
@@ -9241,7 +9348,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-control-center"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { controlCenterContent.forceActiveFocus() })
       mask: Region {
         y: controlCenterWindow.dragging ? 0 : controlCenterWindow.barReach
@@ -9369,11 +9476,11 @@ Shared.Theme {
                     anchors.verticalCenter: parent.verticalCenter
                   }
                 }
-                MouseArea {
+                Shared.ActionArea {
                   id: prFocusEnterMouse
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: prFocusEnter.activate()
+                  onTriggered: prFocusEnter.activate()
                 }
               }
   
@@ -9489,7 +9596,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-transfers"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { transfersPanel.forceActiveFocus() })
       PanelSurface {
         Column {
@@ -9525,7 +9632,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-hermes"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { hermesContent.forceActiveFocus() })
       PanelSurface {
         Shared.SeeleFlickable {
@@ -9562,7 +9669,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-caffeinate"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { caffeinateContent.forceActiveFocus() })
       PanelSurface {
         Column {
@@ -9647,7 +9754,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-network-activity"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { networkActivityPanel.forceActiveFocus() })
       PanelSurface {
         id: activitySurface
@@ -9687,7 +9794,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-sensors"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { sensorsPanel.forceActiveFocus() })
       PanelSurface {
         id: sensorsSurface
@@ -9772,7 +9879,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-ports"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { portsPanel.forceActiveFocus() })
       PanelSurface {
         Column {
@@ -9803,7 +9910,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-drift"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { driftPanel.forceActiveFocus() })
       PanelSurface {
         Column {
@@ -9884,7 +9991,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-resources"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { resourcesPanel.focusSearch() })
       PanelSurface {
         Column {
@@ -9931,7 +10038,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-theme-settings"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       PanelSurface {
         Column {
           id: themeSettingsContent
@@ -9962,7 +10069,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-themes"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { themesPanel.forceActiveFocus() })
       PanelSurface {
         ThemePanel {
@@ -9996,7 +10103,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-media"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) Qt.callLater(function() { mediaContent.forceActiveFocus() })
 
       PanelSurface {
@@ -10146,7 +10253,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-audio"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: if (visible) {
         multipleOutputs = root.selectedAudioOutputs().length > 1
         Qt.callLater(function() { audioContent.forceActiveFocus() })
@@ -10214,8 +10321,8 @@ Shared.Theme {
                   Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                 }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-                MouseArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !controlProcess.running
-                  onClicked: {
+                Shared.ActionArea { id: outputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !controlProcess.running
+                  onTriggered: {
                     if (!parent.modelData.node) root.setAudioDevice(parent.modelData.id, parent.modelData.profile)
                     else if (audioControlsWindow.multipleOutputs) root.toggleAudioOutput(parent.modelData.node)
                     else root.setAudioOutputs([parent.modelData.node])
@@ -10250,7 +10357,7 @@ Shared.Theme {
                   Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                 }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-                MouseArea { id: inputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
+                Shared.ActionArea { id: inputDeviceMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.setAudioDevice(parent.modelData.id, parent.modelData.profile) }
               }
             }
           }
@@ -10312,7 +10419,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-network"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: {
         addressesExpanded = false
         if (visible) {
@@ -10516,7 +10623,7 @@ Shared.Theme {
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                   Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                   RefreshGlyph { visible: speedtestProcess.running; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-                  MouseArea { id: speedtestMouse; anchors.fill: parent; enabled: !speedtestProcess.running; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.startSpeedtest() }
+                  Shared.ActionArea { id: speedtestMouse; anchors.fill: parent; enabled: !speedtestProcess.running; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.startSpeedtest() }
                 }
               }
               Row {
@@ -10560,12 +10667,12 @@ Shared.Theme {
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 18; height: 18; spinning: visible; font.pixelSize: root.textLead }
-                MouseArea {
+                Shared.ActionArea {
                   id: networkActionMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.runControl(parent.modelData.action, parent.modelData.value)
+                  onTriggered: root.runControl(parent.modelData.action, parent.modelData.value)
                 }
               }
             }
@@ -10619,14 +10726,14 @@ Shared.Theme {
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             HoverHandler { id: tailscaleCardHover }
             CardEdge {}
-            MouseArea {
+            Shared.ActionArea {
               id: tailscaleMenuMouse
               anchors.fill: parent
               anchors.rightMargin: 58
               enabled: !!tailscaleCard.trayItem
               hoverEnabled: true
               cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-              onClicked: root.openTrayItemMenu(tailscaleCard.trayItem, root.overlayScreen)
+              onTriggered: root.openTrayItemMenu(tailscaleCard.trayItem, root.overlayScreen)
             }
             HoverTip { mouse: tailscaleMenuMouse; inOverlay: true; text: "Open Tailscale menu" }
             Row {
@@ -10700,13 +10807,13 @@ Shared.Theme {
 
                     Text { visible: !sshMode.busy; anchors.centerIn: parent; text: sshMode.modelData.label; color: sshMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: sshMode.selected ? root.weightStrong : root.weightRegular }
                     RefreshGlyph { visible: sshMode.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
-                    MouseArea {
+                    Shared.ActionArea {
                       id: sshModeMouse
                       anchors.fill: parent
                       enabled: sshMode.modelData.available && !sshServerCard.busy && sshServerCard.mode !== sshMode.modelData.mode
                       hoverEnabled: true
                       cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                      onClicked: root.runControl("ssh-server", sshMode.modelData.mode)
+                      onTriggered: root.runControl("ssh-server", sshMode.modelData.mode)
                     }
                   }
                 }
@@ -10739,7 +10846,7 @@ Shared.Theme {
                 color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "󰏌"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
-                MouseArea { id: protonAppMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("proton-vpn", "open") }
+                Shared.ActionArea { id: protonAppMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.runControl("proton-vpn", "open") }
                 HoverTip { mouse: protonAppMouse; inOverlay: true; text: "Open Proton VPN for sign-in and location selection" }
               }
               ControlSwitch {
@@ -10856,12 +10963,12 @@ Shared.Theme {
               color: bluetoothScanMouse.pressed ? root.pressColor : root.bluetoothScanActive ? root.activeTint : bluetoothScanMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.bluetoothScanActive }
-              MouseArea {
+              Shared.ActionArea {
                 id: bluetoothScanMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.setBluetoothScanning(!root.bluetoothScanActive)
+                onTriggered: root.setBluetoothScanning(!root.bluetoothScanActive)
               }
               HoverTip { mouse: bluetoothScanMouse; inOverlay: true; text: root.bluetoothScanActive ? "Stop discovering" : "Search and stay visible for two minutes" }
             }
@@ -10924,7 +11031,7 @@ Shared.Theme {
                 }
               }
               RefreshGlyph { visible: parent.busy; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea { id: deviceMouse; anchors.fill: parent; enabled: !parent.busy; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleBluetoothDevice(parent.modelData) }
+              Shared.ActionArea { id: deviceMouse; anchors.fill: parent; enabled: !parent.busy; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.toggleBluetoothDevice(parent.modelData) }
               Rectangle {
                 visible: rowActions
                 anchors.right: parent.right
@@ -10935,7 +11042,7 @@ Shared.Theme {
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 HoverWash { hovered: autoConnectMouse.containsMouse }
                 Text { anchors.centerIn: parent; text: "Auto"; color: modelData.trusted ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
-                MouseArea { id: autoConnectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runBluetooth("trust", modelData.address) }
+                Shared.ActionArea { id: autoConnectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.runBluetooth("trust", modelData.address) }
                 HoverTip { mouse: autoConnectMouse; inOverlay: true; text: modelData.trusted ? "Autoconnect on" : "Autoconnect off" }
               }
               Rectangle {
@@ -10947,7 +11054,7 @@ Shared.Theme {
                 color: forgetMouse.pressed || forgetArmed ? root.dangerPress : forgetMouse.containsMouse ? root.dangerColor : root.floatColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "󰅖"; color: forgetArmed || forgetMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
-                MouseArea { id: forgetMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.forgetBluetoothDevice(modelData) }
+                Shared.ActionArea { id: forgetMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.forgetBluetoothDevice(modelData) }
               }
             }
           }
@@ -10976,6 +11083,9 @@ Shared.Theme {
       required property var modelData
       readonly property string kind: String((root.pairingRequest || {}).kind || "confirm")
       readonly property string deviceName: String((root.pairingRequest || {}).name || "This device")
+      readonly property bool keyboardActive: visible && root.pairingKeyboardToken !== ""
+        && root.pairingKeyboardToken === String((root.pairingRequest || {}).token || "")
+        && root.pairingKeyboardToken === root.pairingLoadToken
       screen: modelData
       visible: root.pairingPrompting && root.pinnedScreen(root.pairingScreen, modelData)
       exclusionMode: ExclusionMode.Ignore
@@ -10983,16 +11093,33 @@ Shared.Theme {
       implicitHeight: pairingCard.implicitHeight + 44
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
-      // Only the models that ask this end to type a code need the keyboard, so
-      // the prompt takes focus only then and gives it straight back.
-      WlrLayershell.keyboardFocus: visible && root.pairingWantsCode() ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      // An incoming device never takes the keyboard. Code entry retains its
+      // click-to-focus path; opening Bluetooth deliberately focuses this request.
+      WlrLayershell.keyboardFocus: keyboardActive ? WlrKeyboardFocus.Exclusive
+        : visible && root.pairingWantsCode() ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
       WlrLayershell.namespace: "seele-shell-bluetooth-pairing"
-      onVisibleChanged: if (visible && root.pairingWantsCode()) Qt.callLater(function() {
-        pairingCodeField.forceActiveFocus()
-        pairingCodeField.selectAll()
-      })
+      function focusInitial() {
+        if (!visible || (!keyboardActive && !root.pairingWantsCode())) return
+        Qt.callLater(function() {
+          if (!pairingWindow.visible) return
+          if (root.pairingWantsCode()) {
+            pairingCodeField.forceActiveFocus()
+            pairingCodeField.selectAll()
+          } else if (pairingWindow.keyboardActive) {
+            if (pairingWindow.kind === "display") pairingDismissMouse.forceActiveFocus()
+            else pairingRejectMouse.forceActiveFocus()
+          }
+        })
+      }
+      onVisibleChanged: focusInitial()
+      onKeyboardActiveChanged: focusInitial()
+      onKindChanged: focusInitial()
 
       PanelSurface {
+        Keys.onEscapePressed: {
+          if (pairingWindow.kind === "display") root.clearBluetoothPairing()
+          else root.answerBluetoothPairing("reject", "")
+        }
         Column {
           id: pairingCard
 
@@ -11091,7 +11218,7 @@ Shared.Theme {
               color: pairingRejectMouse.pressed ? root.dangerPress : pairingRejectMouse.containsMouse ? root.dangerColor : root.floatColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "Reject"; color: pairingRejectMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-              MouseArea { id: pairingRejectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.answerBluetoothPairing("reject", "") }
+              Shared.ActionArea { id: pairingRejectMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.answerBluetoothPairing("reject", "") }
             }
             Rectangle {
               width: (pairingCard.width - 8) / 2
@@ -11100,7 +11227,7 @@ Shared.Theme {
               color: pairingAcceptMouse.pressed ? root.pressColor : pairingAcceptMouse.containsMouse ? root.hoveredColor(root.selectedColor) : root.selectedColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "Confirm"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-              MouseArea { id: pairingAcceptMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.answerBluetoothPairing("accept", pairingCodeField.text) }
+              Shared.ActionArea { id: pairingAcceptMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.answerBluetoothPairing("accept", pairingCodeField.text) }
             }
           }
 
@@ -11113,7 +11240,7 @@ Shared.Theme {
             color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoveredColor(root.floatColor) : root.floatColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { anchors.centerIn: parent; text: "Dismiss"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-            MouseArea { id: pairingDismissMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearBluetoothPairing() }
+            Shared.ActionArea { id: pairingDismissMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.clearBluetoothPairing() }
           }
         }
       }
@@ -11185,7 +11312,7 @@ Shared.Theme {
 
                 Text { visible: !noiseMode.busy; anchors.centerIn: parent; text: noiseMode.failed ? "×" : noiseMode.complete ? "✓ " + noiseMode.modelData.label : noiseMode.modelData.label; color: noiseMode.failed ? root.red : noiseMode.complete ? root.green : noiseMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: noiseMode.selected ? root.weightStrong : root.weightRegular }
                 RefreshGlyph { visible: noiseMode.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-                MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", noiseMode.modelData.mode) }
+                Shared.ActionArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onTriggered: root.runControl("headphones", noiseMode.modelData.mode) }
               }
             }
           }
@@ -11217,7 +11344,7 @@ Shared.Theme {
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-            MouseArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.runControl("headphones", "open") }
+            Shared.ActionArea { id: airpodsDetailsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.runControl("headphones", "open") }
           }
         }
       }
@@ -11315,7 +11442,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-home-assistant"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       onVisibleChanged: {
         if (visible) Qt.callLater(function() { homeAssistantContent.opened() })
         else homeAssistantContent.closed()
@@ -11415,7 +11542,7 @@ Shared.Theme {
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.namespace: "seele-shell-notifications"
-      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
       // Rows are as tall as the notification they hold, so the opening height
       // comes from what the list actually measured rather than a row count.
@@ -11462,7 +11589,12 @@ Shared.Theme {
         remeasure()
       }
       onQuietMenuOpenChanged: {
-        if (quietMenuOpen) quietTick = Date.now() / 1000
+        if (quietMenuOpen) {
+          quietTick = Date.now() / 1000
+          Qt.callLater(function() {
+            if (notificationWindow.quietMenuOpen && quietOptions.count > 0) quietOptions.itemAt(0).forceActiveFocus()
+          })
+        } else if (visible) quietButton.forceActiveFocus()
         remeasure()
       }
       onChromeHeightChanged: remeasure()
@@ -11606,14 +11738,14 @@ Shared.Theme {
 
               RefreshGlyph { visible: quietButton.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
 
-              MouseArea {
+              Shared.ActionArea {
                 id: quietMouse
 
                 anchors.fill: parent
                 enabled: !quietButton.busy
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: notificationWindow.quietMenuOpen = !notificationWindow.quietMenuOpen
+                onTriggered: notificationWindow.quietMenuOpen = !notificationWindow.quietMenuOpen
               }
 
               // The tip stands down while the menu is open: the surface it
@@ -11670,13 +11802,13 @@ Shared.Theme {
                     font.pixelSize: root.textLabel
                     font.weight: notificationView.selected ? root.weightStrong : root.weightRegular
                   }
-                  MouseArea {
+                  Shared.ActionArea {
                     id: notificationViewMouse
                     anchors.fill: parent
                     enabled: !notificationView.selected
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.notificationHistoryOpen = notificationView.modelData.history
+                    onTriggered: root.notificationHistoryOpen = notificationView.modelData.history
                   }
                   HoverTip { mouse: notificationViewMouse; inOverlay: true; text: notificationView.modelData.history ? "Show the past 24 hours" : "Show current notifications" }
                 }
@@ -11702,7 +11834,7 @@ Shared.Theme {
 
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-              MouseArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clearNotifications() }
+              Shared.ActionArea { id: clearMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onTriggered: root.clearNotifications() }
               HoverTip { mouse: clearMouse; inOverlay: true; text: root.notificationHistoryOpen ? "Clear the history" : "Dismiss every notification" }
             }
           }
@@ -11758,6 +11890,7 @@ Shared.Theme {
 
         Rectangle {
           id: quietMenu
+          readonly property bool keyboardScope: true
 
           visible: notificationWindow.quietMenuOpen
           width: notificationWindow.quietMenuWidth
@@ -11780,6 +11913,7 @@ Shared.Theme {
             anchors.bottomMargin: root.spaceTight
 
             Repeater {
+              id: quietOptions
               model: notificationWindow.quietChoices
 
               Item {
@@ -11802,7 +11936,7 @@ Shared.Theme {
 
                 width: parent.width
                 height: root.controlHeight
-                activeFocusOnTab: notificationWindow.quietMenuOpen
+                activeFocusOnTab: true
 
                 Keys.onPressed: event => {
                   if (event.key === Qt.Key_Escape) {
@@ -11857,13 +11991,13 @@ Shared.Theme {
                   font.weight: quietChoice.selected ? root.weightStrong : root.weightRegular
                 }
 
-                MouseArea {
+                Shared.ActionArea {
                   id: quietChoiceMouse
 
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: notificationWindow.chooseQuiet(quietChoice.modelData.minutes)
+                  onTriggered: notificationWindow.chooseQuiet(quietChoice.modelData.minutes)
                 }
               }
             }
@@ -11933,12 +12067,12 @@ Shared.Theme {
                   Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.selected ? "󰄬" : "󰄀"; color: parent.parent.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textStrong }
                   Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: modelData.name; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel }
                 }
-                MouseArea {
+                Shared.ActionArea {
                   id: cameraDeviceMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.cameraPreviewDevice = String(parent.modelData.device || "")
+                  onTriggered: root.cameraPreviewDevice = String(parent.modelData.device || "")
                 }
               }
               ScrollBar.vertical: SlimScrollBar { popupHovered: cameraSurface.hovered }
@@ -11991,12 +12125,12 @@ Shared.Theme {
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
-                MouseArea {
+                Shared.ActionArea {
                   id: cameraActionMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: {
+                  onTriggered: {
                     if (parent.modelData.action === "camera-preview") root.openCameraPreview(parent.device)
                     else root.openCameraSettings(parent.device)
                   }
@@ -12138,12 +12272,12 @@ Shared.Theme {
                   Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: root.textTitle }
                   Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 }
-                MouseArea {
+                Shared.ActionArea {
                   id: sessionActionMouse
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: {
+                  onTriggered: {
                     if (root.runControl(parent.modelData.action)) root.closeOverlays()
                   }
                 }

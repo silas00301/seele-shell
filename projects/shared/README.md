@@ -1,5 +1,10 @@
 # Shared Qt scene components
 
+`KeyboardNavigation.qml` and `ActionArea.qml` provide the shared keyboard
+contract without changing a control's material or layout. See the
+[navigation guide](../navigation/README.md) for bindings, continuous gestures,
+text-entry boundaries, packaging and real Qt checks.
+
 `Palette.js` is the sole fallback palette and theme assignment module used by
 `Theme.qml`, lock, greeter and polkit. This small JavaScript file is required by
 Qt's property binding API; it runs no services, subprocesses or background work.
