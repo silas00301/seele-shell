@@ -2095,6 +2095,11 @@ Shared.Theme {
     panelOpen: root.controlPanel === "transfers"
     onRevealRequested: if (root.controlPanel !== "transfers") root.toggleControl("transfers")
   }
+  HermesStore {
+    id: hermesStore
+    onHeartbeat: projection => integrationHealth.publish("hermes", {state: projection.health, summary: projection.label, actions: ["settings", "restart"]})
+  }
+
   CaffeinateStore {
     id: caffeinateStore
   }
@@ -6726,6 +6731,23 @@ Shared.Theme {
             HoverTip { mouse: transfersMouse; text: "Transfers · active, new or failed" }
           }
 
+          BarItem {
+            visible: hermesStore.enabled
+            width: hermesLabel.implicitWidth + root.spaceLarge
+            active: root.panelHere("hermes", barWindow.modelData)
+            hovered: hermesMouse.containsMouse
+            Text {
+              id: hermesLabel
+              anchors.centerIn: parent
+              text: hermesStore.projection.glyph
+              color: root[hermesStore.projection.tint]
+              font.family: root.fontFamily
+              font.pixelSize: root.textIcon
+            }
+            MouseArea { id: hermesMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("hermes", barWindow.modelData.name, root.barItemCenter(parent)) }
+            HoverTip { mouse: hermesMouse; text: "Hermes · " + hermesStore.projection.label }
+          }
+
           // The cup is here only while a Caffeinate session holds the idle
           // inhibitor, so the bar states the exception rather than the rule.
           BarItem {
@@ -9259,6 +9281,42 @@ Shared.Theme {
             width: parent.width
             onPreviewRequested: path => root.toggleQuickLook(path)
           }
+        }
+      }
+    }
+  }
+
+  // Hermes Desktop connection and task-scoped approvals -----------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      visible: hermesStore.enabled && root.controlPanel === "hermes" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.hermesWidth, modelData.width - root.panelMargin * 2)
+      implicitHeight: Math.min(hermesContent.implicitHeight + root.panelMargin * 2, modelData.height - root.barHeight - root.panelGap - root.panelMargin)
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-hermes"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { hermesContent.forceActiveFocus() })
+      PanelSurface {
+        Shared.SeeleFlickable {
+          theme: root
+          anchors { fill: parent; margins: root.panelMargin }
+          contentHeight: hermesContent.implicitHeight
+          clip: true
+        Column {
+          id: hermesContent
+          width: parent.width
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰚩"; title: "Hermes"; detail: hermesStore.projection.label }
+          HermesPanel { theme: root; store: hermesStore; width: parent.width }
+        }
         }
       }
     }

@@ -261,6 +261,10 @@ inspector, also listed under Seele Controls. Its search keywords include CPU,
 RAM, disk, storage, processes and performance. Readings exist only while the shell panel is open;
 the launcher starts no separate monitor and offers no process termination action.
 
+- **Hermes** (`hermes.tsx`): opens the Shell's connection and local approval
+  panel. Chat, sessions, cancellation, sign-in and voice belong to the official
+  Hermes Desktop app opened from that panel; see `../integrations/HERMES.md`.
+
 The **Seele Sensors** command opens the shell's temperatures and fan speeds
 panel, also listed under Seele Controls. Its keywords include temperature,
 thermal, fan and hwmon. Like Resources, it reads nothing itself: the shell's
