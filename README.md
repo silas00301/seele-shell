@@ -87,6 +87,11 @@ while the clock is expanded; calendar models change only when the date changes.
 The catalog merges `zone.tab` and `zone1970.tab`, adds aliases from `tzdata.zi`,
 and normalizes saved pins. City and country names come from the database.
 
+The clock's calendar popup also carries a weather line from the resident
+`seele-weather` worker: current conditions that unfold into the next hours, the
+week and a place search. It defaults to the timezone's reference city and uses
+Open-Meteo, which needs no key. See `projects/integrations/WEATHER.md`.
+
 ## Notes and voice memos
 
 Run `seele-notes`, choose **Seele Notes** in the application launcher, or use

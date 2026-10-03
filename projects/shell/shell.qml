@@ -140,6 +140,8 @@ Shared.Theme {
   property string calendarFocusId: ""
   property string calendarFocusDay: ""
   property bool calendarSettingsRequested: false
+  // Integration Health's Settings for Weather opens the clock popup unfolded on it.
+  property bool weatherRequested: false
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
@@ -1996,6 +1998,11 @@ Shared.Theme {
     id: integrationHealth
     onOpenSettings: destination => {
       if (destination === "calendar") root.calendarSettingsRequested = true
+      // Weather lives in the clock popup rather than a panel of its own.
+      if (destination === "weather") {
+        root.weatherRequested = true
+        destination = "calendar"
+      }
       root.toggleControl(destination, root.currentScreen())
     }
     onConfigured: {
@@ -2012,6 +2019,7 @@ Shared.Theme {
         calendarStore.healthToken = token
         calendarStore.retry()
       }
+      routes.weather = function(action, token) { weatherStore.retry(token) }
       integrationHealth.handlers=routes
       githubStore.refresh(false)
     }
@@ -2071,6 +2079,11 @@ Shared.Theme {
     onCoverageChanged: root.refreshMeeting()
     onHealthPublished: (state, summary, success) => integrationHealth.publish("calendar", {state:state,summary:summary,lastSuccess:success,actions:["retry","settings"]})
     onRetried: ok => { if (healthToken) { integrationHealth.complete("calendar",healthToken,ok); healthToken=0 } }
+  }
+  WeatherStore {
+    id: weatherStore
+    onHealthPublished: health => integrationHealth.publish("weather", {state:health.state,summary:health.summary,lastSuccess:health.last_success,actions:["retry","settings"]})
+    onRetried: (token, ok) => integrationHealth.complete("weather", token, ok)
   }
   MicTestStore {
     id: micTest
@@ -7078,6 +7091,7 @@ Shared.Theme {
       // The bar's event opens on its own day, unfolded.
       function focusEvent() {
         settingsOpen = false
+        calendarWeather.fold()
         if (!copyPending) {
           selectedDate = root.calendarFocusDay && root.calendarFocusDay !== root.calendarDay ? root.calendarFocusDay : ""
           copyStatus = ""
@@ -7151,7 +7165,9 @@ Shared.Theme {
       anchors { top: true; left: true }
       margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
       implicitWidth: 390
-      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap - root.panelMargin, root.calendarMaximumHeight)
+      // The weather line adds its own row rather than taking the agenda's.
+      readonly property real weatherReserve: calendarWeather.visible ? calendarWeather.foldedHeight + root.panelSpacing : 0
+      implicitHeight: Math.min(modelData.height - root.barHeight - root.panelGap - root.panelMargin, root.calendarMaximumHeight + weatherReserve)
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -7162,6 +7178,8 @@ Shared.Theme {
         // The popup opens on the calendar unless Integration Health asked for settings.
         settingsOpen = root.calendarSettingsRequested
         root.calendarSettingsRequested = false
+        calendarWeather.reset(root.weatherRequested)
+        root.weatherRequested = false
         calendarAgenda.expandedKey = ""
         if (root.calendarFocusId) focusEvent()
         else if (!copyPending) {
@@ -7171,7 +7189,8 @@ Shared.Theme {
         calendarStore.forDay(agendaDay)
         Qt.callLater(function() {
           calendarWindow.showMonth(calendarWindow.agendaDay)
-          calendarSurface.forceActiveFocus()
+          // The place search keeps the keyboard it asked for.
+          if (!calendarWeather.placeStep) calendarSurface.forceActiveFocus()
         })
       }
 
@@ -7185,6 +7204,11 @@ Shared.Theme {
             if (event.key !== Qt.Key_Escape) return
             calendarWindow.settingsOpen = false
             calendarSurface.forceActiveFocus()
+          }
+          // The unfolded weather covers the month, so the month's keys wait.
+          else if (calendarWeather.expanded) {
+            if (event.key !== Qt.Key_Escape) return
+            calendarWeather.fold()
           }
           else if (event.key === Qt.Key_Escape) root.closeOverlays()
           else if (event.key === Qt.Key_Left) calendarWindow.moveCalendarSelection(-1, false)
@@ -7232,6 +7256,7 @@ Shared.Theme {
                     calendarWindow.selectedDate = ""
                     calendarWindow.copyStatus = ""
                   }
+                  calendarWeather.fold()
                   calendarAgenda.expandedKey = ""
                   calendarMonths.positionViewAtIndex(60, ListView.Beginning)
                 }
@@ -7243,8 +7268,21 @@ Shared.Theme {
               glyph: "󰒓"
               text: calendarWindow.settingsOpen ? "Back to the calendar" : "Calendar settings"
               selected: calendarWindow.settingsOpen
-              onClicked: calendarWindow.settingsOpen = !calendarWindow.settingsOpen
+              onClicked: {
+                calendarWeather.fold()
+                calendarWindow.settingsOpen = !calendarWindow.settingsOpen
+              }
             }
+          }
+
+          WeatherCard {
+            id: calendarWeather
+            width: parent.width
+            visible: !calendarWindow.settingsOpen && weatherStore.mode !== "unavailable"
+            available: parent.height - calendarHeader.height - root.panelSpacing
+            theme: root
+            store: weatherStore
+            popupHovered: calendarSurface.hovered
           }
 
           CalendarSettings {
@@ -7260,14 +7298,14 @@ Shared.Theme {
           SeeleListView {
             id: calendarMonths
             width: parent.width
-            visible: !calendarWindow.settingsOpen
+            visible: !calendarWindow.settingsOpen && !calendarWeather.expanded
             // Exactly one six-week month, so no month ever loses its last
             // week, and the agenda under it takes everything that is left. A
             // short output gives up month rows before the agenda's last two.
             readonly property int monthHeight: root.chipHeight + root.spaceSmall + root.barItemHeight
               + root.spaceSmall + 6 * root.controlHeight
             height: visible ? Math.min(monthHeight, parent.height - calendarHeader.height
-              - root.panelSpacing * 2 - root.rowHeight * 2 - 32) : 0
+              - root.panelSpacing * 2 - root.rowHeight * 2 - 32 - calendarWindow.weatherReserve) : 0
             // Months scrolled to are fetched too, so their days show dots
             // before one is picked.
             onContentYChanged: if (visible) calendarBrowse.restart()
@@ -7418,9 +7456,12 @@ Shared.Theme {
           }
           CalendarAgenda {
             id: calendarAgenda
-            visible: !calendarWindow.settingsOpen
+            visible: !calendarWindow.settingsOpen && !calendarWeather.expanded
             width: parent.width
-            height: visible ? parent.height - calendarHeader.height - calendarMonths.height - root.panelSpacing * 2 : 0
+            // Measured against the weather line's live height, so folding it
+            // hands its room back to the agenda as it goes.
+            height: visible ? Math.max(0, parent.height - calendarHeader.height - calendarMonths.height
+              - root.panelSpacing * 2 - (calendarWeather.visible ? calendarWeather.height + root.panelSpacing : 0)) : 0
             theme: root
             store: calendarStore
             day: calendarWindow.agendaDay

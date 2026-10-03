@@ -1,6 +1,7 @@
 //! Shared integration boundaries. Untrusted errors never cross a public protocol.
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::{
+    collections::BTreeMap,
     io,
     path::PathBuf,
     process::Command,
@@ -121,4 +122,61 @@ pub async fn emit(value: &Value) -> io::Result<()> {
     static OUTPUT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = OUTPUT.lock().await;
     write_json(&mut FdIo::stdout()?, value).await
+}
+
+/// Sends each section of a worker's projection only when its content changed
+/// since the last line, so a QML property bound to one section is replaced only
+/// when that section did and nothing bound to another is rebuilt.
+#[derive(Default)]
+pub struct Publisher {
+    sent: BTreeMap<&'static str, String>,
+}
+
+impl Publisher {
+    pub fn changes(&mut self, sections: Vec<(&'static str, Value)>) -> Option<Value> {
+        let mut line = Map::new();
+        for (name, value) in sections {
+            let encoded = value.to_string();
+            if self.sent.get(name) != Some(&encoded) {
+                self.sent.insert(name, encoded);
+                line.insert(name.to_owned(), value);
+            }
+        }
+        (!line.is_empty()).then_some(Value::Object(line))
+    }
+}
+
+/// Nanoseconds the machine has spent suspended since boot. A jump between two
+/// readings means the machine slept, which wall-clock timers alone cannot tell.
+#[cfg(target_os = "linux")]
+pub fn suspend_offset() -> Option<i64> {
+    fn read(clock: libc::clockid_t) -> Option<i64> {
+        let mut value = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: clock_gettime writes only the provided timespec.
+        if unsafe { libc::clock_gettime(clock, &mut value) } == 0 {
+            Some(value.tv_sec * 1_000_000_000 + value.tv_nsec)
+        } else {
+            None
+        }
+    }
+    Some(read(libc::CLOCK_BOOTTIME)? - read(libc::CLOCK_MONOTONIC)?)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn suspend_offset() -> Option<i64> {
+    None
+}
+
+/// Wall-clock minute boundaries, so countdowns and reminders land on the
+/// minute; capped so a resume from suspend is noticed within seconds.
+pub fn next_tick() -> Duration {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let into_minute = (millis % 60_000) as u64;
+    Duration::from_millis((60_000 - into_minute + 20).min(15_000))
 }

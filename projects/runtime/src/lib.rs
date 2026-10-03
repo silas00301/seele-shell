@@ -7,6 +7,7 @@ pub mod fs;
 pub mod github;
 pub mod process;
 pub mod time;
+pub mod timezone;
 pub mod wire;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

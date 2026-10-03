@@ -36,6 +36,9 @@ const shellPatterns = {
   'shuffle control': /Media\.toggleShuffle\(/,
   'repeat control': /Media\.cycleRepeat\(/,
   'calendar copy': /Time\.calendarCopyDate\(/,
+  'weather store': /WeatherStore\s*\{\s*\n\s*id: weatherStore/,
+  'weather line in the clock popup': /WeatherCard\s*\{\s*\n\s*id: calendarWeather[\s\S]{0,300}?store: weatherStore/,
+  'weather Integration Health retry': /routes\.weather = function\(action, token\) \{ weatherStore\.retry\(token\) \}/,
   'world-clock copy': /copyClockTimestamp\(/,
   'network address rows': /Network\.addresses\(/,
   'per-player volume': /PlayerVolume\.adjust\(/,
@@ -131,6 +134,8 @@ const packagedSources = [
   'MicTestStore.qml',
   'MicTestCard.qml',
   'mic-test.js',
+  'WeatherStore.qml',
+  'WeatherCard.qml',
 ];
 for (const source of packagedSources) {
   const reference = new RegExp(`\\$\\{\\./${source.replace('.', '\\.')}\\}`);
@@ -170,6 +175,7 @@ const focusedTests = [
   'mic-test.js',
   'mic-test.sh',
   'vicinae-views.cjs',
+  'weather-card.sh',
 ];
 for (const test of focusedTests) {
   assert.ok(pkg.includes(`tests/${test}`) || pkg.includes("${tests}/" + test), `${test} is not run by the shell package`);
