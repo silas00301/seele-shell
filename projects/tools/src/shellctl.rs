@@ -36,7 +36,8 @@ Commands:
   notes                     Open Seele Notes for quick capture into the vault
   voxtype                   Toggle voice dictation
   lock                      Lock the session
-  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
+  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, snooze <minutes>,
+                                    or remind <id> <minutes|cancel>
   health-publish <id>       Publish bounded health JSON from stdin
   health-status             Print registered current health metadata
   notification-status       Print notification state as JSON
