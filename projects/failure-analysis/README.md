@@ -1,8 +1,9 @@
 # Native failure analysis
 
-Three Rust executables share one library: `seele-failure-report` collects and
+Four Rust executables share one library: `seele-failure-report` collects and
 privately presents a failed operation, `seele-rebuild` preserves `nh` progress and
-status, and `seele-failure-generator` adds the systemd failure reporter drop-in.
+status, `seele-rb` runs the reviewed rebuild workflow below, and
+`seele-failure-generator` adds the systemd failure reporter drop-in.
 The parent feature supplies executable paths, installs the existing Neovim viewer
 and declares the notification/window/service integration. No Python or Pi runtime
 is installed by this feature.
@@ -47,6 +48,23 @@ and UTF-8. Shared process ownership handles cancellation, terminal foreground
 handoff, child reaping and a 24-hour deadline. Only the last 64 KiB is retained;
 a failed notification cannot replace the original rebuild exit status. Successful
 rebuilds create no report.
+
+`seele-rb` (`rb` in Fish, SIL-25) is the check-build-diff-activate workflow.
+It records the Jujutsu working copy with `jj log -r @`, which snapshots it and
+prints its change and commit, and never stages, describes or rewrites anything.
+It then runs `nix flake check --no-build --no-write-lock-file` and `nh os build
+--diff never --out-link` into a private runtime directory, and shows `nvd diff`
+against `/run/current-system`. A build identical to the running system stops
+there. Activation hands `nh os switch` the built `/nix/store` path itself, which
+nh treats as a store installable without evaluating anything, so the generation
+activated is exactly the one diffed. `--dry-run` never activates, `--switch`
+activates without asking, and the default asks on a terminal and activates only
+on an explicit yes; without a terminal it never activates. Every step streams
+unchanged. Success sends one transient notification, and a failed step stops
+before activation and goes through the same private report and consent
+notification as `seele-rebuild`, naming the step and command. The flake comes
+from `--flake`, then `NH_OS_FLAKE`, then `NH_FLAKE`. Generation cleanup stays
+with `nh clean`.
 
 Validation from the submodule:
 

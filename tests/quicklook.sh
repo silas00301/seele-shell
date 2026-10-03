@@ -54,6 +54,20 @@ const readline = require('node:readline')
 
 const files = process.env.QUICKLOOK_FILES
 const runtime = process.env.XDG_RUNTIME_DIR
+// Real worker classification must feed source text into the reply and hand
+// ISO BMFF still images to Qt by path, rather than selecting its video body.
+fs.writeFileSync(path.join(files, 'source.ts'), 'export const answer = 42;\n')
+const imageHeader = brand => {
+  const bytes = Buffer.alloc(24)
+  bytes.writeUInt32BE(24)
+  bytes.write('ftyp', 4)
+  bytes.write(brand, 8)
+  bytes.write('mif1', 16)
+  bytes.write(brand, 20)
+  return bytes
+}
+fs.writeFileSync(path.join(files, 'photo.avif'), imageHeader('avif'))
+fs.writeFileSync(path.join(files, 'photo.heic'), imageHeader('heic'))
 const calls = () => fs.existsSync(process.env.PDF_CALLS)
   ? fs.readFileSync(process.env.PDF_CALLS, 'utf8').trim().split('\n').filter(Boolean)
   : []
@@ -101,12 +115,16 @@ async function main() {
     path.join(files, 'folder'),
     '/dev/zero',
     'relative/path',
+    path.join(files, 'source.ts'),
+    path.join(files, 'photo.avif'),
+    path.join(files, 'photo.heic'),
   ] })
   const opened = await next(messages, m => m.id === 1 && m.event === 'items')
   const kinds = opened.items.map(item => item.kind)
   assert.deepEqual(kinds, [
     'text', 'unavailable', 'markdown', 'image', 'pdf', 'pdf',
     'binary', 'directory', 'unavailable', 'unavailable',
+    'text', 'image', 'image',
   ])
 
   // Content is shown to the one account that already owns it, but never the
@@ -118,6 +136,9 @@ async function main() {
   // A file the panel draws itself is described, never read into the reply.
   assert.equal(opened.items[3].text, undefined)
   assert.equal(opened.items[6].text, undefined)
+  assert.equal(opened.items[10].text, 'export const answer = 42;\n')
+  assert.equal(opened.items[11].text, undefined)
+  assert.equal(opened.items[12].text, undefined)
 
   assert.equal(opened.items[4].pages, 7)
   assert.equal(opened.items[4].error, '')
@@ -184,6 +205,28 @@ async function main() {
   const exited = await new Promise(resolve => worker.on('exit', (code, signal) => resolve({ code, signal })))
   assert.deepEqual(exited, { code: 0, signal: null })
   await settle(() => workspace().length === 0, 'the workspace survived stdin EOF')
+
+  // Tabs count as characters in the same per-line budget as ordinary text.
+  // A full read budget of tabs must not become one huge Qt layout line.
+  fs.writeFileSync(path.join(files, 'tabs.txt'), '\t'.repeat(128 * 1024))
+  const mixed = 'é'.repeat(1999) + '\t'
+  fs.writeFileSync(path.join(files, 'mixed.txt'), mixed + '\tmore\nnext\tline\n')
+  fs.writeFileSync(path.join(files, 'short.txt'), 'one\ttwo\n\tthree\n')
+  const tabbed = start()
+  tabbed.worker.stdin.write(JSON.stringify({
+    command: 'open', id: 4, paths: ['tabs.txt', 'mixed.txt', 'short.txt'].map(name => path.join(files, name)),
+  }) + '\n')
+  const tabbedItems = (await next(tabbed.messages, m => m.id === 4 && m.event === 'items')).items
+  assert.equal(tabbedItems[0].kind, 'text')
+  assert.equal(tabbedItems[0].text, '\t'.repeat(2000))
+  assert.equal(tabbedItems[0].truncated, true)
+  assert.equal(tabbedItems[1].text, mixed + '\nnext\tline\n')
+  assert.equal(tabbedItems[1].truncated, true)
+  assert.equal(tabbedItems[2].text, 'one\ttwo\n\tthree\n')
+  assert.equal(tabbedItems[2].truncated, false)
+  tabbed.worker.stdin.end()
+  await new Promise(resolve => tabbed.worker.on('exit', resolve))
+  await settle(() => workspace().length === 0, 'the tabbed preview workspace survived EOF')
 
   // A shell reload sends SIGTERM, which has to leave as little behind.
   const terminating = start()

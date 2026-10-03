@@ -17,6 +17,7 @@ FocusScope {
   function percent(value) { return typeof value === "number" && isFinite(value) ? value.toFixed(1) + "%" : "—" }
   function bytes(value) {
     if (typeof value !== "number" || !isFinite(value)) return "—"
+    if (value >= 1099511627776) return (value / 1099511627776).toFixed(1) + " TiB"
     if (value >= 1073741824) return (value / 1073741824).toFixed(1) + " GiB"
     if (value >= 1048576) return (value / 1048576).toFixed(1) + " MiB"
     return Math.round(value / 1024) + " KiB"
@@ -26,6 +27,22 @@ FocusScope {
       store.select(store.model.get(processes.currentIndex).entry.id)
   }
   function focusSearch() { search.forceActiveFocus() }
+  readonly property string storageState: snapshot.storage ? snapshot.storage.state : "pending"
+  // Share of the space a user can write that is already written, as df counts
+  // it: blocks reserved for root are neither used nor available.
+  function storageRatio(entry) {
+    const room = entry.used + entry.available
+    return room > 0 ? entry.used / room : 0
+  }
+  // The Maintenance disk source warns at 85% and calls 95% critical, so the
+  // meter turns at the same points the System Health finding does.
+  function storageTint(ratio) { return ratio >= 0.95 ? theme.red : ratio >= 0.85 ? theme.yellow : theme.accent }
+  function storageDetail() {
+    if (storageState === "stale") return "Not updating"
+    if (storageState === "unavailable") return "Unavailable"
+    const count = store.storage.count
+    return storageState === "pending" && !count ? "Reading…" : count + (count === 1 ? " filesystem" : " filesystems")
+  }
   component Caption: Text {
     color: panel.theme.subtext
     font.family: panel.theme.fontFamily
@@ -99,6 +116,64 @@ FocusScope {
       Caption {
         width: parent.width
         text: panel.memory ? "Used = total − available. Swap: " + panel.bytes(panel.memory.swapUsed) + " / " + panel.bytes(panel.memory.swapTotal) : "Reading local CPU and memory…"
+      }
+      Shared.SectionRule {
+        width: parent.width; theme: panel.theme
+        label: "STORAGE"; detail: panel.storageDetail()
+        detailColor: panel.storageState === "stale" || panel.storageState === "unavailable" ? panel.theme.yellow : panel.theme.overlay
+      }
+      Rectangle {
+        objectName: "resourcesStorage"
+        width: parent.width
+        height: storageColumn.implicitHeight + panel.theme.cardPadding * 2
+        radius: panel.theme.radius
+        color: panel.theme.cardColor
+        Shared.CardEdge { theme: panel.theme }
+        Column {
+          id: storageColumn
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
+          spacing: panel.theme.spaceLarge
+          Caption {
+            width: parent.width
+            visible: panel.store.storage.count === 0
+            text: panel.storageState === "unavailable" ? "The mount table could not be read." : panel.storageState === "pending" ? "Reading mounted filesystems…" : "No filesystem on a local block device is mounted."
+          }
+          Repeater {
+            model: panel.store.storage
+            delegate: Column {
+              id: volume
+              required property var entry
+              readonly property real ratio: panel.storageRatio(entry)
+              width: storageColumn.width
+              spacing: panel.theme.spaceSmall
+              Row {
+                width: parent.width
+                spacing: panel.theme.spaceSmall
+                Text {
+                  id: mountLabel
+                  width: parent.width - room.implicitWidth - parent.spacing
+                  text: volume.entry.mount
+                  textFormat: Text.PlainText; elide: Text.ElideMiddle
+                  color: panel.theme.text; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody
+                }
+                Text {
+                  id: room
+                  text: panel.bytes(volume.entry.available) + " free of " + panel.bytes(volume.entry.total)
+                  textFormat: Text.PlainText
+                  color: volume.ratio >= 0.85 ? panel.storageTint(volume.ratio) : panel.theme.subtext
+                  font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption
+                  anchors.baseline: mountLabel.baseline
+                }
+              }
+              Shared.MeterBar { theme: panel.theme; width: parent.width; ratio: volume.ratio; fill: panel.storageTint(volume.ratio) }
+              Caption {
+                width: parent.width
+                text: volume.entry.fstype + " · " + volume.entry.source + (volume.entry.readOnly ? " · read-only" : "")
+                elide: Text.ElideRight; wrapMode: Text.NoWrap
+              }
+            }
+          }
+        }
       }
       Shared.SearchField {
         id: search

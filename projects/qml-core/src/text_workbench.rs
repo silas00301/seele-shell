@@ -1,5 +1,8 @@
 //! Bounded, text-only transforms. No clipboard, filesystem or network access.
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -69,6 +72,16 @@ fn transform(input: &str, mode: &str) -> Result<String, String> {
         "base64-decode" => String::from_utf8(STANDARD.decode(input).map_err(
             |_| "Invalid Base64. Use the standard alphabet and padding, without whitespace.",
         )?)
+        .map_err(|_| "Decoded bytes are not valid UTF-8 text.")?,
+        "base64url-encode" => URL_SAFE_NO_PAD.encode(input),
+        "base64url-decode" => String::from_utf8(
+            URL_SAFE
+                .decode(input)
+                .or_else(|_| URL_SAFE_NO_PAD.decode(input))
+                .map_err(|_| {
+                    "Invalid Base64url. Use the URL-safe alphabet with no padding or complete padding, without whitespace."
+                })?,
+        )
         .map_err(|_| "Decoded bytes are not valid UTF-8 text.")?,
         "lines-clean" => input
             .lines()
@@ -192,6 +205,7 @@ mod tests {
         for (encode, decode) in [
             ("url-encode", "url-decode"),
             ("base64-encode", "base64-decode"),
+            ("base64url-encode", "base64url-decode"),
         ] {
             let text = "Grüße 🦀 日本語\n +/%";
             assert_eq!(
@@ -215,6 +229,45 @@ mod tests {
             transform("a-z_~. /+", "url-encode").unwrap(),
             "a-z_~.%20%2F%2B"
         );
+    }
+    #[test]
+    fn base64url_vectors_padding_and_alphabet_are_explicit() {
+        // RFC 4648 section 10 vectors, with section 5's URL-safe alphabet and
+        // optional padding. The Unicode case exercises both '-' and '_'.
+        for (plain, encoded) in [
+            ("", ""),
+            ("f", "Zg"),
+            ("fo", "Zm8"),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg"),
+            ("fooba", "Zm9vYmE"),
+            ("foobar", "Zm9vYmFy"),
+            ("\u{ffff}🦀", "77-_8J-mgA"),
+        ] {
+            assert_eq!(transform(plain, "base64url-encode").unwrap(), encoded);
+            assert_eq!(transform(encoded, "base64url-decode").unwrap(), plain);
+            let padded = format!("{encoded}{}", "=".repeat((4 - encoded.len() % 4) % 4));
+            assert_eq!(transform(&padded, "base64url-decode").unwrap(), plain);
+        }
+        for invalid in [
+            "Z", "Zg=", "Zg===", "Z=g=", "=Zg=", "Zm9v=", "Zh", "Zh==", "Zm9", "Zm9=", "77+/",
+            "77+_", "77-/", "Zg\n", "Zg\t", " Zg", "Zg ", "Ｚg",
+        ] {
+            assert!(transform(invalid, "base64url-decode").is_err(), "{invalid}");
+        }
+        assert_eq!(transform("77+/", "base64-decode").unwrap(), "\u{ffff}");
+        for invalid in ["77-_", "Zg", "Zh=="] {
+            assert!(transform(invalid, "base64-decode").is_err(), "{invalid}");
+        }
+        for binary in ["_w", "_w==", "AA", "AA=="] {
+            let reply = call("transform", &[json!(binary), json!("base64url-decode")]).unwrap();
+            assert_eq!(reply["valid"], false);
+            assert_eq!(reply["output"], "");
+        }
+        assert!(transform(&"x".repeat(INPUT), "base64url-encode").is_ok());
+        assert!(transform(&"x".repeat(INPUT + 1), "base64url-encode").is_err());
+        assert!(transform(&"YWFh".repeat(INPUT / 4), "base64url-decode").is_ok());
+        assert!(transform(&"Z".repeat(INPUT + 1), "base64url-decode").is_err());
     }
     #[test]
     fn json_preserves_values_keys_and_escapes() {

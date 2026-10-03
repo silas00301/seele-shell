@@ -9,6 +9,14 @@ mkdir -p "$work/state/seele-shell"
 printf '#!%s\n' "$BASH" >"$work/codexbar"
 cat >>"$work/codexbar" <<'SCRIPT'
 set -euo pipefail
+if [[ " $* " == *" --provider cursor "* ]]; then
+  if [[ $1 == usage ]]; then
+    jq -nc '[{provider:"cursor", source:"web", usage:{primary:{usedPercent:60},loginMethod:"Pro"}}]'
+  else
+    printf '[]\n'
+  fi
+  exit 0
+fi
 
 case $1 in
   usage)
@@ -76,7 +84,9 @@ SEELE_SHELL_TODAY="2026-08-29" \
   "$agent_state" >"$work/result.json"
 
 jq -e '
-  (.subscriptions | length) == 1
+  (.subscriptions | length) == 2
+  and any(.subscriptions[]; .id == "cursor" and .name == "Cursor" and .limits[0].usedPercent == 60)
+  and any(.launchers[]; .id == "cursor" and .command == "cursor-agent")
   and any(.subscriptions[]; .id == "codex" and .limits[0].usedPercent == 25)
   and .local.periods.day.totalTokens == 90
   and .local.periods.day.totalCost == 9

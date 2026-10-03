@@ -48,6 +48,29 @@ Item {
       wait(40);verify(panel.implicitHeight<=420);
       var narrow=grabImage(panel);compare(narrow.width,320);verify(!wide.equals(narrow));
     }
+    function filesystem(mount, used, available, readOnly) {
+      return {id: "/dev/" + mount.replace(/\//g, "_") + ":ext4", mount: mount, source: "/dev/nvme0n1p" + mount.length, fstype: "ext4", total: used + available + 1024, used: used, available: available, readOnly: !!readOnly}
+    }
+    // The worker sends a new object every reading; so does the fixture.
+    function fresh(value) { state.accept(JSON.parse(JSON.stringify(value))) }
+    function test_storage_group_thresholds_and_identity() {
+      var value=snapshot([]);
+      value.storage={state:"current",filesystems:[filesystem("/",400,600),filesystem("/boot",88,12),filesystem("/run/media/me/Photos",97,3,true)]};
+      fresh(value);wait(40);
+      compare(state.storage.count,3);compare(panel.storageDetail(),"3 filesystems");
+      compare(panel.storageTint(0.40),tokens.accent);compare(panel.storageTint(0.88),tokens.yellow);compare(panel.storageTint(0.97),tokens.red);
+      compare(panel.storageRatio({used:0,available:0}),0);
+      var card=findChild(panel,"resourcesStorage");verify(card.visible&&card.height>0);
+      // The same devices in a later reading keep their rows rather than rebuilding them.
+      value.storage.filesystems[0]=filesystem("/",500,500);fresh(value);
+      compare(state.storage.count,3);compare(state.storage.get(0).entry.used,500);
+      value.storage.state="stale";fresh(value);compare(panel.storageDetail(),"Not updating");
+      value.storage={state:"unavailable",filesystems:[]};fresh(value);
+      compare(state.storage.count,0);compare(panel.storageDetail(),"Unavailable");
+      state.reset();compare(panel.storageDetail(),"Reading…");
+      compare(panel.bytes(2199023255552),"2.0 TiB");
+      verify(grabImage(panel).height>0);
+    }
     function test_chart_missing_and_finite_values() {
       var value=snapshot([]);value.cpuHistory=[null,0,NaN,Infinity,-5,120,50];state.accept(value);
       wait(40);verify(grabImage(panel).height>0);

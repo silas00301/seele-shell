@@ -181,8 +181,12 @@ resident with the shell, but opening it does not start Codex or read a context
 source. Escape closes it. Losing keyboard focus closes an unfinished prompt;
 an answer remains available for copying or insertion until it is dismissed.
 
-Context is opt-in through controls typed into the prompt. `@window` sends only
-the focused application's name and window title. `@dir` resolves the focused
+Context is opt-in through controls typed into the prompt. Typing `@` opens a
+completion list of `clip`, `select`, `window`, `dir` and `screen`. Arrow keys
+move, Enter or Tab inserts the highlighted mention, and Escape dismisses the
+list before it closes the panel. A mention that is already complete stays out
+of the list, so Enter still sends. The list only matches text and reads
+nothing. `@window` sends only the focused application's name and window title. `@dir` resolves the focused
 terminal's working directory through `/proc`; it is unavailable for other
 applications. `@screen` captures only the output where the panel opened and
 only after its **Capture** action hides the panel. The resulting thumbnail is
@@ -209,7 +213,7 @@ synthetic executables to check consent gates, stale generations, bounded text,
 private capture cleanup, exact copy/insert snapshots, and cancellation. Its
 optional installed-Codex loopback gate exercises initial requests, follow-ups,
 and images using an empty private configuration and synthetic authentication.
-`tests/ai-prompt.js` checks the native mention policy and QML interaction
+`tests/ai-prompt.js` checks the native mention policy, `@` completion, and QML interaction
 contract. Broker and prompt share `runtime::codex` isolation; see
 [the native workspace guide](docs/native-workspace.md).
 

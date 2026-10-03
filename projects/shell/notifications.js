@@ -8,6 +8,10 @@ function stackedRows(entries, expanded) { return Bridge.call("notifications.stac
 function localImage(source) { return Bridge.call("notifications.localImage",[source]) }
 function imageRoles(entry) { return Bridge.call("notifications.imageRoles",[entry]) }
 function bodyMarkup(body) { return Bridge.call("notifications.bodyMarkup",[body]) }
+// Each sender chooses its hints' D-Bus types, and Qt hands a nested variant or
+// a byte string to QML as an opaque wrapper the native boundary refuses along
+// with the whole notification. A stack tag crosses only as text or a number.
+function hintTag(value) { return typeof value === "string" || typeof value === "number" ? value : null }
 function fromNative(n, now) {
   var hints=n.hints || {}
   var entry=Bridge.call("notifications.fromNative",[{
@@ -15,7 +19,7 @@ function fromNative(n, now) {
     summary:n.summary,body:n.body,hasActionIcons:n.hasActionIcons,image:String(n.image || ""),
     urgency:Bridge.number(Number(n.urgency)),resident:n.resident,transient:n.transient,
     expireTimeout:Bridge.number(Number(n.expireTimeout)),hints:{value:Bridge.number(Number(hints.value)),
-      "x-dunst-stack-tag":hints["x-dunst-stack-tag"],"x-canonical-private-synchronous":hints["x-canonical-private-synchronous"]}
+      "x-dunst-stack-tag":hintTag(hints["x-dunst-stack-tag"]),"x-canonical-private-synchronous":hintTag(hints["x-canonical-private-synchronous"])}
   },now])
   // Preserve sender action insertion order and QObject identity outside JSON.
   // Qt serializes ordinary objects into QVariantMap. Null-prototype objects
@@ -32,6 +36,31 @@ function popupDuration(entry) { return Bridge.call("notifications.popupDuration"
 // The panel draws a countdown, so quiet-period state, what is left of it and
 // how much of it that is come from the same core the period itself lives in.
 function quietPeriod(dnd, until, minutes, now) { return Bridge.call("notifications.quietPeriod",[!!dnd,Bridge.number(until),Bridge.number(minutes),Bridge.number(now)]) }
+
+// A reminder is offered as a few lengths from now and one local morning. The
+// choice resolves to an absolute time only when it is made, so a card left open
+// cannot hand in a moment that has already passed; the policy checks the rest.
+var reminderChoices=[
+  {minutes:15,label:"15 min"},{minutes:60,label:"1 hour"},{minutes:240,label:"4 hours"},
+  {minutes:-1,label:"Tomorrow 09:00"}
+]
+function reminderDue(minutes, nowMs) {
+  if (minutes>0) return Math.floor(nowMs/1000)+minutes*60
+  var now=new Date(nowMs)
+  return new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,9,0,0).getTime()/1000
+}
+// When a pending reminder returns: the time alone today, the day in front of it
+// otherwise, and a plain statement once it has come due during a quiet period.
+function reminderLabel(at, nowMs) {
+  if (!(at>0)) return ""
+  if (at*1000<=nowMs) return "After quiet"
+  var when=new Date(at*1000), now=new Date(nowMs)
+  var time=("0"+when.getHours()).slice(-2)+":"+("0"+when.getMinutes()).slice(-2)
+  if (when.toDateString()===now.toDateString()) return time
+  var tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1)
+  if (when.toDateString()===tomorrow.toDateString()) return "Tomorrow "+time
+  return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][when.getDay()]+" "+time
+}
 
 // Qt owns live QObject handles and callback invocation. Rust owns all serializable
 // state, timing, quiet periods, replacement, pinning, history and grouping policy.
@@ -69,6 +98,7 @@ function createStore(publish, arrived, now) {
   state.retire=function(id) { return apply("retire",[id]) }
   state.dismiss=function(id) { return apply("dismiss",[id]) }
   state.pin=function(id) { return apply("pin",[id]) }
+  state.remind=function(id,due,timestamp) { return apply("remind",[id,Bridge.number(due),Bridge.number(timestamp)]) }
   state.setAppQuiet=function(key,quiet) { return apply("setAppQuiet",[key,quiet]) }
   state.resumeApps=function() { return apply("resumeApps",[]) }
   state.setDnd=function(enabled) { return apply("setDnd",[enabled]) }

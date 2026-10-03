@@ -563,6 +563,13 @@ impl Service {
     }
 }
 pub fn action_args(config: &Value, row: &Row, action: &str) -> Result<Vec<String>> {
+    if action == "open-power" {
+        return if row.source == "restart" {
+            Ok(args(&["seele-shellctl", "power"]))
+        } else {
+            Err("unregistered_action")
+        };
+    }
     if !["retry", "open-logs"].contains(&action) {
         return Err("unregistered_action");
     }

@@ -20,6 +20,47 @@ assert.equal(helpers.canSubmit("question", [], false, false, false, false, true)
 assert.equal(helpers.preview("one\ntwo", 7, false), "one  ↵  two · 7 characters")
 assert.match(helpers.preview("text", 65536, true), /first 65,536 characters/)
 
+const kinds = ["clip", "select", "window", "dir", "screen"]
+const opened = helpers.completion("Ask @", "Ask @".length)
+assert.equal(opened.active, true)
+assert.equal(opened.query, "")
+assert.deepEqual(opened.options.map(option => option.kind), kinds)
+assert.deepEqual(opened.options.map(option => option.label), kinds.map(kind => "@" + kind))
+assert.ok(opened.options.every(option => option.glyph && option.caption))
+assert.equal(opened.options[0].caption, "Included once when you press Send")
+assert.equal(opened.options[3].caption, "Resolved when you press Send")
+const filtered = helpers.completion("Ask @sc", "Ask @sc".length)
+assert.deepEqual(filtered.options.map(option => option.kind), ["screen"])
+assert.equal(helpers.completion("Ask @clip", "Ask @clip".length).active, false)
+assert.equal(helpers.completion("mail me@example.org", "mail me@example.org".length).active, false)
+assert.equal(helpers.completion("quote @@clip", "quote @@clip".length).active, false)
+assert.equal(helpers.completion("@cli", 2).active, false)
+assert.equal(helpers.completion("Ask @clipboard", "Ask @clipboard".length).active, false)
+assert.equal(helpers.completion("🙂 @", "🙂 @".length).active, true)
+const spaced = helpers.applyCompletion("Explain @cl please", "Explain @cl".length, "clip")
+assert.equal(spaced.applied, true)
+assert.equal(spaced.text, "Explain @clip please")
+assert.equal(spaced.cursor, "Explain @clip ".length)
+const inserted = helpers.applyCompletion("Explain @", "Explain @".length, "screen")
+assert.equal(inserted.text, "Explain @screen ")
+assert.equal(inserted.cursor, inserted.text.length)
+assert.equal(helpers.applyCompletion("@cl-next", 3, "clip").text, "@clip -next")
+assert.deepEqual(helpers.applyCompletion("@cl\nmore", 3, "clip"), {text: "@clip\nmore", cursor: "@clip\n".length, applied: true})
+const emoji = helpers.applyCompletion("🙂 @", "🙂 @".length, "dir")
+assert.equal(emoji.text, "🙂 @dir ")
+assert.equal(emoji.cursor, "🙂 @dir ".length)
+const refused = helpers.applyCompletion("Explain @cl", "Explain @cl".length, "screen")
+assert.equal(refused.applied, false)
+assert.equal(refused.text, "Explain @cl")
+assert.equal(helpers.completionKey(true, 16777237, false), "down")
+assert.equal(helpers.completionKey(true, 16777235, false), "up")
+assert.equal(helpers.completionKey(true, 16777220, false), "accept")
+assert.equal(helpers.completionKey(true, 16777221, true), "passthrough")
+assert.equal(helpers.completionKey(true, 16777217, false), "accept")
+assert.equal(helpers.completionKey(true, 16777216, false), "dismiss")
+assert.equal(helpers.completionKey(false, 16777216, false), "passthrough")
+assert.equal(helpers.completionKey(false, 16777220, false), "passthrough")
+
 const qml = fs.readFileSync(process.argv[3], "utf8")
 const open = qml.match(/function open\(screen, window\) \{[\s\S]*?\n  \}/)[0]
 assert.ok(open.indexOf("active = true") < open.indexOf('send({ command: "open"'),
@@ -38,7 +79,16 @@ for (const [feature, pattern] of Object.entries({
   "private screen disclosure": /captured once when you press Send/,
   "stale context rejection": /!acceptsContext\(String\(message\.kind \|\| ""\), Number\(message\.token \|\| 0\)\)/,
   "answer-only response card": /label: "ANSWER"/,
+  "mention completion list": /id: completionMenu/,
+  "completion stays in the scroll": /height: 112 \+ \(prompt\.completionOpen \? completionMenu\.height \+ prompt\.theme\.spaceTight : 0\)/,
+  "completion keeps the field focused": /onClicked: \{\n\s*prompt\.acceptMention\(completionRow\.modelData\.kind\)\n\s*promptField\.forceActiveFocus\(\)/,
 })) assert.ok(pattern.test(qml), `${feature} is missing from AiPrompt.qml`)
+
+const key = qml.match(/function key\(event\) \{[\s\S]*?\n  \}/)[0]
+assert.ok(key.indexOf("completionKey") < key.indexOf("close()"), "Escape dismisses completion before it can close the panel")
+assert.ok(key.includes('action === "accept"'), "Enter accepts the highlighted mention")
+assert.ok(key.includes('action === "dismiss"'), "Escape dismisses the mention list")
+assert.ok(/onCompletionIdentityChanged: completionIndex = 0/.test(qml), "a new query returns to the first match")
 
 // The panel used to close itself as soon as it lost keyboard focus. It now
 // holds the keyboard until it is dismissed by hand, so nothing may bring that
@@ -108,3 +158,39 @@ state.accept({id:state.generation,event:'preview',kind:'dir',token:state.directo
 assert.equal(state.canSend, true)
 assert.match(state.error, /@dir/)
 console.log('One-send collection, no pre-send reads, duplicate prevention, errors, edits and stale generations passed')
+
+state.Qt = {ShiftModifier: 0x02000000, ControlModifier: 0x04000000}
+state.completion = helpers.completion("Use @w", "Use @w".length)
+state.completionOpen = true
+state.completionIndex = 0
+state.completionDismissed = ""
+state.completionIdentity = "query"
+state.promptCursor = "Use @w".length
+state.promptText = "Use @w"
+messages.length = 0
+state.acceptMention("screen")
+assert.equal(state.promptText, "Use @w")
+assert.equal(messages.filter(message => message.command === "preview").length, 0)
+state.acceptMention("window")
+assert.equal(state.promptText, "Use @window ")
+assert.equal(state.pendingCursor, "Use @window ".length)
+assert.equal(messages.filter(message => message.command === "preview").length, 0)
+assert.equal(messages.filter(message => message.command === "submit").length, 0)
+state.completionOpen = true
+state.completion = helpers.completion("Use @", "Use @".length)
+state.completionIndex = 0
+state.promptText = "Use @"
+state.promptCursor = "Use @".length
+state.key({key: 16777237, modifiers: 0, accepted: false})
+assert.equal(state.completionIndex, 1)
+state.key({key: 16777216, modifiers: 0, accepted: false})
+assert.equal(state.completionDismissed, "query")
+assert.equal(state.active, true)
+state.completionDismissed = ""
+state.completionOpen = true
+messages.length = 0
+state.key({key: 16777220, modifiers: 0, accepted: false})
+assert.equal(state.promptText, "Use @select ")
+assert.equal(messages.filter(message => message.command === "preview").length, 0)
+assert.equal(messages.filter(message => message.command === "submit").length, 0)
+console.log("Mention completion inserts the highlighted source without reading it")

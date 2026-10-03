@@ -33,19 +33,25 @@ fn string_data(value: Option<&Value>) -> String {
     data(value).and_then(Value::as_str).unwrap_or("").to_owned()
 }
 
+/// One bounded request to Hyprland's control socket. hyprctl exits nonzero
+/// on a reply that begins with `error:`, so that arrives here as a failure.
+pub(crate) fn hyprctl(arguments: &[&str]) -> Result<String> {
+    crate::command::output_with_input(
+        "hyprctl",
+        arguments,
+        b"",
+        Duration::from_secs(15),
+        64 * 1024,
+    )
+    .ok_or_else(|| "Hyprland request failed".into())
+}
+
 // Hyprland reads `hyprctl dispatch` as Lua, so a dispatcher arrives as one
 // `hl.dsp` call rather than as a bare name followed by its arguments. The bare
 // name resolves to no global and the dispatch is dropped with an error hyprctl
 // still exits zero on, which is why every legacy form failed in silence.
 pub(crate) fn dispatch(call: &str) -> Result {
-    let reply = crate::command::output_with_input(
-        "hyprctl",
-        ["dispatch", call],
-        b"",
-        Duration::from_secs(15),
-        64 * 1024,
-    )
-    .ok_or("Hyprland dispatch failed")?;
+    let reply = hyprctl(&["dispatch", call]).map_err(|_| "Hyprland dispatch failed")?;
     if reply.trim() != "ok" {
         return Err("Hyprland rejected the action".into());
     }

@@ -243,6 +243,7 @@
                   node tests/focus.js projects/shell/focus.js
                   bash tests/focus-timer.sh ${quickshell}/bin/quickshell projects/shell
                   node tests/panel-layouts.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  node tests/control-center-layout.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   PYTHONDONTWRITEBYTECODE=1 ${
                     pkgs.python3.withPackages (ps: [ ps.aiohttp ])
                   }/bin/python3 projects/integrations/tests/home_assistant.py target/debug/seele-home-assistant
