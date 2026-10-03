@@ -5,6 +5,16 @@ The GitHub panel has Notifications, Reviews and My pull requests tabs.
 The existing PR lists retain their read-only, bounded `seele-github-status`
 collector and one-minute refresh policy.
 
+## Pull request focus
+
+`seele-shellctl pr-focus` enters or leaves focus on one configured pull request.
+`seele-github-status focus <url>` reads that request only: the latest commit's
+check rollup and the newest review or conversation comment, with no diff hunks
+and no writes. The Control Center shows that pin while focus is on and removes
+it on exit. Desktop toasts that are not @-mentions wait in the inbox until
+focus ends; a body or summary that @-mentions someone, or that says "mentioned
+you", still toasts. Nothing is posted to chat or email.
+
 ## Notification inbox
 
 `seele-github-inbox` is a resident Rust worker in `projects/integrations/src/github/`.
