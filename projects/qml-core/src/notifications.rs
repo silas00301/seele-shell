@@ -219,6 +219,37 @@ pub(crate) struct State {
     quiet_apps: BTreeSet<String>,
     dnd_until: f64,
     dnd_minutes: f64,
+    /// Session-only. One configured pull request is in focus; not written to disk.
+    #[serde(default)]
+    focus: bool,
+    /// "" for a manual choice, "focus" while the focus timer owns silence,
+    /// "meeting" while a chosen event owns it. A meeting deadline wins the
+    /// readout when both holds are up; the focus hold stays underneath.
+    #[serde(default)]
+    dnd_reason: String,
+    #[serde(default)]
+    focus_sync: bool,
+    #[serde(default)]
+    focus_hold: bool,
+    /// This session's report of the focus timer. It is not written down: a
+    /// reload asks the timer again, so a timer that ended while the shell was
+    /// down cannot keep silence on.
+    #[serde(default, skip)]
+    focus_active: bool,
+    #[serde(default)]
+    meeting_hold: bool,
+    #[serde(default)]
+    meeting_key: String,
+    #[serde(default)]
+    meeting_end: f64,
+    #[serde(default)]
+    holding: bool,
+    #[serde(default)]
+    saved_dnd: bool,
+    #[serde(default)]
+    saved_until: f64,
+    #[serde(default)]
+    saved_minutes: f64,
     paused: bool,
     last_tick: f64,
     restored: serde_json::Map<String, Value>,
@@ -233,7 +264,37 @@ struct Record {
     remaining: f64,
     clock: f64,
     popup: bool,
+    #[serde(default)]
+    deferred: bool,
     skip_history: bool,
+}
+fn mentions(entry: &Value) -> bool {
+    let summary = text(entry.get("summary"));
+    let body = text(entry.get("body"));
+    let combined = format!("{summary}\n{body}");
+    if combined.to_ascii_lowercase().contains("mentioned you") {
+        return true;
+    }
+    let chars: Vec<char> = combined.chars().collect();
+    for (index, character) in chars.iter().enumerate() {
+        if *character != '@' {
+            continue;
+        }
+        let boundary = index == 0
+            || !(chars[index - 1].is_ascii_alphanumeric()
+                || matches!(chars[index - 1], '.' | '_' | '-' | '+'));
+        if boundary
+            && chars
+                .get(index + 1)
+                .is_some_and(|next| next.is_ascii_alphanumeric())
+        {
+            return true;
+        }
+    }
+    false
+}
+fn hold_for_focus(state: &State, entry: &Value, generation: bool) -> bool {
+    state.focus && !generation && !mentions(entry)
 }
 // Bounds account for JSON escaping before cloning or serializing retained text.
 const MAX_ENTRIES: usize = 4096;
@@ -319,19 +380,20 @@ impl State {
             .filter(|r| !truthy(r.entry.get("transient")))
             .map(|r| &r.entry)
             .collect();
-        json!({"count":items.len(),"items":items,"popups":self.current.iter().filter(|r|r.popup).map(|r|&r.entry).collect::<Vec<_>>(),"history":self.history,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"quietApps":self.quiet_apps})
+        json!({"count":items.len(),"items":items,"popups":self.current.iter().filter(|r|r.popup).map(|r|&r.entry).collect::<Vec<_>>(),"history":self.history,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"dndReason":self.dnd_reason,"focusSync":self.focus_sync,"meetingKey":self.meeting_key,"meetingEnd":self.meeting_end,"quietApps":self.quiet_apps})
     }
     fn save(&self) -> Value {
         let metadata: serde_json::Map<_, _> = self.current.iter().map(|record| (string(record.entry.get("id")), json!({"time":record.entry["time"],"pinned":record.entry["pinned"],"popup":record.popup&&permanent(&record.entry),"remindAt":reminder_at(&record.entry),"reminder":truthy(record.entry.get("reminder"))}))).collect();
-        json!({"history":self.history,"dnd":self.dnd,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"metadata":metadata,"quietApps":self.quiet_apps})
+        json!({"history":self.history,"dnd":self.dnd,"dndUntil":self.dnd_until,"dndMinutes":self.dnd_minutes,"dndReason":self.dnd_reason,"focusSync":self.focus_sync,"focusHold":self.focus_hold,"meetingHold":self.meeting_hold,"meetingKey":self.meeting_key,"meetingEnd":self.meeting_end,"holding":self.holding,"savedDnd":self.saved_dnd,"savedUntil":self.saved_until,"savedMinutes":self.saved_minutes,"metadata":metadata,"quietApps":self.quiet_apps})
     }
     fn advance(&mut self, timestamp: f64, effects: &mut Vec<Value>) {
         let mut changed = false;
         self.last_tick = timestamp;
-        if self.dnd_until > 0.0 && timestamp >= self.dnd_until {
-            self.dnd = false;
-            self.dnd_until = 0.0;
-            self.dnd_minutes = 0.0;
+        if self.meeting_hold && timestamp >= self.meeting_end {
+            self.release_meeting();
+            changed = true;
+        }
+        if self.expire_manual(timestamp) {
             changed = true;
         }
         // A reminder that comes due while the shell is quiet waits for the
@@ -365,6 +427,11 @@ impl State {
         for record in &mut self.current {
             let elapsed = (timestamp - record.clock).max(0.0);
             record.clock = timestamp;
+            // A held notification waits out focus. Counting it down here would
+            // expire a transient one before it is ever shown.
+            if record.deferred {
+                continue;
+            }
             if self.paused
                 || record.remaining < 0.0
                 || !record.popup && !truthy(record.entry.get("transient"))
@@ -400,6 +467,81 @@ impl State {
             effects.push(json!({"operation":"dismiss","id":record.entry["id"]}));
         }
         effects.push(json!({"operation":"publish"}));
+    }
+    fn silence_popups(&mut self) {
+        for record in &mut self.current {
+            record.popup = false;
+        }
+    }
+    fn begin_hold(&mut self) {
+        if self.holding {
+            return;
+        }
+        self.saved_dnd = self.dnd;
+        self.saved_until = self.dnd_until;
+        self.saved_minutes = self.dnd_minutes;
+        self.holding = true;
+    }
+    /// A manual menu choice replaces every automatic hold and does not put the
+    /// earlier silence back. That keeps a duration, an indefinite hold, or
+    /// Turn off from fighting the focus timer or the meeting clock.
+    fn manual_override(&mut self) {
+        self.focus_sync = false;
+        self.focus_hold = false;
+        self.meeting_hold = false;
+        self.meeting_key.clear();
+        self.meeting_end = 0.0;
+        self.holding = false;
+        self.dnd_reason.clear();
+    }
+    fn present_hold(&mut self) {
+        if self.meeting_hold {
+            let span = (self.meeting_end - self.last_tick).max(0.0);
+            self.dnd = true;
+            self.dnd_until = self.meeting_end;
+            self.dnd_minutes = (span / 60.0).ceil().clamp(1.0, 100_000.0);
+            self.dnd_reason = "meeting".into();
+        } else if self.focus_hold {
+            self.dnd = true;
+            self.dnd_until = 0.0;
+            self.dnd_minutes = 0.0;
+            self.dnd_reason = "focus".into();
+        }
+    }
+    fn finish_hold(&mut self) {
+        if self.meeting_hold || self.focus_hold {
+            self.present_hold();
+            return;
+        }
+        self.dnd = self.saved_dnd;
+        self.dnd_until = if self.saved_dnd {
+            self.saved_until
+        } else {
+            0.0
+        };
+        self.dnd_minutes = if self.dnd_until > 0.0 {
+            self.saved_minutes
+        } else {
+            0.0
+        };
+        self.dnd_reason.clear();
+        self.holding = false;
+    }
+    fn expire_manual(&mut self, timestamp: f64) -> bool {
+        if self.holding || self.dnd_until <= 0.0 || timestamp < self.dnd_until {
+            return false;
+        }
+        self.dnd = false;
+        self.dnd_until = 0.0;
+        self.dnd_minutes = 0.0;
+        self.dnd_reason.clear();
+        true
+    }
+    fn release_meeting(&mut self) {
+        self.meeting_hold = false;
+        self.meeting_key.clear();
+        self.meeting_end = 0.0;
+        self.finish_hold();
     }
 }
 #[cfg(test)]
@@ -469,6 +611,45 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     state.dnd_until = 0.0;
                     state.dnd_minutes = 0.0;
                 }
+                state.focus_sync = truthy(saved.get("focusSync"));
+                state.focus_hold = state.focus_sync && truthy(saved.get("focusHold"));
+                state.saved_dnd = truthy(saved.get("savedDnd"));
+                state.saved_until = saved
+                    .get("savedUntil")
+                    .and_then(Value::as_f64)
+                    .filter(|until| until.is_finite() && *until > 0.0)
+                    .unwrap_or(0.0);
+                let saved_minutes = number(saved.get("savedMinutes"));
+                state.saved_minutes = if state.saved_until > 0.0 && saved_minutes.is_finite() {
+                    saved_minutes
+                } else {
+                    0.0
+                };
+                state.holding = truthy(saved.get("holding"));
+                let key = text(saved.get("meetingKey"));
+                let key = key.trim();
+                let end = number(saved.get("meetingEnd"));
+                if truthy(saved.get("meetingHold"))
+                    && !key.is_empty()
+                    && key.len() <= 512
+                    && end.is_finite()
+                    && end > state.last_tick
+                {
+                    state.meeting_hold = true;
+                    state.meeting_key = key.to_owned();
+                    state.meeting_end = end;
+                } else {
+                    state.meeting_hold = false;
+                    state.meeting_key.clear();
+                    state.meeting_end = 0.0;
+                }
+                if state.meeting_hold || state.focus_hold {
+                    state.holding = true;
+                    state.present_hold();
+                } else if state.holding {
+                    state.finish_hold();
+                    state.expire_manual(state.last_tick);
+                }
                 state.restored.clear();
                 if let Some(metadata) = saved.get("metadata").and_then(Value::as_object) {
                     for (id, entry) in metadata.iter().take(MAX_ENTRIES) {
@@ -528,7 +709,10 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                 };
                 record.entry = entry;
                 if fresh {
-                    record.popup = !state.dnd
+                    let held = hold_for_focus(state, &record.entry, false);
+                    record.deferred = held;
+                    record.popup = !held
+                        && !state.dnd
                         && !suppress_popup
                         && !state.quiet_apps.contains(&group_key(&record.entry));
                     record.remaining = popup_duration(&record.entry);
@@ -568,7 +752,9 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                         entry["reminder"] = json!(true);
                     }
                 }
-                let popup = !state.dnd
+                let held = hold_for_focus(state, &entry, generation);
+                let popup = !held
+                    && !state.dnd
                     && !suppress_popup
                     && if generation {
                         // Reload restores an existing permanent toast, not a new
@@ -589,6 +775,7 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                         entry,
                         clock: time,
                         popup,
+                        deferred: held,
                         skip_history: false,
                     },
                 );
@@ -695,14 +882,41 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
             state.quiet_apps.clear();
             effects.push(json!({"operation":"publish"}));
         }
+        "setPrFocus" => {
+            let enabled = truthy(args.first());
+            let time = timestamp(args.get(1))?;
+            result = json!(true);
+            if state.focus != enabled {
+                state.focus = enabled;
+                if !enabled {
+                    let quiet_apps = state.quiet_apps.clone();
+                    let dnd = state.dnd;
+                    for record in &mut state.current {
+                        if !record.deferred {
+                            continue;
+                        }
+                        record.deferred = false;
+                        if dnd || quiet_apps.contains(&group_key(&record.entry)) {
+                            continue;
+                        }
+                        record.popup = true;
+                        record.remaining = popup_duration(&record.entry);
+                        record.clock = time;
+                        effects.push(
+                            json!({"operation":"arrived","entry":record.entry,"fresh":false}),
+                        );
+                    }
+                }
+                effects.push(json!({"operation":"publish"}));
+            }
+        }
         "setDnd" => {
+            state.manual_override();
             state.dnd_until = 0.0;
             state.dnd_minutes = 0.0;
             state.dnd = truthy(args.first());
             if state.dnd {
-                for record in &mut state.current {
-                    record.popup = false;
-                }
+                state.silence_popups();
             }
             effects.push(json!({"operation":"publish"}));
         }
@@ -717,13 +931,97 @@ fn transition(state: &mut State, event: &str, args: &[Value]) -> Result<Value, S
                     && time >= 0.0
             );
             if result == true {
+                state.manual_override();
                 state.dnd = true;
                 state.dnd_until = time + minutes * 60.0;
                 state.dnd_minutes = minutes;
-                for record in &mut state.current {
-                    record.popup = false;
+                state.silence_popups();
+                effects.push(json!({"operation":"publish"}));
+            }
+        }
+        // The focus timer reports whether it is running. Sync is a preference:
+        // entering applies silence, leaving puts the previous silence back.
+        // The timer itself is never started or stopped from here, so a DND
+        // choice cannot bounce the timer and the timer cannot re-arm a choice
+        // the user just replaced.
+        "setFocus" => {
+            let active = truthy(args.first());
+            let now = number(args.get(1));
+            if now.is_finite() && now >= 0.0 {
+                state.last_tick = now;
+            }
+            let apply = active && state.focus_sync && !state.focus_hold;
+            let release = !active && state.focus_hold;
+            state.focus_active = active;
+            result = json!(true);
+            if apply {
+                state.begin_hold();
+                state.focus_hold = true;
+                state.present_hold();
+                state.silence_popups();
+                effects.push(json!({"operation":"publish"}));
+            } else if release {
+                state.focus_hold = false;
+                state.finish_hold();
+                state.expire_manual(state.last_tick);
+                effects.push(json!({"operation":"publish"}));
+            }
+        }
+        "setFocusSync" => {
+            let enabled = truthy(args.first());
+            if enabled && !state.focus_active {
+                result = json!(false);
+            } else if enabled && state.focus_sync && state.focus_hold {
+                result = json!(true);
+            } else {
+                result = json!(true);
+                if enabled {
+                    state.focus_sync = true;
+                    if !state.focus_hold {
+                        state.begin_hold();
+                        state.focus_hold = true;
+                        state.present_hold();
+                        state.silence_popups();
+                    }
+                } else {
+                    state.focus_sync = false;
+                    if state.focus_hold {
+                        state.focus_hold = false;
+                        state.finish_hold();
+                        state.expire_manual(state.last_tick);
+                    }
                 }
                 effects.push(json!({"operation":"publish"}));
+            }
+        }
+        // Armed only when the menu chooses it. Nothing here starts a hold
+        // because a meeting is underway.
+        "armMeeting" => {
+            let key = text(args.first());
+            let key = key.trim();
+            let end = number(args.get(1));
+            let now = number(args.get(2));
+            let valid = !key.is_empty()
+                && key.len() <= 512
+                && end.is_finite()
+                && now.is_finite()
+                && now >= 0.0
+                && end > now;
+            result = json!(valid);
+            if valid {
+                state.last_tick = now;
+                let same = state.meeting_hold
+                    && state.meeting_key == key
+                    && (state.meeting_end - end).abs() < 0.5;
+                if !same {
+                    state.begin_hold();
+                    state.meeting_hold = true;
+                    state.meeting_key = key.to_owned();
+                    state.meeting_end = end;
+                    state.present_hold();
+                    state.silence_popups();
+                    effects.push(json!({"operation":"publish"}));
+                }
             }
         }
         "clear" => {
@@ -986,6 +1284,114 @@ mod tests {
         );
     }
     #[test]
+    fn pull_request_focus_defers_unrelated_notifications_and_keeps_mentions() {
+        let mut state = new_state(1000.0).unwrap();
+        let ordinary = json!({"id":1,"app_name":"Mail","summary":"Build finished","body":"user@example.com passed","timeout":5000,"urgency":1});
+        state_call(
+            &mut state,
+            "receive",
+            &[ordinary.clone(), json!(1000), json!(false)],
+        )
+        .unwrap();
+        assert!(
+            state.current[0].popup,
+            "focus off still shows an ordinary toast"
+        );
+        state_call(&mut state, "setPrFocus", &[json!(true), json!(1001)]).unwrap();
+        assert!(
+            state.current[0].popup,
+            "entering focus leaves a toast already on screen"
+        );
+        let unrelated = json!({"id":2,"app_name":"Chat","summary":"Standup moved","body":"See the calendar","timeout":5000,"urgency":1});
+        state_call(
+            &mut state,
+            "receive",
+            &[unrelated, json!(1002), json!(false)],
+        )
+        .unwrap();
+        let mention = json!({"id":3,"app_name":"GitHub","summary":"Review","body":"@silas please look","timeout":5000,"urgency":1});
+        state_call(&mut state, "receive", &[mention, json!(1003), json!(false)]).unwrap();
+        let phrase = json!({"id":4,"app_name":"GitHub","summary":"ada mentioned you in seele","body":"on the pull request","timeout":5000,"urgency":1});
+        state_call(&mut state, "receive", &[phrase, json!(1004), json!(false)]).unwrap();
+        let held = state
+            .current
+            .iter()
+            .find(|record| record.entry["id"].as_u64() == Some(2))
+            .unwrap();
+        assert!(held.deferred);
+        assert!(!held.popup);
+        assert!(
+            state.view()["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["id"].as_u64() == Some(2))
+        );
+        assert!(
+            state
+                .current
+                .iter()
+                .find(|record| record.entry["id"].as_u64() == Some(3))
+                .unwrap()
+                .popup
+        );
+        assert!(
+            !state
+                .current
+                .iter()
+                .find(|record| record.entry["id"].as_u64() == Some(3))
+                .unwrap()
+                .deferred
+        );
+        assert!(
+            state
+                .current
+                .iter()
+                .find(|record| record.entry["id"].as_u64() == Some(4))
+                .unwrap()
+                .popup
+        );
+        let transient = json!({"id":5,"app_name":"Volume","summary":"Muted","body":"","timeout":1000,"urgency":1,"transient":true});
+        state_call(
+            &mut state,
+            "receive",
+            &[transient, json!(1005), json!(false)],
+        )
+        .unwrap();
+        state_call(&mut state, "advance", &[json!(1010)]).unwrap();
+        assert!(
+            state
+                .current
+                .iter()
+                .any(|record| record.entry["id"].as_u64() == Some(5)),
+            "a deferred transient is not expired unseen"
+        );
+        let released = state_call(&mut state, "setPrFocus", &[json!(false), json!(1011)]).unwrap();
+        assert!(
+            released["effects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|effect| effect["operation"] == "arrived"
+                    && effect["entry"]["id"].as_u64() == Some(2))
+        );
+        assert!(
+            state
+                .current
+                .iter()
+                .find(|record| record.entry["id"].as_u64() == Some(2))
+                .unwrap()
+                .popup
+        );
+        assert!(state.current.iter().all(|record| !record.deferred));
+        assert!(!state.focus);
+        let saved = state_call(&mut state, "save", &[]).unwrap();
+        assert!(
+            saved.get("focus").is_none(),
+            "focus is not stored with notification text"
+        );
+    }
+    #[test]
     fn application_silence_is_bounded_and_resumes_at_capacity() {
         let mut state = new_state(1000.0).unwrap();
         let keys: Vec<_> = (0..MAX_QUIET_APPS + 10)
@@ -1025,6 +1431,113 @@ mod tests {
         state_call(&mut state, "restore", &[json!({"history":[],"dnd":true})]).unwrap();
         assert!(state.quiet_apps.is_empty());
         assert!(state.dnd);
+        assert!(!state.focus_sync);
+    }
+    #[test]
+    fn focus_sync_and_meeting_hold_restore_previous_silence() {
+        let mut state = new_state(1_000.0).unwrap();
+        assert_eq!(
+            state_call(&mut state, "setFocusSync", &[json!(true)]).unwrap()["result"],
+            false,
+            "sync is refused while focus is off"
+        );
+        state_call(&mut state, "setFocus", &[json!(true), json!(1_000.0)]).unwrap();
+        assert!(!state.dnd, "focus alone does not arm silence");
+
+        state_call(&mut state, "snooze", &[json!(15.0), json!(1_000.0)]).unwrap();
+        state_call(&mut state, "setFocusSync", &[json!(true)]).unwrap();
+        assert_eq!(state.view()["dndReason"], "focus");
+        assert_eq!(state.saved_until, 1_900.0);
+        state_call(&mut state, "setFocus", &[json!(true), json!(1_050.0)]).unwrap();
+        assert_eq!(
+            state.saved_until, 1_900.0,
+            "a repeated focus report keeps the first snapshot"
+        );
+
+        assert_eq!(
+            state_call(
+                &mut state,
+                "armMeeting",
+                &[json!(""), json!(1_500.0), json!(1_100.0)]
+            )
+            .unwrap()["result"],
+            false
+        );
+        state_call(
+            &mut state,
+            "armMeeting",
+            &[json!("one:a"), json!(1_500.0), json!(1_100.0)],
+        )
+        .unwrap();
+        assert_eq!(state.view()["dndReason"], "meeting");
+        assert!(state.focus_hold, "the focus hold stays under the meeting");
+        state_call(&mut state, "advance", &[json!(1_500.0)]).unwrap();
+        assert_eq!(state.view()["dndReason"], "focus");
+        assert_eq!(state.view()["meetingKey"], "");
+        state_call(&mut state, "setFocus", &[json!(false), json!(1_600.0)]).unwrap();
+        assert_eq!(state.dnd_reason, "");
+        assert!(state.dnd);
+        assert_eq!(state.dnd_until, 1_900.0);
+        state_call(&mut state, "advance", &[json!(1_900.0)]).unwrap();
+        assert!(
+            !state.dnd,
+            "the restored period still ends on its own deadline"
+        );
+
+        state_call(&mut state, "setDnd", &[json!(true)]).unwrap();
+        state_call(&mut state, "setFocus", &[json!(true), json!(2_000.0)]).unwrap();
+        state_call(&mut state, "setFocusSync", &[json!(true)]).unwrap();
+        state_call(
+            &mut state,
+            "armMeeting",
+            &[json!("one:b"), json!(3_000.0), json!(2_000.0)],
+        )
+        .unwrap();
+        state_call(&mut state, "setDnd", &[json!(false)]).unwrap();
+        assert!(!state.dnd);
+        assert!(!state.focus_sync, "a manual choice stops the sync");
+        assert!(!state.meeting_hold);
+        state_call(&mut state, "setFocus", &[json!(true), json!(2_100.0)]).unwrap();
+        assert!(!state.dnd, "focus cannot re-arm silence after that choice");
+        state_call(&mut state, "advance", &[json!(3_000.0)]).unwrap();
+        assert!(
+            !state.dnd,
+            "the meeting that was overridden does not restore it"
+        );
+
+        let mut meeting = new_state(1_000.0).unwrap();
+        state_call(&mut meeting, "setDnd", &[json!(false)]).unwrap();
+        state_call(
+            &mut meeting,
+            "armMeeting",
+            &[json!("one:c"), json!(2_000.0), json!(1_000.0)],
+        )
+        .unwrap();
+        let saved = meeting.save();
+        let mut resumed = new_state(1_200.0).unwrap();
+        state_call(&mut resumed, "restore", std::slice::from_ref(&saved)).unwrap();
+        assert_eq!(resumed.view()["dndReason"], "meeting");
+        assert_eq!(resumed.meeting_key, "one:c");
+        let mut ended = new_state(2_000.0).unwrap();
+        state_call(&mut ended, "restore", &[saved]).unwrap();
+        assert!(!ended.meeting_hold);
+        assert!(
+            !ended.dnd,
+            "a meeting that ended while down does not stay quiet"
+        );
+
+        let mut synced = new_state(1_000.0).unwrap();
+        state_call(&mut synced, "snooze", &[json!(60.0), json!(1_000.0)]).unwrap();
+        state_call(&mut synced, "setFocus", &[json!(true), json!(1_000.0)]).unwrap();
+        state_call(&mut synced, "setFocusSync", &[json!(true)]).unwrap();
+        let saved = synced.save();
+        let mut reloaded = new_state(1_100.0).unwrap();
+        state_call(&mut reloaded, "restore", &[saved]).unwrap();
+        assert!(reloaded.focus_hold);
+        assert_eq!(reloaded.view()["dndReason"], "focus");
+        state_call(&mut reloaded, "setFocus", &[json!(false), json!(1_100.0)]).unwrap();
+        assert!(reloaded.dnd);
+        assert_eq!(reloaded.dnd_until, 4_600.0);
     }
     #[test]
     fn opaque_state_drop_releases_owned_data() {
@@ -1091,7 +1604,7 @@ mod tests {
         for count in [0, 20, 100, 1000] {
             let mut state = State::default();
             for id in 0..count {
-                state.current.push(Record { entry: json!({"id":id,"app_name":"Chat","summary":"A representative notification","body":"A local message that stays in memory.","actions":{"reply":"Reply"},"timeout":-1,"urgency":1,"transient":false,"time":1000}), remaining:30.0, clock:1000.0, popup:true, skip_history:false });
+                state.current.push(Record { entry: json!({"id":id,"app_name":"Chat","summary":"A representative notification","body":"A local message that stays in memory.","actions":{"reply":"Reply"},"timeout":-1,"urgency":1,"transient":false,"time":1000}), remaining:30.0, clock:1000.0, popup:true, deferred:false, skip_history:false });
             }
             let snapshot = json!(state);
             let input=serde_json::to_vec(&json!({"operation":"notifications.transition","arguments":[snapshot,"advance",[1000.25]]})).unwrap();

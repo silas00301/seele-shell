@@ -10,6 +10,7 @@ mod clock;
 mod command;
 mod control;
 mod daemon;
+pub mod drift;
 mod grain;
 mod launch;
 mod litra;

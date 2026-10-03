@@ -100,6 +100,17 @@ TestCase {
   }
   QtObject { id: integrationHealth; property int attentionCount: 0 }
   QtObject { id: transfersStore; property bool attention: false; property string barText: "" }
+  QtObject { id: driftStore; property int drifted: 0 }
+  QtObject {
+    id: prFocusStore
+    property bool configured: false
+    property bool active: false
+    property string label: "fixture PR"
+    property var snapshot: ({title: "", checks: "", state: "", comment: "", commentAuthor: "", message: ""})
+    function enter() { active = true }
+    function exit() { active = false }
+  }
+  QtObject { id: githubFixture; function checksLabel(value) { return value } }
   QtObject { id: portsStore; property int total: 0 }
   QtObject { id: bluetoothProcess; property bool running: false }
   QtObject {
@@ -135,7 +146,7 @@ TestCase {
       anchors.fill: parent
       anchors.topMargin: controlCenterWindow.barReach
       PanelSurface {
-      ${viewport}
+      ${viewport.replace(/GitHub\.checksLabel/g, "githubFixture.checksLabel")}
       }
     }
   }
@@ -152,8 +163,8 @@ TestCase {
   function level(microphone) { return find(controlCenterContent, item => item.microphone === microphone && item.fillRatio !== undefined) }
   function box(item) { var point = item.mapToItem(controlCenterContent, 0, 0); return {x: point.x, y: point.y, w: item.width, h: item.height} }
   function overlaps(a, b) { return !(a.x + a.w <= b.x + 0.1 || b.x + b.w <= a.x + 0.1 || a.y + a.h <= b.y + 0.1 || b.y + b.h <= a.y + 0.1) }
-  readonly property var utilities: ["Health", "Transfers", "Resources", "Traffic", "Ports", "Calculator", "Colour Lab", "Text"]
-  readonly property var panels: ["system-health", "transfers", "resources", "network-activity", "ports", "calculator", "color-lab", "text-workbench"]
+  readonly property var utilities: ["Health", "Fix me", "Transfers", "Resources", "Traffic", "Ports", "Calculator", "Colour Lab", "Text"]
+  readonly property var panels: ["system-health", "drift", "transfers", "resources", "network-activity", "ports", "calculator", "color-lab", "text-workbench"]
 
   function init() {
     controlCenterWindow.modelData = {width: 1920, height: 1080, name: "fixture"}
@@ -190,7 +201,7 @@ TestCase {
     }
     // Every utility sits in one grid of equal cells, four to a row.
     var first = box(tile("Health"))
-    compare(box(tile("Ports")).x, first.x)
+    compare(box(tile("Traffic")).x, first.x)
     verify(box(tile("Ports")).y > first.y)
     for (var k = 1; k < 4; ++k) compare(box(tile(utilities[k])).y, first.y, utilities[k] + " shares the first row")
     // The last utility is reachable on every output, and clicking it opens its panel.
@@ -285,11 +296,11 @@ TestCase {
     keyClick(Qt.Key_Down)
     verify(tile("Health").activeFocus, "Down reaches the utilities")
     keyClick(Qt.Key_Right)
-    verify(tile("Transfers").activeFocus, "Right moves along the utilities")
+    verify(tile("Fix me").activeFocus, "Right moves along the utilities")
     keyClick(Qt.Key_Down)
-    verify(tile("Calculator").activeFocus, "the utilities are a grid")
+    verify(tile("Ports").activeFocus, "the utilities are a grid")
     keyClick(Qt.Key_Return)
-    compare(root.opened, "calculator:fixture")
+    compare(root.opened, "ports:fixture")
   }
 
   function test_tab_walks_the_panel_in_reading_order() {

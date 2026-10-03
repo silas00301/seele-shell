@@ -1,4 +1,5 @@
 pub mod appearance;
+pub mod build_idle;
 pub mod catalog;
 pub mod materialize;
 pub mod project_text;

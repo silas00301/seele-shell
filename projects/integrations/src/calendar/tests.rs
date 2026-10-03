@@ -375,6 +375,18 @@ fn indicator_counts_down_then_follows_the_soonest_ending_event() {
     );
     assert_eq!(running["detail"], "09:00–10:00 · 1 more event");
     assert_eq!(indicator(&state, &index, nine + 4200, today), Value::Null);
+    assert_eq!(
+        current_meeting(&state, &index, nine - 60),
+        Value::Null,
+        "a meeting that has not started is not current"
+    );
+    let during = current_meeting(&state, &index, nine + 300);
+    assert_eq!(
+        (during["key"].as_str(), during["end"].as_i64()),
+        (Some("one:a"), Some(nine + 3600)),
+        "the current meeting stays available while the bar counts down to the next start"
+    );
+    assert_eq!(current_meeting(&state, &index, nine + 4200), Value::Null);
 }
 
 #[test]
@@ -633,6 +645,14 @@ fn fixture_route(target: &str) -> (u16, Value) {
             200,
             json!({"items": [{"id": format!("team-{}", &query["timeMin"][..10]), "status": "confirmed", "start": {"date": on(0)}, "end": {"date": on(1)}}]}),
         ),
+        path if path.starts_with("/calendar/v3/calendars/") && path.contains("/events/") => (
+            200,
+            json!({"attendees": [
+                {"displayName": "Ada Lovelace", "email": "ada@example.com", "responseStatus": "accepted"},
+                {"email": "skip@example.com", "responseStatus": "declined"},
+                {"self": true, "email": "me@example.com", "responseStatus": "accepted"}
+            ]}),
+        ),
         _ => (404, json!({})),
     }
 }
@@ -768,6 +788,49 @@ async fn first_sync_pages_projects_and_adopts_the_primary_calendar() {
 }
 
 #[tokio::test]
+async fn the_meeting_note_asks_for_that_occurrences_attendees_only() {
+    let (base, log) = fake_google().await;
+    let http = client().unwrap();
+    let tokens = fixture_tokens();
+    let google = Google {
+        http: &http,
+        tokens: &tokens,
+        client_id: "id",
+        has_client_secret: false,
+        base: &base,
+    };
+    let body = google
+        .scratchpad_event("me@example.com", "weekly_20261002T120000Z")
+        .await
+        .unwrap();
+    let people = super::scratchpad::project_attendees(&body);
+    assert_eq!(people.len(), 2);
+    assert_eq!(people[0].name, "Ada Lovelace");
+    assert!(people
+        .iter()
+        .all(|person| person.email != "skip@example.com"));
+    let log = log.lock().unwrap().clone();
+    let request = log
+        .iter()
+        .find(|(target, _)| target.contains("weekly_"))
+        .unwrap();
+    let query: HashMap<String, String> = Url::parse(&format!("http://fixture{}", request.0))
+        .unwrap()
+        .query_pairs()
+        .into_owned()
+        .collect();
+    assert_eq!(query["maxAttendees"], "40");
+    assert_eq!(
+        query["fields"],
+        "attendees(displayName,email,responseStatus,self)"
+    );
+    assert!(google
+        .scratchpad_event("me/example", "weekly")
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn a_sync_fetches_each_selected_calendar_for_each_window() {
     let (base, log) = fake_google().await;
     let windows = [
@@ -850,6 +913,7 @@ fn fixture_worker(base: Url) -> (Worker, mpsc::UnboundedReceiver<Message>, tempf
         ..fresh()
     };
     let mut worker = Worker::new(state, sender, "");
+    worker.scratch_off = true;
     worker.base = Some(base);
     worker.tokens = fixture_tokens();
     // Nothing in a test may touch the real cache file.

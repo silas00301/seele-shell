@@ -102,7 +102,11 @@ function createStore(publish, arrived, now) {
   state.setAppQuiet=function(key,quiet) { return apply("setAppQuiet",[key,quiet]) }
   state.resumeApps=function() { return apply("resumeApps",[]) }
   state.setDnd=function(enabled) { return apply("setDnd",[enabled]) }
+  state.setPrFocus=function(enabled,timestamp) { return apply("setPrFocus",[!!enabled,Bridge.number(timestamp)]) }
   state.snooze=function(minutes,timestamp) { return apply("snooze",[Bridge.number(minutes),Bridge.number(timestamp)]) }
+  state.setFocus=function(active,timestamp) { return apply("setFocus",[!!active,Bridge.number(timestamp)]) }
+  state.setFocusSync=function(enabled) { return apply("setFocusSync",[!!enabled]) }
+  state.armMeeting=function(key,end,timestamp) { return apply("armMeeting",[key,Bridge.number(end),Bridge.number(timestamp)]) }
   state.clear=function(history) { return apply("clear",[history]) }
   state.group=function(key,popup) { return apply("group",[key,popup]) }
   state.invoke=function(id,key) {

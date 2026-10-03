@@ -64,6 +64,39 @@ else:
         self.assertEqual(self.run_worker()['state'], 'error')
         self.assertFalse(marker.exists())
 
+    def test_focus_reads_one_pull_and_rejects_a_bad_url_without_gh(self):
+        self.stub('''import json,sys
+assert sys.argv[1:4] == ['api','--hostname','github.com']
+assert 'graphql' in sys.argv
+query = next(arg for arg in sys.argv if arg.startswith('query='))
+assert 'mutation' not in query and 'diff_hunk' not in query
+assert 'statusCheckRollup' in query and 'pull/183' not in query
+assert 'pullRequest(number: 183)' in query
+print(json.dumps({'data':{'repository':{'pullRequest':{
+ 'number':183,'title':'Focus','url':'https://github.com/silas00301/seele/pull/183',
+ 'isDraft':False,'reviewDecision':'REVIEW_REQUIRED',
+ 'commits':{'nodes':[{'commit':{'statusCheckRollup':{'state':'FAILURE'}}}]},
+ 'reviews':{'nodes':[{'submittedAt':'2026-10-02T12:00:00Z','author':{'login':'ada'},'body':'Please split this'}]},
+ 'comments':{'nodes':[]}
+}}}}))
+''')
+        result = subprocess.run([BINARY, 'focus', 'https://github.com/silas00301/seele/pull/183'],
+                                env=self.env, capture_output=True, timeout=5, check=True)
+        self.assertEqual(result.stderr, b'')
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload['state'], 'ready')
+        self.assertEqual(payload['checks'], 'FAILURE')
+        self.assertEqual(payload['comment'], 'Please split this')
+        self.assertEqual(payload['commentAuthor'], 'ada')
+        marker = self.path / 'started'
+        self.stub('from pathlib import Path\nPath(' + repr(str(marker)) + ').touch()\n')
+        refused = subprocess.run([BINARY, 'focus', 'https://github.com/org/repo/pull/0'],
+                                 env=self.env, capture_output=True, timeout=5, check=True)
+        body = json.loads(refused.stdout)
+        self.assertEqual(body['state'], 'error')
+        self.assertFalse(marker.exists())
+        self.assertNotIn('http', body['message'].lower())
+
     def test_shutdown_owns_and_reaps_gh(self):
         for number in (signal.SIGTERM, signal.SIGINT):
             with self.subTest(signal=number):

@@ -26,9 +26,48 @@ import "github.js" as GitHub
 Shared.Theme {
   id: root
 
+  FocusExitCue {
+    id: focusExitCue
+    theme: root
+  }
+
   FocusTimer {
     id: focusTimer
-    onCompleted: Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+    // Completion is the exit. Pause and cancel leave the cue alone: one was
+    // asked for, the other is a break. The notification stays for the inbox;
+    // the rim is what can be seen without looking at the bar, including while
+    // Do Not Disturb has the toast.
+    onCompleted: {
+      focusExitCue.play()
+      Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+    }
+  }
+
+  // One rim per output, mapped only while the cue plays. An empty mask is the
+  // whole window passing pointer input, and keyboard focus stays None so
+  // mapping the surface cannot take the keys. The namespace is left out of
+  // the Hyprland blur rule: the light is the cue, and frosting it would turn
+  // the edge into a pane of glass.
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      required property var modelData
+      screen: modelData
+      anchors { top: true; bottom: true; left: true; right: true }
+      visible: focusExitCue.playing
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      mask: Region {}
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-focus-exit"
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+      FocusExitRim {
+        anchors.fill: parent
+        theme: root
+        strength: focusExitCue.strength
+      }
+    }
   }
 
   QuickLook {
@@ -2053,6 +2092,7 @@ Shared.Theme {
   NotificationStore {
     id: notificationStore
     calendarFocusQuiet: focusTimer.timerState.status === "running"
+    focusRunning: focusTimer.timerState.status === "running"
     onPublished: (view, dnd) => {
       root.systemData.apply({ notifications: view, dnd: dnd })
       var present = {}, unfolded = {}
@@ -2062,6 +2102,11 @@ Shared.Theme {
       root.notificationUnfolded = unfolded
     }
     onArrived: root.notificationPopupScreen = root.currentScreen()
+  }
+
+  PrFocusStore {
+    id: prFocusStore
+    onActiveChanged: notificationStore.controller.setPrFocus(active, Date.now() / 1000)
   }
 
   HomeAssistantStore {
@@ -2147,6 +2192,10 @@ Shared.Theme {
     id: portsStore
     panelOpen: root.controlPanel === "ports"
   }
+  DriftStore {
+    id: driftStore
+    panelOpen: root.controlPanel === "drift"
+  }
   ThemeStore {
     id: themeStore
     panelOpen: root.themesOpen
@@ -2161,6 +2210,13 @@ Shared.Theme {
     }
     function notificationStatus(): string {
       return JSON.stringify({ notifications: notificationStore.controller.view(), dnd: notificationStore.controller.dnd })
+    }
+    function prFocus(action: string): string {
+      if (action === "status") return JSON.stringify({ active: prFocusStore.active, url: prFocusStore.url, snapshot: prFocusStore.snapshot })
+      if (action === "enter") return prFocusStore.enter() ? "ok" : "unavailable"
+      if (action === "exit") return prFocusStore.exit() ? "ok" : "unavailable"
+      if (action === "toggle") return prFocusStore.toggle() ? "ok" : "unavailable"
+      return "unavailable"
     }
     function notificationCommand(action: string, id: string, key: string): string {
       var state = notificationStore.controller
@@ -3494,6 +3550,7 @@ Shared.Theme {
       event.accepted = true
     }
 
+
     Rectangle {
       id: controlCenterMedia
 
@@ -3722,6 +3779,17 @@ Shared.Theme {
           return "System Health · " + (parts.length ? parts.join(" · ") : "all clear")
         }
         onActivated: root.toggleControl("system-health", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰁨"
+        label: "Fix me"
+        value: driftStore.drifted > 0 ? String(driftStore.drifted) : ""
+        active: driftStore.drifted > 0
+        tip: driftStore.drifted ? driftStore.drifted + " drifted from the flake" : "Fix me · Quad9, Podman and remote shell"
+        onActivated: root.toggleControl("drift", controlGrid.screenName)
       }
 
       UtilityTile {
@@ -9237,6 +9305,143 @@ Shared.Theme {
 
               PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
 
+              Rectangle {
+                id: prFocusEnter
+                visible: prFocusStore.configured && !prFocusStore.active
+                width: parent.width
+                implicitHeight: prFocusEnterRow.implicitHeight + root.cardPadding * 2
+                radius: root.radius
+                color: prFocusEnterMouse.pressed ? root.pressColor : prFocusEnterMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
+                CardEdge {}
+                Row {
+                  id: prFocusEnterRow
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.margins: root.cardPadding
+                  spacing: root.spaceTight
+                  Text {
+                    id: prFocusEnterTitle
+                    text: "PR focus"
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textBody
+                    font.weight: root.weightMedium
+                  }
+                  Text {
+                    id: prFocusEnterTarget
+                    text: prFocusStore.label
+                    color: root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
+                    width: Math.max(0, parent.width - prFocusEnterTitle.implicitWidth - prFocusEnterHint.implicitWidth - root.spaceTight * 2)
+                  }
+                  Text {
+                    id: prFocusEnterHint
+                    text: "Enter"
+                    color: root.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    font.weight: root.weightMedium
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+                MouseArea {
+                  id: prFocusEnterMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: prFocusStore.enter()
+                }
+              }
+  
+              Rectangle {
+                id: prFocusPin
+                visible: prFocusStore.active
+                width: parent.width
+                implicitHeight: prFocusPinBody.implicitHeight + root.cardPadding * 2
+                radius: root.radius
+                color: root.cardColor
+                CardEdge {}
+                Column {
+                  id: prFocusPinBody
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.margins: root.cardPadding
+                  spacing: root.spaceTight
+                  Row {
+                    width: parent.width
+                    spacing: root.spaceTight
+                    Text {
+                      id: prFocusPinTitle
+                      text: prFocusStore.label
+                      color: root.text
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textBody
+                      font.weight: root.weightMedium
+                      elide: Text.ElideRight
+                      width: Math.min(implicitWidth, parent.width - prFocusExit.implicitWidth - root.spaceTight)
+                    }
+                    Item { width: Math.max(0, parent.width - prFocusPinTitle.width - prFocusExit.implicitWidth - root.spaceTight); height: 1 }
+                    Text {
+                      id: prFocusExit
+                      text: "Exit"
+                      color: root.accent
+                      font.family: root.fontFamily
+                      font.pixelSize: root.textCaption
+                      font.weight: root.weightMedium
+                      MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: prFocusStore.exit()
+                      }
+                    }
+                  }
+                  Text {
+                    width: parent.width
+                    visible: prFocusStore.snapshot.title !== ""
+                    text: prFocusStore.snapshot.title
+                    color: root.subtext
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                  }
+                  Text {
+                    width: parent.width
+                    text: prFocusStore.snapshot.state === "ready" || prFocusStore.snapshot.checks ? GitHub.checksLabel(prFocusStore.snapshot.checks) : (prFocusStore.snapshot.message || "Loading checks")
+                    color: {
+                      var checks = prFocusStore.snapshot.checks
+                      if (checks === "SUCCESS") return root.green
+                      if (checks === "FAILURE" || checks === "ERROR") return root.red
+                      if (checks === "PENDING" || checks === "EXPECTED") return root.yellow
+                      return root.subtext
+                    }
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    font.weight: root.weightMedium
+                    textFormat: Text.PlainText
+                  }
+                  Text {
+                    width: parent.width
+                    visible: prFocusStore.snapshot.state === "ready" || prFocusStore.snapshot.comment !== ""
+                    text: prFocusStore.snapshot.comment !== ""
+                      ? (prFocusStore.snapshot.commentAuthor ? prFocusStore.snapshot.commentAuthor + ": " : "") + prFocusStore.snapshot.comment
+                      : "No review comment"
+                    color: root.text
+                    font.family: root.fontFamily
+                    font.pixelSize: root.textCaption
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 3
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                  }
+                }
+              }
+  
               ControlCenterGrid {
                 id: controlCenterGrid
                 width: parent.width
@@ -9558,6 +9763,37 @@ Shared.Theme {
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: "󰛳"; title: "Ports"; detail: portsPanel.hint }
           PortsPanel { id: portsPanel; theme: root; store: portsStore; width: parent.width }
+        }
+      }
+    }
+  }
+
+  // Fix me: flake versus what is running ---------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: driftWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "drift" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: driftContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-drift"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { driftPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: driftContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰁨"; title: "Fix me"; detail: driftPanel.hint }
+          DriftPanel { id: driftPanel; theme: root; store: driftStore; width: parent.width }
         }
       }
     }
@@ -11099,14 +11335,23 @@ Shared.Theme {
       // Every way silence can be set, in one menu, so the header carries one
       // control instead of a switch beside a well. A length starts a period
       // from now, zero holds the shell quiet with no end, and the way out only
-      // appears once there is something to leave.
+      // appears once there is something to leave. Two further rows appear only
+      // while they apply: syncing with the focus timer while that timer is
+      // running, and holding until the current meeting ends while one is
+      // underway. The meeting row is highlighted as a suggestion. Choosing it
+      // is what arms silence; opening the menu does not.
       readonly property var quietChoices: {
         var choices = [
           { minutes: 15, label: "For 15 minutes" },
           { minutes: 60, label: "For 1 hour" },
-          { minutes: 240, label: "For 4 hours" },
-          { minutes: 0, label: "Until I turn it off" }
+          { minutes: 240, label: "For 4 hours" }
         ]
+        var meeting = calendarStore.meeting
+        if (meeting && Number(meeting.end) > quietTick)
+          choices.push({ minutes: -4, label: "Until the current meeting ends", suggested: true, key: String(meeting.key || "") })
+        if (focusTimer.timerState.status === "running")
+          choices.push({ minutes: -3, label: "Sync with focus" })
+        choices.push({ minutes: 0, label: "Until I turn it off" })
         if (root.systemData.dnd) choices.push({ minutes: -1, label: "Turn off" })
         var count = (root.systemData.notifications.quietApps || []).length
         if (count > 0) choices.push({ minutes: -2, label: "Resume " + count + (count === 1 ? " quiet app" : " quiet apps") })
@@ -11166,12 +11411,22 @@ Shared.Theme {
 
       // Silence is set from one menu, so every way of setting it is one call:
       // a length starts a period from now, zero holds the shell quiet with no
-      // end, -1 ends global DND, and -2 resumes the separate app choices.
+      // end, -1 ends global DND, -2 resumes the separate app choices, -3 syncs
+      // with the running focus timer, and -4 holds until the current meeting
+      // ends. A meeting that is no longer underway is ignored, so a stale row
+      // cannot arm silence.
       function chooseQuiet(minutes) {
         quietMenuOpen = false
+        var now = Date.now() / 1000
         if (minutes === -2) notificationStore.controller.resumeApps()
-        else if (minutes > 0) notificationStore.controller.snooze(minutes, Date.now() / 1000)
-        else notificationStore.controller.setDnd(minutes === 0)
+        else if (minutes === -3) notificationStore.controller.setFocusSync(true)
+        else if (minutes === -4) {
+          var meeting = calendarStore.meeting
+          if (meeting && Number(meeting.end) > now)
+            notificationStore.controller.armMeeting(String(meeting.key || ""), Number(meeting.end), now)
+        }
+        else if (minutes > 0) notificationStore.controller.snooze(minutes, now)
+        else if (minutes >= -1) notificationStore.controller.setDnd(minutes === 0)
       }
 
       // Deferred, because the lists have not laid out their rows at the moment
@@ -11187,7 +11442,10 @@ Shared.Theme {
         if (!visible) quietMenuOpen = false
         remeasure()
       }
-      onQuietMenuOpenChanged: remeasure()
+      onQuietMenuOpenChanged: {
+        if (quietMenuOpen) quietTick = Date.now() / 1000
+        remeasure()
+      }
       onChromeHeightChanged: remeasure()
       onQuietMenuHeightChanged: remeasure()
       // Clearing or dismissing while the panel is open has to shrink it; the
@@ -11210,7 +11468,7 @@ Shared.Theme {
       Timer {
         interval: 1000
         repeat: true
-        running: notificationWindow.visible && Number(root.systemData.notifications.dndUntil) > 0
+        running: notificationWindow.visible && (quietMenuOpen || Number(root.systemData.notifications.dndUntil) > 0)
         onRunningChanged: if (running) notificationWindow.quietTick = Date.now() / 1000
         onTriggered: notificationWindow.quietTick = Date.now() / 1000
       }
@@ -11345,7 +11603,12 @@ Shared.Theme {
                 mouse: quietMouse
                 inOverlay: true
                 text: notificationWindow.quietMenuOpen ? ""
-                  : notificationWindow.quietTimed
+                  : root.systemData.notifications.dndReason === "meeting" && notificationWindow.quietTimed
+                    ? "Quiet · until the meeting ends · "
+                      + Qt.formatDateTime(new Date(Number(root.systemData.notifications.dndUntil) * 1000), "HH:mm")
+                    : root.systemData.notifications.dndReason === "focus"
+                      ? "Quiet · with focus"
+                    : notificationWindow.quietTimed
                     ? "Quiet · " + notificationWindow.quiet.label + " · until "
                       + Qt.formatDateTime(new Date(Number(root.systemData.notifications.dndUntil) * 1000), "HH:mm")
                     : root.systemData.dnd ? "Quiet · until you turn it off" : "Silence notifications"
@@ -11505,11 +11768,18 @@ Shared.Theme {
 
                 required property var modelData
 
-                // A length is running, silence is held with no end, or neither.
-                // The choice that is on is the one the check belongs to.
-                readonly property bool selected: modelData.minutes > 0
-                  ? notificationWindow.quietTimed && Number(root.systemData.notifications.dndMinutes) === modelData.minutes
-                  : modelData.minutes === 0 && root.systemData.dnd && !notificationWindow.quietTimed
+                // A length is running, silence is held with no end, focus sync is
+                // on, or the current meeting was chosen. A manual period does
+                // not light the focus or meeting rows, and those holds do not
+                // light a preset.
+                readonly property string quietReason: root.systemData.notifications.dndReason || ""
+                readonly property bool selected: modelData.minutes === -3
+                  ? !!root.systemData.notifications.focusSync
+                  : modelData.minutes === -4
+                    ? quietReason === "meeting" && root.systemData.notifications.meetingKey === modelData.key
+                    : modelData.minutes > 0
+                      ? quietReason === "" && notificationWindow.quietTimed && Number(root.systemData.notifications.dndMinutes) === modelData.minutes
+                      : modelData.minutes === 0 && quietReason === "" && root.systemData.dnd && !notificationWindow.quietTimed
 
                 width: parent.width
                 height: root.controlHeight
@@ -11534,7 +11804,9 @@ Shared.Theme {
                   radius: root.radiusSmall
                   color: quietChoiceMouse.pressed ? root.pressColor : root.clearColor
                   border.width: 1
-                  border.color: quietChoice.activeFocus ? root.accent : root.alpha(root.accent, 0)
+                  border.color: quietChoice.activeFocus ? root.accent
+                    : quietChoice.modelData.suggested && !quietChoice.selected ? root.alpha(root.accent, 0.55)
+                    : root.alpha(root.accent, 0)
                   antialiasing: true
 
                   Behavior on color { ColorAnimation { duration: root.durationFast } }

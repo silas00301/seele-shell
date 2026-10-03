@@ -905,8 +905,16 @@ fn change(
 }
 /// The scheduler's step: when a boundary newer than the last one acted on has
 /// passed, the mode becomes the one it names. A mode chosen by hand since then
-/// is left alone until the next boundary.
+/// is left alone until the next boundary. A running `nix build` holds the step
+/// without recording the boundary, and so does a process list that cannot be
+/// read: the next pass applies it once the machine is actually idle.
 fn tick(catalog: &Catalog, state: &Path, now: i64) -> Result<(serde_json::Value, Option<i64>)> {
+    if crate::build_idle::nix_build_running(&crate::build_idle::proc_root()) != Some(false) {
+        return Ok((
+            serde_json::json!({"deferred": "nix-build", "pending": []}),
+            scheduled_wake(catalog, state, now),
+        ));
+    }
     let place = appearance::place();
     let mut next = None;
     let reply = change(catalog, state, false, |prefs| {
@@ -920,6 +928,13 @@ fn tick(catalog: &Catalog, state: &Path, now: i64) -> Result<(serde_json::Value,
         Ok(())
     })?;
     Ok((reply, next))
+}
+fn scheduled_wake(catalog: &Catalog, state: &Path, now: i64) -> Option<i64> {
+    let prefs = preferences(state, catalog).ok()?;
+    let place = appearance::place();
+    appearance::plan(&prefs.auto, &Local, place.as_ref(), now)?
+        .next
+        .map(|boundary| boundary.at)
 }
 fn catalog_file() -> Result<Catalog> {
     let catalog: Catalog = serde_json::from_slice(&read_bounded(

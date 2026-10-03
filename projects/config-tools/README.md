@@ -124,7 +124,20 @@ step changes the mode only when a newer boundary has passed, so a mode chosen by
 hand holds until the next sunrise, sunset or fixed time, and a boundary missed
 while the machine slept is caught up at the next step. `follow` wakes at the next
 boundary and at least once a minute, so a resumed machine, a changed clock and
-new settings are seen promptly.
+new settings are seen promptly. `tick` also waits while `/proc` shows a `nix`
+process whose first argument is `build`, or a `nix-build` process. It does not
+record the boundary, so the same step publishes once that process is gone. An
+unreadable process list waits too. `set`, `pick`, `mode` and `restore` are not
+held. `SEELE_BUILD_IDLE_PROC` may point the scan at an absolute fixture
+directory; the user service leaves it unset.
+
+`seele-build-idle active` reports whether that job is running (`running` / exit 0,
+`idle` / exit 1, unreadable / exit 2). `seele-build-idle notify` is the nerv Fish
+hook: one ordinary `notify-send` when a foreground `nix build` or `nix-build`
+command has finished and its terminal window is not the focused Hyprland window.
+Unknown focus, a focused window, an SSH session, and any compound or background
+command stay silent. The toast names the job and, on failure, its status. It
+does not include the rest of the command.
 
 `appearance.rs` computes the boundaries. Fixed times go through the system's
 own local time via `libc`, as `seele-clock` does, so a daylight-saving day still
@@ -147,6 +160,9 @@ drives the real CLI with a fixed clock and a synthetic tz table through
 migration, both slots, the mode, restore, both schedules, a hand-chosen mode
 holding until its boundary, catch-up after a gap, and `follow` applying a
 boundary on its own.
+`python3 projects/config-tools/tests/build_idle.py target/debug/seele-theme target/debug/seele-build-idle`
+drives a fixture process list through detection, a held evening boundary, and
+the unfocused done/fail notification.
 
 ### Pickers
 

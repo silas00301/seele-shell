@@ -381,3 +381,29 @@ pub(super) fn indicator(state: &State, index: &Index, now: i64, today: NaiveDate
         }),
     })
 }
+
+/// The event underway now, ending soonest. The bar indicator prefers a start
+/// inside the next fifteen minutes, so a meeting can be current while the bar
+/// is counting down to the next one. All-day events and anything lasting a day
+/// or longer stay out, the same way they stay out of that countdown.
+pub(super) fn current_meeting(state: &State, index: &Index, now: i64) -> Value {
+    let mut ongoing: Vec<&Span> = index
+        .spans
+        .iter()
+        .filter(|span| {
+            !span.all_day && span.end - span.start < 86_400 && span.start <= now && span.end > now
+        })
+        .collect();
+    let key = |span: &Span| event_key(&state.events[span.event]);
+    ongoing.sort_by(|a, b| a.end.cmp(&b.end).then_with(|| key(a).cmp(&key(b))));
+    let Some(first) = ongoing.first() else {
+        return Value::Null;
+    };
+    let event = &state.events[first.event];
+    json!({
+        "key": key(first),
+        "title": title(event),
+        "start": first.start,
+        "end": first.end,
+    })
+}

@@ -315,6 +315,30 @@ functions own the proposed URL, the failure wording, the row summary and the
 bounded action queue, so an address is never assembled by string concatenation
 in QML.
 
+## Fix me
+
+`seele-drift` is the unprivileged command behind the shell's Fix me panel.
+`seele-restore-drift` is the narrow privileged helper it reaches through
+`run0`. Both live in this crate. The panel shows a human-readable before and
+after; it never names a system command.
+
+`diff` reads `resolvectl status` and `systemctl show` and prints one JSON
+report whose `mutated` field is false. `apply` takes the check ids the panel
+still has switched on. An empty list, an unknown id, or a check that is no
+longer drifted changes nothing. The three ids are `quad9-dot`,
+`podman-rootless` and `remote-shell`, and they are the only ids the helper
+accepts. It reads `/etc/seele/drift.json` and ignores a caller-supplied
+catalog. Each id expands to a fixed command: restart `systemd-resolved` and
+revert links that hold `~.`, stop and disable a rootful Podman or Docker
+socket and start the user socket, or enable Tailscale and disable OpenSSH at
+boot without stopping a session that is already open. The helper is found
+beside the worker's own executable and must be a regular executable that is
+not group- or world-writable.
+
+The user command honours `SEELE_DRIFT_EXPECTATIONS` so tests can point at a
+catalog without writing `/etc`. The helper does not. `tests/drift.rs` runs
+the real binaries against programs that only record their arguments.
+
 ## Quick Look
 
 `seele-quicklook` is the resident worker behind the Quick Look panel. It links
