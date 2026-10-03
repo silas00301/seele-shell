@@ -16,6 +16,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const handlers = new Map();
 const extension = require(process.argv[2]).default;
+process.title = "pi";
 extension({ on(name, handler) { handlers.set(name, handler); } });
 const stateFile = path.join(process.env.XDG_STATE_HOME, "seele-shell", "agents", `pi-native-${process.pid}.json`);
 const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
@@ -36,6 +37,8 @@ const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
   process.exit(1);
 });
 JS
+# The synthetic hosts name themselves so hooks cannot resolve to an unrelated
+# agent running above the fixture in the invoking process tree.
 XDG_STATE_HOME="$work/state" node "$work/pi-test.cjs" "$work/pi-extension.cjs"
 
 esbuild "$opencode_extension" --bundle --platform=node --format=cjs \
@@ -44,6 +47,7 @@ cat >"$work/opencode-test.cjs" <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
 const plugin = require(process.argv[2]).SeeleShellStatus;
+process.title = "opencode";
 const stateFile = path.join(process.env.XDG_STATE_HOME, "seele-shell", "agents", `opencode-native-${process.pid}.json`);
 const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
 

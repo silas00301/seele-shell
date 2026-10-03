@@ -23,6 +23,7 @@ mod notifications;
 mod pi;
 mod ports;
 mod presentation;
+mod presenting;
 mod quicklook;
 mod system;
 mod text_workbench;
@@ -67,6 +68,7 @@ pub fn call(operation: &str, arguments: &[Value]) -> Result<Value, String> {
         "system" => system::call(function, arguments),
         "presentation" => presentation::call(function, arguments),
         "ports" => ports::call(function, arguments),
+        "presenting" => presenting::call(function, arguments),
         "themes" => themes::call(function, arguments),
         "notes" => notes::call(function, arguments),
         "ai_activity" => ai_activity::call(function, arguments),

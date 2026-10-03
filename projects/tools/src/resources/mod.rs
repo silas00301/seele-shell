@@ -6,6 +6,8 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
+mod storage;
+
 const HISTORY: usize = 60;
 const MAX_PROCESSES: usize = 32768;
 const MAX_ROWS: usize = 256;
@@ -323,10 +325,12 @@ impl State {
         json!({"version":1,"type":"snapshot","cadenceSeconds":CADENCE.as_secs(),"historyCapacity":HISTORY,"cpu":self.usage,"cores":self.cores,"memory":self.memory,"cpuHistory":self.cpu_history,"memoryHistory":self.memory_history,"rows":rows,"total":self.processes.len(),"matched":matched,"limited":self.limited,"selected":selected,"selectionGone": !self.selected.is_empty() && selected.is_none(),"sort":if self.sort == "memory" {"memory"} else {"cpu"},"query":self.query})
     }
 }
-fn publish(state: &State) -> io::Result<()> {
+fn publish(state: &State, storage: &storage::Latest) -> io::Result<()> {
+    let mut snapshot = state.snapshot();
+    snapshot["storage"] = storage.snapshot(Instant::now());
     let stdout = io::stdout();
     let mut out = stdout.lock();
-    serde_json::to_writer(&mut out, &state.snapshot())?;
+    serde_json::to_writer(&mut out, &snapshot)?;
     out.write_all(b"\n")?;
     out.flush()
 }
@@ -341,6 +345,7 @@ pub fn run() -> io::Result<()> {
         return Err(io::Error::other("page size unavailable"));
     }
     let mut state = State::default();
+    let storage = storage::spawn("/proc/self/mountinfo");
     let mut pending = Vec::new();
     let mut next = Instant::now();
     let mut last_sample = None;
@@ -356,7 +361,7 @@ pub fn run() -> io::Result<()> {
             }
             last_sample = Some(sampled);
             state.update(sample(Path::new("/proc"), page_size as u64));
-            publish(&state)?;
+            publish(&state, &storage)?;
             next = Instant::now() + CADENCE;
         }
         let timeout = next
@@ -395,7 +400,7 @@ pub fn run() -> io::Result<()> {
                 return Err(io::Error::other("request exceeds bound"));
             }
         }
-        publish(&state)?;
+        publish(&state, &storage)?;
     }
 }
 

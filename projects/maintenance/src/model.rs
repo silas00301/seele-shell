@@ -13,13 +13,14 @@ use std::{
 pub type Result<T> = std::result::Result<T, &'static str>;
 pub const WEEK: f64 = 7.0 * 86400.0;
 pub const CAPACITY: usize = 4096;
-pub const SOURCES: [&str; 6] = [
+pub const SOURCES: [&str; 7] = [
     "systemd",
     "backups",
     "disk",
     "flake",
     "certificates",
     "inputs",
+    "restart",
 ];
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.:@/-]{1,200}$").unwrap());
 pub fn valid_key(key: &str) -> bool {
@@ -189,6 +190,17 @@ pub fn registrations(config: &Value) -> Registrations {
                     Action {
                         label: "Retry backup",
                         disruptive: true,
+                    },
+                );
+            }
+            // Only opens the shell's Power panel; restarting stays a choice
+            // made there, behind that panel's own controls.
+            if *source == "restart" {
+                actions.insert(
+                    "open-power".into(),
+                    Action {
+                        label: "Open Power",
+                        disruptive: false,
                     },
                 );
             }

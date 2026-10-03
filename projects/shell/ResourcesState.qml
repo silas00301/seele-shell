@@ -6,7 +6,10 @@ import "../shared/ListModels.js" as Models
 QtObject {
   id: state
   property ListModel model: ListModel { dynamicRoles: true }
-  property var snapshot: ({ rows: [], cpuHistory: [], memoryHistory: [], memory: null, cpu: null, total: 0, matched: 0, cores: 0, cadenceSeconds: 1, historyCapacity: 60 })
+  // Mounted filesystems keyed by device, reconciled like the process rows so a
+  // reading every second reuses its delegates instead of rebuilding them.
+  property ListModel storage: ListModel { dynamicRoles: true }
+  property var snapshot: ({ rows: [], cpuHistory: [], memoryHistory: [], memory: null, cpu: null, total: 0, matched: 0, cores: 0, cadenceSeconds: 1, historyCapacity: 60, storage: { state: "pending", filesystems: [] } })
   property string query: ""
   property string sort: "cpu"
   property string selected: ""
@@ -17,10 +20,12 @@ QtObject {
     snapshot = value
     error = ""
     Models.reconcile(model, value.rows || [], "entry", function(row) { return row.id })
+    Models.reconcile(storage, value.storage && value.storage.filesystems || [], "entry", function(filesystem) { return filesystem.id })
   }
   function reset() {
     model.clear()
-    snapshot = ({ rows: [], cpuHistory: [], memoryHistory: [], memory: null, cpu: null, total: 0, matched: 0, cores: 0, cadenceSeconds: 1, historyCapacity: 60 })
+    storage.clear()
+    snapshot = ({ rows: [], cpuHistory: [], memoryHistory: [], memory: null, cpu: null, total: 0, matched: 0, cores: 0, cadenceSeconds: 1, historyCapacity: 60, storage: { state: "pending", filesystems: [] } })
     query = ""
     sort = "cpu"
     selected = ""

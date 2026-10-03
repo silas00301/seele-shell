@@ -14,12 +14,15 @@ Commands:
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
   network-activity          Open live per-interface traffic
+  sensors                   Toggle live temperatures and fan speeds
   resources                 Toggle live CPU and memory inspector
   controls                  Toggle session controls
+  power                     Open session controls; never closes them
   uris                      Freeze all screens and pick a visible URI
   color                     Freeze all screens and sample a colour
   quicklook <path>...       Preview highlighted files without opening them
   calculator                Toggle the private calculator workbench
+  presentation [on|off|toggle|status]  Hide toasts and personal bar details and stay awake
   color-lab                 Open the colour contrast and palette workbench
   control <panel>           Toggle a control panel
   bluetooth-pairing <token> Show the matching private Bluetooth request
@@ -29,10 +32,12 @@ Commands:
   volume <up|down|mute>     Change volume and show its OSD
   microphone <up|down|mute> Change the microphone and show its OSD
   microphone-state <muted|live> Show a device mute OSD
+  zoom <in|out|reset> [--fine]  Zoom the screen around the pointer and show its OSD
   notes                     Open Seele Notes for quick capture into the vault
   voxtype                   Toggle voice dictation
   lock                      Lock the session
-  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, or snooze <minutes>
+  notification <action> [id] [key]  Invoke, dismiss, retire, pin, clear, clear-history, dnd, snooze <minutes>,
+                                    or remind <id> <minutes|cancel>
   health-publish <id>       Publish bounded health JSON from stdin
   health-status             Print registered current health metadata
   notification-status       Print notification state as JSON
@@ -91,8 +96,10 @@ pub fn run(arguments: &[String]) -> Result {
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
         "network-activity" => call("toggleControl", &["network-activity".into()]),
+        "sensors" => call("toggleControl", &["sensors".into()]),
         "resources" => call("toggleControl", &["resources".into()]),
         "controls" => call("toggleControls", &[]),
+        "power" => call("openPower", &[]),
         "uris" => call("toggleUris", &[]),
         "color" => call("toggleColor", &[]),
         "quicklook" => {
@@ -108,6 +115,18 @@ pub fn run(arguments: &[String]) -> Result {
             call("previewFiles", &[paths.join("\n")])
         }
         "calculator" => call("toggleControl", &["calculator".into()]),
+        "presentation" => {
+            let action = rest.first().map_or("toggle", String::as_str);
+            if !matches!(action, "on" | "off" | "toggle" | "status") {
+                return Err("presentation takes on, off, toggle or status".into());
+            }
+            let response = ipc_output(&["presentation".into(), action.into()])?;
+            if response.trim() == "invalid" {
+                return Err("presentation action unavailable".into());
+            }
+            println!("{}", response.trim());
+            Ok(())
+        }
         "color-lab" => call("toggleControl", &["color-lab".into()]),
         "control" => call(
             "toggleControl",
@@ -161,6 +180,12 @@ pub fn run(arguments: &[String]) -> Result {
             "showMicrophone",
             &[rest.first().ok_or("muted or live required")?.clone()],
         ),
+        // The zoom is Hyprland's; the shell only reports it. Zooming does not
+        // depend on the shell answering, so a quiet call cannot undo a step.
+        "zoom" => {
+            let shown = crate::zoom::apply(crate::zoom::request(rest)?)?;
+            ipc(true, &["showZoom".into(), shown.to_string()])
+        }
         "notes" => detached("seele-notes", &[]),
         "voxtype" => {
             let result = output("seele-control", ["voxtype"]).ok_or("voxtype control failed")?;

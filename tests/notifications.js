@@ -5,6 +5,32 @@ const assert = require('node:assert/strict');
 const notifications = {Bridge:nativeBridge()};
 vm.createContext(notifications);
 vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), notifications);
+
+// The Qt boundary (projects/qml/functions-boundary.h) refuses a whole call when
+// any argument is not JSON-shaped. The subprocess stand-in would serialize an
+// opaque value instead, so the fixture applies the same rule to every call.
+// HostWrapper stands for a Qt value QML sees only as an opaque object, such as
+// QDBusVariant or QDBusArgument; ArrayBuffer and URL are how QByteArray and QUrl
+// arrive. Script objects of any prototype convert to QVariantMap and pass.
+class HostWrapper {}
+function jsonShaped(value, depth = 0) {
+  if (depth > 64) return false;
+  if (value === null || value === undefined) return true;
+  if (['string', 'number', 'boolean'].includes(typeof value)) return true;
+  if (typeof value !== 'object') return false;
+  if (value instanceof HostWrapper || value instanceof ArrayBuffer || value instanceof URL) return false;
+  return Object.values(value).every(item => jsonShaped(item, depth + 1));
+}
+const guarded = (call) => (operation, args) => {
+  assert.ok(jsonShaped(args), `${operation} must send only JSON-shaped arguments`);
+  return call(operation, args);
+};
+notifications.Bridge.call = guarded(notifications.Bridge.call);
+const notificationState = notifications.Bridge.notificationState;
+notifications.Bridge.notificationState = (now) => {
+  const policy = notificationState(now);
+  return {call: guarded(policy.call.bind(policy))};
+};
 const code = (body, summary = '') => notifications.verificationCode({body, summary});
 assert.equal(code('Your verification code is 012345'), '012345');
 assert.equal(code('Use <b>123456</b> to sign in'), '123456');
@@ -154,6 +180,51 @@ function harness() {
   h.store.group('desktop:org.chat',true);assert.equal(h.view.popups.length,0);assert.equal(h.view.items.length,2);
   h.store.group('desktop:org.chat',false);assert.equal(h.view.items.length,0);assert.equal(h.view.history.length,2);
   h.store.clear(true);assert.equal(h.view.history.length,0);
+}
+{
+  // Local times are Qt's: the morning preset is 09:00 tomorrow wherever the
+  // desktop is, and the label names the day only when it is not today.
+  const at = (y, m, d, h, min) => new Date(y, m, d, h, min).getTime();
+  const noon = at(2026, 8, 28, 12, 0);
+  assert.equal(notifications.reminderDue(15, noon), noon / 1000 + 900);
+  assert.equal(notifications.reminderDue(-1, noon), at(2026, 8, 29, 9, 0) / 1000);
+  assert.equal(notifications.reminderDue(-1, at(2026, 11, 31, 23, 30)), at(2027, 0, 1, 9, 0) / 1000, 'the morning crosses a year');
+  assert.equal(notifications.reminderLabel(at(2026, 8, 28, 14, 5) / 1000, noon), '14:05');
+  assert.equal(notifications.reminderLabel(at(2026, 8, 29, 9, 0) / 1000, noon), 'Tomorrow 09:00');
+  assert.equal(notifications.reminderLabel(at(2026, 9, 1, 9, 0) / 1000, noon), 'Thu 09:00');
+  assert.equal(notifications.reminderLabel(noon / 1000 - 60, noon), 'After quiet', 'a due reminder held by quiet says so');
+  assert.equal(notifications.reminderLabel(0, noon), '');
+  assert.deepEqual(Array.from(notifications.reminderChoices, c => c.label), ['15 min', '1 hour', '4 hours', 'Tomorrow 09:00']);
+
+  const h=harness(), n=h.make(1);
+  h.store.receive(n,1000);h.store.advance(1031);
+  assert.equal(h.view.popups.length,0);
+  assert.equal(h.store.remind(1,1000,1031),false,'a reminder must be ahead');
+  assert.equal(h.store.remind(1,1100,1031),true);
+  assert.equal(h.view.items[0].remind_at,1100);
+  h.store.advance(1100);
+  assert.equal(h.view.popups.length,1,'a due reminder toasts again');
+  assert.equal(h.view.popups[0].reminder,true);
+  assert.equal(h.arrivals,2);
+  h.store.advance(5000);
+  assert.equal(h.view.popups.length,1,'until it is hidden');
+  h.store.retire(1);
+  assert.equal(h.view.popups.length,0);assert.equal(h.view.items.length,1,'the notification stays waiting');
+  assert.equal(h.store.remind(1,5100,5000),true);assert.equal(h.store.remind(1,0,5000),true);
+  h.store.advance(5200);assert.equal(h.view.popups.length,0,'a cancelled reminder does not return');
+}
+console.log('notification reminders passed');
+{
+  // A sender chooses each hint's D-Bus type. Qt hands a nested variant or a byte
+  // string to QML as an opaque wrapper, and the notification must still arrive.
+  const h=harness();
+  h.store.receive(h.make(1,{hints:{'x-dunst-stack-tag':new HostWrapper(),value:new HostWrapper()}}),1000);
+  h.store.receive(h.make(2,{hints:{'x-canonical-private-synchronous':new ArrayBuffer(4)}}),1000);
+  assert.equal(h.view.items.length,2,'opaque hints read as absent rather than dropping the notification');
+  assert.equal(h.view.items.find(item => item.id===1).progress,-1,'an opaque progress hint shows no progress');
+  const tagged=h.make(3,{hints:{'x-dunst-stack-tag':7}}), retagged=h.make(4,{hints:{'x-dunst-stack-tag':7}});
+  h.store.receive(tagged,1000);h.store.receive(retagged,1000);
+  assert.equal(h.view.items.length,3,'a numeric stack tag still replaces its predecessor');
 }
 console.log('notification stacks, lifecycle, urgency, transients, replacements, and actions passed');
 

@@ -93,11 +93,12 @@ fn agents(args: &[Value]) -> Result<Value, String> {
         ("opencode", "OpenCode"),
         ("codex", "Codex"),
         ("claude", "Claude Code"),
+        ("cursor", "Cursor"),
     ]
     .into_iter()
     .map(|(a, b)| (a.into(), b.into()))
     .collect();
-    let mut ids: Vec<String> = ["pi", "opencode", "codex", "claude"]
+    let mut ids: Vec<String> = ["pi", "opencode", "codex", "claude", "cursor"]
         .into_iter()
         .map(String::from)
         .collect();
@@ -375,6 +376,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 "opencode" => "OC".into(),
                 "codex" => "CX".into(),
                 "claude" => "CC".into(),
+                "cursor" => "CU".into(),
                 _ => String::from_utf16_lossy(&id.encode_utf16().take(2).collect::<Vec<_>>())
                     .to_uppercase(),
             })
@@ -384,6 +386,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             "opencode" => "opencode.svg",
             "codex" | "openai" => "openai.svg",
             "claude" => "claude.svg",
+            "cursor" => "cursor.svg",
             _ => "",
         }),
         "agentColor" => json!(match first.as_str() {

@@ -31,6 +31,42 @@ TestCase {
     compare(panel.result.output, "Grüße 🦀")
     compare(pasteSpy.count, 0)
   }
+  function test_base64url_selector_keyboard_and_native_preview() {
+    let encode = findChild(panel, "workbenchMode-base64url-encode")
+    let decode = findChild(panel, "workbenchMode-base64url-decode")
+    verify(encode)
+    verify(decode)
+    mouseClick(encode)
+    compare(panel.mode, "base64url-encode")
+    panel.input = "\uffff🦀"
+    tryCompare(panel, "canCopy", true)
+    compare(panel.result.output, "77-_8J-mgA")
+    compare(copySpy.count, 0)
+    compare(pasteSpy.count, 0)
+    mouseClick(decode)
+    compare(panel.canCopy, false)
+    panel.input = "77-_8J-mgA=="
+    tryCompare(panel, "canCopy", true)
+    compare(panel.result.output, "\uffff🦀")
+    panel.input = "Zg="
+    tryCompare(panel, "canCopy", false)
+    wait(250)
+    verify(panel.result.error.indexOf("Invalid Base64url") >= 0)
+    compare(panel.result.output, "")
+    panel.copy()
+    compare(copySpy.count, 0)
+    let editor = findChild(panel, "workbenchInput")
+    editor.forceActiveFocus()
+    keyClick(Qt.Key_9, Qt.AltModifier)
+    compare(panel.mode, "base64url-encode")
+    keyClick(Qt.Key_0, Qt.AltModifier)
+    compare(panel.mode, "base64url-decode")
+    panel.input = "Zg"
+    tryCompare(panel, "canCopy", true)
+    panel.copy()
+    compare(copySpy.count, 1)
+    compare(copySpy.signalArguments[0][0], "f")
+  }
   function test_invalid_and_debounce_disable_copy() {
     panel.input = '{"x":1}'
     tryCompare(panel, "canCopy", true)

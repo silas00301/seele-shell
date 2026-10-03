@@ -63,6 +63,10 @@ reach it from the launcher's root search.
   [`projects/caffeinate/README.md`](../caffeinate/README.md) for the inhibition
   boundary, task identity and the protocol.
 
+- **Seele Presentation Mode** (`presentation.tsx`): a no-view toggle that runs
+  `seele-shellctl presentation toggle`. The shell's bar says whether the mode
+  is on, so the command shows nothing of its own.
+
 - **Seele Controls** (`seele.tsx`): the live view. Its first section carries the
   output and microphone level, Do Not Disturb, Wi-Fi, Bluetooth, Tailscale, and
   the privacy row, each showing its own state as a coloured tag rather than as
@@ -92,7 +96,8 @@ reach it from the launcher's root search.
   grouped by modifier chord with the shortcut as the row's tag and the command
   it runs beneath its description. Enter closes the launcher and inputs the
   shortcut, Shift+Enter copies it, Ctrl+Shift+C copies the command, and Ctrl+R
-  reloads.
+  reloads. A wheel binding such as Super + Scroll Up is listed and copied but
+  has no key to input, so its tag is dimmed and Enter is not offered.
 - **Seele NixOS Generations** (`generations.tsx`): every generation retained by
   the system profile. The list shows its age, NixOS version, and kernel, and the
   running one is tagged. Enter opens a review whose metadata panel holds the
@@ -251,11 +256,16 @@ EOF deadlines and cancellation. The native unit tests cover exact raw-byte
 preservation, recognized/encoded/duplicate keys, signing markers and invalid
 input. Both fixtures run in the package's existing check paths.
 
-The **Seele Resources** command opens the shell's live CPU and memory inspector,
-also listed under Seele Controls. Its search keywords include CPU, RAM,
-processes and performance. Readings exist only while the shell panel is open;
+The **Seele Resources** command opens the shell's live CPU, memory and storage
+inspector, also listed under Seele Controls. Its search keywords include CPU,
+RAM, disk, storage, processes and performance. Readings exist only while the shell panel is open;
 the launcher starts no separate monitor and offers no process termination action.
 
 - **Hermes** (`hermes.tsx`): opens the Shell's connection and local approval
   panel. Chat, sessions, cancellation, sign-in and voice belong to the official
   Hermes Desktop app opened from that panel; see `../integrations/HERMES.md`.
+
+The **Seele Sensors** command opens the shell's temperatures and fan speeds
+panel, also listed under Seele Controls. Its keywords include temperature,
+thermal, fan and hwmon. Like Resources, it reads nothing itself: the shell's
+worker samples only while that panel is open.

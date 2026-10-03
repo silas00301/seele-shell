@@ -261,6 +261,21 @@
       "mode": "view"
     },
     {
+      "name": "presentation",
+      "title": "Seele Presentation Mode",
+      "description": "Hide toasts and personal bar details and keep the session awake, or end it",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "presentation",
+        "present",
+        "presenting",
+        "screen share",
+        "demo",
+        "privacy"
+      ]
+    },
+    {
       "name": "calculator",
       "title": "Seele Calculator",
       "description": "Open the private arithmetic and unit-conversion workbench",
@@ -339,14 +354,34 @@
       ]
     },
     {
+      "name": "sensors",
+      "title": "Seele Sensors",
+      "description": "View live temperatures, fan speeds and the limits their drivers report",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "sensors",
+        "temperature",
+        "thermal",
+        "fan",
+        "rpm",
+        "cpu",
+        "nvme",
+        "hwmon"
+      ]
+    },
+    {
       "name": "resources",
       "title": "Seele Resources",
-      "description": "Inspect live CPU, memory and local processes",
+      "description": "Inspect live CPU, memory, storage and local processes",
       "mode": "no-view",
       "keywords": [
         "cpu",
         "memory",
         "ram",
+        "disk",
+        "storage",
+        "space",
         "process",
         "performance",
         "monitor"

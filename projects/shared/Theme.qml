@@ -105,6 +105,11 @@ ShellRoot {
   // glyph, so it stands above the row ramp. Every tile in the grid takes it,
   // because a grid whose tiles disagree on height reads as a mistake.
   readonly property int controlTileHeight: 55
+  // The round control a connectivity row, a tile and a level lead with. It is
+  // one size wherever it appears, so the knob that switches Wi-Fi and the one
+  // that mutes the output read as the same kind of thing, and a tile without a
+  // knob keeps the column for its glyph so its title lines up beside one.
+  readonly property int knobSize: 30
   // The square an application's own themed icon is drawn in where it leads a
   // row's title. It is sized against that title rather than against the row,
   // because it is standing in for the glyph that would otherwise be there.
@@ -238,6 +243,9 @@ ShellRoot {
   readonly property int textWorkbenchEditorHeight: 240
   // A duplex chart and two rate columns retain their measure on this panel.
   readonly property int networkActivityWidth: 480
+  // A reading's label, its peak and limits, a state chip and its value share
+  // one line in the Sensors panel without eliding a typical driver label.
+  readonly property int sensorsWidth: 440
   // The calculator keeps its tape within one compact workbench.
   readonly property int calculatorWidth: 480
   readonly property int calculatorMaximumHeight: 620

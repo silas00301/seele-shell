@@ -117,4 +117,20 @@ assert.doesNotMatch(panel, /"Less" : "Details"/);
 for (const seconds of [3600, 86400, 604800])
   assert.ok(panel.includes('seconds: ' + seconds), 'snooze presets keep their durations');
 assert.match(source, /code!==0 \|\| !received/, 'empty replies fail visibly');
+// A restart finding's Open Power action reaches the shell through
+// `seele-shellctl power`; that open must never close a Power panel already shown.
+const shellPath = path.join(path.dirname(sourcePath), 'shell.qml');
+if (fs.existsSync(shellPath)) {
+  const shell = fs.readFileSync(shellPath, 'utf8');
+  const openPower = shell.match(/function openPower\(\): void \{([^\n]+)\}/);
+  assert.ok(openPower, 'shell IPC exposes openPower');
+  let toggles = 0;
+  const desktop = {controlPanel: 'control-center', toggleControl(name) { toggles++; this.controlPanel = this.controlPanel === name ? '' : name; }};
+  const ipc = vm.createContext({root: desktop});
+  vm.runInContext('function open(){' + openPower[1] + '}', ipc);
+  ipc.open();
+  ipc.open();
+  assert.equal(desktop.controlPanel, 'system', 'Open Power shows the Power panel');
+  assert.equal(toggles, 1, 'a second Open Power leaves the panel open');
+}
 console.log('Maintenance production QML methods: stable rows, revision-bound confirmation, typed actions, snooze, stale replies and unavailable source passed');
