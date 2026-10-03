@@ -333,8 +333,13 @@ refused before anything is opened.
 
 What a file *is* comes from its container magic first, then its extension, then
 what its opening bytes read as, so a renamed archive never reaches the text
-reader and a `.txt` that is really a PDF is previewed as the PDF it is. An
-`ftyp` brand separates audio from video inside the same container. Only text and
+reader and a `.txt` that is really a PDF is previewed as the PDF it is. ISO BMFF
+`ftyp` major and compatible brands separate AVIF/HEIF images from audio and
+video; brand reads stay inside the declared box and the 4096-byte sniff. The
+ambiguous `.ts` suffix needs three MPEG transport packet headers for video,
+readable UTF-8 for TypeScript, or otherwise gets a binary summary. Invalid
+interior UTF-8 is binary; an incomplete final codepoint at the sniff boundary
+does not reject the readable prefix. Only text and
 Markdown are read into the reply, bounded to 128 KiB, 4000 lines and 2000
 characters per line; a folder lists at most 256 entries beside its true total.
 Everything else is described rather than copied, because Qt decodes pictures,
