@@ -722,6 +722,7 @@ impl Worker {
                 "indicator",
                 indicator(&self.state, &self.index, now, self.today),
             ),
+            ("meeting", current_meeting(&self.state, &self.index, now)),
         ];
         // A minute heartbeat lets the shell tell a quiet worker from a hung one.
         sections.push(("heartbeat", json!(now / 60)));
