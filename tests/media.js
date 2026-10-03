@@ -11,6 +11,27 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+// The Qt boundary (projects/qml/functions-boundary.h) refuses a whole call when
+// any argument is not JSON-shaped. The subprocess stand-in would serialize an
+// opaque value instead, so the fixture applies the same rule to every call.
+// HostWrapper stands for a Qt value QML sees only as an opaque object, such as
+// QDBusVariant or QDBusArgument; ArrayBuffer and URL are how QByteArray and QUrl
+// arrive. Script objects of any prototype convert to QVariantMap and pass.
+class HostWrapper {}
+function jsonShaped(value, depth = 0) {
+  if (depth > 64) return false;
+  if (value === null || value === undefined) return true;
+  if (["string", "number", "boolean"].includes(typeof value)) return true;
+  if (typeof value !== "object") return false;
+  if (value instanceof HostWrapper || value instanceof ArrayBuffer || value instanceof URL) return false;
+  return Object.values(value).every((item) => jsonShaped(item, depth + 1));
+}
+const nativeCall = media.Bridge.call;
+media.Bridge.call = (operation, args) => {
+  assert(jsonShaped(args), `${operation} must send only JSON-shaped arguments`);
+  return nativeCall(operation, args);
+};
+
 const spotify = {
   isPlaying: true,
   identity: "Spotify",
@@ -137,6 +158,29 @@ assert(!media.liveStream({ length: 86400, metadata: {} }), "ordinary long-form m
 assert(media.presentPlayer([device, spotify], spotify) === spotify, "a held player still on the bus must keep its bar entry");
 assert(media.presentPlayer([device], spotify) === null, "a held player whose client quit must lose its bar entry");
 assert(media.presentPlayer([device], null) === null, "an empty hold must not resolve to a player");
+
+// A client can put any D-Bus type in its metadata. Qt hands a nested variant,
+// an object-path list or a byte string to QML as an opaque wrapper, and one such
+// player must not take every other player's entry down with it.
+const artistSequence = { length: 2, 0: "Sequence artist", 1: "Second artist" };
+const hostile = {
+  ...device,
+  trackTitle: "",
+  trackArtist: "",
+  metadata: {
+    "xesam:title": new HostWrapper(),
+    "xesam:artist": new HostWrapper(),
+    "xesam:albumArtist": new ArrayBuffer(4),
+    "xesam:album": new URL("file:///album"),
+  },
+};
+assert(media.spotifyPlayer([hostile, spotify]) === spotify, "a player with opaque metadata must not hide Spotify");
+assert(media.availablePlayers([hostile, device]).length === 1, "opaque metadata reads as absent rather than failing the list");
+assert(media.label(hostile) === "", "opaque metadata never becomes text");
+assert(
+  media.artist({ trackArtist: "", metadata: { "xesam:artist": artistSequence } }) === "Sequence artist, Second artist",
+  "a Qt string list wrapper must still be read as the artist list",
+);
 
 console.log("media normalization checks passed");
 
