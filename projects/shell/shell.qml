@@ -3725,7 +3725,7 @@ Shared.Theme {
         height: root.controlTileHeight
         glyph: "󰍛"
         label: "Resources"
-        tip: "Resources · live CPU, memory and processes"
+        tip: "Resources · live CPU, memory, storage and processes"
         onActivated: root.toggleControl("resources", controlGrid.screenName)
       }
 
@@ -9514,7 +9514,7 @@ Shared.Theme {
     }
   }
 
-  // Live CPU and memory --------------------------------------------------------
+  // Live CPU, memory and storage ----------------------------------------------
   Variants {
     model: Quickshell.screens
     PanelWindow {

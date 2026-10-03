@@ -373,12 +373,15 @@
     {
       "name": "resources",
       "title": "Seele Resources",
-      "description": "Inspect live CPU, memory and local processes",
+      "description": "Inspect live CPU, memory, storage and local processes",
       "mode": "no-view",
       "keywords": [
         "cpu",
         "memory",
         "ram",
+        "disk",
+        "storage",
+        "space",
         "process",
         "performance",
         "monitor"

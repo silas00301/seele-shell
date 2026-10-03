@@ -154,7 +154,7 @@ const panels: Entry[] = [
   },
   {
     title: "Resources",
-    subtitle: "Live CPU, memory, and local processes",
+    subtitle: "Live CPU, memory, storage, and local processes",
     icon: Icon.Heartbeat,
     args: ["resources"],
     keywords: ["cpu", "memory", "ram", "process", "performance"],
