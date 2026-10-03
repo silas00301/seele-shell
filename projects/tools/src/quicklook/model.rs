@@ -414,12 +414,9 @@ pub fn sanitize(input: &str) -> (String, bool) {
             if character == '\n' {
                 continue;
             }
-            if character == '\t' {
-                out.push('\t');
-                characters += 1;
-                continue;
-            }
-            if character.is_control() || !seele_runtime::redact::visible(character) {
+            if character != '\t'
+                && (character.is_control() || !seele_runtime::redact::visible(character))
+            {
                 truncated = true;
                 continue;
             }
@@ -657,6 +654,26 @@ mod tests {
         let (limited, dropped) = sanitize(&many);
         assert_eq!(limited.lines().count(), MAX_TEXT_LINES);
         assert!(dropped);
+    }
+
+    #[test]
+    fn tabs_share_the_line_bound_with_printable_characters() {
+        for line in [
+            "\t".repeat(MAX_LINE_CHARS + 1),
+            format!("{}\t", "x".repeat(MAX_LINE_CHARS)),
+        ] {
+            let (text, truncated) = sanitize(&line);
+            assert_eq!(text.chars().count(), MAX_LINE_CHARS);
+            assert!(truncated);
+        }
+        let exact = format!("{}\t", "é".repeat(MAX_LINE_CHARS - 1));
+        assert_eq!(sanitize(&exact), (exact.clone(), false));
+        let over = format!("{exact}\tmore\nnext\tline\n");
+        assert_eq!(sanitize(&over), (format!("{exact}\nnext\tline\n"), true));
+        assert_eq!(
+            sanitize("one\ttwo\n\tthree\n"),
+            ("one\ttwo\n\tthree\n".into(), false)
+        );
     }
 
     #[test]

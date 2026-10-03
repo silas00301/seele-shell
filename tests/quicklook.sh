@@ -206,6 +206,28 @@ async function main() {
   assert.deepEqual(exited, { code: 0, signal: null })
   await settle(() => workspace().length === 0, 'the workspace survived stdin EOF')
 
+  // Tabs count as characters in the same per-line budget as ordinary text.
+  // A full read budget of tabs must not become one huge Qt layout line.
+  fs.writeFileSync(path.join(files, 'tabs.txt'), '\t'.repeat(128 * 1024))
+  const mixed = 'é'.repeat(1999) + '\t'
+  fs.writeFileSync(path.join(files, 'mixed.txt'), mixed + '\tmore\nnext\tline\n')
+  fs.writeFileSync(path.join(files, 'short.txt'), 'one\ttwo\n\tthree\n')
+  const tabbed = start()
+  tabbed.worker.stdin.write(JSON.stringify({
+    command: 'open', id: 4, paths: ['tabs.txt', 'mixed.txt', 'short.txt'].map(name => path.join(files, name)),
+  }) + '\n')
+  const tabbedItems = (await next(tabbed.messages, m => m.id === 4 && m.event === 'items')).items
+  assert.equal(tabbedItems[0].kind, 'text')
+  assert.equal(tabbedItems[0].text, '\t'.repeat(2000))
+  assert.equal(tabbedItems[0].truncated, true)
+  assert.equal(tabbedItems[1].text, mixed + '\nnext\tline\n')
+  assert.equal(tabbedItems[1].truncated, true)
+  assert.equal(tabbedItems[2].text, 'one\ttwo\n\tthree\n')
+  assert.equal(tabbedItems[2].truncated, false)
+  tabbed.worker.stdin.end()
+  await new Promise(resolve => tabbed.worker.on('exit', resolve))
+  await settle(() => workspace().length === 0, 'the tabbed preview workspace survived EOF')
+
   // A shell reload sends SIGTERM, which has to leave as little behind.
   const terminating = start()
   terminating.worker.stdin.write(JSON.stringify({
