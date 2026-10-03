@@ -462,6 +462,7 @@ pkgs.stdenvNoCC.mkDerivation {
     node ${tests}/focus.js "$out/share/seele-shell/focus.js"
     bash ${tests}/focus-timer.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
     node ${tests}/panel-layouts.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+    node ${tests}/control-center-layout.js "$out/share/seele-shell" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     node ${tests}/home-assistant-store.js "$out/share/seele-shell/HomeAssistantStore.qml"
     node ${tests}/maintenance.js "$out/share/seele-shell/MaintenanceStore.qml"
     node ${tests}/health.js "$out/share/seele-shell/health.js"
