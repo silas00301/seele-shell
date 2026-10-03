@@ -56,6 +56,7 @@ let
   fixtures = {
     tools = ''
       python3 projects/tools/tests/network_activity.py "$out/bin/seele-network-activity"
+      python3 projects/tools/tests/sensors.py "$out/bin/seele-sensors"
       python3 projects/tools/tests/resources.py "$out/bin/seele-resources"
     '';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';
@@ -77,6 +78,7 @@ let
     repo-tools = ''
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
+      python3 projects/repo-tools/tests/jj_workspace.py "$out/bin/jj-pr"
       python3 projects/repo-tools/tests/submodule.py "$out/bin/update-submodule"
     '';
     broker = ''

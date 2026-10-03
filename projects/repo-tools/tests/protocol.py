@@ -18,12 +18,17 @@ name=pathlib.Path(sys.argv[0]).name;args=sys.argv[1:];state=pathlib.Path(os.envi
 with(state/'calls').open('a')as log:log.write(json.dumps([name,args])+"\\n")
 mode=os.environ.get('TEST_MODE','')
 if name=='jj':
+ if args[:2]==['git','root']:
+  if mode=='missing-backend':sys.exit(19)
+  print(root/'backend.git')
  if '--template'in args:print('topic' if mode!='multiple-bookmarks'else'topic\\nother',end='')
  elif args[:1]==['log']and'change_id'in args:print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'if args[args.index('-r')+1]=='@'else'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',end='')
  elif 'remote_bookmarks(remote=origin)'in' '.join(args):print('a'*40 if mode!='unpublished'else'',end='')
  elif 'commit_id'in args:print('b'*40,end='')
  if mode=='fetch-fails'and'fetch'in args:sys.exit(42)
 elif name=='gh':
+ assert os.environ.get('GIT_DIR')==str(root/'backend.git')
+ assert not any(key in os.environ for key in ('GIT_WORK_TREE','GIT_COMMON_DIR','GIT_INDEX_FILE','GH_REPO'))
  if args[:2]==['pr','list']:print(json.dumps([{'number':7,'title':'A title'}]))
  elif args[:2]==['pr','view']:print(json.dumps({'headRefName':'feature/topic','headRepositoryOwner':{'login':'owner' if mode!='unsafe-owner'else'owner@evil'},'headRepository':{'name':'repo'}}))
 elif name=='gum':
@@ -66,7 +71,8 @@ else:raise AssertionError(name)
             assert ['jj',['new','"feature/topic"@'+json.dumps(remote)]]in calls
             assert calls[-1]==['jj',['git','remote','remove',remote]]
         result,calls=invoke('jj-pr','checkout','7',mode='fetch-fails');assert result.returncode==42;assert calls[-1][1][:3]==['git','remote','remove'];assert not any(args[:1]==['new']for _,args in calls)
-        result,calls=invoke('jj-pr','checkout','7',mode='unsafe-owner');assert result.returncode==1 and not any(name=='jj'for name,_ in calls)
+        result,calls=invoke('jj-pr','checkout','7',mode='unsafe-owner');assert result.returncode==1 and not any(name=='jj'and args[:2]!=['git','root'] for name,args in calls)
+        result,calls=invoke('jj-pr','checkout','7',mode='missing-backend');assert result.returncode==19 and not any(name=='gh' for name,_ in calls)
         for mode in('dirty','unpublished'):
             result,calls=invoke('update-submodule',mode=mode);assert result.returncode==1;assert not any(name=='git'and'add'in args for name,args in calls)
         result,calls=invoke('update-submodule','../../outside');assert result.returncode==2 and not calls

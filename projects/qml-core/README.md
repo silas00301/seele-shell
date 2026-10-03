@@ -130,13 +130,17 @@ limits and export behavior. The shell's real Qt interaction fixture is
 ### Private text workbench
 
 `text_workbench.transform(input, mode)` implements JSON format/minify, URL
-component encode/decode, standard padded Base64 encode/decode, line cleanup,
+component encode/decode, standard padded Base64 and URL-safe Base64 encode/decode, line cleanup,
 and stable exact-line deduplication. Input is limited to 64 KiB of UTF-8 and
 output to 256 KiB. Errors return `valid: false` with no partial output.
 JSON layout preserves original numeric lexemes, duplicate keys and string
 escapes. Malformed syntax and unpaired surrogate escapes are rejected. URL
 decoding preserves literal plus signs; Base64 whitespace, binary non-UTF-8
-output and NUL bytes fail visibly.
+output and NUL bytes fail visibly. Base64url encoding omits padding; its decoder
+accepts either absent padding or complete canonical padding, rejects mixed
+alphabets and nonzero trailing bits, and never relaxes the standard Base64 mode.
+The selector preserves Alt+1–8 for existing modes and uses Alt+9 / Alt+0 for
+Base64url encode/decode.
 
 The panel previews after a 200 ms pause and invalidates Copy immediately when
 input or mode changes. Its conservative character preflight catches large input;

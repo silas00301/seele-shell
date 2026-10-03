@@ -70,6 +70,13 @@ Shared.Theme {
   // panel closing, and the resolver falls back when the selected MPRIS client
   // leaves the bus.
   property var selectedMediaPlayer: null
+  // Presentation mode (SIL-55). Chosen by hand, or implied while the screen is
+  // shared, it holds toasts back and takes personal text off the bar. It never
+  // writes Do Not Disturb, so ending it has nothing to restore; the one piece
+  // of state it owns is the keep-awake session it may have started.
+  readonly property var presentingState: Bridge.call("presenting.state",
+    [presentingRetained.manual, !!root.systemData.screenRecording])
+  readonly property bool presenting: presentingState.active
   // A module being dragged between the Control Center and the menu bar.
   // `dragKind` is "add" when it came from the panel and "remove" when it was
   // pulled off the bar; `dragOverBar` is the live drop decision.
@@ -136,6 +143,7 @@ Shared.Theme {
   property var activeTrayItem: null
   property bool osdOpen: false
   property string osdKind: "volume"
+  property var zoomOsd: ({ label: "1×", ratio: 0 })
   property bool headphonesOsdConnected: false
   property string headphonesOsdName: "Headphones"
   property string headphonesOsdKind: "headphones"
@@ -333,8 +341,8 @@ Shared.Theme {
     if (panel === "clock") refreshClock()
     overlayScreen = screen || currentScreen()
     overlayAnchorX = nextAnchor
-    // This panel owns local counters and needs no general device refresh.
-    if (panel === "network-activity") return
+    // These panels own local kernel readings and need no general device refresh.
+    if (panel === "network-activity" || panel === "sensors") return
     if (panel === "home-assistant") {
       homeAssistantStore.refresh()
       return
@@ -1450,6 +1458,24 @@ Shared.Theme {
     osdTimer.restart()
   }
 
+  // The level arrives measured and worded by the native helper, which read it
+  // back from Hyprland rather than remembering it. At 1x there is nothing to
+  // report, so an OSD still showing the zoom goes at once instead of lingering.
+  function showZoom(state) {
+    var shown = null
+    try { shown = JSON.parse(state) } catch (error) { return }
+    if (!shown || typeof shown.label !== "string" || typeof shown.ratio !== "number") return
+    if (!shown.zoomed) {
+      if (root.osdKind === "zoom" && root.osdOpen) {
+        osdTimer.stop()
+        root.osdOpen = false
+      }
+      return
+    }
+    root.zoomOsd = { label: shown.label, ratio: Math.max(0, Math.min(1, shown.ratio)) }
+    root.showTimedOsd("zoom")
+  }
+
   function handleYubikeyEvent(value) {
     var event = String(value || "").trim()
     if (!/^(GPG|U2F|MAC)_[01]$/.test(event)) return
@@ -1561,6 +1587,21 @@ Shared.Theme {
   function adjustAudioFromWheel(wheel, microphone) {
     var steps = root.audioWheelSteps(wheel)
     if (steps === 0) return
+    root.adjustAudio(steps, microphone)
+    wheel.accepted = true
+  }
+
+  function toggleAudioMute(microphone) {
+    if (microphone) {
+      if (root.runControl("microphone", "mute")) root.patchSystemData({ microphoneMuted: !root.systemData.microphoneMuted })
+    } else {
+      if (root.runControl("volume", "mute")) root.patchSystemData({ muted: !root.systemData.muted })
+    }
+  }
+
+  // One step is the volume keys' step, whether it came from the wheel or from
+  // an arrow key on a focused level, and both stay clamped to the real limit.
+  function adjustAudio(steps, microphone) {
     var dragged = microphone ? root.microphoneDrag : root.volumeDrag
     var reported = Number(microphone ? root.systemData.microphoneVolume : root.systemData.volume)
     var current = dragged >= 0 ? dragged : isNaN(reported) ? 0 : reported
@@ -1573,7 +1614,6 @@ Shared.Theme {
       root.volumeDrag = adjusted
       if (!volumeDragTimer.running) volumeDragTimer.start()
     }
-    wheel.accepted = true
   }
 
 
@@ -1945,6 +1985,13 @@ Shared.Theme {
   MaintenanceStore { id: maintenance }
   property int healthMaintenanceCount: maintenance.count
   property string healthMaintenanceUrgency: maintenance.urgency
+  // What System Health has to say, read the same way by its bar entry and by
+  // its Control Center tile: how many things want attention, and the colour of
+  // the most pressing one.
+  readonly property int healthAttentionCount: integrationHealth.attentionCount + root.healthMaintenanceCount
+  readonly property color healthTint: root.healthMaintenanceUrgency === "now" ? root.red
+    : root.healthMaintenanceUrgency === "eventually" && integrationHealth.attentionCount === 0 ? root.accent
+    : root.yellow
   IntegrationHealthStore {
     id: integrationHealth
     onOpenSettings: destination => {
@@ -2038,9 +2085,41 @@ Shared.Theme {
   CaffeinateStore {
     id: caffeinateStore
   }
+
+  // A shell reload mid-talk must not put the details back on the bar, so the
+  // choice and the session it started survive reloads the way pins do.
+  PersistentProperties {
+    id: presentingRetained
+    reloadableId: "seele-presenting"
+    property bool manual: false
+    property real caffeinateStarted: 0
+  }
+
+  // Keeping the session awake borrows Caffeinate's single session: one is
+  // started only when none is running, and only that one is ended again.
+  function setPresenting(on) {
+    if (presentingRetained.manual === !!on) return
+    presentingRetained.manual = !!on
+    var now = Date.now() / 1000
+    if (on) {
+      presentingRetained.caffeinateStarted = 0
+      if (Bridge.call("presenting.claim", [caffeinateStore.session])) {
+        caffeinateStore.send({ op: "start", mode: "manual" })
+        presentingRetained.caffeinateStarted = now
+      }
+    } else {
+      if (Bridge.call("presenting.owns", [presentingRetained.caffeinateStarted, caffeinateStore.session, now]))
+        caffeinateStore.stop()
+      presentingRetained.caffeinateStarted = 0
+    }
+  }
   NetworkActivityStore {
     id: networkActivityStore
     panelOpen: root.controlPanel === "network-activity"
+  }
+  SensorsStore {
+    id: sensorsStore
+    panelOpen: root.controlPanel === "sensors"
   }
   ResourcesStore {
     id: resourcesStore
@@ -2079,6 +2158,14 @@ Shared.Theme {
       if (action === "snooze") return state.snooze(parseInt(id, 10), Date.now() / 1000) ? "ok" : "unavailable"
       return "unavailable"
     }
+    // on, off or toggle; any verb answers with the mode's state afterwards.
+    function presentation(action: string): string {
+      if (action === "on") root.setPresenting(true)
+      else if (action === "off") root.setPresenting(false)
+      else if (action === "toggle") root.setPresenting(!presentingRetained.manual)
+      else if (action !== "status") return "invalid"
+      return JSON.stringify(root.presentingState)
+    }
     function ping(): string { return "ok" }
     function toggleLauncher(mode: string): void { root.toggleLauncher(mode) }
     function toggleAgents(): void { root.toggleAgents() }
@@ -2090,6 +2177,9 @@ Shared.Theme {
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
     function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
+    // A maintenance action opens Power from wherever it was asked; it never
+    // closes a Power panel that is already showing.
+    function openPower(): void { if (root.controlPanel !== "system") root.toggleControl("system") }
     function launchAgent(id: string, prompt: string): void { root.runAgent(id, prompt) }
     function refreshAgents(): void { root.refreshAgents() }
     function updateStatus(json: string): void { root.parseSystemData(json) }
@@ -2101,6 +2191,7 @@ Shared.Theme {
       if (muted !== "") root.patchSystemData({ microphoneMuted: muted === "muted" })
       root.showTimedOsd("microphone")
     }
+    function showZoom(state: string): void { root.showZoom(state) }
     function bluetoothPairingRequest(request: string): void { root.setBluetoothPairing(request) }
     function bluetoothPairingDismiss(): void { root.clearBluetoothPairing() }
     function close(): void { root.closeOverlays() }
@@ -2676,13 +2767,7 @@ Shared.Theme {
 
       ModuleDragArea {
         id: audioMuteMouse
-        onActivated: {
-          if (audioLevelRow.microphone) {
-            if (root.runControl("microphone", "mute")) root.patchSystemData({ microphoneMuted: !root.systemData.microphoneMuted })
-          } else {
-            if (root.runControl("volume", "mute")) root.patchSystemData({ muted: !root.systemData.muted })
-          }
-        }
+        onActivated: root.toggleAudioMute(audioLevelRow.microphone)
       }
 
       HoverTip {
@@ -2697,6 +2782,8 @@ Shared.Theme {
 
   // One compact horizontal level inside the shared Control Center Audio card.
   // The mute button sits inside the track instead of consuming another column.
+  // Focused, the level takes Left and Right a volume key's step at a time and
+  // Space mutes it, so the card is reachable without the pointer.
   component ControlLevel: Rectangle {
     id: controlLevel
 
@@ -2706,10 +2793,25 @@ Shared.Theme {
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
     readonly property bool muted: controlLevel.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
     readonly property real fillRatio: root.audioFillRatio(controlLevel.shown)
+    readonly property string name: controlLevel.microphone ? "Microphone" : "Output"
 
     radius: root.radius
     color: root.wellColor
     clip: true
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Slider
+    Accessible.name: controlLevel.name + (controlLevel.muted ? ", muted" : "")
+    Accessible.description: controlLevel.shown + "%"
+    Keys.onPressed: event => {
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+        root.adjustAudio(event.key === Qt.Key_Right ? 1 : -1, controlLevel.microphone)
+        event.accepted = true
+      } else if (!event.isAutoRepeat && event.key === Qt.Key_Space) {
+        root.toggleAudioMute(controlLevel.microphone)
+        event.accepted = true
+      }
+    }
 
     Rectangle {
       width: parent.width * controlLevel.fillRatio
@@ -2720,7 +2822,7 @@ Shared.Theme {
 
     Text {
       anchors.right: parent.right
-      anchors.rightMargin: 10
+      anchors.rightMargin: root.cardPadding
       anchors.verticalCenter: parent.verticalCenter
       text: controlLevel.shown + "%"
       color: root.text
@@ -2765,10 +2867,10 @@ Shared.Theme {
     Rectangle {
       z: 2
       anchors.left: parent.left
-      anchors.leftMargin: 6
+      anchors.leftMargin: (parent.height - height) / 2
       anchors.verticalCenter: parent.verticalCenter
-      width: 30
-      height: 30
+      width: root.knobSize
+      height: root.knobSize
       radius: width / 2
       color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoveredColor(root.alpha(root.crust, 0.7)) : root.alpha(root.crust, 0.7)
       Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -2786,23 +2888,17 @@ Shared.Theme {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: {
-          if (controlLevel.microphone) {
-            if (root.runControl("microphone", "mute")) root.patchSystemData({ microphoneMuted: !root.systemData.microphoneMuted })
-          } else {
-            if (root.runControl("volume", "mute")) root.patchSystemData({ muted: !root.systemData.muted })
-          }
-        }
+        onClicked: root.toggleAudioMute(controlLevel.microphone)
       }
 
       HoverTip {
         mouse: controlLevelMuteMouse
         inOverlay: true
-        text: controlLevel.microphone
-          ? (controlLevel.muted ? "Unmute microphone" : "Mute microphone")
-          : (controlLevel.muted ? "Unmute output" : "Mute output")
+        text: (controlLevel.muted ? "Unmute " : "Mute ") + controlLevel.name.toLowerCase()
       }
     }
+
+    FocusRing { z: 3; shown: controlLevel.activeFocus }
   }
 
   // One application's own level in the Audio panel. It is the master row's
@@ -2971,7 +3067,8 @@ Shared.Theme {
 
   // One radio in the Control Center's connectivity card. The round knob owns
   // the radio itself and the rest of the row hands off to the panel that owns
-  // the devices behind it, the way macOS expands a module in place.
+  // the devices behind it, the way macOS expands a module in place. The
+  // keyboard gets the same split: Space throws the radio, Enter opens the panel.
   component ConnectivityRow: Item {
     id: connectivityRow
 
@@ -2985,19 +3082,33 @@ Shared.Theme {
     signal toggled()
     signal opened()
 
-    height: 49
-    opacity: connectivityRow.module !== "" && root.dragModule === connectivityRow.module ? 0.45 : 1
+    height: root.rowHeight
+    opacity: connectivityRow.module !== "" && root.dragModule === connectivityRow.module ? root.disabledOpacity : 1
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: connectivityRow.label
+    Accessible.description: connectivityRow.detail
+    Keys.onPressed: event => {
+      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+        connectivityRow.opened()
+        event.accepted = true
+      } else if (event.key === Qt.Key_Space) {
+        if (connectivityRow.toggleEnabled && !connectivityRow.busy) connectivityRow.toggled()
+        event.accepted = true
+      }
+    }
 
     Rectangle {
       id: connectivityKnob
 
       anchors.verticalCenter: parent.verticalCenter
-      width: 30
-      height: 30
+      width: root.knobSize
+      height: root.knobSize
       radius: width / 2
-      opacity: connectivityRow.toggleEnabled ? 1 : 0.42
+      opacity: connectivityRow.toggleEnabled ? 1 : root.disabledOpacity
       color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : root.wellColor
-      border.width: connectivityRow.active ? 0 : 1
+      border.width: connectivityRow.active ? 0 : root.hairline
       border.color: root.edgeLight
       antialiasing: true
       Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -3016,8 +3127,8 @@ Shared.Theme {
       RefreshGlyph {
         visible: connectivityRow.busy
         anchors.centerIn: parent
-        width: 16
-        height: 16
+        width: root.rowIconSize
+        height: root.rowIconSize
         spinning: visible
         color: connectivityRow.active ? root.crust : root.text
         font.pixelSize: root.textBody
@@ -3039,7 +3150,7 @@ Shared.Theme {
       // band the pointer crossed on its way from one row to the next — the
       // highlight blinking out between two rows that look adjacent.
       anchors.left: connectivityKnob.right
-      anchors.leftMargin: 4
+      anchors.leftMargin: root.spaceTight
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.bottom: parent.bottom
@@ -3050,21 +3161,22 @@ Shared.Theme {
       Column {
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
-        anchors.leftMargin: 8
-        anchors.right: parent.right
-        anchors.rightMargin: 22
-        spacing: 1
+        anchors.leftMargin: root.spaceMedium
+        anchors.right: connectivityChevron.left
+        anchors.rightMargin: root.spaceTight
+        spacing: root.hairline
 
         Text { width: parent.width; text: connectivityRow.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
         Text { width: parent.width; text: connectivityRow.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
       }
 
-      // The hand-off is only worth advertising under the pointer; the row is
-      // quiet otherwise.
+      // The hand-off is only worth advertising under the pointer or the
+      // keyboard; the row is quiet otherwise.
       Text {
-        visible: connectivityLabelMouse.containsMouse
+        id: connectivityChevron
+        opacity: connectivityLabelMouse.containsMouse || connectivityRow.activeFocus ? 1 : 0
         anchors.right: parent.right
-        anchors.rightMargin: 8
+        anchors.rightMargin: root.spaceMedium
         anchors.verticalCenter: parent.verticalCenter
         text: "󰅂"
         color: root.overlay
@@ -3078,12 +3190,15 @@ Shared.Theme {
         onActivated: connectivityRow.opened()
       }
     }
+
+    FocusRing { shown: connectivityRow.activeFocus }
   }
 
   // A Control Center module tile. The glyph is a component slot because each
   // supported headphone family has its own silhouette. A tile whose glyph is
   // also a control draws it as a knob, the way a connectivity row does: the
-  // knob acts, and the rest of the tile opens the module.
+  // knob acts, and the rest of the tile opens the module. From the keyboard,
+  // Space is the knob and Enter the tile.
   component ControlTile: Rectangle {
     id: controlTile
 
@@ -3092,17 +3207,30 @@ Shared.Theme {
     property string detail: ""
     property string module: ""
     property bool active: false
-    property bool compact: false
     property bool knob: false
-    readonly property real glyphWidth: controlTile.knob ? 30 : controlTile.compact ? 18 : 22
+    readonly property bool hovered: controlTileHover.hovered
     signal activated()
     signal knobClicked()
 
     radius: root.radius
-    opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? 0.45 : 1
-    readonly property bool hovered: controlTileHover.hovered
+    opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? root.disabledOpacity : 1
     color: controlTileMouse.pressed ? root.pressColor : controlTile.hovered ? root.hoveredColor(controlTile.active ? root.activeTint : root.cardColor) : controlTile.active ? root.activeTint : root.cardColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: controlTile.label
+    Accessible.description: controlTile.detail
+    Keys.onPressed: event => {
+      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+        controlTile.activated()
+        event.accepted = true
+      } else if (event.key === Qt.Key_Space) {
+        if (controlTile.knob) controlTile.knobClicked()
+        else controlTile.activated()
+        event.accepted = true
+      }
+    }
 
     CardEdge {}
 
@@ -3112,21 +3240,21 @@ Shared.Theme {
       // Above the tile's own drag area, so a knob answers its own clicks.
       z: 1
       anchors.fill: parent
-      anchors.leftMargin: controlTile.compact ? 8 : 10
-      anchors.rightMargin: controlTile.compact ? 8 : 10
-      spacing: controlTile.compact ? 5 : 9
+      anchors.leftMargin: root.cardPadding
+      anchors.rightMargin: root.cardPadding
+      spacing: root.spaceMedium
 
       Item {
-        width: controlTile.glyphWidth
+        width: root.knobSize
         height: parent.height
         Rectangle {
           visible: controlTile.knob
           anchors.centerIn: parent
-          width: 30
-          height: 30
+          width: root.knobSize
+          height: root.knobSize
           radius: width / 2
           color: controlTileKnob.pressed ? root.pressColor : root.wellColor
-          border.width: 1
+          border.width: root.hairline
           border.color: root.edgeLight
           antialiasing: true
           Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -3146,11 +3274,11 @@ Shared.Theme {
 
       Column {
         anchors.verticalCenter: parent.verticalCenter
-        width: parent.width - controlTile.glyphWidth - (controlTile.compact ? 5 : 9)
-        spacing: 2
+        width: parent.width - root.knobSize - parent.spacing
+        spacing: root.hairline
 
-        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: controlTile.compact ? root.textLabel : root.textBody; font.weight: root.weightStrong }
-        Text { visible: !controlTile.compact; width: parent.width; text: controlTile.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+        Text { width: parent.width; visible: text !== ""; text: controlTile.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
       }
     }
 
@@ -3159,114 +3287,186 @@ Shared.Theme {
       module: controlTile.module
       onActivated: controlTile.activated()
     }
+
+    FocusRing { z: 2; shown: controlTile.activeFocus }
   }
 
-  component ControlCenterGrid: Item {
+  // A utility in the Control Center: a panel the aggregate only opens, with no
+  // state of its own to switch. It is a quarter of the grid, a glyph over its
+  // name, because a launcher that spends a full-width tile on a sentence about
+  // itself is what turned the panel into a list. The sentence moved to the
+  // tooltip. A utility that has something to report — how much is waiting,
+  // how far a transfer got — says it in the corner, lifts onto the active
+  // tint and takes that state's own colour on its glyph; otherwise it stays
+  // quiet.
+  component UtilityTile: Rectangle {
+    id: utilityTile
+
+    property string glyph: ""
+    property string label: ""
+    property string tip: ""
+    property string value: ""
+    property color valueColor: root.accent
+    property bool active: false
+    signal activated()
+
+    radius: root.radius
+    color: utilityTileMouse.pressed ? root.pressColor : utilityTile.active ? root.activeTint : root.cardColor
+    Behavior on color { ColorAnimation { duration: root.durationFast } }
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: utilityTile.label + (utilityTile.value !== "" ? ", " + utilityTile.value : "")
+    Accessible.description: utilityTile.tip
+    Keys.onPressed: event => {
+      if (event.isAutoRepeat || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+        utilityTile.activated()
+        event.accepted = true
+      }
+    }
+
+    CardEdge {}
+
+    HoverWash { hovered: utilityTileMouse.containsMouse && !utilityTileMouse.pressed }
+
+    Column {
+      anchors.centerIn: parent
+      width: parent.width - root.spaceMedium * 2
+      spacing: root.spaceTight
+
+      CenteredGlyph {
+        width: parent.width
+        height: root.textCard
+        text: utilityTile.glyph
+        color: utilityTile.active ? utilityTile.valueColor : root.text
+        font.family: root.fontFamily
+        font.pixelSize: root.textCard
+      }
+
+      Text {
+        width: parent.width
+        text: utilityTile.label
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        color: root.subtext
+        font.family: root.fontFamily
+        font.pixelSize: root.textLabel
+        font.weight: root.weightMedium
+      }
+    }
+
+    Text {
+      visible: utilityTile.value !== ""
+      anchors.top: parent.top
+      anchors.right: parent.right
+      anchors.topMargin: root.spaceSmall
+      anchors.rightMargin: root.spaceSmall
+      text: utilityTile.value
+      textFormat: Text.PlainText
+      color: utilityTile.valueColor
+      font.family: root.fontFamily
+      font.pixelSize: root.textCaption
+      font.weight: root.weightStrong
+    }
+
+    ModuleDragArea {
+      id: utilityTileMouse
+      onActivated: utilityTile.activated()
+    }
+
+    HoverTip { mouse: utilityTileMouse; inOverlay: true; text: utilityTile.tip }
+
+    FocusRing { shown: utilityTile.activeFocus }
+  }
+
+  // The Control Center on its four-column grid, top to bottom: the wide media
+  // card; the connectivity and Audio cards side by side; the device and
+  // appearance modules two to a row; and the utilities four to a row. It is a
+  // stack of positioners rather than counted offsets, so the panel's height
+  // falls out of what it holds and a new tile never needs a sum recounted.
+  component ControlCenterGrid: Column {
     id: controlGrid
 
     property string screenName: ""
     readonly property real gap: root.spaceMedium
-    readonly property real cellSize: (width - gap * 3) / 4
-    readonly property real mediaSize: cellSize * 2 + gap
-    readonly property real mediaHeight: root.mediaBodyHeight
+    readonly property real halfWidth: (width - gap) / 2
+    readonly property real cellWidth: (width - gap * 3) / 4
     readonly property real controlSpacing: root.spaceTight
     readonly property real audioPadding: root.spaceLarge
     readonly property real audioSliderHeight: 46
     readonly property real controlsHeight: audioSliderHeight * 2 + audioPadding * 3
-    readonly property real smallTileHeight: root.controlTileHeight
-    readonly property real controlsY: mediaHeight + gap
-    readonly property real devicesY: controlsY + controlsHeight + gap
+    readonly property bool headphonesConnected: !!(root.systemData.headphones || {}).connected
 
-    height: devicesY + smallTileHeight * 9 + gap * 8
+    spacing: controlGrid.gap
 
-    ControlTile {
-      y: controlGrid.devicesY + controlGrid.smallTileHeight + controlGrid.gap
-      width: controlGrid.width
-      height: controlGrid.smallTileHeight
-      label: "System Health"
-      detail: integrationHealth.attentionCount + " integrations need attention" + (root.healthMaintenanceCount ? " · " + root.healthMaintenanceCount + " maintenance items" : "")
-      active: integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
-      glyph: Text { text: "󰅚"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("system-health", controlGrid.screenName)
+    // Everything in the grid the keyboard can land on, in the order it is
+    // drawn, including the media card's own transport.
+    function focusables(item, found) {
+      var list = found || []
+      var children = item.children
+      for (var index = 0; index < children.length; ++index) {
+        var child = children[index]
+        if (!child.visible || !child.enabled || child.opacity === 0) continue
+        if (child.activeFocusOnTab) list.push(child)
+        controlGrid.focusables(child, list)
+      }
+      return list
     }
 
-    ControlTile {
-      x: 0
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 2 + controlGrid.gap * 2
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Transfers"
-      detail: transfersStore.attention ? "Active, new or failed transfers" : "Send original files to your personal devices"
-      active: transfersStore.attention
-      glyph: Text { text: "󰇚"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("transfers", controlGrid.screenName)
+    function focusFirst() {
+      var items = controlGrid.focusables(controlGrid)
+      if (items.length) items[0].forceActiveFocus(Qt.TabFocusReason)
     }
 
-    ControlTile {
-      x: 0
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 3 + controlGrid.gap * 3
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Ports"
-      detail: portsStore.total ? portsStore.total + " local TCP listeners" : "Find what is listening on this machine"
-      glyph: Text { text: "󰛳"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("ports", controlGrid.screenName)
+    // An arrow moves to the nearest control drawn in its direction, so Down
+    // from the connectivity card lands on the tile under it rather than on
+    // whatever happened to be declared next. A control sharing the row (or
+    // the column) wins over a closer one diagonally off it, the way a grid is
+    // read; only where nothing shares it does the nearest control take over.
+    // A control that uses an arrow itself — a level, the media timeline —
+    // takes it before it gets here.
+    function moveFocus(from, dx, dy) {
+      var items = controlGrid.focusables(controlGrid)
+      var current = from
+      while (current && items.indexOf(current) < 0) current = current.parent
+      if (!current) {
+        controlGrid.focusFirst()
+        return true
+      }
+      var origin = current.mapToItem(controlGrid, 0, 0)
+      var best = null
+      var bestScore = Infinity
+      for (var index = 0; index < items.length; ++index) {
+        var item = items[index]
+        if (item === current) continue
+        var corner = item.mapToItem(controlGrid, 0, 0)
+        var along = dx !== 0
+          ? (corner.x + item.width / 2 - origin.x - current.width / 2) * dx
+          : (corner.y + item.height / 2 - origin.y - current.height / 2) * dy
+        if (along < 1) continue
+        var sharesBand = dx !== 0
+          ? corner.y < origin.y + current.height && origin.y < corner.y + item.height
+          : corner.x < origin.x + current.width && origin.x < corner.x + item.width
+        var across = dx !== 0
+          ? Math.abs(corner.y + item.height / 2 - origin.y - current.height / 2)
+          : Math.abs(corner.x + item.width / 2 - origin.x - current.width / 2)
+        var score = (sharesBand ? 0 : controlGrid.width * 4) + along + across * 2
+        if (score < bestScore) {
+          best = item
+          bestScore = score
+        }
+      }
+      if (best) best.forceActiveFocus(Qt.TabFocusReason)
+      return best !== null
     }
 
-    ControlTile {
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 4 + controlGrid.gap * 4
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Calculator"
-      detail: "Calculate, convert and keep a private tape"
-      glyph: Text { text: "󰃬"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("calculator", controlGrid.screenName)
-    }
-
-    ControlTile {
-      x: 0
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 5 + controlGrid.gap * 5
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Colour Lab"
-      detail: "Contrast, typography and tonal palettes"
-      glyph: Text { text: "󰏘"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("color-lab", controlGrid.screenName)
-    }
-
-    ControlTile {
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 6 + controlGrid.gap * 6
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Text workbench"
-      detail: "Format, encode and clean text locally"
-      glyph: Text { text: "󰦨"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("text-workbench", controlGrid.screenName)
-    }
-
-    ControlTile {
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 7 + controlGrid.gap * 7
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Resources"
-      detail: "Live CPU, memory, storage and processes"
-      glyph: Text { text: "󰍛"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textIcon }
-      onActivated: root.toggleControl("resources", controlGrid.screenName)
-    }
-
-    ControlTile {
-      x: 0
-      y: controlGrid.devicesY + controlGrid.smallTileHeight * 8 + controlGrid.gap * 8
-      width: parent.width
-      height: controlGrid.smallTileHeight
-      label: "Themes"
-      detail: themeStore.currentName !== "" ? themeStore.currentName + " · " + themeStore.appearanceLabel : "Recolor the desktop, terminal and editor"
-      // The knob shows Light, Dark or Auto and steps to the next; the tile
-      // opens the Themes panel.
-      knob: true
-      glyph: Text { text: themeStore.appearanceGlyph; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
-      onKnobClicked: themeStore.cycleAppearance()
-      onActivated: root.toggleControl("themes", controlGrid.screenName)
+    Keys.onPressed: event => {
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      var dx = event.key === Qt.Key_Left ? -1 : event.key === Qt.Key_Right ? 1 : 0
+      var dy = event.key === Qt.Key_Up ? -1 : event.key === Qt.Key_Down ? 1 : 0
+      if (dx === 0 && dy === 0) return
+      controlGrid.moveFocus(controlGrid.Window.activeFocusItem, dx, dy)
+      event.accepted = true
     }
 
     Rectangle {
@@ -3280,13 +3480,13 @@ Shared.Theme {
       // art and the timeline are all hover areas over this fill, so the card
       // asks a handler rather than the drag area beneath them.
       readonly property bool hovered: controlCenterMediaHover.hovered
-      width: parent.width
-      height: controlGrid.mediaHeight
+      width: controlGrid.width
+      height: root.mediaBodyHeight
       radius: root.radius
       color: controlCenterMediaMouse.pressed ? root.pressColor
         : controlCenterMedia.hovered ? root.hoveredColor(root.cardColor)
         : root.cardColor
-      opacity: root.dragModule === "media" ? 0.45 : 1
+      opacity: root.dragModule === "media" ? root.disabledOpacity : 1
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
@@ -3307,150 +3507,265 @@ Shared.Theme {
       }
     }
 
-    Rectangle {
-      y: controlGrid.controlsY
-      width: controlGrid.mediaSize
-      height: controlGrid.controlsHeight
-      radius: root.radius
-      color: root.cardColor
+    Row {
+      spacing: controlGrid.gap
 
-      CardEdge {}
+      Rectangle {
+        width: controlGrid.halfWidth
+        height: controlGrid.controlsHeight
+        radius: root.radius
+        color: root.cardColor
 
-      Column {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.leftMargin: 8
-        anchors.rightMargin: 8
-        spacing: controlGrid.controlSpacing
+        CardEdge {}
 
-        ConnectivityRow {
-          width: parent.width
-          height: root.rowHeight
-          module: "network"
-          icon: root.systemData.connection === "Disconnected" ? "󰖪" : root.systemData.connectionType.indexOf("wireless") >= 0 ? "󰖩" : "󰈀"
-          label: root.systemData.wifiAvailable ? "Wi-Fi" : "Network"
-          detail: root.systemData.wifiAvailable && !root.systemData.wifiEnabled ? "Off" : (root.systemData.connection || "Disconnected")
-          active: root.systemData.wifiAvailable ? root.systemData.wifiEnabled : root.systemData.connection !== "Disconnected"
-          toggleEnabled: root.systemData.wifiAvailable
-          busy: root.controlBusy("wifi", "toggle")
-          onToggled: if (root.runControl("wifi", "toggle")) root.patchSystemData({ wifiEnabled: !root.systemData.wifiEnabled })
-          onOpened: root.toggleControl("network", controlGrid.screenName)
+        Column {
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.leftMargin: root.spaceMedium
+          anchors.rightMargin: root.spaceMedium
+          spacing: controlGrid.controlSpacing
+
+          ConnectivityRow {
+            width: parent.width
+            module: "network"
+            icon: root.systemData.connection === "Disconnected" ? "󰖪" : root.systemData.connectionType.indexOf("wireless") >= 0 ? "󰖩" : "󰈀"
+            label: root.systemData.wifiAvailable ? "Wi-Fi" : "Network"
+            detail: root.systemData.wifiAvailable && !root.systemData.wifiEnabled ? "Off" : (root.systemData.connection || "Disconnected")
+            active: root.systemData.wifiAvailable ? root.systemData.wifiEnabled : root.systemData.connection !== "Disconnected"
+            toggleEnabled: root.systemData.wifiAvailable
+            busy: root.controlBusy("wifi", "toggle")
+            onToggled: if (root.runControl("wifi", "toggle")) root.patchSystemData({ wifiEnabled: !root.systemData.wifiEnabled })
+            onOpened: root.toggleControl("network", controlGrid.screenName)
+          }
+
+          ConnectivityRow {
+            width: parent.width
+            module: "bluetooth"
+            visible: root.systemData.bluetoothAvailable
+            icon: root.systemData.bluetoothPowered ? "󰂯" : "󰂲"
+            label: "Bluetooth"
+            detail: !root.systemData.bluetoothAvailable ? "Unavailable"
+              : !root.systemData.bluetoothPowered ? "Off"
+              : root.systemData.bluetoothConnected + " connected"
+            active: root.systemData.bluetoothPowered
+            toggleEnabled: root.systemData.bluetoothAvailable
+            busy: bluetoothProcess.running && root.bluetoothAction === "toggle"
+            onToggled: root.toggleBluetoothPower()
+            onOpened: root.toggleControl("bluetooth", controlGrid.screenName)
+          }
+
+          ConnectivityRow {
+            width: parent.width
+            module: "vpn"
+            icon: "󰒃"
+            label: "VPN"
+            detail: root.privateNetworkDetail()
+            active: root.privateNetworkActive()
+            toggleEnabled: root.privateNetworkTarget() !== ""
+            busy: root.privateNetworkBusy()
+            onToggled: root.togglePrivateNetwork()
+            onOpened: root.toggleControl("vpn", controlGrid.screenName)
+          }
+        }
+      }
+
+      Rectangle {
+        id: controlCenterAudio
+
+        // The two level tracks cover all of this card but its padding, and each
+        // is a hover area of its own, so the card asks a handler whether the
+        // pointer is on it. Reading the drag area underneath meant the tint was
+        // lit only in the margins around the sliders and went out across the
+        // sliders themselves — the card blinking under a pointer crossing it.
+        readonly property bool hovered: controlCenterAudioHover.hovered
+
+        width: controlGrid.halfWidth
+        height: controlGrid.controlsHeight
+        radius: root.radius
+        color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudio.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
+        Behavior on color { ColorAnimation { duration: root.durationFast } }
+        opacity: root.dragModule === "audio" ? root.disabledOpacity : 1
+
+        HoverHandler { id: controlCenterAudioHover }
+
+        CardEdge {}
+
+        ModuleDragArea {
+          id: controlCenterAudioMouse
+          module: "audio"
+          onActivated: root.toggleControl("audio", controlGrid.screenName)
         }
 
-        ConnectivityRow {
-          width: parent.width
-          height: root.rowHeight
-          module: "bluetooth"
-          visible: root.systemData.bluetoothAvailable
-          icon: root.systemData.bluetoothPowered ? "󰂯" : "󰂲"
-          label: "Bluetooth"
-          detail: !root.systemData.bluetoothAvailable ? "Unavailable"
-            : !root.systemData.bluetoothPowered ? "Off"
-            : root.systemData.bluetoothConnected + " connected"
-          active: root.systemData.bluetoothPowered
-          toggleEnabled: root.systemData.bluetoothAvailable
-          busy: bluetoothProcess.running && root.bluetoothAction === "toggle"
-          onToggled: root.toggleBluetoothPower()
-          onOpened: root.toggleControl("bluetooth", controlGrid.screenName)
-        }
+        Column {
+          z: 2
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.leftMargin: controlGrid.audioPadding
+          anchors.rightMargin: controlGrid.audioPadding
+          spacing: controlGrid.audioPadding
 
-        ConnectivityRow {
-          width: parent.width
-          height: root.rowHeight
-          module: "vpn"
-          icon: "󰒃"
-          label: "VPN"
-          detail: root.privateNetworkDetail()
-          active: root.privateNetworkActive()
-          toggleEnabled: root.privateNetworkTarget() !== ""
-          busy: root.privateNetworkBusy()
-          onToggled: root.togglePrivateNetwork()
-          onOpened: root.toggleControl("vpn", controlGrid.screenName)
+          ControlLevel {
+            width: parent.width
+            height: controlGrid.audioSliderHeight
+          }
+
+          ControlLevel {
+            width: parent.width
+            height: controlGrid.audioSliderHeight
+            microphone: true
+          }
         }
       }
     }
 
-    Rectangle {
-      id: controlCenterAudio
+    // Camera and Themes hold their places whether or not headphones are
+    // connected; supported headphones take the whole row under them while
+    // they are, so nothing already on screen moves when a pair connects.
+    Grid {
+      columns: 2
+      columnSpacing: controlGrid.gap
+      rowSpacing: controlGrid.gap
 
-      // The two level tracks cover all of this card but its padding, and each
-      // is a hover area of its own, so the card asks a handler whether the
-      // pointer is on it. Reading the drag area underneath meant the tint was
-      // lit only in the margins around the sliders and went out across the
-      // sliders themselves — the card blinking under a pointer crossing it.
-      readonly property bool hovered: controlCenterAudioHover.hovered
-
-      x: controlGrid.mediaSize + controlGrid.gap
-      y: controlGrid.controlsY
-      width: controlGrid.mediaSize
-      height: controlGrid.controlsHeight
-      radius: root.radius
-      color: controlCenterAudioMouse.pressed ? root.pressColor : controlCenterAudio.hovered ? root.hoveredColor(root.cardColor) : root.cardColor
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
-      opacity: root.dragModule === "audio" ? 0.45 : 1
-
-      HoverHandler { id: controlCenterAudioHover }
-
-      CardEdge {}
-
-      ModuleDragArea {
-        id: controlCenterAudioMouse
-        module: "audio"
-        onActivated: root.toggleControl("audio", controlGrid.screenName)
+      ControlTile {
+        width: controlGrid.halfWidth
+        height: root.controlTileHeight
+        module: "camera"
+        label: "Camera"
+        detail: root.cameraDetail()
+        active: root.systemData.cameraActive
+        glyph: Text {
+          text: root.systemData.cameraActive ? "󰄀" : "󰄁"
+          color: root.systemData.cameraActive ? root.red : root.text
+          font.family: root.fontFamily
+          font.pixelSize: root.textIcon
+        }
+        onActivated: root.toggleControl("camera", controlGrid.screenName)
       }
 
-      Column {
-        z: 2
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        spacing: controlGrid.audioPadding
-
-        ControlLevel {
-          width: parent.width
-          height: controlGrid.audioSliderHeight
-        }
-
-        ControlLevel {
-          width: parent.width
-          height: controlGrid.audioSliderHeight
-          microphone: true
-        }
+      ControlTile {
+        width: controlGrid.halfWidth
+        height: root.controlTileHeight
+        label: "Themes"
+        // The knob already says Light, Dark or Auto, so the line under the
+        // title names the theme alone and is not cut off repeating the mode.
+        detail: themeStore.currentName !== "" ? themeStore.currentName : "Recolor the desktop"
+        // The knob shows Light, Dark or Auto and steps to the next; the tile
+        // opens the Themes panel.
+        knob: true
+        glyph: Text { text: themeStore.appearanceGlyph; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textSubhead }
+        onKnobClicked: themeStore.cycleAppearance()
+        onActivated: root.toggleControl("themes", controlGrid.screenName)
       }
     }
 
     ControlTile {
-      y: controlGrid.devicesY
-      width: (root.systemData.headphones || {}).connected ? controlGrid.mediaSize : controlGrid.width
-      height: controlGrid.smallTileHeight
-      module: "camera"
-      label: "Camera"
-      detail: root.cameraDetail()
-      active: root.systemData.cameraActive
-      glyph: Text {
-        text: root.systemData.cameraActive ? "󰄀" : "󰄁"
-        color: root.systemData.cameraActive ? root.red : root.accent
-        font.family: root.fontFamily
-        font.pixelSize: root.textIcon
-      }
-      onActivated: root.toggleControl("camera", controlGrid.screenName)
-    }
-
-    ControlTile {
-      visible: !!(root.systemData.headphones || {}).connected
-      x: controlGrid.mediaSize + controlGrid.gap
-      y: controlGrid.devicesY
-      width: controlGrid.mediaSize
-      height: controlGrid.smallTileHeight
+      visible: controlGrid.headphonesConnected
+      width: controlGrid.width
+      height: root.controlTileHeight
       module: "airpods"
       label: root.headphonesLabel()
       detail: root.headphonesDetail()
       active: true
       glyph: HeadphonesIcon { kind: root.headphonesIconKind(); tint: root.accent }
       onActivated: root.toggleControl("airpods", controlGrid.screenName)
+    }
+
+    // Utilities: panels the aggregate opens and nothing else. They read as a
+    // tray of instruments, what is waiting first, then what inspects the
+    // machine, then the workbenches.
+    Grid {
+      columns: 4
+      columnSpacing: controlGrid.gap
+      rowSpacing: controlGrid.gap
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰅚"
+        label: "Health"
+        value: root.healthAttentionCount > 0 ? String(root.healthAttentionCount) : ""
+        valueColor: root.healthTint
+        active: root.healthAttentionCount > 0
+        tip: {
+          var parts = []
+          var integrations = integrationHealth.attentionCount
+          var maintenance = root.healthMaintenanceCount
+          if (integrations > 0) parts.push(integrations + (integrations === 1 ? " integration needs" : " integrations need") + " attention")
+          if (maintenance > 0) parts.push(maintenance + (maintenance === 1 ? " maintenance item" : " maintenance items"))
+          return "System Health · " + (parts.length ? parts.join(" · ") : "all clear")
+        }
+        onActivated: root.toggleControl("system-health", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰇚"
+        label: "Transfers"
+        // The bar entry's own reading without its glyph: progress while a
+        // transfer runs, a count of new files, or a failure.
+        value: transfersStore.attention ? String(transfersStore.barText).replace(/^\S+\s*/, "") : ""
+        valueColor: value === "!" ? root.red : root.accent
+        active: transfersStore.attention
+        tip: transfersStore.attention ? "Transfers · active, new or failed" : "Transfers · send original files to your personal devices"
+        onActivated: root.toggleControl("transfers", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰍛"
+        label: "Resources"
+        tip: "Resources · live CPU, memory, storage and processes"
+        onActivated: root.toggleControl("resources", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰓅"
+        label: "Traffic"
+        tip: "Network activity · live traffic on each interface"
+        onActivated: root.toggleControl("network-activity", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰛳"
+        label: "Ports"
+        tip: portsStore.total ? "Ports · " + portsStore.total + " local TCP listeners" : "Ports · find what is listening on this machine"
+        onActivated: root.toggleControl("ports", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰃬"
+        label: "Calculator"
+        tip: "Calculator · calculate, convert and keep a private tape"
+        onActivated: root.toggleControl("calculator", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰏘"
+        label: "Colour Lab"
+        tip: "Colour Lab · contrast, typography and tonal palettes"
+        onActivated: root.toggleControl("color-lab", controlGrid.screenName)
+      }
+
+      UtilityTile {
+        width: controlGrid.cellWidth
+        height: root.controlTileHeight
+        glyph: "󰦨"
+        label: "Text"
+        tip: "Text workbench · format, encode and clean text locally"
+        onActivated: root.toggleControl("text-workbench", controlGrid.screenName)
+      }
     }
   }
 
@@ -4046,6 +4361,7 @@ Shared.Theme {
       }
       screen: modelData
       visible: !uriPicker.presented && !colorPicker.presented && !root.systemData.dnd
+        && !root.presenting
         && root.controlPanel !== "notifications"
         && entries.length > 0
         && root.pinnedScreen(root.notificationPopupScreen, modelData)
@@ -4113,7 +4429,8 @@ Shared.Theme {
     property string icon: ""
     property color iconColor: root.accent
     readonly property bool paused: !!barMediaArt.player && !barMediaArt.player.isPlaying
-    readonly property bool hasArt: barMediaArtImage.status === Image.Ready
+    // Artwork names the track as plainly as its title does.
+    readonly property bool hasArt: barMediaArtImage.status === Image.Ready && !root.presenting
 
     width: 16
     height: 16
@@ -5616,7 +5933,9 @@ Shared.Theme {
                 height: parent.height
                 maximumWidth: 190
                 color: root.subtext
-                text: root.windowLabel(parent.parent.window)
+                // A title can carry a subject line or a document name; the
+                // application alone says what is on screen without reading it.
+                text: root.presenting ? root.windowAppName(parent.parent.window) : root.windowLabel(parent.parent.window)
               }
             }
             MouseArea {
@@ -5626,7 +5945,7 @@ Shared.Theme {
               cursorShape: Qt.PointingHandCursor
               onPressed: root.toggleApplication(parent.window, barWindow.modelData.name, root.barItemCenter(parent))
             }
-            HoverTip { mouse: activeWindowMouse; text: root.windowTitle(activeWindowMouse.parent.window) }
+            HoverTip { mouse: activeWindowMouse; text: root.presenting ? "" : root.windowTitle(activeWindowMouse.parent.window) }
           }
 
           BarItem {
@@ -5645,7 +5964,7 @@ Shared.Theme {
                 font.pixelSize: root.textStrong
               }
               BarLabel {
-                visible: homeAssistantStore.summaryText !== ""
+                visible: homeAssistantStore.summaryText !== "" && !root.presenting
                 text: homeAssistantStore.summaryText
                 maximumWidth: root.rowHeight * 3
                 color: homeAssistantStore.connected ? root.subtext : root.yellow
@@ -5744,7 +6063,7 @@ Shared.Theme {
                 id: eventBarTitle
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, root.calendarIndicatorWidth - 14 - 11 - eventBarWhen.implicitWidth)
-                text: root.calendarIndicator ? root.calendarIndicator.title : ""
+                text: root.calendarIndicator ? (root.presenting ? "Event" : root.calendarIndicator.title) : ""
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.text
@@ -5775,7 +6094,7 @@ Shared.Theme {
                 if (root.controlPanel !== "calendar") root.toggleControl("calendar", barWindow.modelData.name, root.barItemCenter(parent))
               }
             }
-            HoverTip { mouse: eventBarMouse; text: root.calendarIndicator ? root.calendarIndicator.detail : "" }
+            HoverTip { mouse: eventBarMouse; text: root.calendarIndicator && !root.presenting ? root.calendarIndicator.detail : "" }
           }
 
           BarItem {
@@ -5877,6 +6196,35 @@ Shared.Theme {
             MouseArea { id: screenRecordingIndicator; anchors.fill: parent; hoverEnabled: true }
             HoverTip { mouse: screenRecordingIndicator; text: "Screen is being recorded" }
           }
+
+          // The mode says it is on, in the one place the bar still speaks
+          // plainly, and a click ends a mode chosen by hand. One implied by a
+          // share ends with the share.
+          BarItem {
+            visible: root.presenting
+            width: visible ? presentingBarLabel.implicitWidth + root.spaceLarge : 0
+            hovered: presentingMouse.containsMouse
+            Text {
+              id: presentingBarLabel
+              anchors.centerIn: parent
+              text: "󰐯 " + root.presentingState.label
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: root.textBody
+              font.weight: root.weightStrong
+            }
+            MouseArea {
+              id: presentingMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: root.presentingState.manual ? Qt.PointingHandCursor : Qt.ArrowCursor
+              onClicked: if (root.presentingState.manual) root.setPresenting(false)
+            }
+            HoverTip {
+              mouse: presentingMouse
+              text: root.presentingState.detail + (root.presentingState.manual ? " · click to stop presenting" : "")
+            }
+          }
         }
 
         Row {
@@ -5909,11 +6257,12 @@ Shared.Theme {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 maximumWidth: 175
+                visible: !root.presenting
                 text: root.mediaLabel(parent.parent.player)
               }
             }
             BarModuleArea { id: deviceMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: deviceMediaMouse; text: root.mediaLabel(deviceMediaItem.player) }
+            HoverTip { mouse: deviceMediaMouse; text: root.presenting ? "Now Playing" : root.mediaLabel(deviceMediaItem.player) }
           }
 
           BarItem {
@@ -5940,11 +6289,12 @@ Shared.Theme {
                 anchors.verticalCenter: parent.verticalCenter
                 height: parent.height
                 maximumWidth: 175
+                visible: !root.presenting
                 text: root.mediaLabel(parent.parent.player)
               }
             }
             BarModuleArea { id: spotifyMediaMouse; module: "media"; onActivated: root.toggleMedia(parent.player, barWindow.modelData.name, root.barItemCenter(parent)) }
-            HoverTip { mouse: spotifyMediaMouse; text: root.mediaLabel(spotifyMediaItem.player) }
+            HoverTip { mouse: spotifyMediaMouse; text: root.presenting ? "Now Playing" : root.mediaLabel(spotifyMediaItem.player) }
           }
 
           // The bar is anchored to its right edge, so the tray grows leftward
@@ -6289,11 +6639,11 @@ Shared.Theme {
           }
 
           BarItem {
-            visible: integrationHealth.attentionCount > 0 || root.healthMaintenanceCount > 0
+            visible: root.healthAttentionCount > 0
             width: healthBarLabel.implicitWidth + root.spaceLarge
             hovered: healthBarHover.hovered
             active: root.panelHere("system-health", barWindow.modelData)
-            Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + (integrationHealth.attentionCount + root.healthMaintenanceCount); color: root.healthMaintenanceUrgency === "now" ? root.red : root.healthMaintenanceUrgency === "eventually" && integrationHealth.attentionCount === 0 ? root.accent : root.yellow; font.family: root.fontFamily; font.pixelSize: root.textBody }
+            Text { id: healthBarLabel; anchors.centerIn: parent; text: "󰅚 " + root.healthAttentionCount; color: root.healthTint; font.family: root.fontFamily; font.pixelSize: root.textBody }
             HoverHandler { id: healthBarHover }
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleControl("system-health", barWindow.modelData.name, root.barItemCenter(parent)) }
           }
@@ -8696,8 +9046,12 @@ Shared.Theme {
       visible: root.controlPanel === "control-center" && root.pinnedScreen(root.overlayScreen, modelData)
       anchors { top: true; left: true }
       margins { top: 0; left: root.panelLeft(modelData, implicitWidth) }
-      implicitWidth: 400
-      implicitHeight: controlCenterContent.implicitHeight + root.panelMargin * 2 + controlCenterWindow.barReach
+      // As wide as the media panel, so the media block is one object at one
+      // width in both places; and never taller than the output below the bar,
+      // so an output too short for the whole panel scrolls it instead of
+      // cutting off its last row.
+      implicitWidth: Math.min(root.mediaPanelWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: Math.min(controlCenterContent.implicitHeight + root.panelMargin * 2, modelData.height - controlCenterWindow.barReach - root.panelGap) + controlCenterWindow.barReach
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -8715,17 +9069,61 @@ Shared.Theme {
         anchors.topMargin: controlCenterWindow.barReach
 
         PanelSurface {
-          Column {
-            id: controlCenterContent
-            Keys.onEscapePressed: root.closeOverlays()
+          Shared.SeeleFlickable {
+            id: controlCenterViewport
 
-            anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing
+            // Keep the control the keyboard just reached inside the viewport.
+            function reveal(item) {
+              var inside = item
+              while (inside && inside !== controlCenterContent) inside = inside.parent
+              if (!inside || item === controlCenterContent) return
+              var top = item.mapToItem(controlCenterContent, 0, 0).y
+              var bottom = top + item.height
+              if (top < controlCenterViewport.contentY) controlCenterViewport.contentY = Math.max(0, top - root.spaceMedium)
+              else if (bottom > controlCenterViewport.contentY + controlCenterViewport.height)
+                controlCenterViewport.contentY = Math.min(controlCenterViewport.contentHeight - controlCenterViewport.height, bottom - controlCenterViewport.height + root.spaceMedium)
+            }
 
-            PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
+            theme: root
+            anchors.fill: parent
+            anchors.margins: root.panelMargin
+            contentWidth: width
+            contentHeight: controlCenterContent.implicitHeight
+            clip: true
+            // Scrolling exists only for an output too short for the panel, and
+            // it must never take a module on its way to the menu bar.
+            interactive: contentHeight > height && !controlCenterWindow.dragging
 
-            ControlCenterGrid {
+            HoverHandler { id: controlCenterHover }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: controlCenterHover.hovered }
+
+            Connections {
+              target: controlCenterViewport.Window.window
+              function onActiveFocusItemChanged() { controlCenterViewport.reveal(controlCenterViewport.Window.activeFocusItem) }
+            }
+
+            Column {
+              id: controlCenterContent
+
               width: parent.width
-              screenName: controlCenterWindow.modelData.name
+              spacing: root.panelSpacing
+              // The panel opens with the keyboard on itself rather than on a
+              // tile, so a pointer user never sees a focus ring they did not
+              // ask for; the first arrow or Tab steps onto the first module.
+              Keys.onEscapePressed: root.closeOverlays()
+              Keys.onPressed: event => {
+                if ([Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down].indexOf(event.key) < 0) return
+                controlCenterGrid.focusFirst()
+                event.accepted = true
+              }
+
+              PanelHeader { width: parent.width; glyph: "󰘮"; title: "Control Center" }
+
+              ControlCenterGrid {
+                id: controlCenterGrid
+                width: parent.width
+                screenName: controlCenterWindow.modelData.name
+              }
             }
           }
         }
@@ -8895,6 +9293,53 @@ Shared.Theme {
     }
   }
 
+  // Temperatures and fans ------------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: sensorsWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "sensors" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: Math.min(root.sensorsWidth, modelData.width - root.panelGap * 2)
+      implicitHeight: sensorsContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-sensors"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { sensorsPanel.forceActiveFocus() })
+      PanelSurface {
+        id: sensorsSurface
+        Column {
+          id: sensorsContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader {
+            id: sensorsHeader
+            width: parent.width
+            glyph: "󰔏"
+            title: "Sensors"
+            detail: sensorsStore.snapshot.summary || "Temperatures and fans on this machine"
+            detailColor: sensorsStore.snapshot.attention > 0 ? root.yellow : root.subtext
+          }
+          Shared.SeeleFlickable {
+            theme: root
+            width: parent.width
+            height: Math.min(sensorsPanel.implicitHeight, Math.max(root.controlHeight, modelData.height - root.barHeight - root.panelGap * 3 - root.panelMargin * 2 - sensorsHeader.height - root.panelSpacing))
+            contentHeight: sensorsPanel.implicitHeight
+            clip: true
+            SensorsPanel { id: sensorsPanel; theme: root; store: sensorsStore; width: parent.width }
+            ScrollBar.vertical: SlimScrollBar { popupHovered: sensorsSurface.hovered }
+          }
+        }
+      }
+    }
+  }
+
   // Private text transforms ----------------------------------------------------
   Variants {
     model: Quickshell.screens
@@ -9038,7 +9483,21 @@ Shared.Theme {
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
           spacing: root.panelSpacing
           Keys.onEscapePressed: root.closeOverlays()
-          PanelHeader { width: parent.width; glyph: "󰍛"; title: "Resources"; detail: resourcesPanel.hint }
+          PanelHeader {
+            width: parent.width
+            glyph: "󰍛"
+            title: "Resources"
+            detail: resourcesPanel.hint
+            // Temperatures and fans are the same machine seen from its
+            // hardware, so they are one step away rather than one more tile.
+            Shared.ActionButton {
+              objectName: "openSensors"
+              theme: root
+              height: root.chipHeight
+              text: "Sensors  ↗"
+              onClicked: root.toggleControl("sensors", resourcesWindow.modelData.name, root.overlayAnchorX)
+            }
+          }
           ResourcesPanel { id: resourcesPanel; theme: root; store: resourcesStore; width: parent.width; maximumHeight: Math.min(root.resourcesMaximumHeight, resourcesWindow.modelData.height - root.barHeight - root.panelGap - root.panelMargin * 2 - root.panelHeaderHeight - root.panelSpacing - root.panelMargin) }
         }
       }
@@ -11293,6 +11752,20 @@ Shared.Theme {
             ratio: root.audioFillRatio(levelOsd.level)
           }
           Text { anchors.verticalCenter: parent.verticalCenter; text: levelOsd.level + "%"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
+        }
+        // The zoom shares the level strip's shape. Its meter fills by octaves,
+        // so 2x, 4x and 8x divide it into thirds.
+        Row {
+          visible: root.osdKind === "zoom"
+          anchors.fill: parent; anchors.margins: 14; spacing: 12
+          Text { anchors.verticalCenter: parent.verticalCenter; text: "󰩣"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textDisplay }
+          MeterBar {
+            width: 205
+            height: 8
+            anchors.verticalCenter: parent.verticalCenter
+            ratio: root.zoomOsd.ratio
+          }
+          Text { anchors.verticalCenter: parent.verticalCenter; text: root.zoomOsd.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody }
         }
         Row {
           visible: root.osdKind === "airpods"

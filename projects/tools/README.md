@@ -76,6 +76,45 @@ counts and bytes and reject symlink, hardlink and foreign-owner records. The
 host-event parity and hostile-file tests live in `tests/harness-status.sh` at
 the workspace root.
 
+## Cursor agent integration
+
+`seele-agent cursor` launches `cursor-agent` in Ghostty from the focused window's
+working directory, with the same CPU fallback and focus action as the other
+harnesses. `SEELE_SHELL_CURSOR` pins its executable. The cockpit and menu bar
+identify both CLI and editor conversations as `cursor`; an idle editor never
+becomes a CPU-inferred agent. CLI discovery recognizes the normal launcher and
+SEA process names, not shell/worker subprocesses.
+
+On `nerv`, the parent installs `/etc/cursor/hooks.json` at Cursor's system layer,
+which merges with the user's and project's hooks without owning either file.
+`seele-agent-hook cursor host-event` consumes `sessionStart`,
+`beforeSubmitPrompt`, `stop` and `sessionEnd`. Start/stop mean input, submission
+means working, and end removes the conversation record. A late fire-and-forget
+start preserves an already-submitted turn. Cursor supplies `session_id` at
+start/end and `conversation_id` during a turn; both map to the same bounded
+SHA-256 key. The hook walks ancestors to the CLI or editor process, never using
+an untrusted payload PID, so session focus returns to its owning terminal or
+editor. Hooks return empty JSON: they approve nothing, inject no context and
+request no follow-up. Cursor exposes no permission-wait event, so a mid-turn
+approval pause remains working rather than claiming a known input state.
+
+Input is bounded to 1 MiB and two seconds; only event and conversation identity
+are deserialized. Prompts, attachments, email and transcript paths are discarded,
+never logged or persisted, and no transcript is opened. Metadata remains private.
+CodexBar's default provider selection is `both cursor`; unavailable providers
+produce no invented subscription. On Linux, Cursor usage needs a signed-in
+editor or CodexBar's separately configured session, not merely CLI login.
+Cursor costs, when supplied by CodexBar, are remote account-wide dashboard data,
+not local CLI token logs. No credential is managed by this integration.
+
+Sources: [Cursor hooks](https://cursor.com/docs/agent/hooks) and
+[CodexBar Cursor provider](https://github.com/steipete/CodexBar/blob/main/docs/cursor.md).
+The pinned CLI's hook loader also confirms the Linux system path and schema.
+`tests/cursor-agent.sh` drives synthetic CLI/editor owners, concurrent identities,
+late starts, cleanup, focus, fallback discovery and exact launch arguments without
+a real desktop or model account. `tests/agent-state.sh` covers subscription
+collection and `tests/shell-presentation.js` covers the mark and capacity row.
+
 ## Launcher window moves
 
 `seele-control vicinae-desktop` includes each eligible window's `moveWindow`
@@ -87,6 +126,31 @@ state is queried on demand and nothing is stored. The launcher only renders
 native choices and forwards the selected identities. See the
 [Vicinae contract](../vicinae/README.md); `tests/vicinae.rs` exercises the actual
 binary against synthetic compositor commands, never the live desktop.
+
+## Screen zoom
+
+`seele-shellctl zoom <in|out|reset> [--fine]` zooms the output under the pointer
+through Hyprland's own `cursor:zoom_factor`, which magnifies the whole frame
+around the pointer. The option is the only record of the level: every request
+reads it back with `hyprctl getoption cursor:zoom_factor -j`, so nothing can
+drift from what the compositor draws, and writes it with one `hl.config` call
+through `hyprctl eval`, because `hyprctl keyword` is refused under a Lua
+configuration. Levels lie on a grid of quarter octaves between 1x and 8x: a
+key moves half an octave, a `--fine` scroll notch a quarter, so both meet at
+2x, 4x and 8x and stepping down always ends on exactly `1`, which Hyprland
+draws as the unzoomed frame. A level left off the grid steps to the next grid
+point in the requested direction. A private advisory lock in
+`$XDG_RUNTIME_DIR` serializes read, step and write so overlapping notches each
+count; it holds no level. Hyprland starts every session, and every
+configuration reload, at its default of 1.
+
+`zoom.rs` also words the OSD: the label, the octave-filled meter ratio and
+whether anything is zoomed at all. The shell's `showZoom` draws it in the level
+strip and withdraws it at 1x. The OSD is a layer surface on the output being
+magnified, so it is magnified with everything else and only on screen while the
+view includes the top of the output. `tests/screen-zoom.sh` drives the raw
+helper against a fake `hyprctl` that keeps the option in a file, and
+`tests/screen-zoom.js` runs the shell's own `showZoom` callback.
 
 ## Caffeinate
 
@@ -269,8 +333,13 @@ refused before anything is opened.
 
 What a file *is* comes from its container magic first, then its extension, then
 what its opening bytes read as, so a renamed archive never reaches the text
-reader and a `.txt` that is really a PDF is previewed as the PDF it is. An
-`ftyp` brand separates audio from video inside the same container. Only text and
+reader and a `.txt` that is really a PDF is previewed as the PDF it is. ISO BMFF
+`ftyp` major and compatible brands separate AVIF/HEIF images from audio and
+video; brand reads stay inside the declared box and the 4096-byte sniff. The
+ambiguous `.ts` suffix needs three MPEG transport packet headers for video,
+readable UTF-8 for TypeScript, or otherwise gets a binary summary. Invalid
+interior UTF-8 is binary; an incomplete final codepoint at the sniff boundary
+does not reject the readable prefix. Only text and
 Markdown are read into the reply, bounded to 128 KiB, 4000 lines and 2000
 characters per line; a folder lists at most 256 entries beside its true total.
 Everything else is described rather than copied, because Qt decodes pictures,
@@ -360,7 +429,7 @@ warnings`. `tests/ports.rs` exercises the port inspector against a synthetic
 `/proc` in a private temporary directory, recording the system manager, signal
 and authentication calls instead of performing them; the panel's own store is
 covered by `tests/ports.js` at the workspace root. Focused external fixtures are
-`tests/mic-sync.sh`, `tests/mic-test.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
+`tests/mic-sync.sh`, `tests/mic-test.sh`, `tests/screen-zoom.sh`, `tests/control-actions.sh`, `tests/bluetooth-receiver.sh`,
 `tests/agent-state.sh`, `tests/notes.py`, `tests/uri-picker.sh` and
 `tests/quicklook.sh`, which drives the raw Quick Look worker against synthetic
 files and fake Poppler tools. They use isolated fake desktop programs,
@@ -372,6 +441,30 @@ The local OCR validation used extracted Ubuntu ImageMagick 6, Tesseract English
 data and Zint, with a development `magick`→`convert` shim and DejaVu Sans Mono.
 That proves protocol/recognition behavior with synthetic fixtures; it does not
 prove Maple NF font rendering or compositor-level visual parity.
+
+## Low battery warnings
+
+The resident status monitor (`seele-control watch-status`) passes every battery
+list it publishes — system power supplies, OpenLogi devices and connected
+Bluetooth peripherals — through `battery_alert.rs`. A discharging device that
+reaches 15% raises one ordinary `Battery low` notification and one at 5%
+raises a critical `Battery almost empty`, which the shell keeps on screen until
+dismissed. Each crossing speaks once. A device re-arms only when it is seen
+charging or full, or climbs back to 25%, so a reading that wobbles around a
+threshold stays quiet; a device first seen already low warns once at its deepest
+level. Zero is treated as unknown, because the OpenLogi reading falls back to
+zero when it cannot parse a level, and names lose control and direction
+characters before they reach `notify-send` as arguments after `--`.
+
+What has been said is kept by `kind:name` in the private
+`$XDG_RUNTIME_DIR/seele-shell/battery-alerts.json` (mode 0600, at most 64
+devices, read through the runtime's private-file check). A shell reload
+therefore does not repeat a warning, and a reboot, which clears the runtime
+directory, starts fresh. No battery history is kept.
+
+Validation: `cargo test -p seele-tools --lib battery_alert` covers crossings,
+hysteresis, charging, a device that appears low, unknown readings, bounds,
+argument construction and reloading or rejecting the memory file.
 
 ## Bluetooth authorization
 
@@ -553,6 +646,64 @@ Closing destroys the worker; reopening creates a new observation session.
 Generation-bound QML callbacks reject late data or exit from a discarded
 worker, and a disappeared selection stays explicit until the user chooses.
 The worker reads local kernel counters only and keeps nothing on disk.
+
+## Sensors
+
+`seele-sensors` is a JSON-lines worker owned by one open Sensors panel, reached
+from the Resources header, `seele-shellctl sensors` and the Vicinae **Seele
+Sensors** command. It reads `/sys/class/hwmon` every two seconds and exits on
+stdin EOF. For each hwmon device it reads the chip `name`, an optional `label`,
+the canonical `device` link (and an NVMe controller's `model`), and every
+`tempN_*` and `fanN_*` channel's input, label, `enable`, `fault`, alarm flags,
+`max`, `crit` and fan `min`. It writes nothing, reads no other attribute, and
+persists nothing. `SEELE_SENSORS_SYSFS` selects a synthetic tree for fixtures.
+
+Each version-1 snapshot carries `rows`, `summary`, `attention`, `skipped`,
+`limited`, `error`, `elapsed` and `cadenceSeconds`. A row is one device with a
+stable `chip@canonical-device-path` identity, a title, the chip and device name
+as detail, and its readings. A reading carries formatted `value`, session
+`peak` and `limits`, a `state` (`normal`, `stopped`, `high`, `critical`,
+`alarm`, `fault`, `disabled` or `unavailable`), a short `status`, and a meter
+`ratio` only when the driver states a limit to measure against.
+
+- Limits are the driver's own. A `max` or `crit` of zero or below is a limit
+  the chip does not have, and no threshold is invented where none is stated, so
+  a CPU whose driver publishes no limits never turns amber. An alarm flag
+  outranks the comparison, because the chip compares against the limit it
+  enforces in hardware.
+- A faulted, disabled or unreadable channel (a sleeping sensor answers
+  `ENODATA`) stays in its row as what it is, never a zero, and keeps the peak it
+  had.
+- Devices are ordered by what they are (CPU, GPU, mainboard, memory, NVMe,
+  network, thermal zones, the rest) and then by identity, never by reading, so
+  a row does not move while the pointer travels to it.
+- Titles prefer the hwmon `label`, then the NVMe model, then a family name for
+  the chip. Driver and firmware strings pass the shared visible-character filter,
+  lose control characters and are bounded to 48 characters; a chip name outside
+  the ABI's alphabet is skipped.
+- `drivetemp` devices are counted and left alone. The driver sends an ATA or
+  SCSI command for each read, and its documentation warns that this can reset a
+  drive's spin-down timer; an inspector must not keep a disk awake.
+- Peaks belong to one driver instance: a device whose hwmon directory is
+  replaced starts again, and a device that disappears takes its peaks with it.
+  `{"op":"reset"}` clears every peak and emits at once.
+- Discovery reads at most 1024 directory entries, 64 devices after sorting by
+  name, and 64 channels of each kind per device, each attribute under a small
+  byte bound, and reports `limited` when anything was left out.
+
+NVIDIA's driver publishes no hwmon device, so its GPU does not appear; the panel
+shows what the kernel's sensor interface holds rather than querying vendor
+tools.
+
+Validation: the unit tests cover limits and alarm precedence, broken channels,
+naming and sanitization, `drivetemp`, stable ordering, peaks across reset and
+rebinding, and discovery bounds. `tests/sensors.py` drives the real executable
+against a synthetic hwmon class with symlinked devices through peaks, a crossed
+limit, Reset, a rebind under a new hwmon number, a vanished class directory,
+EOF and oversized input. `tests/sensors.js` checks the store's process
+ownership and late-callback refusal, and `tests/sensors.sh` runs
+`tst_sensors.qml` against the production panel and store for states, meters,
+captions, keyboard Reset and Retry.
 
 ## CPU, memory, storage and local processes
 

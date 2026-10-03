@@ -62,6 +62,18 @@ Scope {
     && /^0x[0-9a-f]+$/i.test(String(sourceWindow.address || ""))
     && answer.length <= 65536
   readonly property bool canSend: !busy && !collecting && promptText.trim() !== ""
+  property int promptCursor: 0
+  property int pendingCursor: -1
+  property bool promptFieldActive: false
+  property int completionIndex: 0
+  property string completionDismissed: ""
+  // The list is a string match. Opening it, moving through it and accepting a
+  // row never read a source; a finished mention is absent so Enter still sends.
+  readonly property var completion: Ai.completion(promptText, promptCursor)
+  readonly property string completionIdentity: completion.active ? String(completion.start) + ":" + String(completion.query) : ""
+  readonly property bool completionOpen: completion.active && promptFieldActive && !busy && completion.options.length > 0 && completionDismissed !== completionIdentity
+  readonly property int completionChoice: completionPick()
+  onCompletionIdentityChanged: completionIndex = 0
 
   signal usageRefreshRequested()
 
@@ -121,6 +133,11 @@ Scope {
     collectionQueue = []
     permissionContexts = []
     inserting = false
+    promptCursor = 0
+    pendingCursor = -1
+    promptFieldActive = false
+    completionIndex = 0
+    completionDismissed = ""
     resetContexts()
     alive = true
     active = true
@@ -139,6 +156,11 @@ Scope {
     permissionContexts = []
     inserting = false
     promptText = ""
+    promptCursor = 0
+    pendingCursor = -1
+    promptFieldActive = false
+    completionIndex = 0
+    completionDismissed = ""
     sentPrompt = ""
     answer = ""
     error = ""
@@ -277,7 +299,53 @@ Scope {
     send({ command: "insert", id: generation })
   }
 
+  function completionPick() {
+    var options = completion.options || []
+    if (options.length === 0) return 0
+    var index = completionIndex
+    if (!(index >= 0)) return 0
+    return index >= options.length ? options.length - 1 : index
+  }
+
+  function moveCompletion(delta) {
+    var count = (completion.options || []).length
+    if (!completionOpen || count === 0) return
+    completionIndex = (completionPick() + delta + count) % count
+  }
+
+  function acceptMention(kind) {
+    if (!completionOpen || busy) return
+    var applied = Ai.applyCompletion(promptText, promptCursor, String(kind || ""))
+    if (!applied.applied) return
+    pendingCursor = applied.cursor
+    promptText = applied.text
+    promptCursor = applied.cursor
+  }
+
   function key(event) {
+    var action = Ai.completionKey(completionOpen, event.key, (event.modifiers & Qt.ShiftModifier) !== 0)
+    if (action === "dismiss") {
+      completionDismissed = completionIdentity
+      event.accepted = true
+      return
+    }
+    if (action === "up") {
+      moveCompletion(-1)
+      event.accepted = true
+      return
+    }
+    if (action === "down") {
+      moveCompletion(1)
+      event.accepted = true
+      return
+    }
+    if (action === "accept") {
+      var options = completion.options || []
+      var pick = completionPick()
+      if (pick < options.length) acceptMention(options[pick].kind)
+      event.accepted = true
+      return
+    }
     if (event.key === Qt.Key_Escape) {
       close()
       event.accepted = true
@@ -554,34 +622,159 @@ Scope {
               }
             }
 
-            Rectangle {
+            Item {
+              id: promptEditor
               width: parent.width
-              height: 112
-              radius: prompt.theme.radius
-              color: prompt.theme.wellColor
-              border.width: 1
-              border.color: promptField.activeFocus ? prompt.theme.edgeCrown : prompt.theme.cardBorder
-              antialiasing: true
+              // The list sits under the field, in the scroll, so every match
+              // stays reachable on a short output.
+              height: 112 + (prompt.completionOpen ? completionMenu.height + prompt.theme.spaceTight : 0)
 
-              TextArea {
-                id: promptField
-                anchors.fill: parent
-                anchors.margins: prompt.theme.cardPadding
-                text: prompt.promptText
-                onTextChanged: if (prompt.promptText !== text) prompt.promptText = text
-                enabled: !prompt.busy
-                placeholderText: prompt.needsAction ? "Ask a follow-up…" : "Ask Codex…  Add @clip, @select, @window, @dir, or @screen"
-                color: prompt.theme.text
-                placeholderTextColor: prompt.theme.overlay
-                selectionColor: prompt.theme.selectedColor
-                selectedTextColor: prompt.theme.text
-                font.family: prompt.theme.fontFamily
-                font.pixelSize: prompt.theme.textLead
-                wrapMode: TextEdit.Wrap
-                selectByMouse: true
-                persistentSelection: true
-                background: Item {}
-                Keys.onPressed: event => prompt.key(event)
+              Rectangle {
+                id: promptWell
+                width: parent.width
+                height: 112
+                radius: prompt.theme.radius
+                color: prompt.theme.wellColor
+                border.width: 1
+                border.color: promptField.activeFocus ? prompt.theme.edgeCrown : prompt.theme.cardBorder
+                antialiasing: true
+
+                TextArea {
+                  id: promptField
+                  anchors.fill: parent
+                  anchors.margins: prompt.theme.cardPadding
+                  text: prompt.promptText
+                  onTextChanged: {
+                    if (prompt.promptText !== text) prompt.promptText = text
+                    if (prompt.pendingCursor >= 0 && promptWindow.panelActive) {
+                      var cursor = prompt.pendingCursor
+                      prompt.pendingCursor = -1
+                      cursorPosition = cursor
+                    }
+                    if (promptWindow.panelActive) prompt.promptCursor = cursorPosition
+                  }
+                  onCursorPositionChanged: if (promptWindow.panelActive) prompt.promptCursor = cursorPosition
+                  onActiveFocusChanged: if (promptWindow.panelActive) prompt.promptFieldActive = activeFocus
+                  enabled: !prompt.busy
+                  placeholderText: prompt.needsAction ? "Ask a follow-up…" : "Ask Codex…  Type @ to add context"
+                  color: prompt.theme.text
+                  placeholderTextColor: prompt.theme.overlay
+                  selectionColor: prompt.theme.selectedColor
+                  selectedTextColor: prompt.theme.text
+                  font.family: prompt.theme.fontFamily
+                  font.pixelSize: prompt.theme.textLead
+                  wrapMode: TextEdit.Wrap
+                  selectByMouse: true
+                  persistentSelection: true
+                  background: Item {}
+                  Keys.onPressed: event => prompt.key(event)
+                }
+              }
+
+              Rectangle {
+                id: completionMenu
+                visible: prompt.completionOpen
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: promptWell.bottom
+                anchors.topMargin: prompt.theme.spaceTight
+                radius: prompt.theme.radius
+                color: prompt.theme.floatColor
+                border.width: 1
+                border.color: prompt.theme.panelBorder
+                antialiasing: true
+                implicitHeight: completionList.implicitHeight + prompt.theme.spaceTight * 2
+                height: implicitHeight
+
+                Shared.SurfaceEdge { theme: prompt.theme; radius: completionMenu.radius - 1 }
+                Shared.SurfaceGrain { theme: prompt.theme; inset: 3 }
+
+                Column {
+                  id: completionList
+                  z: 2
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.margins: prompt.theme.spaceTight
+                  spacing: 0
+
+                  Repeater {
+                    model: prompt.completionOpen ? prompt.completion.options : []
+
+                    Rectangle {
+                      id: completionRow
+                      required property int index
+                      required property var modelData
+                      readonly property bool current: index === prompt.completionChoice
+                      width: completionList.width
+                      height: prompt.theme.detailRowHeight
+                      radius: prompt.theme.radiusSmall
+                      color: current ? prompt.theme.selectedColor : prompt.theme.clearColor
+                      antialiasing: true
+
+                      HoverHandler {
+                        id: completionHover
+                        cursorShape: Qt.PointingHandCursor
+                        onHoveredChanged: if (hovered) prompt.completionIndex = completionRow.index
+                      }
+                      Shared.HoverWash { theme: prompt.theme; hovered: completionHover.hovered }
+
+                      Rectangle {
+                        id: completionGlyph
+                        anchors.left: parent.left
+                        anchors.leftMargin: prompt.theme.cardPadding
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: prompt.theme.chipHeight
+                        height: width
+                        radius: prompt.theme.radiusSmall
+                        color: prompt.theme.activeTint
+                        Shared.CenteredGlyph {
+                          anchors.fill: parent
+                          text: completionRow.modelData.glyph
+                          color: prompt.theme.accent
+                          font.family: prompt.theme.fontFamily
+                          font.pixelSize: prompt.theme.textIcon
+                        }
+                      }
+
+                      Column {
+                        anchors.left: completionGlyph.right
+                        anchors.leftMargin: prompt.theme.spaceMedium
+                        anchors.right: parent.right
+                        anchors.rightMargin: prompt.theme.cardPadding
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: prompt.theme.spaceTight
+                        Text {
+                          width: parent.width
+                          text: completionRow.modelData.label
+                          textFormat: Text.PlainText
+                          color: prompt.theme.text
+                          font.family: prompt.theme.fontFamily
+                          font.pixelSize: prompt.theme.textBody
+                          font.weight: prompt.theme.weightStrong
+                          elide: Text.ElideRight
+                        }
+                        Text {
+                          width: parent.width
+                          text: completionRow.modelData.caption
+                          textFormat: Text.PlainText
+                          color: prompt.theme.subtext
+                          font.family: prompt.theme.fontFamily
+                          font.pixelSize: prompt.theme.textCaption
+                          elide: Text.ElideRight
+                        }
+                      }
+
+                      MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                          prompt.acceptMention(completionRow.modelData.kind)
+                          promptField.forceActiveFocus()
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
 
@@ -590,7 +783,7 @@ Scope {
               spacing: prompt.theme.spaceMedium
               Text {
                 Layout.fillWidth: true
-                text: "Enter sends · Shift+Enter adds a line · sensitive text needs one-time permission"
+                text: prompt.completionOpen ? "Up and Down move · Enter inserts · Escape dismisses" : "Enter sends · Shift+Enter adds a line · sensitive text needs one-time permission"
                 color: prompt.theme.subtext
                 font.family: prompt.theme.fontFamily
                 font.pixelSize: prompt.theme.textCaption

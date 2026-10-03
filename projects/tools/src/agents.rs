@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Read};
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,11 +58,42 @@ fn process_name(pid: u32) -> String {
     normalized_process_name(&name).to_owned()
 }
 
+fn cli_harness(name: &str) -> Option<&str> {
+    match normalized_process_name(name) {
+        "pi" => Some("pi"),
+        "opencode" => Some("opencode"),
+        "codex" => Some("codex"),
+        "claude" => Some("claude"),
+        "cursor-agent" | "cursor-agent-sea" | "cursor-agent-se" => Some("cursor"),
+        _ => None,
+    }
+}
+
+fn argv0_name(pid: u32) -> Option<String> {
+    let mut bytes = Vec::new();
+    fs::File::open(format!("/proc/{pid}/cmdline"))
+        .ok()?
+        .take(4096)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let end = bytes.iter().position(|byte| *byte == 0)?;
+    let name = std::str::from_utf8(&bytes[..end])
+        .ok()?
+        .rsplit('/')
+        .next()?;
+    Some(normalized_process_name(name).to_owned())
+}
+
 fn owning_pid(agent: &str) -> u32 {
     let fallback = unsafe { libc::getppid() as u32 };
     let mut pid = fallback;
     for _ in 0..12 {
-        if process_name(pid) == agent {
+        let name = process_name(pid);
+        if name == agent
+            || agent == "cursor"
+                && (cli_harness(&name) == Some("cursor")
+                    || argv0_name(pid).as_deref().and_then(cli_harness) == Some("cursor"))
+        {
             return pid;
         }
         let Some((parent, _)) = proc_stat(pid) else {
@@ -155,6 +186,37 @@ impl HostSessions {
     }
 }
 
+#[derive(Deserialize)]
+struct CursorEvent {
+    hook_event_name: String,
+    #[serde(default)]
+    conversation_id: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+}
+
+impl CursorEvent {
+    fn lifecycle(&self) -> Option<&'static str> {
+        match self.hook_event_name.as_str() {
+            "sessionStart" | "stop" => Some("input"),
+            "beforeSubmitPrompt" => Some("working"),
+            "sessionEnd" => Some("end"),
+            _ => None,
+        }
+    }
+
+    fn key(&self) -> Option<String> {
+        let id = self
+            .conversation_id
+            .as_deref()
+            .or(self.session_id.as_deref())?;
+        if id.is_empty() || id.encode_utf16().count() > 1024 {
+            return None;
+        }
+        Some(format!("{:x}", Sha256::digest(id.as_bytes())))
+    }
+}
+
 pub fn hook(arguments: &[String]) -> Result {
     let agent = arguments.first().ok_or("agent required")?;
     if agent.is_empty() || agent.len() > 64 || clean_key(agent) != *agent {
@@ -163,7 +225,7 @@ pub fn hook(arguments: &[String]) -> Result {
     let event = arguments.get(1).ok_or("event required")?;
     if arguments.len() != 2
         || !(matches!(event.as_str(), "input" | "working" | "end")
-            || agent == "opencode" && event == "host-event")
+            || matches!(agent.as_str(), "opencode" | "cursor") && event == "host-event")
     {
         return Err("Invalid agent event".into());
     }
@@ -180,17 +242,47 @@ pub fn hook(arguments: &[String]) -> Result {
             &*crate::command::shutdown_signal(),
         )?
     };
-    let key = serde_json::from_slice::<Value>(&payload)
-        .ok()
-        .and_then(|value| value.get("session_id")?.as_str().map(clean_key))
-        .filter(|value| !value.is_empty());
+    let cursor = if agent == "cursor" && event == "host-event" {
+        let incoming: CursorEvent =
+            serde_json::from_slice(&payload).map_err(|_| "Invalid Cursor event")?;
+        // Hooks can receive prompts and paths. Deserialize only lifecycle identity;
+        // no source content, transcript reads or approval decisions belong here.
+        let key = incoming.key().ok_or("Invalid Cursor session identity")?;
+        let Some(status) = incoming.lifecycle() else {
+            println!("{{}}");
+            return Ok(());
+        };
+        Some((incoming, key, status))
+    } else {
+        None
+    };
+    let key = cursor.as_ref().map(|(_, key, _)| key.clone()).or_else(|| {
+        serde_json::from_slice::<Value>(&payload)
+            .ok()
+            .and_then(|value| value.get("session_id")?.as_str().map(clean_key))
+            .filter(|value| !value.is_empty())
+    });
     let pid = owning_pid(agent);
     let key = key.unwrap_or_else(|| pid.to_string());
     let directory = agent_dir();
     seele_runtime::fs::private_directory(&directory)?;
     let path = directory.join(format!("{agent}-native-{key}.json"));
+    // sessionStart is fire-and-forget in Cursor; a late start must not roll a
+    // submitted turn back to input. Empty JSON observes, never blocks or resumes.
+    let event = if let Some((incoming, _, status)) = &cursor {
+        if incoming.hook_event_name == "sessionStart"
+            && seele_runtime::fs::read_private(&path, 4096).is_ok()
+        {
+            println!("{{}}");
+            return Ok(());
+        }
+        println!("{{}}");
+        *status
+    } else {
+        event.as_str()
+    };
     let sessions_path = directory.join(format!(".opencode-sessions-{pid}"));
-    if agent == "opencode" && matches!(event.as_str(), "input" | "end") {
+    if agent == "opencode" && matches!(event, "input" | "end") {
         let _ = fs::remove_file(&sessions_path);
     }
     if event == "end" {
@@ -220,7 +312,7 @@ pub fn hook(arguments: &[String]) -> Result {
         atomic_write(&sessions_path, &serde_json::to_vec(&sessions)?)?;
         status
     } else {
-        event.as_str()
+        event
     };
     let now = timestamp();
     let started = seele_runtime::fs::read_private(&path, 4096)
@@ -378,9 +470,14 @@ pub fn launch(arguments: &[String]) -> Result {
         "opencode" => "SEELE_SHELL_OPENCODE",
         "codex" => "SEELE_SHELL_CODEX",
         "claude" => "SEELE_SHELL_CLAUDE",
+        "cursor" => "SEELE_SHELL_CURSOR",
         _ => return Err(format!("Unknown agent: {agent}").into()),
     };
-    let default = agent;
+    let default = if agent == "cursor" {
+        "cursor-agent"
+    } else {
+        agent
+    };
     let harness = env::var(variable).unwrap_or_else(|_| default.to_owned());
     let mut inner = vec![harness];
     if agent == "opencode" {
@@ -407,7 +504,8 @@ pub fn launch(arguments: &[String]) -> Result {
 
 fn collect(kind: &str) -> Vec<Value> {
     let binary = env::var("SEELE_SHELL_CODEXBAR").unwrap_or_else(|_| "codexbar".into());
-    let providers = env::var("SEELE_SHELL_CODEXBAR_PROVIDERS").unwrap_or_else(|_| "both".into());
+    let providers =
+        env::var("SEELE_SHELL_CODEXBAR_PROVIDERS").unwrap_or_else(|_| "both cursor".into());
     let mut records = Vec::new();
     for provider in providers.split_whitespace() {
         let mut args = vec![kind, "--provider", provider, "--json"];
@@ -627,7 +725,8 @@ pub fn state(_arguments: &[String]) -> Result {
             {"id":"pi","name":"Pi","command":env::var("SEELE_SHELL_PI").unwrap_or_else(|_|"pi".into()),"description":"Primary Seele coding agent"},
             {"id":"opencode","name":"OpenCode","command":env::var("SEELE_SHELL_OPENCODE").unwrap_or_else(|_|"opencode".into()),"description":"Provider-flexible coding agent"},
             {"id":"codex","name":"Codex","command":env::var("SEELE_SHELL_CODEX").unwrap_or_else(|_|"codex".into()),"description":"OpenAI Codex CLI"},
-            {"id":"claude","name":"Claude Code","command":env::var("SEELE_SHELL_CLAUDE").unwrap_or_else(|_|"claude".into()),"description":"Anthropic Claude Code CLI"}
+            {"id":"claude","name":"Claude Code","command":env::var("SEELE_SHELL_CLAUDE").unwrap_or_else(|_|"claude".into()),"description":"Anthropic Claude Code CLI"},
+            {"id":"cursor","name":"Cursor","command":env::var("SEELE_SHELL_CURSOR").unwrap_or_else(|_|"cursor-agent".into()),"description":"Cursor Agent CLI"}
         ]
     });
     let cache = state_home().join("seele-shell/agents.json");
@@ -871,25 +970,22 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
         // Reuse that read for discovery as well as CPU accounting.
         let stat = fs::read_to_string(entry.path().join("stat")).ok();
         let parsed = stat.as_deref().and_then(parse_proc_stat);
-        let mut name = if let Some((parent, ticks, name)) = parsed {
+        let name = if let Some((parent, ticks, name)) = parsed {
             processes.push((pid, parent, ticks));
             normalized_process_name(name).to_owned()
         } else {
             process_name(pid)
         };
-        if !matches!(name.as_str(), "pi" | "opencode" | "codex" | "claude") {
-            let bytes = fs::read(entry.path().join("cmdline")).unwrap_or_default();
-            name =
-                String::from_utf8_lossy(bytes.split(|byte| *byte == 0).next().unwrap_or_default())
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or("")
-                    .trim_start_matches('.')
-                    .trim_end_matches("-wrapped")
-                    .to_owned();
-        }
-        if matches!(name.as_str(), "pi" | "opencode" | "codex" | "claude") {
-            roots.insert(pid, name);
+        let agent = cli_harness(&name).map(str::to_owned).or_else(|| {
+            argv0_name(pid)
+                .as_deref()
+                .and_then(cli_harness)
+                .map(str::to_owned)
+        });
+        // An idle graphical editor is not an active agent. Only its native
+        // conversation hooks enroll it; CPU fallback discovers the CLI alone.
+        if let Some(agent) = agent {
+            roots.insert(pid, agent);
         }
     }
     let tree = ProcessTree::new(&processes);
@@ -902,6 +998,51 @@ fn running_harnesses() -> Vec<(u32, String, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_cli_identity_excludes_idle_editors_and_workers() {
+        for name in [
+            "cursor-agent",
+            ".cursor-agent-wrapped",
+            "cursor-agent-sea",
+            "cursor-agent-se",
+        ] {
+            assert_eq!(cli_harness(name), Some("cursor"));
+        }
+        for name in [
+            "cursor",
+            "node",
+            "cursor-shell",
+            "cursor-agent-worker-sea",
+            "cursor-agent-helper",
+        ] {
+            assert_eq!(cli_harness(name), None);
+        }
+    }
+
+    #[test]
+    fn cursor_hooks_share_one_bounded_opaque_identity() {
+        let start: CursorEvent = serde_json::from_value(json!({
+            "hook_event_name":"sessionStart", "session_id":"conversation/one"
+        }))
+        .unwrap();
+        let step: CursorEvent = serde_json::from_value(json!({
+            "hook_event_name":"beforeSubmitPrompt", "conversation_id":"conversation/one",
+            "prompt":"not metadata", "attachments":[{"file_path":"not metadata"}]
+        }))
+        .unwrap();
+        assert_eq!(start.key(), step.key());
+        assert_eq!(step.key().unwrap().len(), 64);
+        assert_eq!(start.lifecycle(), Some("input"));
+        assert_eq!(step.lifecycle(), Some("working"));
+        for id in [String::new(), "x".repeat(1025)] {
+            let event: CursorEvent = serde_json::from_value(json!({
+                "hook_event_name":"stop", "conversation_id":id
+            }))
+            .unwrap();
+            assert_eq!(event.key(), None);
+        }
+    }
 
     #[test]
     fn stat_snapshot_supplies_name_parent_and_ticks_together() {

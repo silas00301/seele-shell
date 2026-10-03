@@ -46,3 +46,37 @@ const closing=create('copy',6,'private');
 vm.runInNewContext(body('Component.onDestruction:'),{session});
 assert.equal(closing.payload,'');assert.equal(closing.completed,true);assert.equal(closing.running,false);
 console.log('text workbench production callbacks: repeated copies and timeout/stale-result isolation passed');
+
+
+// Execute the production panel's mode table and preview callback against the
+// native bridge. QtTest separately clicks the real delegates and checks keys.
+const panelSource = fs.readFileSync(process.argv[3], 'utf8');
+const {nativeBridge} = require('./native-functions.cjs');
+const modesText = panelSource.match(/readonly property var modes: (\[[\s\S]*?\n  \])/)[1];
+const modes = vm.runInNewContext(modesText);
+assert.equal(new Set(modes.map(mode => mode.id)).size, modes.length);
+const preview = panelSource.match(/function preview\(\) \{([\s\S]*?)\n  \}/)[1];
+const panelContext = vm.createContext({Native: nativeBridge(), editor: {text: ''}, mode: '', result: null});
+for (const [id, input, output] of [
+  ['base64url-encode', '\uffff🦀', '77-_8J-mgA'],
+  ['base64url-decode', '77-_8J-mgA', '\uffff🦀'],
+  ['base64url-decode', '77-_8J-mgA==', '\uffff🦀'],
+  ['base64-encode', '\uffff🦀', '77+/8J+mgA=='],
+  ['base64-decode', '77+/8J+mgA==', '\uffff🦀'],
+]) {
+  const mode = modes.find(mode => mode.id === id);
+  assert(mode, 'production selector must expose ' + id);
+  panelContext.mode = mode.id;
+  panelContext.editor.text = input;
+  vm.runInContext(preview, panelContext);
+  assert.equal(panelContext.result.valid, true);
+  assert.equal(panelContext.result.output, output);
+}
+for (const [mode, input] of [['base64url-decode','Zg='],['base64url-decode','77+/'],['base64-decode','77-_']]) {
+  panelContext.mode = mode;
+  panelContext.editor.text = input;
+  vm.runInContext(preview, panelContext);
+  assert.equal(panelContext.result.valid, false);
+  assert.equal(panelContext.result.output, '');
+}
+console.log('text workbench production modes: URL-safe and standard native dispatch passed');
