@@ -203,44 +203,6 @@ pub(crate) fn enrich(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn projection_is_bounded_before_targets_are_cloned() {
-        let client = json!({
-            "address": "0x1",
-            "pid": std::process::id(),
-            "mapped": true,
-            "hidden": false,
-            "initialClass": "fixture",
-            "initialTitle": "Fixture",
-            "workspace": {"id": 1, "name": "one"}
-        });
-        let clients = json!([client]);
-        let mut snapshot = json!({
-            "clientGroups": [(0..65).map(|_| json!({
-                "address": "0x1",
-                "workspace": {"name": "one"}
-            })).collect::<Vec<_>>()]
-        });
-        let workspaces = json!((2..66)
-            .map(|id| json!({
-                "id": id,
-                "name": id.to_string()
-            }))
-            .collect::<Vec<_>>());
-
-        assert_eq!(
-            enrich(&mut snapshot, &clients, &workspaces, &json!([]))
-                .unwrap_err()
-                .to_string(),
-            "Too many window move targets"
-        );
-        assert!(snapshot["clientGroups"][0][0].get("moveTargets").is_none());
-    }
-}
 fn focused() -> Result<(Value, Value)> {
     let active = parsed("hyprctl", &["activewindow", "-j"])?;
     let workspace = parsed("hyprctl", &["activeworkspace", "-j"])?;
@@ -310,4 +272,43 @@ pub(crate) fn run(arguments: &[String]) -> Result {
         return Err("Window move could not be confirmed; refresh the desktop".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn projection_is_bounded_before_targets_are_cloned() {
+        let client = json!({
+            "address": "0x1",
+            "pid": std::process::id(),
+            "mapped": true,
+            "hidden": false,
+            "initialClass": "fixture",
+            "initialTitle": "Fixture",
+            "workspace": {"id": 1, "name": "one"}
+        });
+        let clients = json!([client]);
+        let mut snapshot = json!({
+            "clientGroups": [(0..65).map(|_| json!({
+                "address": "0x1",
+                "workspace": {"name": "one"}
+            })).collect::<Vec<_>>()]
+        });
+        let workspaces = json!((2..66)
+            .map(|id| json!({
+                "id": id,
+                "name": id.to_string()
+            }))
+            .collect::<Vec<_>>());
+
+        assert_eq!(
+            enrich(&mut snapshot, &clients, &workspaces, &json!([]))
+                .unwrap_err()
+                .to_string(),
+            "Too many window move targets"
+        );
+        assert!(snapshot["clientGroups"][0][0].get("moveTargets").is_none());
+    }
 }
