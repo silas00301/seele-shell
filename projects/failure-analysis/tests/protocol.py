@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'target/debug/seele-failure-report'
 GENERATOR = BINARY.with_name('seele-failure-generator')
 REBUILD = BINARY.with_name('seele-rebuild')
+RB = BINARY.with_name('seele-rb')
 
 
 def fixture(root, action=''):
@@ -85,6 +86,80 @@ def main():
             assert not result.stderr
             log=[json.loads(line)for line in calls.read_text().splitlines()];assert log[0]==['nh',['os','switch','--dry']]
             assert any(row[0]=='notify'for row in log)==bool(code)
+    # rb: record, check, build, diff, then activate the exact built store path.
+    rb_tools={
+      'jj':'print("kxtnwmpq 1a2b3c4d Reviewed change")\nif os.environ.get("FIXTURE_FAIL")=="jj":sys.exit(1)\n',
+      'nix':'print("checking flake outputs")\nif os.environ.get("FIXTURE_FAIL")=="check":print("error: option does not exist");sys.exit(1)\n',
+      'nh':('a=sys.argv[1:]\nif a[:2]==["os","build"]:\n if os.environ.get("FIXTURE_FAIL")=="build":print("error: build of nixos-system failed");sys.exit(1)\n'
+            ' link=pathlib.Path(a[a.index("--out-link")+1]);target=pathlib.Path(os.environ["FIXTURE_BUILT"]);target.mkdir(parents=True,exist_ok=True);link.symlink_to(target)\n'
+            'print("activating" if a[:2]==["os","switch"] else "built")\n'),
+      'nvd':'print("<<< current\\n>>> built\\nAdded packages: 1")\n',
+    }
+    def rb(root,arguments,fail='',same=False,stdin=subprocess.DEVNULL):
+        runtime,calls,environment=fixture(root)
+        tools=root/'tools';store=root/'store';store.mkdir()
+        for name,body in rb_tools.items():
+            path=tools/name;path.write_text(('#!'+sys.executable+'\n')+'import json,os,pathlib,sys\np=pathlib.Path('+repr(str(calls))+')\nwith p.open("a") as f:f.write(json.dumps([pathlib.Path(sys.argv[0]).name,sys.argv[1:]])+"\\n")\n'+body);path.chmod(0o700)
+        built=store/'bbbb-nixos-system-nerv';current=store/'aaaa-nixos-system-nerv';current.mkdir()
+        if same:built=current
+        running=root/'current-system';running.symlink_to(current)
+        environment.update(SEELE_FAILURE_JJ=str(tools/'jj'),SEELE_FAILURE_NIX=str(tools/'nix'),SEELE_FAILURE_NVD=str(tools/'nvd'),
+          SEELE_REBUILD_STORE_DIR=str(store),SEELE_REBUILD_CURRENT_SYSTEM=str(running),FIXTURE_BUILT=str(built),FIXTURE_FAIL=fail,NH_FLAKE=str(root/'seele'))
+        environment.pop('NH_OS_FLAKE',None)
+        result=subprocess.run([str(RB),*arguments],env=environment,stdin=stdin,capture_output=True,timeout=15)
+        log=[json.loads(line) for line in calls.read_text().splitlines()]
+        return result,log,built,runtime
+    def names(log):return [row[0]+(' '+' '.join(row[1][:2]) if row[0]=='nh' else '') for row in log if row[0] not in ('notify','systemctl')]
+    for arguments,expect_switch in ((['--dry-run'],False),(['--switch'],True),([],False)):
+        with tempfile.TemporaryDirectory(prefix='seele-rb-fixture-') as temporary:
+            root=Path(temporary);root.chmod(0o700)
+            result,log,built,runtime=rb(root,arguments)
+            assert result.returncode==0,(arguments,result.returncode,result.stdout,result.stderr)
+            steps=['jj','nix','nh os build','nvd']+(['nh os switch'] if expect_switch else [])
+            assert names(log)==steps,(arguments,names(log))
+            jj=next(row for row in log if row[0]=='jj')[1];assert jj[:2]==['--repository',str(root/'seele')] and 'log' in jj,jj
+            assert next(row for row in log if row[0]=='nix')[1]==['flake','check','--no-build','--no-write-lock-file',str(root/'seele')]
+            build=next(row for row in log if row[0]=='nh')[1];assert build[-1]==str(root/'seele') and '--out-link' in build
+            if expect_switch:
+                assert log[-2][1]==['os','switch','--diff','never',str(built)],'the diffed store path is what gets activated'
+            output=result.stdout.decode()
+            assert 'kxtnwmpq 1a2b3c4d Reviewed change' in output and 'Added packages: 1' in output
+            if arguments==[]:assert 'No terminal to ask on' in output,'without a terminal nothing is activated'
+            notified=[row for row in log if row[0]=='notify'];assert len(notified)==1
+            assert ('Activated' if expect_switch else 'Built, not activated') in notified[0][1][-1]
+            assert not list(runtime.glob('seele-rb-*')),'the private result link is removed'
+            assert not (runtime/'seele-shell/failures').exists(),'success creates no report'
+    # On a terminal the default asks, and only an explicit yes activates.
+    import pty
+    for answer,expect_switch in ((b'y\n',True),(b'\n',False),(b'no\n',False)):
+        with tempfile.TemporaryDirectory(prefix='seele-rb-fixture-') as temporary:
+            root=Path(temporary);root.chmod(0o700)
+            primary,secondary=pty.openpty();os.write(primary,answer)
+            try:result,log,built,runtime=rb(root,[],stdin=secondary)
+            finally:os.close(secondary);os.close(primary)
+            assert result.returncode==0 and b'Activate this generation? [y/N]' in result.stdout
+            assert (names(log)[-1]=='nh os switch')==expect_switch,(answer,names(log))
+    with tempfile.TemporaryDirectory(prefix='seele-rb-fixture-') as temporary:
+        root=Path(temporary);root.chmod(0o700)
+        result,log,built,runtime=rb(root,['--switch'],same=True)
+        assert result.returncode==0 and names(log)==['jj','nix','nh os build'],names(log)
+        assert b'nothing to activate' in result.stdout
+    for fail,expected in (('jj',['jj']),('check',['jj','nix']),('build',['jj','nix','nh os build'])):
+        with tempfile.TemporaryDirectory(prefix='seele-rb-fixture-') as temporary:
+            root=Path(temporary);root.chmod(0o700)
+            result,log,built,runtime=rb(root,['--switch'],fail=fail)
+            assert result.returncode==1,(fail,result.returncode)
+            assert names(log)==expected,(fail,names(log))
+            assert b'Nothing was activated' in result.stdout
+            reports=list((runtime/'seele-shell/failures').glob('*.txt'));assert len(reports)==1
+            text=reports[0].read_text();assert 'Failed step:' in text and 'Failed command:' in text
+            assert any(row[0]=='notify' and '--action' in row[1] for row in log),'a failure offers the private report'
+    with tempfile.TemporaryDirectory(prefix='seele-rb-fixture-') as temporary:
+        root=Path(temporary);root.chmod(0o700);runtime,calls,environment=fixture(root)
+        environment.pop('NH_FLAKE',None);environment.pop('NH_OS_FLAKE',None)
+        assert subprocess.run([str(RB)],env=environment,capture_output=True,timeout=5).returncode==2
+        assert subprocess.run([str(RB),'--dry-run','--switch'],env=dict(environment,NH_FLAKE='/x'),capture_output=True,timeout=5).returncode==2
+        assert not calls.exists(),'invalid invocations run nothing'
     with tempfile.TemporaryDirectory(prefix='seele-generator-fixture-') as temporary:
         root=Path(temporary);root.chmod(0o700);high=root/'high';low=root/'low';output=root/'output'
         for path in (high,low,output):path.mkdir(mode=0o700)
@@ -94,7 +169,7 @@ def main():
         assert result.returncode==0,result.stderr
         assert sorted(path.parent.name for path in output.glob('*.service.d/*.conf'))==['alpha.service.d','beta.service.d']
         assert (output/'alpha.service.d/50-seele-failure-report.conf').read_text()=='[Unit]\nOnFailure=seele-failure-report@%n.service\n'
-    print('Rust failure analysis: consent, private reports, broker redaction, no Pi, local viewer, bounds, raw rebuild bytes/status and systemd generator passed')
+    print('Rust failure analysis: consent, private reports, broker redaction, no Pi, local viewer, bounds, raw rebuild bytes/status, rb record/check/build/diff/activation and systemd generator passed')
 
 
 if __name__=='__main__':main()
