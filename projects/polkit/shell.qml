@@ -1,6 +1,7 @@
 //@ pragma UseQApplication
 
 import QtQuick
+import "../shared" as Shared
 import "../shared/Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
@@ -9,6 +10,8 @@ import Quickshell.Wayland
 
 ShellRoot {
   id: root
+
+  Shared.KeyboardNavigation { theme: root }
 
   property color base: Palette.fallback.base
   property color mantle: Palette.fallback.mantle
@@ -238,6 +241,7 @@ ShellRoot {
 
     Rectangle {
       id: card
+      Keys.onEscapePressed: root.cancel()
 
       anchors.centerIn: parent
       width: 360

@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import Seele.Markdown
+import "shared" as Shared
 
 // The editor is checked by driving it the way a person does: real key presses
 // into the real component, so what is proved is the behaviour the application
@@ -16,6 +17,7 @@ TestCase {
 
   property int edits: 0
   property string lastText: ""
+  Shared.KeyboardNavigation { theme: theme }
 
   QtObject {
     id: theme
@@ -30,6 +32,7 @@ TestCase {
     readonly property color selectedColor: "#33b4befe"
     readonly property string fontFamily: "monospace"
     readonly property int textLead: 13
+    readonly property int radius: 8
     readonly property int spaceLarge: 12
     readonly property int scrollGutter: 8
     readonly property int scrollRebound: 130

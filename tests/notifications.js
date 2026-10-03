@@ -361,7 +361,7 @@ if (process.argv[3]) {
 {
   const shell = fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]), 'shell.qml'), 'utf8');
   const source = shell.slice(shell.indexOf('id: notificationDismissMouse'));
-  const handler = source.match(/^(\s*)onClicked: \{\n([^]*?)^\1\}/m);
+  const handler = source.match(/^(\s*)onTriggered: \{\n([^]*?)^\1\}/m);
   assert(handler);
   for (const popup of [false,true]) for (const expanded of [false,true]) {
     const h=harness();

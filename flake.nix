@@ -48,6 +48,7 @@
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
           packages = {
+            navigation = import ./projects/navigation/package.nix { inherit pkgs; };
             qml-core = import ./packages/core/native.nix {
               inherit pkgs;
               name = "qml-core";

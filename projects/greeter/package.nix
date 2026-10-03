@@ -4,6 +4,7 @@
   quickshell,
 }:
 let
+  navigation = import ../navigation/package.nix { inherit pkgs; };
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -23,6 +24,12 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$out/bin" "$out/share/seele-greeter"
     substitute ${./shell.qml} "$out/share/seele-greeter/shell.qml" \
       --replace-fail '@SYSTEMCTL@' '${pkgs.systemd}/bin/systemctl'
+    mkdir -p "$out/share/seele-greeter/shared"
+    for component in ActionArea FocusRing KeyboardNavigation; do
+      install -m644 "${../shared}/$component.qml" "$out/share/seele-greeter/shared/$component.qml"
+    done
+    substituteInPlace "$out/share/seele-greeter/shell.qml" \
+      --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${../shared/Palette.js} "$out/share/seele-greeter/Palette.js"
     substituteInPlace "$out/share/seele-greeter/shell.qml" \
       --replace-fail 'import "../shared/Palette.js" as Palette' 'import "Palette.js" as Palette'
@@ -30,11 +37,15 @@ pkgs.stdenvNoCC.mkDerivation {
     makeWrapper ${tools}/bin/seele-greeter-run "$out/bin/seele-greeter" \
       --set SEELE_QUICKSHELL '${quickshell}/bin/quickshell' \
       --set SEELE_HYPRCTL '${pkgs.hyprland}/bin/hyprctl' \
-      --set SEELE_CONFIG "$out/share/seele-greeter"
+      --set SEELE_CONFIG "$out/share/seele-greeter" \
+      --prefix QML_IMPORT_PATH : "${navigation}/lib/qt-6/qml" \
+      --prefix QML2_IMPORT_PATH : "${navigation}/lib/qt-6/qml"
 
     runHook postInstall
   '';
 
+  env.QML_IMPORT_PATH = "${navigation}/lib/qt-6/qml";
+  env.QML2_IMPORT_PATH = "${navigation}/lib/qt-6/qml";
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
@@ -46,7 +57,7 @@ pkgs.stdenvNoCC.mkDerivation {
     test -x "$out/bin/seele-greeter"
     "$out/bin/seele-greeter" --help >/dev/null
     ${quickshell}/bin/quickshell --private-check-compat
-    qmllint -I ${quickshell}/lib/qt-6/qml "$out/share/seele-greeter/shell.qml"
+    qmllint -I ${navigation}/lib/qt-6/qml -I ${quickshell}/lib/qt-6/qml "$out/share/seele-greeter/shell.qml"
     grep -q 'model: Quickshell.screens' "$out/share/seele-greeter/shell.qml"
     grep -q 'source: root.grain' "$out/share/seele-greeter/shell.qml"
     grep -q 'onInputReadyChanged: if (inputReady) focusDelay.restart()' "$out/share/seele-greeter/shell.qml"

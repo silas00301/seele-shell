@@ -1,6 +1,7 @@
 //@ pragma UseQApplication
 
 import QtQuick
+import "../shared" as Shared
 import "../shared/Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
@@ -9,6 +10,8 @@ import Quickshell.Wayland
 
 ShellRoot {
   id: root
+
+  Shared.KeyboardNavigation { theme: root }
 
   property color base: Palette.fallback.base
   property color mantle: Palette.fallback.mantle
@@ -218,12 +221,12 @@ ShellRoot {
       }
     }
 
-    MouseArea {
+    Shared.ActionArea {
       id: powerMouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: root.requestPower(powerButton.action)
+      onTriggered: root.requestPower(powerButton.action)
     }
   }
 
@@ -455,6 +458,7 @@ ShellRoot {
       color: root.base
 
       Rectangle {
+        Keys.onEscapePressed: { root.powerMenuOpen = false; root.pendingPowerAction = ""; root.focusPassword() }
         anchors.fill: parent
         color: root.base
 
@@ -765,12 +769,12 @@ ShellRoot {
             font.pixelSize: root.textDisplay
           }
 
-          MouseArea {
+          Shared.ActionArea {
             id: powerMenuMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.powerMenuOpen = !root.powerMenuOpen
+            onTriggered: root.powerMenuOpen = !root.powerMenuOpen
           }
         }
       }
