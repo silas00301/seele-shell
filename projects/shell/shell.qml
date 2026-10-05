@@ -4449,8 +4449,10 @@ Shared.Theme {
         return true
       }
       if (key === Qt.Key_Return || key === Qt.Key_Enter) {
-        if (cursor.stacked) toggleGroup(row.group)
-        else if (!history && root.notificationActionable(entry)) root.activateNotification(entry.id)
+        if (!event.isAutoRepeat) {
+          if (cursor.stacked) toggleGroup(row.group)
+          else if (!history && root.notificationActionable(entry)) root.activateNotification(entry.id)
+        }
         return true
       }
       if (key === Qt.Key_D || key === Qt.Key_Delete) {
