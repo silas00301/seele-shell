@@ -158,3 +158,9 @@ enter argv or logs, and a stale Paste reply cannot replace newer edits.
 
 Validation lives in the `text_workbench` Rust tests, the native clipboard
 fixture, the production QML coordinator fixture, and `tst_textworkbench.qml`.
+
+`notifications.cursor(rows, id, position, step)` flattens visible stack cards and
+reconciles by id. A folded member returns to its lead; a removed id keeps the
+nearest prior position. Step 0 reconciles, ±1 moves, and -2/+2 picks the ends.
+An empty id stays hidden until movement. `tests/notification-cursor.cjs` drives
+the production panel key dispatcher against this policy.
