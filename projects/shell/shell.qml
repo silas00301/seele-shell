@@ -3929,6 +3929,7 @@ Shared.Theme {
     property string group: ""
     property bool history: false
     property bool popup: false
+    property bool keyboardSelected: false
     property bool alwaysUnfolded: false
     // A collapsed stack is not a notification: it stands for its group, opens
     // that group on a click, and its dismiss takes the whole group with it.
@@ -4013,6 +4014,7 @@ Shared.Theme {
     SurfaceWash { radius: root.radius - 1 }
     CardEdge {}
     SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
+    FocusRing { shown: !notificationCard.popup && notificationCard.keyboardSelected; z: 10 }
     Component.onDestruction: if (notificationCard.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
 
     Item {
@@ -4343,7 +4345,8 @@ Shared.Theme {
           delegate: NotificationButton {
             required property var modelData
             visible: !notificationCard.reminding
-            label: modelData.label
+            required property int index
+            label: (notificationCard.keyboardSelected && index < 9 ? (index + 1) + " · " : "") + modelData.label
             controlAction: "notification-action"
             value: String(notificationCard.entry.id)
             extra: modelData.key
@@ -4404,6 +4407,76 @@ Shared.Theme {
     // asked: the panel is where you go to read what you missed.
     readonly property bool alwaysUnfolded: !notificationList.popup
 
+    property string cursorId: ""
+    property int cursorPosition: -1
+    readonly property var cursor: Notifications.cursor(model || [], cursorId, cursorPosition, 0)
+    function resetCursor() { cursorId = ""; cursorPosition = -1 }
+    function reconcileCursor(step) {
+      var next = Notifications.cursor(model || [], cursorId, cursorPosition, step)
+      cursorId = next.id
+      cursorPosition = next.position
+      if (cursorId !== "") revealCursor()
+    }
+    function revealCursor() {
+      if (!visible || popup || cursor.row < 0) return
+      positionViewAtIndex(cursor.row, ListView.Contain)
+      Qt.callLater(function() {
+        var group = notificationList.itemAtIndex(notificationList.cursor.row)
+        if (!group) return
+        var card = group.cardAt(notificationList.cursor.child)
+        if (!card) return
+        var top = card.mapToItem(notificationList.contentItem, 0, 0).y
+        var bottom = top + card.height
+        if (top < notificationList.contentY) notificationList.contentY = top
+        else if (bottom > notificationList.contentY + notificationList.height)
+          notificationList.contentY = Math.max(top, bottom - notificationList.height)
+      })
+    }
+    onModelChanged: if (!popup) reconcileCursor(0)
+    function handleKey(event) {
+      if (popup || !visible || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) return false
+      var key = event.key
+      var step = key === Qt.Key_J || key === Qt.Key_Down ? 1
+        : key === Qt.Key_K || key === Qt.Key_Up ? -1
+        : key === Qt.Key_Home || (key === Qt.Key_G && !(event.modifiers & Qt.ShiftModifier)) ? -2
+        : key === Qt.Key_End || (key === Qt.Key_G && (event.modifiers & Qt.ShiftModifier)) ? 2 : 0
+      if (step) { reconcileCursor(step); return true }
+      if (cursor.id === "") return false
+      var row = model[cursor.row], entry = row.items[cursor.child]
+      if (key === Qt.Key_L || key === Qt.Key_Right || key === Qt.Key_H || key === Qt.Key_Left) {
+        var expanded = key === Qt.Key_L || key === Qt.Key_Right
+        if (row.items.length > 1 && !!expandedGroups[row.group] !== expanded) toggleGroup(row.group)
+        return true
+      }
+      if (key === Qt.Key_Return || key === Qt.Key_Enter) {
+        if (cursor.stacked) toggleGroup(row.group)
+        else if (!history && root.notificationActionable(entry)) root.activateNotification(entry.id)
+        return true
+      }
+      if (key === Qt.Key_D || key === Qt.Key_Delete) {
+        if (!history && !event.isAutoRepeat) {
+          if (cursor.stacked || (cursor.child === 0 && row.expanded)) notificationStore.controller.group(row.group, false)
+          else root.dismissNotification(entry.id)
+        }
+        return true
+      }
+      if (key === Qt.Key_P) {
+        if (!history && !event.isAutoRepeat && (entry.pinned || !Notifications.permanent(entry))) notificationStore.controller.pin(entry.id)
+        return true
+      }
+      if (key === Qt.Key_C) {
+        var code = Notifications.verificationCode(entry)
+        if (code !== "" && !event.isAutoRepeat) root.runControl("copy-code", code, String(entry.id))
+        return true
+      }
+      if (key >= Qt.Key_1 && key <= Qt.Key_9) {
+        var actions = Notifications.actions(entry), at = key - Qt.Key_1
+        if (!history && !event.isAutoRepeat && at < actions.length) root.runControl("notification-action", String(entry.id), actions[at].key)
+        return true
+      }
+      return false
+    }
+
     property var expandedGroups: ({})
     readonly property var entries: notificationList.history ? (root.systemData.notifications.history || [])
       : notificationList.popup ? root.notificationPopupEntries() : (root.systemData.notifications.items || [])
@@ -4433,6 +4506,7 @@ Shared.Theme {
       id: notificationGroup
 
       required property var modelData
+      function cardAt(child) { return child === 0 ? notificationLead : notificationChildren.itemAt(child - 1) }
       readonly property bool open: modelData.expanded
       // A collapsed stack draws its depth below the card, so the row reserves
       // that much and the clip does not cut those edges off.
@@ -4451,6 +4525,8 @@ Shared.Theme {
         spacing: root.spaceSmall
 
         NotificationCard {
+          id: notificationLead
+          keyboardSelected: notificationList.cursor.id === String(entry.id)
           width: parent.width
           entry: notificationGroup.modelData.items[0]
           groupLead: true
@@ -4466,6 +4542,7 @@ Shared.Theme {
         }
 
         Repeater {
+          id: notificationChildren
           model: notificationGroup.open ? notificationGroup.modelData.items.slice(1) : []
 
           NotificationCard {
@@ -4474,6 +4551,7 @@ Shared.Theme {
             x: root.spaceMedium
             width: notificationGroupColumn.width - root.spaceMedium
             entry: modelData
+            keyboardSelected: notificationList.cursor.id === String(entry.id)
             group: notificationGroup.modelData.group
             history: notificationList.history
             popup: notificationList.popup
@@ -11458,7 +11536,11 @@ Shared.Theme {
       // A menu belongs to the surface it dropped out of, so closing the panel
       // takes it with it rather than leaving it open behind the next one.
       onVisibleChanged: {
-        if (!visible) quietMenuOpen = false
+        if (!visible) {
+          quietMenuOpen = false
+          notificationCurrentList.resetCursor()
+          notificationHistoryList.resetCursor()
+        } else Qt.callLater(function() { notificationSurface.forceActiveFocus() })
         remeasure()
       }
       onQuietMenuOpenChanged: {
@@ -11494,6 +11576,23 @@ Shared.Theme {
 
       PanelSurface {
         id: notificationSurface
+        focus: notificationWindow.visible
+        Keys.onPressed: event => {
+          if (event.key === Qt.Key_Escape) {
+            if (notificationWindow.quietMenuOpen) notificationWindow.quietMenuOpen = false
+            else root.closeOverlays()
+            event.accepted = true
+            return
+          }
+          if (event.key === Qt.Key_Tab && (event.modifiers & Qt.ControlModifier)) {
+            root.notificationHistoryOpen = !root.notificationHistoryOpen
+            event.accepted = true
+            return
+          }
+          if (notificationWindow.quietMenuOpen) return
+          var list = root.notificationHistoryOpen ? notificationHistoryList : notificationCurrentList
+          if (list.handleKey(event)) event.accepted = true
+        }
 
         Column {
           anchors.fill: parent; anchors.margins: root.panelMargin; spacing: root.panelSpacing

@@ -107,6 +107,50 @@ fn stacked_rows(entries: &[Value], expanded: &Value) -> Value {
     }
     json!(groups.into_iter().map(|(key,items)| {let count=items.len();let expanded=count>1&&truthy(expanded.get(&key));json!({"key":key,"group":key,"items":items,"count":count,"expanded":expanded,"depth":if expanded {0} else {(count-1).min(2)}})}).collect::<Vec<_>>())
 }
+// Reconcile by notification identity before moving through visible cards. A folded
+// group contributes its lead only, but still resolves a hidden member to that lead.
+fn cursor(rows: &[Value], id: &str, position: f64, step: f64) -> Value {
+    let mut stops = Vec::new();
+    let mut current = None;
+    for (row_index, row) in rows.iter().enumerate() {
+        let items = array(row.get("items"));
+        let open = truthy(row.get("expanded"));
+        let lead = stops.len();
+        for (child, item) in items.iter().enumerate() {
+            let item_id = string(item.get("id"));
+            if item_id == id && !id.is_empty() {
+                current = Some(if open { stops.len() } else { lead });
+            }
+            if child == 0 || open {
+                stops.push(json!({"id":item_id,"row":row_index,"child":child,
+                    "group":row["group"],"stacked":!open && items.len()>1}));
+            }
+        }
+    }
+    if stops.is_empty() || (id.is_empty() && step == 0.0) {
+        return json!({"id":"","position":-1,"row":-1,"child":-1,"group":"","stacked":false});
+    }
+    let last = stops.len() - 1;
+    let old = if position.is_finite() {
+        position.max(0.0) as usize
+    } else {
+        0
+    };
+    let start = current.unwrap_or(old.min(last));
+    let index = if step <= -2.0 {
+        0
+    } else if step >= 2.0 {
+        last
+    } else if id.is_empty() {
+        if step < 0.0 { last } else { 0 }
+    } else {
+        (start as isize + step as isize).clamp(0, last as isize) as usize
+    };
+    let mut result = stops.swap_remove(index);
+    result["position"] = json!(index);
+    result
+}
+
 fn local_image(value: Option<&Value>) -> String {
     let source = text(value);
     if !source.starts_with("//")
@@ -1091,6 +1135,12 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 })
                 .collect::<Vec<_>>()
         ),
+        "cursor" => cursor(
+            array(args.first()),
+            &text(args.get(1)),
+            number(args.get(2)),
+            number(args.get(3)),
+        ),
         "verificationCode" => json!(verification_code(first)),
         "groupKey" => json!(group_key(first)),
         "appQuiet" => {
@@ -1648,5 +1698,46 @@ mod tests {
                 crate::seele_notifications_free(pointer);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+    fn rows(open: bool) -> Value {
+        json!([{"group":"a","expanded":open,"items":[{"id":1},{"id":2},{"id":3}]},
+            {"group":"b","expanded":false,"items":[{"id":4}]}])
+    }
+    #[test]
+    fn hidden_until_navigation_and_folded_stack_is_one_stop() {
+        assert_eq!(cursor(array(Some(&rows(false))), "", -1.0, 0.0)["id"], "");
+        assert_eq!(cursor(array(Some(&rows(false))), "", -1.0, 1.0)["id"], "1");
+        assert_eq!(cursor(array(Some(&rows(false))), "1", 0.0, 1.0)["id"], "4");
+        assert_eq!(cursor(array(Some(&rows(true))), "1", 0.0, 1.0)["id"], "2");
+    }
+    #[test]
+    fn folds_reconcile_to_lead_and_removal_keeps_the_old_position() {
+        assert_eq!(cursor(array(Some(&rows(false))), "3", 2.0, 0.0)["id"], "1");
+        assert_eq!(
+            cursor(array(Some(&rows(true))), "gone", 2.0, 0.0)["id"],
+            "3"
+        );
+        assert_eq!(
+            cursor(array(Some(&rows(true))), "gone", 99.0, 0.0)["id"],
+            "4"
+        );
+        assert_eq!(cursor(&[], "gone", 2.0, 0.0)["id"], "");
+    }
+    #[test]
+    fn identities_survive_reorder_and_endpoints_clamp() {
+        let reordered = json!([{"group":"b","items":[{"id":4}]},{"group":"a","items":[{"id":1}]}]);
+        assert_eq!(
+            cursor(array(Some(&reordered)), "1", 0.0, 0.0)["position"],
+            1
+        );
+        assert_eq!(cursor(array(Some(&rows(true))), "1", 0.0, -1.0)["id"], "1");
+        assert_eq!(cursor(array(Some(&rows(true))), "4", 3.0, 1.0)["id"], "4");
+        assert_eq!(cursor(array(Some(&rows(true))), "2", 1.0, -2.0)["id"], "1");
+        assert_eq!(cursor(array(Some(&rows(true))), "2", 1.0, 2.0)["id"], "4");
     }
 }

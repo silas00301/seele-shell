@@ -512,6 +512,8 @@ pkgs.stdenvNoCC.mkDerivation {
     bash ${tests}/media-host.sh ${quickshell}/bin/quickshell "$out/share/seele-shell"
     node ${tests}/player-volume.js "$out/share/seele-shell/player-volume.js" "$out/share/seele-shell/shell.qml"
     node ${tests}/media-speed.js "$out/share/seele-shell/media-speed.js" "$out/share/seele-shell/shell.qml"
+    bash ${tests}/notification-cursor.sh "$out/share/seele-shell"
+    node ${tests}/notification-cursor.cjs "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/shell.qml"
     node ${tests}/notifications.js "$out/share/seele-shell/notifications.js" "$out/share/seele-shell/NotificationStore.qml"
     bash ${tests}/notification-server.sh ${quickshell}/bin/quickshell \
       "$out/libexec/seele-shell/seele-shellctl" "$out/share/seele-shell"
