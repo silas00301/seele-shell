@@ -29,3 +29,6 @@ assert.deepEqual(JSON.parse(JSON.stringify(current.agentIndicators())),[{id:'cur
 assert.deepEqual(JSON.parse(JSON.stringify(current.menuBarCapacities())),[{id:'cursor',name:'Cursor',free:40}]);
 assert.equal(current.agentMark('cursor'),'cursor.svg');assert.equal(current.agentBadge('cursor'),'CU');
 console.log('Shell native token/reset/capacity/device presentation checks passed');
+
+assert.equal(current.resetText('', 'Tomorrow'), 'Tomorrow');
+assert.equal(current.resetText('2023-11-14T23:13:20Z', 'Tomorrow'), '1h 0m');

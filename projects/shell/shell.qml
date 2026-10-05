@@ -557,8 +557,8 @@ Shared.Theme {
     return Bridge.call("presentation.tokens", [Bridge.number(value || 0)])
   }
 
-  function resetText(value) {
-    return Bridge.call("presentation.reset", [value ? Bridge.number(new Date(value).getTime()) : null, now.getTime()])
+  function resetText(value, description) {
+    return Bridge.call("presentation.reset", [value ? Bridge.number(new Date(value).getTime()) : null, now.getTime(), description || ""])
   }
 
   function workspaceIds(screen) {
@@ -8506,9 +8506,9 @@ Shared.Theme {
                             }
 
                             Text {
-                              visible: root.resetText(limitColumn.modelData.resetsAt) !== ""
+                              visible: root.resetText(limitColumn.modelData.resetsAt, limitColumn.modelData.resetDescription) !== ""
                               anchors.verticalCenter: parent.verticalCenter
-                              text: "· resets " + root.resetText(limitColumn.modelData.resetsAt)
+                              text: "· " + (limitColumn.modelData.resetsAt ? "resets " : "") + root.resetText(limitColumn.modelData.resetsAt, limitColumn.modelData.resetDescription)
                               color: root.overlay
                               font.family: root.fontFamily
                               font.pixelSize: root.textCaption

@@ -795,3 +795,9 @@ and compares every published filesystem with Python's own `os.statvfs`.
 `tests/resources.sh` runs production panel/state and lifecycle fixtures in Qt,
 including keyboard search, sorting, stable selection, narrow rendering and
 late callbacks across close/reopen. Package checks run all three layers.
+
+Capacity windows retain CodexBar's `rateWindowLabels` and named `extraRateWindows`.
+Without a display label, `windowMinutes` supplies the cadence; a slot alone never
+implies Weekly. Unknown and synthetic extra usage is omitted rather than painted
+as exhausted or free quota. Reset descriptions remain available when no timestamp
+is reported. `agents_capacity.rs` covers the official CLI payload projection.
