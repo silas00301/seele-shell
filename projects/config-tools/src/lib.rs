@@ -11,3 +11,5 @@ pub mod inputs;
 pub mod launch;
 
 pub mod themes;
+
+pub mod inspect;
