@@ -73,6 +73,7 @@ let
       python3 projects/config-tools/tests/themes.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/appearance.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/build_idle.py "$out/bin/seele-theme" "$out/bin/seele-build-idle"
+      python3 projects/config-tools/tests/inspect.py "$out/bin/seele-inspect"
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';

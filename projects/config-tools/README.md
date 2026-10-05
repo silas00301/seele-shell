@@ -189,3 +189,21 @@ switch made from the launcher, by the schedule or during activation reaches the
 tile and an open picker alike. Their behavior is covered by
 `tests/vicinae-themes.cjs`, `tests/themes.js` and `tests/tst_themes.qml`;
 parent-side integration is documented in Seele's `docs/theme-switching.md`.
+
+## Configuration inspector
+
+`seele-inspect [QUERY...] [--json]` reads the version-1 generated Home Manager
+catalog. Rows contain only projected boolean enable settings, directly installed
+package names/provenance and supported literal Hyprland keybinding descriptions.
+No credentials, arbitrary option values, commands or live-machine state are
+collected. Search requires every case-insensitive word. Duplicate direct package
+inclusions merge their recorded source files; conflicting setting/shortcut
+identities fail visibly. Catalogs are bounded to 16 MiB and 10,000 input rows.
+
+`--open KEY --source N` opens one explicitly numbered recorded source with the
+configured editor using an argument vector. `--repo CHECKOUT` remaps only source
+files below this exact flake's source root and modules directory, refuses traversal
+and symlink escapes, and never maps an upstream source by a coincidental suffix.
+The editor's process replaces the helper. No build, switch, snapshot, network call,
+source write or package removal is part of inspection. Tests use synthetic catalogs,
+checkouts and editors; `tests/inspect.py` exercises the actual executable.
