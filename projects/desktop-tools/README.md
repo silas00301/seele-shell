@@ -94,3 +94,39 @@ clears. Failed delivery does not advance that record. `--test` exercises deliver
 without querying or changing firmware. The parent pins fwupdmgr and dbus-send on
 the wrapper's PATH and owns the timer. Unit tests cover malformed vendor data,
 control characters, failed delivery, deduplication and rearming after no updates.
+
+## Short screen recordings
+
+`seele-record` selects a region, monitor or visible window using the screenshot
+geometry hints and Slurp's click resolution. It records H.264 MP4 at 30 fps with
+wf-recorder. Audio is explicitly Silent (default), a selected microphone, or one
+currently running application stream. Application capture uses a uniquely named
+PulseAudio remap sink feeding the stream's existing output, so it stays audible.
+The stream is revalidated before moving; cleanup restores it only if its identity
+and temporary route still match, and verifies module ownership before unloading.
+New application streams are not silently added. Microphone and application sound
+are exclusive choices, not a hidden combined recording.
+
+The mapped Stop and review / Discard dialog is the recording indicator. A native
+deadline stops recording after 120 seconds independently of the dialog, and size
+is bounded to 512 MiB. Escape, timeout and termination discard unfinished capture.
+The recorder receives SIGINT and has five seconds to finalize before forced
+cleanup; container duration is checked before publication. Completed originals
+are published exclusively as mode-0600 timestamped files in `Videos/Recordings`
+and copied as a URI list. Trimming re-encodes an explicitly entered interval into
+a separate file; it never overwrites the original, including on trim failure.
+
+Sharing is a separate native consent dialog naming public host 0x0.st and the
+24-hour secret link. Only the validated, open recording descriptor reaches Curl.
+No redirects or local Curl configuration are allowed. Decline or failure leaves
+the saved file and local clipboard in place. Upload limits imposed by the public
+host may be lower than the local recording size bound.
+
+`tests/recording.py` exercises the production binary with fake desktop, audio,
+media and upload tools: silent/audio argument choice, click geometry, graceful
+stop, discard, exact trim interval, original preservation on failure, URI-list
+copy, explicit upload, descriptor handoff, and route/module cleanup. It does not
+prove live Wayland rendering, encoder output or real audio routing. Run the
+packaged helper on nerv for those acceptance checks. Backend contracts follow
+[wf-recorder's official usage](https://github.com/ammen99/wf-recorder) and
+[PipeWire's remap sink](https://pipewire.pages.freedesktop.org/pipewire/page_pulse_module_remap_sink.html).

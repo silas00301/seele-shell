@@ -38,7 +38,7 @@ impl Rectangle {
             && y >= self.y
             && y < self.y + self.height as i64
     }
-    fn text(self) -> String {
+    pub(crate) fn text(self) -> String {
         format!("{},{} {}x{}", self.x, self.y, self.width, self.height)
     }
     pub fn parse(value: &str) -> Option<Self> {
@@ -140,7 +140,7 @@ pub fn resolve(selection: Rectangle, hints: &[Rectangle]) -> Rectangle {
         selection
     }
 }
-fn command(
+pub(crate) fn command(
     name: &str,
     args: &[&str],
     input: &[u8],
@@ -158,7 +158,7 @@ fn command(
         cancel,
     )
 }
-fn json_command(name: &str, args: &[&str], cancel: &AtomicUsize) -> io::Result<Value> {
+pub(crate) fn json_command(name: &str, args: &[&str], cancel: &AtomicUsize) -> io::Result<Value> {
     let output = command(name, args, b"", 5, 4 * 1024 * 1024, cancel)?;
     if !output.status.success() {
         return Err(io::Error::other("desktop state unavailable"));
@@ -198,7 +198,7 @@ impl Drop for Freeze {
         self.stop();
     }
 }
-fn private_work() -> io::Result<tempfile::TempDir> {
+pub(crate) fn private_work() -> io::Result<tempfile::TempDir> {
     let runtime = if let Some(path) = std::env::var_os("XDG_RUNTIME_DIR") {
         let path = PathBuf::from(path);
         let metadata = fs::symlink_metadata(&path)?;
@@ -238,7 +238,7 @@ fn image(path: &Path) -> io::Result<File> {
     file.seek(SeekFrom::Start(0))?;
     Ok(file)
 }
-fn local_stamp() -> String {
+pub(crate) fn local_stamp() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

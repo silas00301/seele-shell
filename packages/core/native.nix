@@ -76,7 +76,10 @@ let
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
-    desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"'';
+    desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+      python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"
+      python3 projects/desktop-tools/tests/recording.py "$out/bin/seele-record"
+    '';
     repo-tools = ''
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
