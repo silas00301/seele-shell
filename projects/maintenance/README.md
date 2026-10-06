@@ -118,3 +118,14 @@ until it is.
 Explicit log viewing starts the fixed, validated Ghostty/journalctl command through
 `systemd-run --user --collect --quiet`. The user service manager owns the window
 so a long-running viewer outlives the bounded maintenance request.
+
+The `seele-restic-test` executable owns monthly byte-for-byte restoration checks
+for the parent backup feature. It reads only a pinned tagged/host snapshot, keeps
+sample content in bounded memory, restores under a private temporary directory,
+refuses symlinks and writes a private receipt only after every file matches. It
+never uses a current source file as its comparison or restoration target.
+`tests/restic_restore.py` uses a real encrypted local repository with fixture data
+and proves original preservation after edits, missing snapshots/files, unsafe
+credential references and cleanup. Set `SEELE_TEST_RESTIC` to an official restic
+executable. Destination provisioning and real host acceptance are parent work;
+see `docs/backups.md` there.

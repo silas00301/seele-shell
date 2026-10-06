@@ -59,6 +59,7 @@ let
       python3 projects/tools/tests/sensors.py "$out/bin/seele-sensors"
       python3 projects/tools/tests/resources.py "$out/bin/seele-resources"
     '';
+    maintenance = ''SEELE_TEST_RESTIC=${lib.getExe pkgs.restic} python3 projects/maintenance/tests/restic_restore.py "${rawBin}/seele-restic-test"'';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';
     integrations = ''
       python3 projects/integrations/tests/hermes.py "$out/bin/seele-hermes"
