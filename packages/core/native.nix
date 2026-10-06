@@ -78,6 +78,7 @@ let
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
     desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"'';
     repo-tools = ''
+      python3 projects/repo-tools/tests/lock_graph.py "$out/bin/seele-lock-graph"
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
       python3 projects/repo-tools/tests/pi_readonly.py "$out/bin/seele-pi-jj"
