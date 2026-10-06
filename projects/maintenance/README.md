@@ -118,3 +118,22 @@ until it is.
 Explicit log viewing starts the fixed, validated Ghostty/journalctl command through
 `systemd-run --user --collect --quiet`. The user service manager owns the window
 so a long-running viewer outlives the bounded maintenance request.
+
+## Individual backup versions
+
+`restic_files.rs` and `seele-backup-files` form a narrow read-only boundary for
+exact regular-file paths under one configured home. Credential references,
+restic executable, host and allowed home come from the parent package wrapper.
+Inherited environment is cleared; tagged host snapshots and the exact file are
+revalidated before bounded extraction. No root-side restore write is available.
+
+`seele-restore-file` is an unprivileged native-dialog client, with Quick Look
+preview, size/SHA-256 and bounded text comparison, and exclusive mode-0600 copy
+publication. It retains previews under a private session runtime directory until
+exit. The fixed helper is invoked with run0 pipe I/O and a service lifetime
+limit. No Vicinae command or persistent content cache is added.
+
+`tests/restic_files.py` runs the actual backend with a disposable encrypted
+restic repository. `tests/restore_ui.py` uses fake authentication/dialogs and the
+real file operations. The parent guide `docs/backup-files.md` owns setup,
+credential grammar, bounds and live acceptance requirements.
