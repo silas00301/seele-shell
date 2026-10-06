@@ -78,6 +78,7 @@ let
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
     desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"'';
     repo-tools = ''
+      python3 projects/repo-tools/tests/archive_check.py "$out/bin/seele-archive-check" ${lib.getExe pkgs._7zz-rar}
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
       python3 projects/repo-tools/tests/pi_readonly.py "$out/bin/seele-pi-jj"
@@ -106,7 +107,7 @@ pkgs.rustPlatform.buildRustPackage {
   ];
   nativeBuildInputs =
     lib.optionals (tools || markdown) [ pkgs.pkg-config ]
-    ++ lib.optionals wrapped [ pkgs.makeBinaryWrapper ];
+    ++ lib.optionals (wrapped || name == "repo-tools") [ pkgs.makeBinaryWrapper ];
   buildInputs =
     lib.optionals tools [
       pkgs.dbus
@@ -143,6 +144,12 @@ pkgs.rustPlatform.buildRustPackage {
   postInstall =
     lib.optionalString (name == "qml-core") ''
       install -Dm644 projects/qml-core/include/seele-core.h "$out/include/seele-core.h"
+    ''
+    + lib.optionalString (name == "repo-tools") ''
+      mkdir -p "$out/libexec/seele-repo-tools"
+      mv "$out/bin/seele-archive-check" "$out/libexec/seele-repo-tools/"
+      makeWrapper "$out/libexec/seele-repo-tools/seele-archive-check" "$out/bin/seele-archive-check" \
+        --prefix PATH : "${lib.makeBinPath [ pkgs._7zz-rar ]}"
     ''
     + lib.optionalString wrapped ''
       mkdir -p "${rawBin}"
