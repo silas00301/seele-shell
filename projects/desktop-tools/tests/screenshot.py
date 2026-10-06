@@ -59,10 +59,13 @@ elif name=='curl':
  mode=os.environ.get('TEST_CURL','success')
  if mode=='fail':sys.exit(22)
  print('https://0x0.st/test-image.png' if mode=='success' else '<html>not a link</html>')
+elif name=='seele-linear-capture':
+ assert len(args)==1 and pathlib.Path(args[0]).read_bytes()==image
+ (state/'linear-draft').touch()
 elif name=='notify-send':pass
 else:raise AssertionError(name)
 ''');script.chmod(0o700)
-        for name in ('hyprctl','hyprpicker','slurp','grim','satty','wl-copy','zenity','curl','notify-send'):(tools/name).symlink_to(script)
+        for name in ('hyprctl','hyprpicker','slurp','grim','satty','wl-copy','zenity','curl','notify-send','seele-linear-capture'):(tools/name).symlink_to(script)
         def case(name,mode='capture',**values):
             directory=root/name;directory.mkdir(mode=0o700);home=directory/'home';home.mkdir(mode=0o700);runtime=directory/'runtime';runtime.mkdir(mode=0o700);state=directory/'state';state.mkdir(mode=0o700)
             environment=dict(os.environ,HOME=str(home),XDG_RUNTIME_DIR=str(runtime),TEST_STATE=str(state),PATH=str(tools)+os.pathsep+os.environ['PATH'],**values)
@@ -81,6 +84,7 @@ else:raise AssertionError(name)
         second=subprocess.run([str(BINARY),'capture'],env=env,capture_output=True,timeout=10);assert second.returncode==0;assert len(list(images[0].parent.glob('*.png')))==2
         result,state,images,calls,_=case('click',TEST_SELECTION='11,21 1x1');assert result.returncode==0,result.stderr;assert images[0].read_bytes()==PNG
         result,state,images,calls,_=case('annotate','annotate');assert result.returncode==0,result.stderr;assert images[0].read_bytes()==PNG;args=next(args for name,args in calls if name=='satty');assert '--actions-on-enter' in args and 'save-to-file' in args and 'exit'in args
+        result,state,images,calls,_=case('linear','linear');assert result.returncode==0,result.stderr;assert len(images)==1 and (state/'linear-draft').exists();assert any(name=='satty' for name,_ in calls);assert not any(name=='curl' for name,_ in calls)
         result,state,images,calls,_=case('annotate-cancel','annotate',TEST_SATTY='cancel');assert result.returncode==0 and not images and not(state/'clipboard').exists()
         result,state,images,calls,_=case('upload','upload',TEST_CHOICE='upload');assert result.returncode==0,result.stderr;assert(state/'clipboard').read_text()=='https://0x0.st/test-image.png';dialog=next(args for name,args in calls if name=='zenity');assert '--ok-label=Upload'in dialog and '--cancel-label=Copy image'in dialog;assert any('public third-party host' in arg and '24 hours'in arg for arg in dialog)
         for variant in ('fail','invalid'):

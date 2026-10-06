@@ -407,7 +407,7 @@ fn command_output_copy(text: &str, cancel: &AtomicUsize) -> io::Result<()> {
     }
 }
 pub fn run(mode: &str, cancel: &AtomicUsize) -> io::Result<()> {
-    if !matches!(mode, "capture" | "annotate" | "upload") {
+    if !matches!(mode, "capture" | "annotate" | "upload" | "linear") {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     let home = std::env::var_os("HOME").ok_or(io::ErrorKind::NotFound)?;
@@ -476,7 +476,7 @@ pub fn run(mode: &str, cancel: &AtomicUsize) -> io::Result<()> {
         return Err(io::Error::other("desktop freeze ended"));
     }
     freeze.stop();
-    let path = if mode == "annotate" {
+    let path = if matches!(mode, "annotate" | "linear") {
         let annotated = work.path().join("annotated.png");
         let result = capture(
             Command::new("satty")
@@ -511,7 +511,24 @@ pub fn run(mode: &str, cancel: &AtomicUsize) -> io::Result<()> {
         captured
     };
     let mut image = image(&path)?;
-    publish(&mut image, &output, &local_stamp())?;
+    let published = publish(&mut image, &output, &local_stamp())?;
+    if mode == "linear" {
+        copy_image(&image, cancel)?;
+        let result = capture(
+            Command::new("seele-linear-capture").arg(&published),
+            b"",
+            Limits {
+                timeout: Duration::from_secs(3600),
+                output: 8192,
+            },
+            cancel,
+        )?;
+        return if result.status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::other("Linear draft failed; capture retained"))
+        };
+    }
     image.seek(SeekFrom::Start(0))?;
     if mode == "upload" {
         let response = command(
