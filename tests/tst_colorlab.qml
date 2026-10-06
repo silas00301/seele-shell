@@ -34,6 +34,14 @@ TestCase {
     panel.focusInput()
     wait(30)
   }
+  function test_hue_units_wrap_and_copy() {
+    panel.foreground = "hsl(-0.5turn 100% 50%)"
+    compare(panel.result.foreground.hex, "#00ffff")
+    panel.copy("hex")
+    compare(copied.signalArguments[0][0], "#00ffff")
+    panel.foreground = "hsl(3.141592653589793rad 100% 50%)"
+    compare(panel.result.foreground.hex, "#00ffff")
+  }
   function test_native_projection_and_alpha_rejection() {
     compare(panel.result.ratioText, "21.00:1")
     compare(panel.result.grades.length, 5)

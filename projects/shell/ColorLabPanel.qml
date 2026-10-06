@@ -111,7 +111,7 @@ FocusScope {
     }
     Caption {
       width: parent.width; wrapMode: Text.Wrap
-      text: panel.result.valid ? "Opaque sRGB · HEX, RGB or HSL · select a field to edit its palette" : panel.result.error
+      text: panel.result.valid ? "Opaque sRGB · HSL hue: deg, rad, turn or grad · select a field to edit its palette" : panel.result.error
       color: panel.result.valid ? panel.theme.overlay : panel.theme.red
     }
     Rectangle {

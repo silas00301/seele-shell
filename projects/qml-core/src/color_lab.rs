@@ -9,6 +9,23 @@ fn number(input: &str, max: f64) -> Option<f64> {
     let value: f64 = input.trim().parse().ok()?;
     (value.is_finite() && (0.0..=max).contains(&value)).then_some(value)
 }
+fn hue(input: &str) -> Option<f64> {
+    let (number, factor) = if let Some(value) = input.strip_suffix("grad") {
+        (value, 0.9)
+    } else if let Some(value) = input.strip_suffix("turn") {
+        (value, 360.0)
+    } else if let Some(value) = input.strip_suffix("rad") {
+        (value, 180.0 / std::f64::consts::PI)
+    } else {
+        (input.strip_suffix("deg").unwrap_or(input), 1.0)
+    };
+    let value = number.parse::<f64>().ok()?;
+    // Reduce in the source unit before multiplication, avoiding overflow for
+    // any finite angle. Saturation and lightness retain their strict ranges.
+    value
+        .is_finite()
+        .then(|| value.rem_euclid(360.0 / factor) * factor)
+}
 fn parse(input: &str) -> Option<Rgb> {
     if input.len() > INPUT_LIMIT || !input.is_ascii() {
         return None;
@@ -60,7 +77,7 @@ fn parse(input: &str) -> Option<Rgb> {
             Some(channels)
         }
         "hsl" => Some(from_hsl(
-            number(parts[0].strip_suffix("deg").unwrap_or(parts[0]), 360.0)?,
+            hue(parts[0])?,
             number(parts[1].strip_suffix('%')?, 100.0)? / 100.0,
             number(parts[2].strip_suffix('%')?, 100.0)? / 100.0,
         )),
@@ -193,6 +210,29 @@ mod tests {
         );
     }
     #[test]
+    fn css_hue_units_wrap_before_conversion() {
+        for value in [
+            "120",
+            "480deg",
+            "-240deg",
+            "0.3333333333333333turn",
+            "133.33333333333333grad",
+            "2.0943951023931953rad",
+        ] {
+            assert_eq!(
+                parse(&format!("hsl({value} 100% 50%)")),
+                Some([0, 255, 0]),
+                "{value}"
+            );
+        }
+        assert_eq!(parse("hsl(-0.5turn 100% 50%)"), Some([0, 255, 255]));
+        assert!(parse("hsl(1e308turn 50% 50%)").is_some());
+        assert_eq!(
+            view(&[json!("hsl(0.5turn 100% 50%)"), json!("#fff")]),
+            view(&[json!("#0ff"), json!("#fff")])
+        );
+    }
+    #[test]
     fn conversions_and_round_trip() {
         assert_eq!(parse("#AbC"), Some([170, 187, 204]));
         assert_eq!(parse("rgb(100% 0% 0%)"), Some([255, 0, 0]));
@@ -225,7 +265,9 @@ mod tests {
             "rgb(256,0,0)",
             "rgb(-1,0,0)",
             "rgb(10%,0,0)",
-            "hsl(361,50%,50%)",
+            "hsl(NaN,50%,50%)",
+            "hsl(infturn,50%,50%)",
+            "hsl(1unknown,50%,50%)",
             "hsl(0,101%,50%)",
             "",
         ] {
