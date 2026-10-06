@@ -26,7 +26,7 @@ Scope {
   }
   function accept(value) {
     if (!value || value.version !== 1 || !Array.isArray(value.items)) return
-    items = value.items
+    if (JSON.stringify(items) !== JSON.stringify(value.items)) items = value.items
     error = value.error || ""
     if (!ready) {
       ready = true

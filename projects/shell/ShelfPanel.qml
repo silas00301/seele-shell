@@ -1,3 +1,4 @@
+import "../shared/ListModels.js" as Models
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -47,7 +48,13 @@ Column {
       store.send({op:"remove"}); event.accepted = true
     }
   }
-  Connections { target: panel.store; function onItemsChanged() { panel.cursor = Math.max(0, Math.min(panel.cursor, panel.store.items.length - 1)) } }
+  ListModel { id: rows; dynamicRoles: true }
+  function reconcileRows() {
+    Models.reconcile(rows, store.items, "entry", function(item) { return String(item.id) }, "shelfId")
+    cursor = Math.max(0, Math.min(cursor, store.items.length - 1))
+  }
+  Component.onCompleted: reconcileRows()
+  Connections { target: panel.store; function onItemsChanged() { panel.reconcileRows() } }
   FileDialog { id: picker; title: "Collect files"; fileMode: FileDialog.OpenFiles; onAccepted: panel.store.send({op:"files",paths:selectedFiles.map(function(uri) { return String(uri) })}) }
   Row {
     width: parent.width; spacing: panel.theme.spaceSmall
@@ -61,30 +68,32 @@ Column {
     ListView {
       id: list
       anchors.fill: parent; anchors.margins: panel.theme.spaceSmall; clip: true
-      model: panel.store.items; spacing: panel.theme.spaceSmall
+      model: rows; spacing: panel.theme.spaceSmall
       delegate: Rectangle {
         id: row
-        required property var modelData
+        objectName: "shelfRow-" + shelfId
+        required property string shelfId
+        required property var entry
         required property int index
         width: list.width; height: panel.theme.controlHeight * 1.6; radius: panel.theme.radius
-        color: modelData.selected ? panel.theme.selectedColor : panel.theme.cardColor
+        color: entry.selected ? panel.theme.selectedColor : panel.theme.cardColor
         Accessible.role: Accessible.CheckBox
-        Accessible.name: modelData.name
-        Accessible.checked: modelData.selected
-        border.color: modelData.selected ? panel.theme.accent : panel.theme.cardBorder
+        Accessible.name: entry.name
+        Accessible.checked: entry.selected
+        border.color: entry.selected ? panel.theme.accent : panel.theme.cardBorder
         Shared.FocusRing { theme: panel.theme; shown: panel.activeFocus && panel.cursor === row.index }
-        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.modelData.image && row.modelData.available; source: visible ? row.modelData.uri : ""; sourceSize.width: 128; sourceSize.height: 128; fillMode: Image.PreserveAspectFit; asynchronous: true }
+        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.entry.image && row.entry.available; source: visible ? row.entry.uri : ""; sourceSize.width: 128; sourceSize.height: 128; fillMode: Image.PreserveAspectFit; asynchronous: true }
         Column {
           x: thumbnail.visible ? thumbnail.x + thumbnail.width + panel.theme.spaceSmall : panel.theme.spaceLarge
           anchors.verticalCenter: parent.verticalCenter
           width: parent.width - x - panel.theme.spaceLarge
-          Text { width: parent.width; text: row.modelData.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: row.modelData.available ? panel.theme.text : panel.theme.red; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
-          Text { width: parent.width; text: !row.modelData.available ? "Original file is unavailable" : row.modelData.caption || Math.ceil(row.modelData.bytes / 1024) + " KiB"; textFormat: Text.PlainText; elide: Text.ElideRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
+          Text { width: parent.width; text: row.entry.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: row.entry.available ? panel.theme.text : panel.theme.red; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
+          Text { width: parent.width; text: !row.entry.available ? "Original file is unavailable" : row.entry.caption || Math.ceil(row.entry.bytes / 1024) + " KiB"; textFormat: Text.PlainText; elide: Text.ElideRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
         }
         MouseArea {
           anchors.fill: parent
-          onClicked: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.modelData.id}) }
-          onDoubleClicked: if (row.modelData.available) panel.previewRequested(row.modelData.path)
+          onClicked: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.entry.id}) }
+          onDoubleClicked: if (row.entry.available) panel.previewRequested(row.entry.path)
         }
       }
     }

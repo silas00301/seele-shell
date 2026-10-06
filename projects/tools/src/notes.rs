@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -765,7 +765,10 @@ impl Library {
             return Err("That vault directory does not exist".into());
         }
         checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
-        fs::create_dir_all(self.vault.notes_dir())?;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(self.vault.notes_dir())?;
         Ok(())
     }
 
@@ -969,7 +972,10 @@ impl Library {
                 .to_ascii_lowercase();
             inputs.push((input, extension));
         }
-        fs::create_dir_all(self.vault.attachments_dir())?;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(self.vault.attachments_dir())?;
         checked_path(
             &self.vault.root,
             &Path::new(&self.vault.directory).join(&self.vault.attachments),
@@ -1385,10 +1391,16 @@ impl Library {
         audio: &[PathBuf],
     ) -> Result<String> {
         checked_path(&self.vault.root, Path::new(&self.vault.directory))?;
-        fs::create_dir_all(self.vault.notes_dir())?;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(self.vault.notes_dir())?;
         let mut embeds = Vec::new();
         if !audio.is_empty() {
-            fs::create_dir_all(self.vault.attachments_dir())?;
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(self.vault.attachments_dir())?;
         }
         for source in audio {
             let mut input = OpenOptions::new()
