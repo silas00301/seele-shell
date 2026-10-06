@@ -65,6 +65,7 @@ let
       python3 projects/integrations/tests/home_assistant.py "$out/bin/seele-home-assistant"
       python3 projects/integrations/tests/transfers.py "$out/bin/seele-transfers"
       python3 projects/integrations/tests/github.py "$out/bin/seele-github-inbox"
+      python3 projects/integrations/tests/linear.py "$out/bin/seele-linear-capture"
     '';
     config-tools = ''
       python3 projects/config-tools/tests/materialize.py "$out/bin/seele-portable-config"
