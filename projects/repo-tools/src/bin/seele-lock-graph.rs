@@ -56,29 +56,6 @@ fn resolve(
     }
     Ok(node)
 }
-fn cycle(
-    node: &str,
-    edges: &HashMap<String, Vec<String>>,
-    active: &mut HashSet<String>,
-    done: &mut HashSet<String>,
-    depth: usize,
-) -> Result<(), &'static str> {
-    if depth > 128 {
-        return Err("Graph exceeds 128 levels.");
-    }
-    if done.contains(node) {
-        return Ok(());
-    }
-    if !active.insert(node.to_owned()) {
-        return Err("Lock input graph contains a cycle.");
-    }
-    for target in edges.get(node).into_iter().flatten() {
-        cycle(target, edges, active, done, depth + 1)?;
-    }
-    active.remove(node);
-    done.insert(node.to_owned());
-    Ok(())
-}
 fn graph(lock: &Value) -> Result<Value, &'static str> {
     if lock.get("version").and_then(Value::as_u64) != Some(7) {
         return Err("Only flake.lock format version 7 is supported.");
@@ -123,11 +100,32 @@ fn graph(lock: &Value) -> Result<Value, &'static str> {
             }
         }
     }
-    let mut done = HashSet::new();
-    for node in nodes.keys() {
-        cycle(node, &adjacency, &mut HashSet::new(), &mut done, 0)?;
+    // Dependency cycles are valid lock topology. Only recursive follows
+    // resolution is invalid; report graph cycles without rejecting the lock.
+    let mut degrees: HashMap<&str, usize> = nodes.keys().map(|key| (key.as_str(), 0)).collect();
+    for targets in adjacency.values() {
+        for target in targets {
+            *degrees.get_mut(target.as_str()).unwrap() += 1;
+        }
     }
-    Ok(json!({"root":root,"nodes":nodes.keys().collect::<Vec<_>>(),"edges":projected}))
+    let mut ready: Vec<&str> = degrees
+        .iter()
+        .filter_map(|(key, count)| (*count == 0).then_some(*key))
+        .collect();
+    let mut removed = 0;
+    while let Some(node) = ready.pop() {
+        removed += 1;
+        for target in adjacency.get(node).into_iter().flatten() {
+            let count = degrees.get_mut(target.as_str()).unwrap();
+            *count -= 1;
+            if *count == 0 {
+                ready.push(target);
+            }
+        }
+    }
+    Ok(
+        json!({"root":root,"nodes":nodes.keys().collect::<Vec<_>>(),"edges":projected,"cyclic":removed != nodes.len()}),
+    )
 }
 fn run() -> Result<(), &'static str> {
     let mut args = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -174,6 +172,9 @@ fn run() -> Result<(), &'static str> {
             projection["root"].as_str().unwrap(),
             projection["nodes"].as_array().unwrap().len()
         );
+        if projection["cyclic"] == true {
+            println!("Dependency cycle present (valid topology)");
+        }
         for edge in projection["edges"].as_array().unwrap() {
             println!(
                 "{}.{} → {}{}",
@@ -214,12 +215,23 @@ mod tests {
                 && edge["follows"] == true));
     }
     #[test]
+    fn dependency_cycles_are_projected_and_reported() {
+        for inputs in [json!({"self":"root"}), json!({"self":[]})] {
+            let result =
+                graph(&json!({"version":7,"root":"root","nodes":{"root":{"inputs":inputs}}}))
+                    .unwrap();
+            assert_eq!(result["cyclic"], true);
+            assert_eq!(result["edges"][0]["target"], "root");
+        }
+        let result = graph(&json!({"version":7,"root":"root","nodes":{"root":{"inputs":{"a":"a"}},"a":{"inputs":{"b":"b"}},"b":{"inputs":{"a":"a"}}}})).unwrap();
+        assert_eq!(result["cyclic"], true);
+    }
+    #[test]
     fn malformed_missing_and_cycles_fail_without_partial_graph() {
         for lock in [
             json!({"version":8,"nodes":{}}),
             json!({"version":7,"root":"root","nodes":{"root":{"inputs":{"bad":"absent"}}}}),
             json!({"version":7,"root":"root","nodes":{"root":{"inputs":{"a":["b"],"b":["a"]}}}}),
-            json!({"version":7,"root":"root","nodes":{"root":{"inputs":{"self":"root"}}}}),
         ] {
             assert!(graph(&lock).is_err());
         }
