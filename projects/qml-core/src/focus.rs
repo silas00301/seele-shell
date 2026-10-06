@@ -39,6 +39,16 @@ fn valid(value: &Value) -> bool {
 }
 pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
     Ok(match function {
+        "progress" => {
+            let state = args.first().filter(|state| valid(state));
+            let Some(state) = state else {
+                return Ok(json!({"visible":false,"elapsed":0,"ratio":0,"finish":null}));
+            };
+            let status = text(state.get("status"));
+            let elapsed = number(state.get("duration")) - number(state.get("remaining"));
+            json!({"visible":status != "idle", "elapsed":elapsed, "ratio":elapsed / number(state.get("duration")),
+                "finish":if status == "running" {state["deadline"].clone()} else {Value::Null}})
+        }
         "initial" => initial(),
         "valid" => Value::Bool(args.first().is_some_and(valid)),
         "customInput" => {
@@ -139,6 +149,25 @@ mod tests {
         call("update", &[state.clone(), json!(action), json!(now), input]).unwrap()
     }
 
+    #[test]
+    fn elapsed_and_finish_follow_pause_resume_extension() {
+        let project = |state: &Value| call("progress", &[state.clone()]).unwrap();
+        assert_eq!(project(&initial())["visible"], false);
+        let started = update(&initial(), "start", 1000.0, json!(25));
+        let ticking = update(&started, "tick", 61000.0, Value::Null);
+        assert_eq!(project(&ticking)["elapsed"], 60.0);
+        assert_eq!(project(&ticking)["finish"], 1501000.0);
+        let paused = update(&ticking, "pause", 61000.0, Value::Null);
+        assert!(project(&paused)["finish"].is_null());
+        let extended = update(&paused, "extend", 99000.0, Value::Null);
+        assert_eq!(project(&extended)["elapsed"], 60.0);
+        let resumed = update(&extended, "resume", 200000.0, Value::Null);
+        assert_eq!(project(&resumed)["finish"], 1940000.0);
+        let done = update(&resumed, "tick", 1940000.0, Value::Null);
+        assert_eq!(project(&done)["ratio"], 1.0);
+        assert!(project(&done)["finish"].is_null());
+        assert_eq!(project(&json!(null))["visible"], false);
+    }
     #[test]
     fn custom_duration_is_strict_and_bounded() {
         for input in [

@@ -10,3 +10,5 @@ function update(saved, action, now, minutes) {
   var next = Bridge.call("focus.update", [saved, action, Bridge.number(now), action === "custom" ? minutes : Bridge.number(minutes)])
   return next === null ? saved : next
 }
+
+function progress(state) { return Bridge.call("focus.progress", [state]) }

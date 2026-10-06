@@ -422,6 +422,9 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${tests}/home-assistant-panel.sh ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${tests}/home-assistant-panel.qml
+    bash ${tests}/focus-progress.sh "$out/share/seele-shell" \
+      ${tests}/tst_focusprogress.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
+      ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
     bash ${tests}/color-lab-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_colorlab.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml

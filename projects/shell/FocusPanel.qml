@@ -6,6 +6,7 @@ Column {
   id: panel
   required property var theme
   required property var timer
+  readonly property var progress: Focus.progress(timer.timerState)
   signal closeRequested()
   spacing: panel.theme.panelSpacing
   Keys.onEscapePressed: panel.closeRequested()
@@ -38,7 +39,7 @@ Column {
 
   // The remaining time is the panel's subject, so it is read off one
   // hero numeral with the meter beneath it saying how much of the
-  // session is left. Idle has nothing to report and draws neither.
+  // session has elapsed. Idle has nothing to report and draws neither.
   Rectangle {
     width: parent.width
     height: focusReadout.implicitHeight + panel.theme.cardPadding * 2
@@ -67,12 +68,25 @@ Column {
         horizontalAlignment: Text.AlignHCenter
       }
 
+      Text {
+        objectName: "focusProgressCaption"
+        width: parent.width
+        visible: panel.progress.visible
+        text: Focus.label(panel.progress.elapsed) + " elapsed"
+          + (panel.progress.finish !== null ? " · Ends at " + Qt.formatTime(new Date(panel.progress.finish), Qt.DefaultLocaleShortDate)
+             : panel.timer.timerState.status === "paused" ? " · Paused" : "")
+        textFormat: Text.PlainText
+        color: panel.theme.subtext
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textCaption
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
+      }
       Shared.MeterBar {
         theme: panel.theme
         width: parent.width
         visible: panel.timer.timerState.status !== "idle"
-        ratio: panel.timer.timerState.duration > 0
-          ? panel.timer.timerState.remaining / panel.timer.timerState.duration : 0
+        ratio: panel.progress.ratio
         fill: panel.timer.timerState.status === "done" ? panel.theme.green : panel.theme.accent
 
         Behavior on ratio { NumberAnimation { duration: panel.theme.durationFast } }
