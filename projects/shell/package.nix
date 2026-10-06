@@ -102,6 +102,9 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    install -m644 ${./ShelfStore.qml} "$out/share/seele-shell/ShelfStore.qml"
+    install -m644 ${./ShelfPanel.qml} "$out/share/seele-shell/ShelfPanel.qml"
+    substituteInPlace "$out/share/seele-shell/ShelfPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./TransfersStore.qml} "$out/share/seele-shell/TransfersStore.qml"
     install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
     substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
@@ -398,7 +401,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml ShelfStore.qml ShelfPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -470,6 +473,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${tests}/feature-integrations.js "$out/share/seele-shell/shell.qml" ${./package.nix}
     node ${tests}/ai-activity.js "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
+    bash ${tests}/shelf-panel.sh "$out/share/seele-shell" "$out/share/seele-shell/shared"
     node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     bash ${tests}/text-workbench.sh "$out/share/seele-shell" \
       ${tests}/tst_textworkbench.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \

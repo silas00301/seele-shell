@@ -13,6 +13,8 @@ Commands:
   themes                    Toggle the floating theme picker without closing panels
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
+  shelf [path...]           Collect files in the temporary shelf
+  shelf --text              Collect bounded text from stdin
   network-activity          Open live per-interface traffic
   sensors                   Toggle live temperatures and fan speeds
   resources                 Toggle live CPU and memory inspector
@@ -96,6 +98,45 @@ pub fn run(arguments: &[String]) -> Result {
         "themes" => call("toggleThemes", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
+        "shelf" => {
+            if rest.is_empty() {
+                return call("shelf", &[String::new()]);
+            }
+            let value = if rest == ["--text"] {
+                let mut text = String::new();
+                std::io::stdin()
+                    .take(64 * 1024 + 1)
+                    .read_to_string(&mut text)?;
+                if text.is_empty() || text.len() > 64 * 1024 {
+                    return Err("shelf text must fit in 64 KiB".into());
+                }
+                serde_json::json!({"op":"text","text":text})
+            } else {
+                if rest.len() > 64 {
+                    return Err("shelf accepts up to 64 paths".into());
+                }
+                let base = env::current_dir()?;
+                serde_json::json!({"op":"files","paths":rest.iter().map(|path|base.join(path).to_string_lossy().into_owned()).collect::<Vec<_>>()})
+            };
+            use std::io::{BufReader, Write};
+            use std::os::unix::net::UnixStream;
+            let runtime = env::var_os("XDG_RUNTIME_DIR").ok_or("private runtime unavailable")?;
+            let mut stream =
+                UnixStream::connect(std::path::PathBuf::from(runtime).join("seele-shelf.sock"))?;
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
+            if !seele_runtime::wire::same_uid(&stream)? {
+                return Err("unexpected shelf owner".into());
+            }
+            stream.write_all(&seele_runtime::wire::json_frame(&value, 256 * 1024)?)?;
+            let mut frame = Vec::new();
+            seele_runtime::wire::read_frame(&mut BufReader::new(stream), &mut frame, 4096)?;
+            let reply: serde_json::Value = serde_json::from_slice(&frame)?;
+            if reply["ok"] != true {
+                return Err("Could not collect the shelf item; open Shelf for details".into());
+            }
+            call("openShelf", &[])
+        }
         "network-activity" => call("toggleControl", &["network-activity".into()]),
         "sensors" => call("toggleControl", &["sensors".into()]),
         "resources" => call("toggleControl", &["resources".into()]),

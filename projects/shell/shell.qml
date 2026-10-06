@@ -2135,6 +2135,7 @@ Shared.Theme {
     panelOpen: root.controlPanel === "audio"
     devices: root.systemData.audioDevices || []
   }
+  ShelfStore { id: shelfStore; panelOpen: root.controlPanel === "shelf" }
   TransfersStore {
     id: transfersStore
     panelOpen: root.controlPanel === "transfers"
@@ -2257,6 +2258,13 @@ Shared.Theme {
     function previewFiles(paths: string): void { root.toggleQuickLook(paths) }
     function toggleControls(): void { root.toggleControls() }
     function toggleControl(panel: string): void { root.toggleControl(panel) }
+    function openShelf(): void { if (root.controlPanel !== "shelf") root.toggleControl("shelf") }
+    function shelf(payload: string): void {
+      if (payload !== "") {
+        try { shelfStore.send(JSON.parse(payload)) } catch (_) { shelfStore.error = "Invalid shelf request" }
+        if (root.controlPanel !== "shelf") root.toggleControl("shelf")
+      } else root.toggleControl("shelf")
+    }
     function openTransfers(): void { if (root.controlPanel !== "transfers") root.toggleControl("transfers") }
     // A maintenance action opens Power from wherever it was asked; it never
     // closes a Power panel that is already showing.
@@ -9467,6 +9475,45 @@ Shared.Theme {
                 screenName: controlCenterWindow.modelData.name
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  // Temporary file shelf -----------------------------------------------------
+  Variants {
+    model: Quickshell.screens
+    PanelWindow {
+      id: shelfWindow
+      required property var modelData
+      screen: modelData
+      visible: root.controlPanel === "shelf" && root.pinnedScreen(root.overlayScreen, modelData)
+      anchors { top: true; left: true }
+      margins { top: root.barHeight + root.panelGap; left: root.panelLeft(modelData, implicitWidth) }
+      implicitWidth: root.clockWidth
+      implicitHeight: shelfContent.implicitHeight + root.panelMargin * 2
+      exclusionMode: ExclusionMode.Ignore
+      color: "transparent"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.namespace: "seele-shell-shelf"
+      WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      onVisibleChanged: if (visible) Qt.callLater(function() { shelfPanel.forceActiveFocus() })
+      PanelSurface {
+        Column {
+          id: shelfContent
+          anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.panelMargin }
+          spacing: root.panelSpacing
+          Keys.onEscapePressed: root.closeOverlays()
+          PanelHeader { width: parent.width; glyph: "󰇚"; title: "Shelf"; detail: shelfStore.items.length + " collected" }
+          ShelfPanel {
+            id: shelfPanel
+            width: parent.width
+            theme: root
+            store: shelfStore
+            onCloseRequested: root.closeOverlays()
+            onPreviewRequested: path => root.toggleQuickLook(path)
+            onTransferRequested: paths => { transfersStore.enqueue({op:"select",paths:paths}); root.toggleControl("transfers") }
           }
         }
       }
