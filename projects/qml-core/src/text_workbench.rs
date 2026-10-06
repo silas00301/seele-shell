@@ -192,7 +192,7 @@ fn csv_markdown(input: &str) -> Result<String, String> {
                     }
                     output.push_str("<br>");
                 }
-                '\\' | '|' | '`' | '*' | '_' | '[' | ']' | '!' => {
+                '\\' | '|' | '`' | '*' | '_' | '[' | ']' | '!' | '~' => {
                     output.push('\\');
                     output.push(ch);
                 }
@@ -327,6 +327,11 @@ mod tests {
         assert_eq!(
             transform("a\n<script>&|*[]\\", "csv-markdown").unwrap(),
             "| a |\n| --- |\n| &lt;script&gt;&amp;\\|\\*\\[\\]\\\\ |\n"
+        );
+        assert!(
+            transform("a\n~~deleted~~", "csv-markdown")
+                .unwrap()
+                .contains("\\~\\~deleted\\~\\~")
         );
         for input in ["", "a,b\nc", "a\"b", "\"a\"x", "\"a"] {
             assert!(transform(input, "csv-markdown").is_err(), "{input}");
