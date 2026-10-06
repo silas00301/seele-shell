@@ -65,6 +65,20 @@ TestCase {
     keyClick(Qt.Key_Return, Qt.ControlModifier)
     compare(copySpy.count, 1)
   }
+  function test_programmer_formats_and_keyboard_copy() {
+    loader.item.expression = "0xff + 0b10"
+    compare(loader.item.result, "257")
+    var hex = findChild(loader.item, "calculatorBaseHex")
+    verify(hex !== null)
+    hex.forceActiveFocus()
+    keyClick(Qt.Key_Return)
+    compare(copySpy.count, 1)
+    compare(copySpy.signalArguments[0][0], "0x101")
+    loader.item.commit()
+    compare(loader.item.integerFormats[2].value, "0b100000001")
+    loader.item.expression = "0.5"
+    compare(loader.item.integerFormats.length, 0)
+  }
   function test_tape_bound_clear_and_close_privacy() {
     for (var i = 0; i < 40; i++) { loader.item.expression = String(i); loader.item.commit() }
     compare(loader.item.tape.length, 32)
