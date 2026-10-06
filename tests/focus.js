@@ -96,3 +96,9 @@ state = focus.initial();
 assert.equal(focus.canExtend(state), false);
 assert.equal(focus.update(state, "extend", 0), state);
 console.log("Custom focus validation and extension checks passed");
+
+const estimate = focus.progress({status: "running", duration: 1500, remaining: 1200, deadline: 2000000});
+assert.equal(estimate.elapsed, 300);
+assert.equal(estimate.finish, 2000000);
+assert.equal(estimate.ratio, 0.2);
+assert.equal(focus.progress({status: "paused", duration: 1500, remaining: 1200, deadline: 0}).finish, null);
