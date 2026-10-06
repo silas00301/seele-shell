@@ -215,7 +215,7 @@ mod tests {
         assert!(
             source(&row(), 1, Some(dir.path()), Path::new("/nix/store/source"))
                 .unwrap()
-                .starts_with(dir.path())
+                .starts_with(dir.path().canonicalize().unwrap())
         );
         let mut bad = row();
         bad.sources = vec!["/source/modules/../../outside.nix".into()];

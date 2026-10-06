@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory() as directory:
     environment["SEELE_INSPECT_EDITOR"] = str(editor)
     result = run("--open", row["key"], "--source", "1", "--repo", str(checkout))
     assert result.returncode == 0, result.stderr
-    assert json.loads(marker.read_text()) == ["--", str(source)]
+    assert json.loads(marker.read_text()) == ["--", str(source.resolve())]
     marker.unlink()
     row["sources"] = ["/upstream/modules/features/fish.nix"]
     catalog.write_text(json.dumps({"version": 1, "sourceRoot": "/nix/store/fixture-source", "rows": [row]}))
