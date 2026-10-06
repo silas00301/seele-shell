@@ -172,6 +172,50 @@ const TEXTS: &[&str] = &[
     "lock",
 ];
 
+/// Dimensions from bounded PNG/JPEG headers, never decoding image data.
+pub fn dimensions(head: &[u8]) -> Option<(u32, u32)> {
+    let dimensions = if head.starts_with(b"\x89PNG\r\n\x1a\n") && head.get(12..16) == Some(b"IHDR")
+    {
+        (
+            u32::from_be_bytes(head.get(16..20)?.try_into().ok()?),
+            u32::from_be_bytes(head.get(20..24)?.try_into().ok()?),
+        )
+    } else if head.starts_with(b"\xff\xd8") {
+        let mut at = 2;
+        loop {
+            if *head.get(at)? != 0xff {
+                return None;
+            }
+            while head.get(at) == Some(&0xff) {
+                at += 1;
+            }
+            let marker = *head.get(at)?;
+            at += 1;
+            if marker == 0xda || marker == 0xd9 {
+                return None;
+            }
+            if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+                continue;
+            }
+            let len = usize::from(u16::from_be_bytes(head.get(at..at + 2)?.try_into().ok()?));
+            if len < 2 {
+                return None;
+            }
+            let segment = head.get(at..at.checked_add(len)?)?;
+            if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+                break (
+                    u32::from(u16::from_be_bytes(segment.get(5..7)?.try_into().ok()?)),
+                    u32::from(u16::from_be_bytes(segment.get(3..5)?.try_into().ok()?)),
+                );
+            }
+            at += len;
+        }
+    } else {
+        return None;
+    };
+    (dimensions.0 > 0 && dimensions.1 > 0).then_some(dimensions)
+}
+
 fn extension(name: &str) -> String {
     Path::new(name)
         .extension()
@@ -459,6 +503,18 @@ pub fn acceptable(path: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn bounded_png_jpeg_dimensions() {
+        let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        png.extend_from_slice(&2000_u32.to_be_bytes());
+        png.extend_from_slice(&1000_u32.to_be_bytes());
+        assert_eq!(dimensions(&png), Some((2000, 1000)));
+        assert_eq!(dimensions(&png[..23]), None);
+        let jpeg = b"\xff\xd8\xff\xc0\x00\x08\x08\x03\xe8\x07\xd0\x01";
+        assert_eq!(dimensions(jpeg), Some((2000, 1000)));
+        assert_eq!(dimensions(&jpeg[..10]), None);
+        assert_eq!(dimensions(b"not an image"), None);
+    }
     #[test]
     fn magic_outranks_a_wrong_extension_and_brands_separate_audio_from_video() {
         assert_eq!(classify("notes.txt", b"%PDF-1.7\n", false), Kind::Pdf);
