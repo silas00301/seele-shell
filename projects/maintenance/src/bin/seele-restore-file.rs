@@ -30,9 +30,30 @@ fn dialog(args: &[String], input: &[u8], cancel: &AtomicUsize) -> io::Result<Opt
     ))
 }
 fn helper(args: &[&str], cancel: &AtomicUsize) -> io::Result<Vec<u8>> {
-    let program = std::env::var_os("SEELE_BACKUP_FILES_HELPER").ok_or(io::ErrorKind::NotFound)?;
+    let program = PathBuf::from(
+        std::env::var_os("SEELE_BACKUP_FILES_HELPER").ok_or(io::ErrorKind::NotFound)?,
+    );
+    let canonical = program.canonicalize()?;
+    let metadata = fs::metadata(&canonical)?;
+    if !canonical.starts_with("/nix/store")
+        || canonical.file_name() != Some(std::ffi::OsStr::new("seele-backup-files"))
+        || !metadata.is_file()
+        || metadata.uid() != 0
+        || metadata.mode() & 0o022 != 0
+        || metadata.mode() & 0o111 == 0
+    {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    helper_command("/run/current-system/sw/bin/run0", &canonical, args, cancel)
+}
+fn helper_command(
+    run0: &str,
+    program: &Path,
+    args: &[&str],
+    cancel: &AtomicUsize,
+) -> io::Result<Vec<u8>> {
     let out = capture(
-        Command::new("run0")
+        Command::new(run0)
             .args(["--pipe", "--property=RuntimeMaxSec=180", "--"])
             .arg(program)
             .args(args),
@@ -115,9 +136,11 @@ fn compare(path: &Path, backup: &[u8], stage: &Path, cancel: &AtomicUsize) -> io
     }
     view(&(header+"These bytes differ. Text diffs are available for UTF-8 files up to 1 MiB; larger or binary files show hashes and sizes."),"Compare versions",cancel)
 }
-fn run() -> io::Result<()> {
+fn run(
+    args: &[String],
+    helper: fn(&[&str], &AtomicUsize) -> io::Result<Vec<u8>>,
+) -> io::Result<()> {
     let cancel = seele_runtime::process::termination_signal()?;
-    let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() > 1 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
@@ -284,6 +307,7 @@ fn run() -> io::Result<()> {
                         view("The destination already exists or could not be created. Choose a different name; no file was overwritten.","Restore copy",&cancel)?;
                         continue;
                     }
+                    fs::File::open(parent)?.sync_all()?;
                     view(
                         "A separate restored copy was saved. The original is unchanged.",
                         "Restore copy",
@@ -297,8 +321,32 @@ fn run() -> io::Result<()> {
     }
 }
 fn main() {
-    if run().is_err() {
+    if run(&std::env::args().skip(1).collect::<Vec<_>>(), helper).is_err() {
         eprintln!("Backup file operation failed. Configure backups first and unlock authentication when requested; originals are unchanged.");
         std::process::exit(1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ui_fixture_child() {
+        if let Ok(path) = std::env::var("SEELE_TEST_RESTORE_PATH") {
+            run(&[path], |args, cancel| {
+                helper_command("run0", Path::new("/fixture/root-helper"), args, cancel)
+            })
+            .unwrap();
+        }
+    }
+    #[test]
+    fn ui_fixture() {
+        let status = Command::new("python3")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/restore_ui.py"))
+            .arg(std::env::current_exe().unwrap())
+            .arg("--test-binary")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }
