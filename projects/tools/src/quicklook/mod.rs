@@ -261,6 +261,12 @@ fn inspect(raw: &str) -> (Value, Option<Kind>) {
     let sniff = head(&path, model::SNIFF_BYTES).unwrap_or_default();
     let kind = model::classify(&file_name(&path), &sniff, false);
     item.insert("kind".into(), json!(kind.name()));
+    if kind == Kind::Image {
+        if let Some((width, height)) = model::dimensions(&sniff) {
+            item.insert("width".into(), json!(width));
+            item.insert("height".into(), json!(height));
+        }
+    }
     if kind.textual() {
         match head(&path, model::MAX_TEXT_BYTES) {
             Ok(bytes) => {

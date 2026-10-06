@@ -220,6 +220,13 @@ pub fn hint(item: &Value, total: f64) -> String {
     if kind == "pdf" && number(item.get("pages")) > 1.0 && text(item.get("error")).is_empty() {
         parts.push("↑ ↓ between pages".into());
     }
+    if kind == "image"
+        && text(item.get("error")).is_empty()
+        && (1.0..=4096.0).contains(&number(item.get("width")))
+        && (1.0..=4096.0).contains(&number(item.get("height")))
+    {
+        parts.push("Z fit / 1:1 · Alt + arrows pan".into());
+    }
     if matches!(kind.as_str(), "audio" | "video") && text(item.get("error")).is_empty() {
         parts.push("P plays".into());
     }
