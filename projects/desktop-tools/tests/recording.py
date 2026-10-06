@@ -22,7 +22,7 @@ elif name=='slurp':
  assert '10,20 300x200' in sys.stdin.read();print('11,21 1x1')
 elif name=='zenity':
  title=next(a for a in args if a.startswith('--title='))
- if title=='--title=Record screen':print(os.environ.get('AUDIO','Silent'))
+ if title=='--title=Record screen':assert '--print-column=2' in args;print(os.environ.get('AUDIO','Silent'))
  elif title.startswith('--title=Select'):print('0')
  elif title=='--title=Recording':
   for i in range(100):
@@ -54,7 +54,8 @@ elif name=='curl':
  form=args[args.index('--form')+1];data=pathlib.Path(form.split(';')[0][6:]).read_bytes()
  assert data==b'trimmed recording';(state/'uploaded').write_bytes(data);print('https://0x0.st/test.mp4')
 elif name=='pactl':
- original={'index':3,'client':4,'sink':2,'properties':{'application.name':'Test app'}}
+ counter=state/'pulse-counter';tick=int(counter.read_text()) if counter.exists() else 0;counter.write_text(str(tick+1))
+ original={'index':3,'client':4,'sink':2,'volume':tick,'properties':{'application.name':'Test app','media.name':'Changing title '+str(tick),'object.serial':'stable-stream','application.process.id':'123'}}
  if 'list' in args:
   kind=args[-1]
   if kind=='sources':print(json.dumps([{'index':1,'name':'test_mic','description':'Test mic'}]))
