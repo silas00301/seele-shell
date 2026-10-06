@@ -221,3 +221,97 @@ async fn capacity_and_unknown_fields_fail_before_execution() {
     b.close();
     b.clear();
 }
+#[tokio::test]
+async fn running_and_retried_jobs_advertise_the_current_selection() {
+    struct Script {
+        phase: AtomicUsize,
+        selects: AtomicUsize,
+        infers: AtomicUsize,
+        release_select: AtomicUsize,
+        release_infer: AtomicUsize,
+    }
+    impl Runner for Script {
+        fn select(&self, model: &str, cancel: &AtomicUsize) -> seele_broker::lifecycle::Selection {
+            let turn = self.selects.fetch_add(1, Ordering::Relaxed) + 1;
+            while self.release_select.load(Ordering::Relaxed) < turn
+                && cancel.load(Ordering::Relaxed) == 0
+            {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if self.phase.load(Ordering::Relaxed) == 0 {
+                seele_broker::lifecycle::Selection {
+                    model: "claude:haiku".into(),
+                    reason: "codex_quota_exhausted",
+                }
+            } else {
+                seele_broker::lifecycle::Selection {
+                    model: model.into(),
+                    reason: "codex_quota_available",
+                }
+            }
+        }
+        fn infer(
+            &self,
+            _: &Request,
+            model: &str,
+            cancel: &AtomicUsize,
+        ) -> seele_broker::Result<(Value, Value)> {
+            let turn = self.infers.fetch_add(1, Ordering::Relaxed) + 1;
+            while self.release_infer.load(Ordering::Relaxed) < turn
+                && cancel.load(Ordering::Relaxed) == 0
+            {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if model.starts_with("claude:") {
+                Err("isolation_failure")
+            } else {
+                Ok((json!(1), json!({})))
+            }
+        }
+    }
+    let script = Arc::new(Script {
+        phase: AtomicUsize::new(0),
+        selects: AtomicUsize::new(0),
+        infers: AtomicUsize::new(0),
+        release_select: AtomicUsize::new(0),
+        release_infer: AtomicUsize::new(0),
+    });
+    let b = Broker::new(config(), script.clone());
+    let workers = b.start();
+    let job = submit(&b, payload("selection")).await;
+    eventually(|| script.selects.load(Ordering::Relaxed) >= 1).await;
+    let pending = call(&b, "status", &job).await;
+    assert_eq!(pending["job"]["state"], "running");
+    assert_eq!(pending["job"]["selectionReason"], "pending");
+    assert_eq!(pending["job"]["model"], "gpt-5.6-luna");
+    script.release_select.store(1, Ordering::Relaxed);
+    eventually(|| script.infers.load(Ordering::Relaxed) >= 1).await;
+    let running = call(&b, "status", &job).await;
+    assert_eq!(running["job"]["state"], "running");
+    assert_eq!(running["job"]["model"], "claude:haiku");
+    assert_eq!(running["job"]["selectionReason"], "codex_quota_exhausted");
+    script.phase.store(1, Ordering::Relaxed);
+    script.release_infer.store(1, Ordering::Relaxed);
+    let failed = done(&b, &job).await;
+    assert_eq!(failed["job"]["state"], "failed");
+    assert_eq!(failed["job"]["model"], "claude:haiku");
+    assert_eq!(failed["job"]["selectionReason"], "codex_quota_exhausted");
+    let retried = call(&b, "retry", &job).await;
+    assert_eq!(retried["job"]["state"], "queued");
+    assert_eq!(retried["job"]["selectionReason"], "pending");
+    assert_eq!(retried["job"]["model"], "gpt-5.6-luna");
+    assert_eq!(retried["job"]["error"], "");
+    eventually(|| script.selects.load(Ordering::Relaxed) >= 2).await;
+    let choosing = call(&b, "status", &job).await;
+    assert_eq!(choosing["job"]["selectionReason"], "pending");
+    assert_eq!(choosing["job"]["model"], "gpt-5.6-luna");
+    script.release_select.store(2, Ordering::Relaxed);
+    eventually(|| script.infers.load(Ordering::Relaxed) >= 2).await;
+    let second = call(&b, "status", &job).await;
+    assert_eq!(second["job"]["state"], "running");
+    assert_eq!(second["job"]["model"], "gpt-5.6-luna");
+    assert_eq!(second["job"]["selectionReason"], "codex_quota_available");
+    script.release_infer.store(2, Ordering::Relaxed);
+    assert_eq!(done(&b, &job).await["result"], 1);
+    shutdown(&b, workers).await;
+}

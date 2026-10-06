@@ -26,7 +26,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     command.args(["lookup", "application", "seele-codex", "account", "claude"]);
-    let output = seele_runtime::process::capture(
+    // Stay in the caller's process group. `capture` would put the lookup in its
+    // own group, which job cancellation does not kill, and SIGKILL skips Drop.
+    let output = seele_runtime::process::capture_inherited_group(
         &mut command,
         b"",
         seele_runtime::process::Limits {

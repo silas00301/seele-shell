@@ -186,6 +186,8 @@ impl Broker {
                     let job = state.jobs.get_mut(&id).unwrap();
                     job.state = "queued";
                     job.sequence = sequence;
+                    // The next attempt chooses again; the previous backend is not current.
+                    job.selection = None;
                 }
                 let delay = state
                     .jobs
@@ -215,8 +217,20 @@ impl Broker {
             self.changed.notify_waiters();
             let runner = self.runner.clone();
             let model = self.config.model.clone();
+            let broker = self.clone();
+            let running = id.clone();
             let outcome = tokio::task::spawn_blocking(move || {
                 let selection = runner.select(&model, &cancel);
+                // Record the choice before the backend runs, so a list during
+                // inference names that backend rather than the configured model
+                // or the previous attempt.
+                {
+                    let mut state = broker.state.lock().unwrap();
+                    if let Some(job) = state.jobs.get_mut(&running).filter(|job| !job.terminal()) {
+                        job.selection = Some(selection.clone());
+                    }
+                }
+                broker.changed.notify_waiters();
                 let outcome =
                     runner
                         .infer(&request, &selection.model, &cancel)
@@ -438,6 +452,7 @@ impl Broker {
                                     job.transient = 0;
                                     job.invalid_outputs = 0;
                                     job.error = "";
+                                    job.selection = None;
                                     job.cancel = Arc::new(AtomicUsize::new(0));
                                     job.updated = now();
                                 }
