@@ -17,7 +17,12 @@ Arithmetic supports `+ - * / ^`, unary signs, parentheses, scientific notation,
 `2^3^2 = 512`, `-2^2 = -4`, and `2^-2 = 0.25`. Postfix `%` divides by 100, so
 `240 * 15% = 36`; it is not a context-sensitive commercial percentage key.
 Calculations use finite IEEE-754 double precision and display 12 significant
-digits. `ans` retains the preceding unrounded numerical value; reusing a tape
+digits, while unitless integers through ±(2^53 − 1) display without rounding.
+Hexadecimal (`0xff`) and binary (`0b10`) literals accept unsigned magnitudes up
+to that bound; unary minus still works. An integer result offers Decimal, Hex
+and Binary copy buttons, reachable with Tab and activated with Enter or Space.
+Arithmetic remains IEEE-754: intermediate operations can still round.
+`ans` retains the preceding unrounded numerical value; reusing a tape
 row inserts the displayed rounded number. This is a general desktop calculator,
 not an arbitrary-precision accounting system.
 
