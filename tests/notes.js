@@ -119,3 +119,6 @@ assert.equal(
 assert.equal(notes.obsidianUri('', 'Inbox/A.md'), '');
 
 console.log('Notes search, date, editing command and Obsidian link checks passed');
+
+assert.equal(notes.statistics("Grüße 🦀").characters, 7);
+assert.equal(notes.statistics("Grüße 🦀").words, 2);
