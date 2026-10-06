@@ -80,6 +80,10 @@ let
       python3 projects/config-tools/tests/inspector.py "$out/bin/seele-inspect"
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
+    maintenance = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+      python3 projects/maintenance/tests/restic_files.py "${rawBin}/seele-backup-files" "${lib.getExe pkgs.restic}"
+      python3 projects/maintenance/tests/restore_ui.py "${rawBin}/seele-restore-file"
+    '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
     desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
       python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"

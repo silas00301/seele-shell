@@ -130,3 +130,22 @@ and proves original preservation after edits, missing snapshots/files, unsafe
 credential references and cleanup. Set `SEELE_TEST_RESTIC` to an official restic
 executable. Destination provisioning and real host acceptance are parent work;
 see `docs/backups.md` there.
+
+## Individual backup versions
+
+`restic_files.rs` and `seele-backup-files` form a narrow read-only boundary for
+exact regular-file paths under one configured home. Credential references,
+restic executable, host and allowed home come from the parent package wrapper.
+Inherited environment is cleared; tagged host snapshots and the exact file are
+revalidated before bounded extraction. No root-side restore write is available.
+
+`seele-restore-file` is an unprivileged native-dialog client, with Quick Look
+preview, size/SHA-256 and bounded text comparison, and exclusive mode-0600 copy
+publication. It retains previews under a private session runtime directory until
+exit. The fixed helper is invoked with run0 pipe I/O and a service lifetime
+limit. No Vicinae command or persistent content cache is added.
+
+`tests/restic_files.py` runs the actual backend with a disposable encrypted
+restic repository. `tests/restore_ui.py` uses fake authentication/dialogs and the
+real file operations. The parent guide `docs/backup-files.md` owns setup,
+credential grammar, bounds and live acceptance requirements.
