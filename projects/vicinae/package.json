@@ -252,7 +252,28 @@
       "title": "Seele Transfers",
       "description": "Send files to personal devices and view received files",
       "mode": "no-view",
-      "keywords": ["seele", "taildrop", "send", "receive", "files"]
+      "keywords": [
+        "seele",
+        "taildrop",
+        "send",
+        "receive",
+        "files"
+      ]
+    },
+    {
+      "name": "shelf",
+      "title": "Seele File Shelf",
+      "description": "Collect temporary files and text, drag them together, or capture in Notes",
+      "mode": "no-view",
+      "keywords": [
+        "seele",
+        "shelf",
+        "collect",
+        "stash",
+        "files",
+        "clipboard",
+        "attach"
+      ]
     },
     {
       "name": "caffeinate",

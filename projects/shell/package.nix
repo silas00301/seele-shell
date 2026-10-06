@@ -102,6 +102,9 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./shell.qml} "$out/share/seele-shell/shell.qml"
     install -m644 ${./HeadphonesIcon.qml} "$out/share/seele-shell/HeadphonesIcon.qml"
     install -m644 ${./NotificationStore.qml} "$out/share/seele-shell/NotificationStore.qml"
+    install -m644 ${./ShelfStore.qml} "$out/share/seele-shell/ShelfStore.qml"
+    install -m644 ${./ShelfPanel.qml} "$out/share/seele-shell/ShelfPanel.qml"
+    substituteInPlace "$out/share/seele-shell/ShelfPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./TransfersStore.qml} "$out/share/seele-shell/TransfersStore.qml"
     install -m644 ${./TransfersPanel.qml} "$out/share/seele-shell/TransfersPanel.qml"
     substituteInPlace "$out/share/seele-shell/TransfersPanel.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
@@ -341,6 +344,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeTool seele-yubikey-watch
     makeWrapper ${tools}/bin/seele-dictation-levels "$out/bin/seele-dictation-levels"
     makeWrapper ${tools}/bin/seele-network-activity "$out/bin/seele-network-activity"
+    makeWrapper ${tools}/bin/seele-shelf "$out/bin/seele-shelf"
     makeWrapper ${tools}/bin/seele-sensors "$out/bin/seele-sensors"
     makeWrapper ${tools}/bin/seele-resources "$out/bin/seele-resources"
     # The port inspector finds its privileged helper beside its own executable
@@ -398,7 +402,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml ShelfStore.qml ShelfPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -452,7 +456,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${tests}/tst_centeredglyph.qml
     QML_IMPORT_PATH="${pkgs.qt6.qtdeclarative}/lib/qt-6/qml:$QML_IMPORT_PATH" \
       python3 ${tests}/hermes-panel.py "$out/share/seele-shell"
-    for command in seele-hermes seele-quicklook seele-resources seele-network-activity seele-sensors seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-drift seele-theme seele-shell seele-home-assistant seele-calendar seele-weather seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-shelf seele-hermes seele-quicklook seele-resources seele-network-activity seele-sensors seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-drift seele-theme seele-shell seele-home-assistant seele-calendar seele-weather seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null
@@ -470,6 +474,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/libexec/seele-shell/seele-agent-hook"
     node ${tests}/feature-integrations.js "$out/share/seele-shell/shell.qml" ${./package.nix}
     node ${tests}/ai-activity.js "$out/share/seele-shell/ai-activity.js" "$out/share/seele-shell/AiActivityStore.qml"
+    bash ${tests}/shelf-panel.sh "$out/share/seele-shell" "$out/share/seele-shell/shared"
     node ${tests}/transfers.js "$out/share/seele-shell/TransfersStore.qml" "$out/share/seele-shell/TransfersPanel.qml" "$out/share/seele-shell/shell.qml"
     bash ${tests}/text-workbench.sh "$out/share/seele-shell" \
       ${tests}/tst_textworkbench.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
