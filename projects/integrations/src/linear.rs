@@ -333,6 +333,7 @@ pub async fn run(args: Vec<String>, cancel: CancellationToken) -> Result<()> {
             "--text=Select only details to include. Both are off initially.".into(),
             "--column=Include".into(),
             "--column=Detail".into(),
+            "--print-column=2".into(),
             "FALSE".into(),
             "Kernel version".into(),
             "FALSE".into(),
