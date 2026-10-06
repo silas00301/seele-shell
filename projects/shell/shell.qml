@@ -331,7 +331,7 @@ Shared.Theme {
 
   function toggleQuickLook(paths) {
     var requested = String(paths || "").split("\n").filter(function (path) { return path !== "" })
-    var shouldOpen = !quickLook.active && requested.length > 0
+    var shouldOpen = requested.length > 0
     var screen = currentScreen()
     closeOverlays()
     if (shouldOpen) quickLook.open(screen, requested)
