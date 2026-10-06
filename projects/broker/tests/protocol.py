@@ -33,7 +33,7 @@ def eventually(check, timeout=5):
 
 
 @contextlib.contextmanager
-def broker(binary=BINARY, fake=None):
+def broker(binary=BINARY, fake=None, environment_overrides=None):
     with tempfile.TemporaryDirectory(prefix='seele-broker-fixture-') as temporary:
         root = Path(temporary)
         root.chmod(0o700)
@@ -81,6 +81,7 @@ print(json.dumps({'type':'turn.completed','usage':{'input_tokens':2,'output_toke
             listener.listen()
             environment = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), HOME=str(home), CODEX_HOME=str(home),
                                SEELE_BROKER_CODEX=str(codex), PRIVATE_INTEGRATION_TOKEN='must-never-be-inherited')
+            environment.update(environment_overrides or {})
             launch = 'import os,sys;os.dup2(int(sys.argv[1]),3);os.set_inheritable(3,True);os.environ.update(LISTEN_PID=str(os.getpid()),LISTEN_FDS="1");os.execv(sys.argv[2],sys.argv[2:])'
             process = subprocess.Popen([sys.executable, '-c', launch, str(listener.fileno()), str(binary), 'serve', '--idle', '30'],
                                        env=environment, pass_fds=(listener.fileno(),), stdout=subprocess.PIPE, stderr=subprocess.PIPE)

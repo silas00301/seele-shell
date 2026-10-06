@@ -7,7 +7,18 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 
+#[derive(Clone)]
+pub struct Selection {
+    pub model: String,
+    pub reason: &'static str,
+}
 pub trait Runner: Send + Sync + 'static {
+    fn select(&self, model: &str, _cancel: &AtomicUsize) -> Selection {
+        Selection {
+            model: model.into(),
+            reason: "preference",
+        }
+    }
     fn infer(&self, request: &Request, model: &str, cancel: &AtomicUsize)
         -> Result<(Value, Value)>;
 }
@@ -55,6 +66,7 @@ struct Job {
     transient: u32,
     invalid_outputs: u32,
     tokens: [u64; 2],
+    selection: Option<Selection>,
     error: &'static str,
     result: Option<Value>,
     promoted: bool,
@@ -69,7 +81,7 @@ impl Job {
         )
     }
     fn metadata(&self, model: &str) -> Value {
-        json!({"id":self.id,"consumer":self.request.value["consumer"],"label":self.request.value["label"],"state":self.state,"created":self.created,"updated":self.updated,"started":self.started,"model":model,"attempts":self.attempts,"queueDuration":((if self.started == 0.0 { now() } else { self.started })-self.created).max(0.0),"tokens":{"input":self.tokens[0],"output":self.tokens[1]},"error":self.error})
+        json!({"id":self.id,"consumer":self.request.value["consumer"],"label":self.request.value["label"],"state":self.state,"created":self.created,"updated":self.updated,"started":self.started,"model":self.selection.as_ref().map(|s| s.model.as_str()).unwrap_or(model),"selectionReason":self.selection.as_ref().map(|s| s.reason).unwrap_or("pending"),"attempts":self.attempts,"queueDuration":((if self.started == 0.0 { now() } else { self.started })-self.created).max(0.0),"tokens":{"input":self.tokens[0],"output":self.tokens[1]},"error":self.error})
     }
     fn finish(&mut self, state: &'static str, error: &'static str) {
         self.state = state;
@@ -186,6 +198,7 @@ impl Broker {
                 let picked = id.map(|id| {
                     let job = state.jobs.get_mut(&id).unwrap();
                     job.state = "running";
+                    job.selection = None;
                     job.promoted = false;
                     if job.started == 0.0 {
                         job.started = now();
@@ -203,16 +216,34 @@ impl Broker {
             self.changed.notify_waiters();
             let runner = self.runner.clone();
             let model = self.config.model.clone();
+            let broker = self.clone();
+            let selected_id = id.clone();
             let outcome = tokio::task::spawn_blocking(move || {
-                let (result, usage) = runner.infer(&request, &model, &cancel)?;
-                let result = if validation::bounded_instance(&result)
-                    && request.validator.is_valid(&result)
+                let selection = runner.select(&model, &cancel);
                 {
-                    Ok(result)
-                } else {
-                    Err("invalid_output")
-                };
-                Ok((result, usage))
+                    let mut state = broker.state.lock().unwrap();
+                    let Some(job) = state.jobs.get_mut(&selected_id) else {
+                        return Err("cancelled");
+                    };
+                    if job.terminal() || cancel.load(Ordering::Relaxed) != 0 {
+                        return Err("cancelled");
+                    }
+                    job.selection = Some(selection.clone());
+                    job.updated = now();
+                }
+                broker.changed.notify_waiters();
+                runner
+                    .infer(&request, &selection.model, &cancel)
+                    .map(|(result, usage)| {
+                        let result = if validation::bounded_instance(&result)
+                            && request.validator.is_valid(&result)
+                        {
+                            Ok(result)
+                        } else {
+                            Err("invalid_output")
+                        };
+                        (result, usage)
+                    })
             })
             .await
             .unwrap_or(Err("runtime_failure"));
@@ -226,6 +257,14 @@ impl Broker {
                     continue;
                 }
                 let outcome = outcome.and_then(|(value, usage)| {
+                    if let Some(model) = usage["model"]
+                        .as_str()
+                        .filter(|m| validation::identifier(m))
+                    {
+                        if let Some(selection) = &mut job.selection {
+                            selection.model = model.into();
+                        }
+                    }
                     for (index, key) in ["input", "output"].into_iter().enumerate() {
                         if let Some(n) = usage[key].as_u64() {
                             job.tokens[index] = job.tokens[index].saturating_add(n);
@@ -333,6 +372,7 @@ impl Broker {
                         transient: 0,
                         invalid_outputs: 0,
                         tokens: [0, 0],
+                        selection: None,
                         error: "",
                         result: None,
                         promoted: false,
@@ -403,6 +443,7 @@ impl Broker {
                                 "cancel" => job.finish("cancelled", ""),
                                 "retry" => {
                                     job.state = "queued";
+                                    job.selection = None;
                                     job.transient = 0;
                                     job.invalid_outputs = 0;
                                     job.error = "";

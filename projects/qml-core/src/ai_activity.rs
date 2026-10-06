@@ -25,6 +25,19 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
                 "state":string(job.get("state")),"created":number(job.get("created")),"updated":number(job.get("updated")),
                 "model":string(job.get("model")),"attempts":number(job.get("attempts")),"queueDuration":number(job.get("queueDuration")),
                 "tokens":{"input":number(Some(&job["tokens"]["input"])),"output":number(Some(&job["tokens"]["output"]))},
+                "choice":match job["selectionReason"].as_str() {
+                    Some("codex_quota_available") => "Codex capacity available",
+                    Some("codex_quota_unknown") => "Codex capacity unknown",
+                    Some("codex_quota_exhausted") => "Codex capacity exhausted; Claude fallback",
+                    _ => ""
+                },
+                "connectionHelp":if job["model"].as_str().is_some_and(|m| m.starts_with("claude:")) {
+                    match job["error"].as_str() {
+                        Some("authentication_unavailable") => "Unlock the wallet or provision the dedicated Claude broker API key. See the broker setup guide.",
+                        Some("isolation_failure") => "The installed Claude CLI could not satisfy tool isolation. Update it before retrying.",
+                        _ => ""
+                    }
+                } else { "" },
                 "error":text(job.get("error"))
             })).collect::<Vec<_>>())
         }

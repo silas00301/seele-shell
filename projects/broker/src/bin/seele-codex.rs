@@ -1,5 +1,6 @@
 use seele_broker::{
     lifecycle::{Broker, Config},
+    routing::Routing,
     runner::Codex,
     transport, validation, MAX_MESSAGE,
 };
@@ -76,9 +77,10 @@ fn run() -> io::Result<()> {
         std::env::var_os("SEELE_BROKER_CODEX")
             .unwrap_or_else(|| "codex".into())
             .into(),
-        runtime,
+        runtime.clone(),
     );
-    let broker = Broker::new(config, Arc::new(codex));
+    let runner = Routing::new(codex, runtime);
+    let broker = Broker::new(config, Arc::new(runner));
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .max_blocking_threads(16)

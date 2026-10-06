@@ -30,7 +30,7 @@ let
   python =
     if name == "integrations" then pkgs.python3.withPackages (ps: [ ps.aiohttp ]) else pkgs.python3;
   runtimeDependencies = {
-    broker = [ pkgs.codex ];
+    broker = [ pkgs.codex pkgs.claude-code pkgs.libsecret ];
     maintenance = [
       pkgs.systemd
       pkgs.openssl
@@ -86,6 +86,8 @@ let
     '';
     broker = ''
       python3 projects/broker/tests/protocol.py "${rawBin}/seele-codex"
+      python3 projects/broker/tests/routing.py "${rawBin}/seele-codex"
+      SEELE_BROKER_CLAUDE=${lib.getExe pkgs.claude-code} python3 projects/broker/tests/claude_loopback.py "${rawBin}/seele-codex"
       SEELE_BROKER_CODEX=${lib.getExe pkgs.codex} python3 projects/broker/tests/codex_loopback.py "${rawBin}/seele-codex"
     '';
   };
@@ -154,7 +156,9 @@ pkgs.rustPlatform.buildRustPackage {
           --suffix PATH : /run/current-system/sw/bin \
           ${lib.optionalString (
             name == "broker"
-          ) ''--set-default SEELE_BROKER_CODEX "${lib.getExe pkgs.codex}"''}
+          ) ''--set-default SEELE_BROKER_CODEX "${lib.getExe pkgs.codex}" \
+          --set-default SEELE_BROKER_CLAUDE "${lib.getExe pkgs.claude-code}" \
+          --set-default SEELE_BROKER_SECRET_TOOL "${pkgs.libsecret}/bin/secret-tool"''}
       done
     '';
   doInstallCheck = builtins.hasAttr name fixtures;
