@@ -23,6 +23,7 @@ for (const name of ['resetCursor','reconcileCursor','toggleGroup','handleKey']) 
 const press=(key,modifiers=0,isAutoRepeat=false)=>c.handleKey({key,modifiers,isAutoRepeat});
 assert.equal(c.cursor.id,''); assert(press(Qt.Key_J)); assert.equal(c.cursor.id,'1');
 assert(press(Qt.Key_Return)); assert(c.expandedGroups['app:chat']);
+const heldBefore=calls.length; assert(press(Qt.Key_Return,0,true)); assert.equal(calls.length,heldBefore);
 assert(press(Qt.Key_J)); assert.equal(c.cursor.id,'2');
 assert(press(Qt.Key_H)); c.reconcileCursor(0); assert.equal(c.cursor.id,'1');
 assert(press(Qt.Key_Return)); assert(press(Qt.Key_Return)); assert.deepEqual(calls.pop(),['open',1]);
