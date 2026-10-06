@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 
 fn label(value: Option<&Value>) -> String {
     value.and_then(Value::as_str).unwrap_or("").chars()
-        .filter(|c| !c.is_control() && !matches!(*c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}'))
+        .filter(|c| !c.is_control() && !matches!(*c, '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}'))
         .take(120).collect::<String>().trim().to_owned()
 }
 
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn provider_text_is_bounded_and_reset_fallback_is_retained() {
         let rows = limits(
-            &json!({"rateWindowLabels":{"primary":"Plan\u{202e}\n"},"usage":{"primary":{"usedPercent":25,"resetDescription":"Tomorrow\u{200b}"}}}),
+            &json!({"rateWindowLabels":{"primary":"Plan\u{2028}\u{2029}\u{202e}\n"},"usage":{"primary":{"usedPercent":25,"resetDescription":"Tomorrow\u{200b}"}}}),
         );
         assert_eq!(rows[0]["name"], "Plan");
         assert_eq!(rows[0]["resetDescription"], "Tomorrow");
