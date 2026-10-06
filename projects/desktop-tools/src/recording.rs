@@ -200,6 +200,13 @@ fn safe_name(name: &str) -> bool {
 fn label(value: &str) -> String {
     value.chars().filter(|c|!c.is_control() && !matches!(*c,'\u{200b}'..='\u{200f}'|'\u{202a}'..='\u{202e}'|'\u{2060}'..='\u{206f}')).take(120).collect()
 }
+fn same_stream(left: &Value, right: &Value) -> bool {
+    left["index"] == right["index"]
+        && left["client"] == right["client"]
+        && ["object.serial", "application.process.id"]
+            .iter()
+            .all(|key| left["properties"][*key] == right["properties"][*key])
+}
 struct AudioRoute {
     name: String,
     module: u64,
@@ -212,10 +219,7 @@ impl Drop for AudioRoute {
         let cancel = AtomicUsize::new(0);
         let same = pulse_list("sink-inputs", &cancel).ok().and_then(|rows| {
             rows.into_iter().find(|row| {
-                row["index"] == self.stream["index"]
-                    && row["client"] == self.stream["client"]
-                    && row["properties"] == self.stream["properties"]
-                    && row["sink"].as_u64() == self.route_sink
+                same_stream(row, &self.stream) && row["sink"].as_u64() == self.route_sink
             })
         });
         if same.is_some() {
@@ -311,7 +315,7 @@ fn choose_audio(
     }
     let stream = pulse_list(kind, cancel)?
         .into_iter()
-        .find(|item| item == row)
+        .find(|item| same_stream(item, row))
         .ok_or(io::ErrorKind::NotFound)?;
     let original_sink = stream["sink"].as_u64().unwrap();
     let name = format!(
@@ -366,6 +370,7 @@ pub fn run(cancel: &AtomicUsize) -> io::Result<()> {
             "--text=Record up to two minutes. Choose audio explicitly.",
             "--column=Pick",
             "--column=Audio",
+            "--print-column=2",
             "TRUE",
             "Silent",
             "FALSE",
