@@ -1,0 +1,1 @@
+Color Lab accepts opaque sRGB hexadecimal, rgb() and hsl() input. Hue accepts degrees (bare or deg), radians (rad), turns (turn) and gradians (grad), including negative and repeated rotations, wrapped into one turn. Saturation and lightness remain 0–100%; alpha remains unsupported. Contrast pass/fail continues to use unrounded ratios.
