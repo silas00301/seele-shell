@@ -1782,6 +1782,7 @@ dependencies = [
  "libc",
  "seele-runtime",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
