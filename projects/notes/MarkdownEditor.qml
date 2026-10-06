@@ -20,6 +20,13 @@ Item {
   readonly property alias area: editor
   readonly property alias caret: editor.cursorPosition
 
+  property var statistics: ({available: false, label: ""})
+  Timer {
+    id: statisticsTimer
+    interval: 200
+    onTriggered: editorRoot.statistics = Notes.statistics(editor.text)
+  }
+  Component.onCompleted: statisticsTimer.restart()
   signal edited(string text)
 
   function load(text, keepCaret) {
@@ -114,6 +121,8 @@ Item {
       background: Item {}
 
       onTextChanged: {
+        editorRoot.statistics = ({available: false, label: ""})
+        statisticsTimer.restart()
         if (guard.loading || guard.reported === text) return
         guard.reported = text
         editorRoot.edited(text)

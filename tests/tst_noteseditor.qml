@@ -68,6 +68,22 @@ TestCase {
 
   // Loading a document is not an edit. If it were, every external refresh
   // would look like something the user typed and get written straight back.
+  function test_00_live_statistics_and_load_reset() {
+    editor.load("Grüße 🦀", false)
+    wait(250)
+    compare(editor.statistics.words, 2)
+    compare(editor.statistics.characters, 7)
+    editor.focusBody()
+    keyClick(Qt.Key_End)
+    keyClick(Qt.Key_Space)
+    keyClick(Qt.Key_X)
+    wait(250)
+    compare(editor.statistics.words, 3)
+    editor.load("next", false)
+    wait(250)
+    compare(editor.statistics.words, 1)
+    compare(editor.statistics.characters, 4)
+  }
   function test_01_loading_is_not_an_edit() {
     editor.load("# Heading\n\nplain text\n", false)
     compare(suite.edits, 0)

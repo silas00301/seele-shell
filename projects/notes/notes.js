@@ -17,3 +17,5 @@ function filter(notes, query) {
 }
 function when(seconds, now) { return Bridge.call("notes.when", Bridge.localDates(seconds, now)) }
 function status(state, seconds, now) { return Bridge.call("notes.status", [state].concat(Bridge.localDates(seconds, now))) }
+
+function statistics(text) { return Bridge.call("notes.statistics", [text]) }
