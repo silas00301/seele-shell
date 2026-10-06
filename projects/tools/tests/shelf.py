@@ -59,9 +59,21 @@ with tempfile.TemporaryDirectory(prefix='seele-shelf-fixture-') as temporary:
     state=request(dict(op='clear'));assert state['items']==[] and not snippet.exists() and source.exists()
     request(dict(op='text',text='temporary again'))
     process.stdin.close();process.wait(timeout=5)
-    assert process.returncode==0 and not list(runtime.iterdir()) and not process.stderr.read()
+    assert process.returncode==0 and not [p for p in runtime.iterdir() if p.name != "seele-shelf.lock"] and not process.stderr.read()
     # Idle termination cleans text and the socket too.
     process=launch();state=request(dict(op='text',text='signal cleanup'))
     process.send_signal(signal.SIGTERM);process.wait(timeout=5)
-    assert process.returncode==0 and not list(runtime.iterdir()) and source.exists()
+    assert process.returncode==0 and not [p for p in runtime.iterdir() if p.name != "seele-shelf.lock"] and source.exists()
+    # A competing worker cannot remove an active endpoint; SIGKILL leaves a
+    # stale endpoint that the next lock owner can retire safely.
+    process=launch()
+    other=subprocess.run([str(binary)],env=env,input=b'',capture_output=True,timeout=5)
+    assert other.returncode!=0 and (runtime/'seele-shelf.sock').exists()
+    process.kill();process.wait(timeout=5)
+    assert (runtime/'seele-shelf.sock').exists()
+    process=launch();process.stdin.close();process.wait(timeout=5)
+    assert process.returncode==0 and not (runtime/'seele-shelf.sock').exists()
+    unsafe=runtime/'seele-shelf.sock';unsafe.write_text('preserve')
+    other=subprocess.run([str(binary)],env=env,input=b'',capture_output=True,timeout=5)
+    assert other.returncode!=0 and unsafe.read_text()=='preserve';unsafe.unlink()
 print('Shelf: atomic references, private snippets/socket, no text argv, independent Notes copies, EOF and SIGTERM cleanup passed')

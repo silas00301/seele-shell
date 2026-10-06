@@ -8,6 +8,7 @@ source="${1:-$root/projects/shell}"
 shared="${2:-$root/projects/shared}"
 cp "$source/ShelfPanel.qml" "$fixture/shell/"
 sed -i 's|import "shared" as Shared|import "../shared" as Shared|' "$fixture/shell/ShelfPanel.qml"
+cp "$shared/ListModels.js" "$shared/Native.js" "$fixture/shared/"
 for part in ActionButton FocusRing HoverWash; do cp "$shared/$part.qml" "$fixture/shared/"; done
 cat > "$fixture/Quickshell/Io/qmldir" <<'EOF'
 module Quickshell.Io
@@ -54,6 +55,15 @@ Item {
     name:"ShelfPanel"; when:windowShown
     function initTestCase() { failOnWarning(/Binding loop/); shelf.forceActiveFocus() }
     function init() { shelf.forceActiveFocus(); shelf.cursor=0; state.calls=[]; preview.clear(); closed.clear() }
+    function test_snapshotKeepsDelegates() {
+      var original=findChild(shelf,"shelfRow-2")
+      verify(original)
+      var replacement=JSON.parse(JSON.stringify(state.items))
+      replacement[1].selected=true
+      state.items=replacement
+      tryVerify(function(){return findChild(shelf,"shelfRow-2").entry.selected})
+      verify(findChild(shelf,"shelfRow-2")===original,"polling and selection retain the row object")
+    }
     function test_navigationAndSelection() {
       keyClick(Qt.Key_J);compare(shelf.cursor,1)
       keyClick(Qt.Key_Space);compare(state.calls[state.calls.length-1].id,"2")

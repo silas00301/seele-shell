@@ -1,10 +1,13 @@
 //! One shell-owned temporary shelf. Original files are references; explicit
 //! text is private runtime data, removed with its item or worker lifetime.
 use serde_json::{json, Value};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+use std::os::unix::{
+    fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    net::{UnixListener, UnixStream},
+};
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::AtomicUsize, Arc};
 use std::time::Duration;
@@ -27,7 +30,6 @@ struct Shelf {
 }
 impl Shelf {
     fn new(runtime: &Path, cancel: Arc<AtomicUsize>) -> io::Result<Self> {
-        use std::os::unix::fs::MetadataExt;
         let metadata = fs::symlink_metadata(runtime)?;
         if !metadata.is_dir()
             || metadata.uid() != unsafe { libc::geteuid() }
@@ -38,6 +40,7 @@ impl Shelf {
         let root = tempfile::Builder::new()
             .prefix("seele-shelf-")
             .tempdir_in(runtime)?;
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700))?;
         Ok(Self {
             root,
             items: Vec::new(),
@@ -206,10 +209,50 @@ pub fn run() -> io::Result<()> {
     let stop = seele_runtime::process::termination_signal()?;
     let mut shelf = Shelf::new(&runtime, stop.clone())?;
     let socket_path = runtime.join("seele-shelf.sock");
+    let lock = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(runtime.join("seele-shelf.lock"))?;
+    let info = lock.metadata()?;
+    if !info.is_file()
+        || info.uid() != unsafe { libc::geteuid() }
+        || info.mode() & 0o077 != 0
+        || unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Shelf already running or unsafe lock",
+        ));
+    }
+    match fs::symlink_metadata(&socket_path) {
+        Ok(info) => {
+            if !info.file_type().is_socket() || info.uid() != unsafe { libc::geteuid() } {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Unsafe shelf socket",
+                ));
+            }
+            match UnixStream::connect(&socket_path) {
+                Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+                    fs::remove_file(&socket_path)?
+                }
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "Shelf socket is active",
+                    ))
+                }
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     let listener = UnixListener::bind(&socket_path)?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     listener.set_nonblocking(true)?;
-    use std::os::unix::fs::MetadataExt;
     struct SocketGuard {
         path: PathBuf,
         inode: u64,
