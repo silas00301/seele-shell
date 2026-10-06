@@ -7,7 +7,7 @@ import tempfile
 
 binary = pathlib.Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory() as directory:
-    work = pathlib.Path(directory)
+    work = pathlib.Path(directory).resolve()
     checkout = work / "checkout"
     source = checkout / "modules" / "features" / "fish.nix"
     source.parent.mkdir(parents=True)
@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == [row]
     assert json.loads(run("fish", "disabled", "--json").stdout) == []
+    assert run("--source", "1").returncode != 0
     marker = work / "editor-arguments.json"
     editor = work / "editor"
     editor.write_text("#!" + sys.executable + "\nimport json, pathlib, sys\npathlib.Path(" + repr(str(marker)) + ").write_text(json.dumps(sys.argv[1:]))\n")
