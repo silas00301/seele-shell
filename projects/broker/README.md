@@ -30,7 +30,57 @@ arbitrary-precision arithmetic allocations.
 Message size is 256 KiB,
 queue capacity is 128 retained jobs, and concurrency defaults to two (1–8).
 Consumers provide a deliberately safe label, never a label derived from private
-content. Model selection belongs exclusively to `seele.codexBroker.model`.
+content. Codex model preference belongs exclusively to `seele.codexBroker.model`.
+Before each broker attempt, bounded CodexBar `usage --provider codex --json`
+reads known rate windows. Any known window at 100% selects Claude Code;
+positive or unavailable quota retains the preferred Codex model. Unknown
+capacity never means exhausted. This applies to broker integration jobs; the
+separate resumable prompt panel keeps its existing Codex session policy.
+
+On exhaustion, Claude Code tries `haiku`, then `sonnet`, then `opus`, advancing
+only for model failure. Authentication, isolation, cancellation and invalid
+output never advance the tier. Activity metadata records the selected model
+and `selectionReason`; its expanded row explains the choice and connection
+failure. The CLI's bare mode disables subscription-login discovery, so this
+fallback requires an explicitly provisioned **Anthropic API key** and uses API
+billing. It never silently uses the user's Claude subscription credentials.
+
+To enable that fallback, store the key in Secret Service with:
+
+```sh
+secret-tool store --label='Seele broker Claude fallback' application seele-codex account claude
+```
+
+Enter the secret only at the command's hidden stdin prompt. Do not put it in a
+shell argument, environment variable, Nix option or file. Disconnect with
+`secret-tool clear application seele-codex account claude`. A missing or locked
+wallet returns `authentication_unavailable` with setup help in Activity.
+No key is needed to continue using Codex.
+
+The native `seele-claude-key` apiKeyHelper reads only this dedicated wallet entry
+on demand, returns it directly to Claude, and has bounded output and deadline.
+Every Claude attempt runs with an empty private HOME/config/workspace and a
+cleared environment, `--bare --tools '' --disallowedTools '*'`, an explicit
+empty strict MCP config, no setting sources, no persisted session and the
+shared inference-only system policy. Help discovery must expose the required
+flags before private task content or a key is supplied. Stream init must report
+empty tools and MCP servers; tool-use events fail closed. The broker, rather
+than a model tool, validates the returned JSON. Attempt trees disappear on
+success, failure and cancellation. Unsupported installed Claude builds fail
+closed and offer update guidance.
+
+The flags and bare-mode API authentication follow the provider's
+[CLI reference](https://code.claude.com/docs/en/cli-reference) and
+[programmatic guide](https://code.claude.com/docs/en/headless).
+`tests/routing.py` proves positive/unknown routing, exhausted Haiku fallback,
+Haiku→Sonnet→Opus model failures, missing wallet, unsupported flags, forbidden
+tools, cancellation and private cleanup using synthetic binaries only.
+`tests/claude_loopback.py` runs the real Claude CLI against a local fake API,
+requires an empty outgoing tool list and excludes hostile host instructions.
+This passed locally with existing Claude 2.1.289; the parent pins 2.1.223 and
+its package check requires that same loopback proof. The standalone child pin
+is older and can fail this mandatory compatibility check rather than weakening
+isolation. Full package builds and live account acceptance remain unrun.
 
 Every reply carries `ok` and an `epoch`. Submit returns `job.id`. All subsequent
 job operations must include that id and epoch. `broker_restarted` means the
@@ -101,6 +151,7 @@ cargo test --manifest-path projects/broker/Cargo.toml
 cargo clippy --manifest-path projects/broker/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path projects/broker/Cargo.toml
 PYTHONDONTWRITEBYTECODE=1 python3 projects/broker/tests/protocol.py target/debug/seele-codex
+PYTHONDONTWRITEBYTECODE=1 python3 projects/broker/tests/routing.py target/debug/seele-codex
 PYTHONDONTWRITEBYTECODE=1 python3 projects/broker/tests/codex_loopback.py target/debug/seele-codex
 ```
 
