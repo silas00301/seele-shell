@@ -25,7 +25,8 @@ FocusScope {
     {id: "lines-clean", label: "Clean lines", hint: "Trim each line, remove blank lines and use LF endings. Preview before copying."},
     {id: "lines-unique", label: "Unique lines", hint: "Keep the first occurrence of each exact line, in its original order."},
     {id: "base64url-encode", label: "Base64url encode", hint: "Encode UTF-8 text with the URL-safe Base64 alphabet, without padding."},
-    {id: "base64url-decode", label: "Base64url decode", hint: "URL-safe Base64 with no padding or complete padding. Whitespace and non-UTF-8 bytes are rejected."}
+    {id: "base64url-decode", label: "Base64url decode", hint: "URL-safe Base64 with no padding or complete padding. Whitespace and non-UTF-8 bytes are rejected."},
+    {id: "csv-markdown", label: "CSV → Markdown", hint: "First row is the header. Quoted commas and newlines are supported; cells are escaped. 1,000 rows / 64 columns maximum."}
   ]
   readonly property string mode: modes[choice].id
   readonly property bool canCopy: result.valid === true && !previewTimer.running && !clipboardBusy
