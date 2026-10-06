@@ -214,7 +214,6 @@ impl Drop for AudioRoute {
             rows.into_iter().find(|row| {
                 row["index"] == self.stream["index"]
                     && row["client"] == self.stream["client"]
-                    && row["properties"] == self.stream["properties"]
                     && row["sink"].as_u64() == self.route_sink
             })
         });
@@ -311,7 +310,7 @@ fn choose_audio(
     }
     let stream = pulse_list(kind, cancel)?
         .into_iter()
-        .find(|item| item == row)
+        .find(|item| item["index"] == row["index"] && item["client"] == row["client"])
         .ok_or(io::ErrorKind::NotFound)?;
     let original_sink = stream["sink"].as_u64().unwrap();
     let name = format!(
