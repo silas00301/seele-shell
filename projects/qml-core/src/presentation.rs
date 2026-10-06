@@ -338,7 +338,7 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
         "capacityColor" => json!(severity(number(args.first()))),
         "reset" => {
             if first.is_null() {
-                json!("")
+                json!(text(args.get(2)))
             } else {
                 let delta = number(args.first()) - number(args.get(1));
                 let minutes = (delta / 60000.0).floor();
