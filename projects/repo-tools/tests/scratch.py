@@ -2,7 +2,7 @@ import fcntl,os,pty,select,signal,subprocess,sys,tempfile,termios,time
 from pathlib import Path
 binary=str(Path(sys.argv[1]).resolve());fish=str(Path(sys.argv[2]).resolve())
 with tempfile.TemporaryDirectory() as directory:
-    root=Path(directory); tools=root/'bin';tools.mkdir();(tools/'fish').symlink_to(fish)
+    root=Path(directory).resolve(); tools=root/'bin';tools.mkdir();(tools/'fish').symlink_to(fish)
     original=root/'original';original.write_text('preserve me'); parent=root/'caller';parent.mkdir(); temps=root/'temps';temps.mkdir()
     def session(cancel):
         receipt=root/('cancel-receipt' if cancel else 'exit-receipt')
