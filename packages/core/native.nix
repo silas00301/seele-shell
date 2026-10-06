@@ -96,6 +96,7 @@ let
       python3 projects/desktop-tools/tests/recording.py "$out/libexec/seele-desktop-tools/seele-record"
     '';
     repo-tools = ''
+      python3 projects/repo-tools/tests/fingerprint.py "$out/bin/seele-fingerprint"
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
       python3 projects/repo-tools/tests/pi_readonly.py "$out/bin/seele-pi-jj"

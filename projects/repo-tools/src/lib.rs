@@ -1,4 +1,5 @@
 pub mod check;
+pub mod fingerprint;
 pub mod generation;
 pub mod jj;
 pub mod pi;
