@@ -122,3 +122,7 @@ console.log('Notes search, date, editing command and Obsidian link checks passed
 
 assert.equal(notes.statistics("Grüße 🦀").characters, 7);
 assert.equal(notes.statistics("Grüße 🦀").words, 2);
+
+const oversized = vm.createContext({Bridge: {call() { throw new Error("oversize reached the ABI"); }}});
+vm.runInContext(nativeSource(fs.readFileSync(process.argv[2], 'utf8')), oversized);
+assert.equal(oversized.statistics('x'.repeat(3 * 1024 * 1024)).label, 'Statistics unavailable above 2 MiB');
