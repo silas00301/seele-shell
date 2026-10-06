@@ -801,3 +801,27 @@ Without a display label, `windowMinutes` supplies the cadence; a slot alone neve
 implies Weekly. Unknown and synthetic extra usage is omitted rather than painted
 as exhausted or free quota. Reset descriptions remain available when no timestamp
 is reported. `agents_capacity.rs` covers the official CLI payload projection.
+
+## Temporary shelf (SIL-52)
+
+`seele-shelf` is one shell-owned resident worker with bounded newline commands
+on stdin and same-user, mode-0600 runtime socket requests. It keeps at most 64
+regular file references and 16 explicit text snippets (64 KiB each), with no
+persistent history. Clear/remove touch only generated snippets. EOF and SIGTERM
+remove the private tree and owned socket. `seele-shellctl shelf --text` uses that
+socket, never text argv. `ShelfPanel.qml` owns rendering, selection controls and
+copy-only drag MIME; the worker owns data validation and lifetime. Closing the
+panel retains items; worker exit/QML reload clears them.
+
+The existing Transfers panel receives explicit selection without starting a
+transfer. `seele-notes-store capture-files <path>...` copies a fully validated and
+staged batch into the configured vault and creates a new Markdown capture. Its
+limits are 16 files, 32 MiB each and 128 MiB total. Originals and an existing
+editor are untouched. Vault copies are durable; they are never automatically
+deleted when shelf text disappears or an embed is removed.
+
+`projects/tools/tests/shelf.py` drives real executables and proves private
+framing/modes, source preservation, Notes copies, and shutdown cleanup.
+`tests/shelf-panel.sh` uses real Qt events and the production panel/shared
+buttons, with only process I/O stubbed. Live Wayland dragging and destination
+acceptance are separate checks. See the parent's `docs/file-shelf.md`.

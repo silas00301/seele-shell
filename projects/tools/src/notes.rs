@@ -929,6 +929,100 @@ impl Library {
         None
     }
 
+    /// Explicit shelf handoff creates a new capture; the current editor and
+    /// every source remain untouched. Validate and stage the whole batch first.
+    fn capture_files(&self, sources: &[String]) -> Result<Value> {
+        if sources.is_empty() || sources.len() > 16 {
+            return Err("Choose one to 16 attachments".into());
+        }
+        self.ensure()?;
+        checked_path(
+            &self.vault.root,
+            &Path::new(&self.vault.directory).join(&self.vault.attachments),
+        )?;
+        let mut inputs = Vec::new();
+        let mut total = 0u64;
+        for source in sources {
+            let path = Path::new(source);
+            if !path.is_absolute() || source.len() > 4096 {
+                return Err("Choose absolute local file paths".into());
+            }
+            let input = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+                .open(path)?;
+            let metadata = input.metadata()?;
+            if !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
+                return Err("Each attachment must be a regular file up to 32 MiB".into());
+            }
+            total += metadata.len();
+            if total > 128 * 1024 * 1024 {
+                return Err("Attachments must fit in 128 MiB together".into());
+            }
+            let extension = path
+                .extension()
+                .and_then(|value| value.to_str())
+                .filter(|value| {
+                    value.len() <= 12 && value.bytes().all(|b| b.is_ascii_alphanumeric())
+                })
+                .unwrap_or("bin")
+                .to_ascii_lowercase();
+            inputs.push((input, extension));
+        }
+        fs::create_dir_all(self.vault.attachments_dir())?;
+        checked_path(
+            &self.vault.root,
+            &Path::new(&self.vault.directory).join(&self.vault.attachments),
+        )?;
+        let mut staged = Vec::new();
+        let mut total = 0u64;
+        for (mut input, extension) in inputs {
+            let mut file = tempfile::Builder::new()
+                .prefix(".seele-attachment-")
+                .tempfile_in(self.vault.attachments_dir())?;
+            let size = io::copy(&mut (&mut input).take(32 * 1024 * 1024 + 1), &mut file)?;
+            total += size;
+            if size > 32 * 1024 * 1024 || total > 128 * 1024 * 1024 {
+                return Err("An attachment grew beyond the size limit".into());
+            }
+            file.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))?;
+            file.as_file().sync_all()?;
+            staged.push((file, extension));
+        }
+        let mut text = String::from("# Shelf capture\n\n");
+        for (index, (file, extension)) in staged.iter().enumerate() {
+            let target = move_new(
+                file.path(),
+                &self.vault.attachments_dir(),
+                &format!("Shelf {} {}", stamp(), index + 1),
+                extension,
+            )?;
+            let name = target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("Invalid attachment name")?;
+            let embed = matches!(
+                extension.as_str(),
+                "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "gif"
+                    | "webp"
+                    | "pdf"
+                    | "wav"
+                    | "mp3"
+                    | "ogg"
+                    | "mp4"
+                    | "webm"
+            );
+            text.push_str(&format!("{}[[{}]]\n", if embed { "!" } else { "" }, name));
+        }
+        // Published vault attachments are never deleted automatically: another
+        // note can already reference one. A failed note save leaves copies safe.
+        self.save(None, &text, "")
+    }
+
     /// Persist a note. `relative` is absent for a capture that has not earned
     /// a filename yet, and `baseline` is the digest the draft was loaded from.
     fn save(&self, relative: Option<&str>, text: &str, baseline: &str) -> Result<Value> {
@@ -2212,7 +2306,19 @@ pub fn run(arguments: &[String]) -> Result {
     match arguments.first().map(String::as_str).unwrap_or("watch") {
         "watch" => watch(),
         "record" => record(),
-        _ => Err("Usage: seele-notes-store [watch|record]".into()),
+        "capture-files" => {
+            let session = Session::load();
+            let result = session
+                .require()
+                .and_then(|library| library.capture_files(&arguments[1..]));
+            match result {
+                Ok(value) => emit(&json!({"ok":true,"path":value["note"]["path"]})),
+                Err(_) => emit(
+                    &json!({"ok":false,"error":"Could not copy attachments. Choose a vault and check file access and the 16-file/32-MiB limits."}),
+                ),
+            }
+        }
+        _ => Err("Usage: seele-notes-store [watch|record|capture-files <path>...]".into()),
     }
 }
 

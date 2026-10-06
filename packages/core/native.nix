@@ -55,6 +55,7 @@ let
   };
   fixtures = {
     tools = ''
+      python3 projects/tools/tests/shelf.py "$out/bin/seele-shelf"
       python3 projects/tools/tests/network_activity.py "$out/bin/seele-network-activity"
       python3 projects/tools/tests/sensors.py "$out/bin/seele-sensors"
       python3 projects/tools/tests/resources.py "$out/bin/seele-resources"

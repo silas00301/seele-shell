@@ -7,6 +7,13 @@ reach it from the launcher's root search.
 
 ## Commands
 
+- **Seele File Shelf** (`shelf.tsx`): opens the temporary file/text collection.
+  Native shell IPC keeps originals as references and snippets in private runtime
+  files. Selection may be dragged together, captured as a new Notes note with
+  independent attachments, or handed to Transfers for explicit destination choice.
+  Nothing is sent merely by opening or collecting. The shelf is cleared when its
+  worker exits; see the tools README for limits and keyboard controls.
+
 - **Copy Clean Link** (`clean-link.tsx`): reads the current text clipboard once
   when invoked, previews the original and cleaned HTTP(S) URL and the recognized
   tracking parameter names removed, and copies only on **Copy Cleaned Link**.
