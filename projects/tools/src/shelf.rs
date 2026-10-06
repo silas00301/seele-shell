@@ -199,6 +199,21 @@ impl Shelf {
 fn label(text: &str) -> String {
     text.chars().filter(|c| !c.is_control() && !matches!(*c,'\u{200b}'..='\u{200f}'|'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}'|'\u{feff}')).take(120).collect()
 }
+fn claim_socket(path: &Path) -> io::Result<UnixListener> {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    use std::os::unix::net::UnixStream;
+    // SIGKILL skips SocketGuard. A live worker still accepts; a leftover does not.
+    if let Ok(info) = fs::symlink_metadata(path) {
+        if !info.file_type().is_socket() || info.uid() != unsafe { libc::geteuid() } {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        if UnixStream::connect(path).is_ok() {
+            return Err(io::ErrorKind::AddrInUse.into());
+        }
+        fs::remove_file(path)?;
+    }
+    UnixListener::bind(path)
+}
 pub fn run() -> io::Result<()> {
     use std::sync::atomic::{AtomicBool, Ordering};
     let runtime =
@@ -206,7 +221,7 @@ pub fn run() -> io::Result<()> {
     let stop = seele_runtime::process::termination_signal()?;
     let mut shelf = Shelf::new(&runtime, stop.clone())?;
     let socket_path = runtime.join("seele-shelf.sock");
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = claim_socket(&socket_path)?;
     fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
     listener.set_nonblocking(true)?;
     use std::os::unix::fs::MetadataExt;
@@ -383,5 +398,22 @@ mod tests {
             assert!(shelf.apply(&json!({"op":"files","paths":[path]})).is_err());
         }
         assert!(shelf.items.is_empty());
+    }
+    #[test]
+    fn a_dead_socket_is_replaced_and_a_live_or_foreign_one_is_kept() {
+        use std::os::unix::net::UnixStream;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("seele-shelf.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        assert!(claim_socket(&path).is_err());
+        assert!(path.exists());
+        drop(listener);
+        let recovered = claim_socket(&path).unwrap();
+        assert!(UnixStream::connect(&path).is_ok());
+        drop(recovered);
+        let _ = fs::remove_file(&path);
+        fs::write(&path, b"not a socket").unwrap();
+        assert!(claim_socket(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"not a socket");
     }
 }

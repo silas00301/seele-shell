@@ -346,6 +346,7 @@ pkgs.stdenvNoCC.mkDerivation {
     makeWrapper ${tools}/bin/seele-network-activity "$out/bin/seele-network-activity"
     makeWrapper ${tools}/bin/seele-sensors "$out/bin/seele-sensors"
     makeWrapper ${tools}/bin/seele-resources "$out/bin/seele-resources"
+    makeWrapper ${tools}/bin/seele-shelf "$out/bin/seele-shelf"
     # The port inspector finds its privileged helper beside its own executable
     # rather than through PATH, so the two stay in the same store directory and
     # only the worker is exposed as a command.
@@ -455,7 +456,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${tests}/tst_centeredglyph.qml
     QML_IMPORT_PATH="${pkgs.qt6.qtdeclarative}/lib/qt-6/qml:$QML_IMPORT_PATH" \
       python3 ${tests}/hermes-panel.py "$out/share/seele-shell"
-    for command in seele-hermes seele-quicklook seele-resources seele-network-activity seele-sensors seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-drift seele-theme seele-shell seele-home-assistant seele-calendar seele-weather seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
+    for command in seele-hermes seele-quicklook seele-resources seele-network-activity seele-sensors seele-shelf seele-text-clipboard seele-transfers seele-ai-prompt-worker seele-uri-worker seele-color-worker seele-ports seele-drift seele-theme seele-shell seele-home-assistant seele-calendar seele-weather seele-github-status seele-agent-state seele-agent seele-agent-run seele-agent-hook seele-caffeinate seele-control seele-bt-receiver seele-bt-agent seele-mic-sync seele-mic-test seele-nothing-headphones seele-os-session seele-shellctl seele-clock seele-yubikey-watch; do
       test -x "$out/bin/$command"
     done
     "$out/bin/seele-shellctl" --help >/dev/null

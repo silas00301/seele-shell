@@ -20,6 +20,34 @@ Column {
     cursor = Math.max(0, Math.min(store.items.length - 1, cursor + step))
     list.positionViewAtIndex(cursor, ListView.Contain)
   }
+  // One model for the life of the panel. Replacing the array resets scroll,
+  // reloads thumbnails, and drops a double-click that lands between snapshots.
+  function sameShelfEntry(a, b) {
+    return !!a && !!b && a.id === b.id && a.name === b.name && a.caption === b.caption && a.path === b.path && a.uri === b.uri && a.kind === b.kind && !!a.image === !!b.image && !!a.selected === !!b.selected && !!a.available === !!b.available && a.bytes === b.bytes
+  }
+  function syncShelf(next) {
+    if (!next) next = []
+    var i = 0
+    for (var n = 0; n < next.length; n++) {
+      var incoming = next[n]
+      var current = i < shelfRows.count ? shelfRows.get(i).entry : null
+      if (current && current.id === incoming.id) {
+        if (!sameShelfEntry(current, incoming)) shelfRows.set(i, { entry: incoming })
+        i++
+        continue
+      }
+      var match = -1
+      for (var j = i + 1; j < shelfRows.count; j++) {
+        var later = shelfRows.get(j).entry
+        if (later && later.id === incoming.id) { match = j; break }
+      }
+      if (match < 0) { shelfRows.insert(i, { entry: incoming }); i++; continue }
+      shelfRows.remove(i, match - i)
+      if (!sameShelfEntry(shelfRows.get(i).entry, incoming)) shelfRows.set(i, { entry: incoming })
+      i++
+    }
+    if (shelfRows.count > i) shelfRows.remove(i, shelfRows.count - i)
+  }
   Keys.onPressed: event => {
     if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_D || event.key === Qt.Key_U)) {
       move((event.key === Qt.Key_D ? 1 : -1) * Math.max(1, Math.floor(list.height / (theme.controlHeight * 3.2))))
@@ -47,7 +75,9 @@ Column {
       store.send({op:"remove"}); event.accepted = true
     }
   }
-  Connections { target: panel.store; function onItemsChanged() { panel.cursor = Math.max(0, Math.min(panel.cursor, panel.store.items.length - 1)) } }
+  ListModel { id: shelfRows }
+  Connections { target: panel.store; function onItemsChanged() { panel.syncShelf(panel.store.items); panel.cursor = Math.max(0, Math.min(panel.cursor, panel.store.items.length - 1)) } }
+  Component.onCompleted: syncShelf(store.items)
   FileDialog { id: picker; title: "Collect files"; fileMode: FileDialog.OpenFiles; onAccepted: panel.store.send({op:"files",paths:selectedFiles.map(function(uri) { return String(uri) })}) }
   Row {
     width: parent.width; spacing: panel.theme.spaceSmall
@@ -61,30 +91,30 @@ Column {
     ListView {
       id: list
       anchors.fill: parent; anchors.margins: panel.theme.spaceSmall; clip: true
-      model: panel.store.items; spacing: panel.theme.spaceSmall
+      model: shelfRows; spacing: panel.theme.spaceSmall
       delegate: Rectangle {
         id: row
-        required property var modelData
+        required property var entry
         required property int index
         width: list.width; height: panel.theme.controlHeight * 1.6; radius: panel.theme.radius
-        color: modelData.selected ? panel.theme.selectedColor : panel.theme.cardColor
+        color: entry.selected ? panel.theme.selectedColor : panel.theme.cardColor
         Accessible.role: Accessible.CheckBox
-        Accessible.name: modelData.name
-        Accessible.checked: modelData.selected
-        border.color: modelData.selected ? panel.theme.accent : panel.theme.cardBorder
+        Accessible.name: entry.name
+        Accessible.checked: entry.selected
+        border.color: entry.selected ? panel.theme.accent : panel.theme.cardBorder
         Shared.FocusRing { theme: panel.theme; shown: panel.activeFocus && panel.cursor === row.index }
-        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.modelData.image && row.modelData.available; source: visible ? row.modelData.uri : ""; sourceSize.width: 128; sourceSize.height: 128; fillMode: Image.PreserveAspectFit; asynchronous: true }
+        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.entry.image && row.entry.available; source: visible ? row.entry.uri : ""; sourceSize.width: 128; sourceSize.height: 128; fillMode: Image.PreserveAspectFit; asynchronous: true }
         Column {
           x: thumbnail.visible ? thumbnail.x + thumbnail.width + panel.theme.spaceSmall : panel.theme.spaceLarge
           anchors.verticalCenter: parent.verticalCenter
           width: parent.width - x - panel.theme.spaceLarge
-          Text { width: parent.width; text: row.modelData.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: row.modelData.available ? panel.theme.text : panel.theme.red; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
-          Text { width: parent.width; text: !row.modelData.available ? "Original file is unavailable" : row.modelData.caption || Math.ceil(row.modelData.bytes / 1024) + " KiB"; textFormat: Text.PlainText; elide: Text.ElideRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
+          Text { width: parent.width; text: row.entry.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: row.entry.available ? panel.theme.text : panel.theme.red; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
+          Text { width: parent.width; text: !row.entry.available ? "Original file is unavailable" : row.entry.caption || Math.ceil(row.entry.bytes / 1024) + " KiB"; textFormat: Text.PlainText; elide: Text.ElideRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
         }
         MouseArea {
           anchors.fill: parent
-          onClicked: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.modelData.id}) }
-          onDoubleClicked: if (row.modelData.available) panel.previewRequested(row.modelData.path)
+          onClicked: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.entry.id}) }
+          onDoubleClicked: if (row.entry.available) panel.previewRequested(row.entry.path)
         }
       }
     }
