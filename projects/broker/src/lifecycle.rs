@@ -232,20 +232,18 @@ impl Broker {
                     job.updated = now();
                 }
                 broker.changed.notify_waiters();
-                let outcome =
-                    runner
-                        .infer(&request, &selection.model, &cancel)
-                        .map(|(result, usage)| {
-                            let result = if validation::bounded_instance(&result)
-                                && request.validator.is_valid(&result)
-                            {
-                                Ok(result)
-                            } else {
-                                Err("invalid_output")
-                            };
-                            (result, usage)
-                        });
-                outcome
+                runner
+                    .infer(&request, &selection.model, &cancel)
+                    .map(|(result, usage)| {
+                        let result = if validation::bounded_instance(&result)
+                            && request.validator.is_valid(&result)
+                        {
+                            Ok(result)
+                        } else {
+                            Err("invalid_output")
+                        };
+                        (result, usage)
+                    })
             })
             .await
             .unwrap_or(Err("runtime_failure"));
