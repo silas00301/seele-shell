@@ -81,30 +81,60 @@ impl Parser<'_> {
                 _ => return Err("Use numbers, pi, e, ans, sqrt(), abs() or round()."),
             }
         } else {
-            let start = self.cursor;
-            while self
-                .source
-                .get(self.cursor)
-                .is_some_and(|b| b.is_ascii_digit() || *b == b'.')
+            if self.source.get(self.cursor) == Some(&b'0')
+                && matches!(
+                    self.source.get(self.cursor + 1),
+                    Some(b'x' | b'X' | b'b' | b'B')
+                )
             {
-                self.cursor += 1;
-            }
-            if start == self.cursor {
-                return Err("Enter a number or an expression.");
-            }
-            if matches!(self.source.get(self.cursor), Some(b'e' | b'E')) {
-                self.cursor += 1;
-                if matches!(self.source.get(self.cursor), Some(b'+' | b'-')) {
+                let radix = if matches!(self.source.get(self.cursor + 1), Some(b'x' | b'X')) {
+                    16
+                } else {
+                    2
+                };
+                self.cursor += 2;
+                let start = self.cursor;
+                while self
+                    .source
+                    .get(self.cursor)
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                {
                     self.cursor += 1;
                 }
-                while self.source.get(self.cursor).is_some_and(u8::is_ascii_digit) {
+                let digits = std::str::from_utf8(&self.source[start..self.cursor])
+                    .map_err(|_| "Invalid integer literal.")?;
+                let integer = u64::from_str_radix(digits, radix)
+                    .map_err(|_| "Use hexadecimal digits after 0x or binary digits after 0b.")?;
+                if integer > 9_007_199_254_740_991 {
+                    return Err("Prefixed integers must be at most 2^53 - 1 for exact arithmetic.");
+                }
+                integer as f64
+            } else {
+                let start = self.cursor;
+                while self
+                    .source
+                    .get(self.cursor)
+                    .is_some_and(|b| b.is_ascii_digit() || *b == b'.')
+                {
                     self.cursor += 1;
                 }
+                if start == self.cursor {
+                    return Err("Enter a number or an expression.");
+                }
+                if matches!(self.source.get(self.cursor), Some(b'e' | b'E')) {
+                    self.cursor += 1;
+                    if matches!(self.source.get(self.cursor), Some(b'+' | b'-')) {
+                        self.cursor += 1;
+                    }
+                    while self.source.get(self.cursor).is_some_and(u8::is_ascii_digit) {
+                        self.cursor += 1;
+                    }
+                }
+                std::str::from_utf8(&self.source[start..self.cursor])
+                    .ok()
+                    .and_then(|text| text.parse::<f64>().ok())
+                    .ok_or("Check the number; use a dot for decimals.")?
             }
-            std::str::from_utf8(&self.source[start..self.cursor])
-                .ok()
-                .and_then(|text| text.parse::<f64>().ok())
-                .ok_or("Check the number; use a dot for decimals.")?
         };
         finite(left)?;
         loop {
@@ -259,14 +289,27 @@ fn evaluate(text: &str, answer: Option<f64>) -> Result<Value, &'static str> {
     } else {
         (arithmetic(text, answer)?, "")
     };
-    let number = format(value);
+    let exact_integer =
+        suffix.is_empty() && value.fract() == 0.0 && value.abs() <= 9_007_199_254_740_991.0;
+    let number = if exact_integer {
+        (value as i64).to_string()
+    } else {
+        format(value)
+    };
+    let integer = if exact_integer {
+        let sign = if value < 0.0 { "-" } else { "" };
+        let magnitude = value.abs() as u64;
+        json!({"decimal":number,"hex":format!("{sign}0x{magnitude:x}"),"binary":format!("{sign}0b{magnitude:b}")})
+    } else {
+        Value::Null
+    };
     let result = if suffix.is_empty() {
         number.clone()
     } else {
         format!("{number} {suffix}")
     };
     Ok(
-        json!({"value": value, "number": number, "result": result, "expression": text, "unit": suffix}),
+        json!({"value": value, "number": number, "result": result, "expression": text, "unit": suffix,"integer":integer}),
     )
 }
 fn answer(state: &Value) -> Option<f64> {
@@ -349,6 +392,30 @@ mod tests {
             "-1 K to C",
             "1 m to",
             "1 foo to m",
+        ] {
+            assert!(evaluate(text, None).is_err(), "{text}");
+        }
+    }
+    #[test]
+    fn programmer_literals_and_exact_representations() {
+        assert_eq!(value("0xff + 0b10"), 257.0);
+        assert_eq!(value("-0Xf * 0B10"), -30.0);
+        let result = evaluate("0x1fffffffffffff", None).unwrap();
+        assert_eq!(result["result"], "9007199254740991");
+        assert_eq!(result["integer"]["hex"], "0x1fffffffffffff");
+        assert_eq!(
+            evaluate("-255", None).unwrap()["integer"]["binary"],
+            "-0b11111111"
+        );
+        assert!(evaluate("0.5", None).unwrap()["integer"].is_null());
+        assert!(evaluate("1 m to cm", None).unwrap()["integer"].is_null());
+        for text in [
+            "0x",
+            "0b",
+            "0b102",
+            "0xgg",
+            "0x20000000000000",
+            "0x1ffffffffffffffff",
         ] {
             assert!(evaluate(text, None).is_err(), "{text}");
         }

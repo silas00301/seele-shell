@@ -21,6 +21,10 @@ FocusScope {
   readonly property var preview: Native.call("calculator.preview", [input.text, session])
   readonly property var tape: session.tape || []
   readonly property string result: preview.result || (preview.empty && session.last ? session.last.result : "")
+  readonly property var integerFormats: {
+    var value = preview.integer || (preview.empty && session.last ? session.last.integer : null)
+    return value ? [{label: "Decimal", value: value.decimal}, {label: "Hex", value: value.hex}, {label: "Binary", value: value.binary}] : []
+  }
   readonly property string copyValue: result
   signal copyRequested(string text)
   signal closeRequested()
@@ -39,11 +43,12 @@ FocusScope {
     copyError = ""
     focusInput()
   }
-  function copyResult() {
-    if (copyValue === "") return
+  function copyResult() { copyText(copyValue) }
+  function copyText(value) {
+    if (value === "") return
     notice = ""
     copyError = ""
-    copyRequested(copyValue)
+    copyRequested(value)
   }
   function clearTape() { session = ({}); recallIndex = -1; recallDraft = ""; notice = ""; copyError = ""; focusInput() }
   function recall(direction) {
@@ -104,7 +109,7 @@ FocusScope {
             height: panel.theme.rowHeight
             maximumLength: 512
             selectByMouse: true
-            placeholderText: "(48 + 16) / 4  or  12 km to mi"
+            placeholderText: "(48 + 16) / 4, 0xff + 0b10, or 12 km to mi"
             font.pixelSize: panel.theme.textLead
             leftPadding: panel.theme.spaceLarge
             rightPadding: panel.theme.spaceLarge
@@ -143,9 +148,31 @@ FocusScope {
               onClicked: panel.copyResult()
             }
           }
+          Column {
+            width: parent.width
+            visible: panel.integerFormats.length > 0
+            spacing: panel.theme.spaceSmall
+            Text { text: "Copy exact integer as"; textFormat: Text.PlainText; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
+            Row {
+              width: parent.width
+              spacing: panel.theme.spaceSmall
+              Repeater {
+                model: panel.integerFormats
+                Shared.ActionButton {
+                  required property var modelData
+                  theme: panel.theme
+                  objectName: "calculatorBase" + modelData.label
+                  width: (parent.width - panel.theme.spaceSmall * 2) / 3
+                  text: modelData.label
+                  Accessible.name: "Copy " + modelData.label + " " + modelData.value
+                  onClicked: panel.copyText(modelData.value)
+                }
+              }
+            }
+          }
           Text {
             width: parent.width
-            text: panel.preview.error || panel.copyError || panel.notice || (panel.session.last ? "ans = " + panel.session.last.number + " · 12 significant digits" : "Local calculations · cleared when you close")
+            text: panel.preview.error || panel.copyError || panel.notice || (panel.session.last ? "ans = " + panel.session.last.number + " · 12 significant digits · exact integers" : "Local calculations · cleared when you close")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: panel.preview.error || panel.copyError ? panel.theme.red : panel.notice ? panel.theme.green : panel.theme.subtext
