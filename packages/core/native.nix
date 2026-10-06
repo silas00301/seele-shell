@@ -40,6 +40,7 @@ let
     shell-ai = [ pkgs.fzf ];
   };
   wrapped = builtins.hasAttr name runtimeDependencies;
+  recordingWrapped = name == "desktop-tools" && pkgs.stdenv.hostPlatform.isLinux;
   rawBin = if wrapped then "$out/libexec/seele-${name}" else "$out/bin";
   mainPrograms = {
     broker = "seele-codex";
@@ -76,7 +77,10 @@ let
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
-    desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"'';
+    desktop-tools = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+      python3 projects/desktop-tools/tests/screenshot.py "$out/bin/seele-screenshot"
+      python3 projects/desktop-tools/tests/recording.py "$out/libexec/seele-desktop-tools/seele-record"
+    '';
     repo-tools = ''
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
@@ -106,7 +110,7 @@ pkgs.rustPlatform.buildRustPackage {
   ];
   nativeBuildInputs =
     lib.optionals (tools || markdown) [ pkgs.pkg-config ]
-    ++ lib.optionals wrapped [ pkgs.makeBinaryWrapper ];
+    ++ lib.optionals (wrapped || recordingWrapped) [ pkgs.makeBinaryWrapper ];
   buildInputs =
     lib.optionals tools [
       pkgs.dbus
@@ -143,6 +147,12 @@ pkgs.rustPlatform.buildRustPackage {
   postInstall =
     lib.optionalString (name == "qml-core") ''
       install -Dm644 projects/qml-core/include/seele-core.h "$out/include/seele-core.h"
+    ''
+    + lib.optionalString recordingWrapped ''
+      mkdir -p "$out/libexec/seele-desktop-tools"
+      mv "$out/bin/seele-record" "$out/libexec/seele-desktop-tools/"
+      makeWrapper "$out/libexec/seele-desktop-tools/seele-record" "$out/bin/seele-record" \
+        --prefix PATH : "${lib.makeBinPath [ pkgs.curl pkgs.ffmpeg pkgs.hyprland pkgs.pulseaudio pkgs.slurp pkgs.wf-recorder pkgs.wl-clipboard pkgs.zenity ]}"
     ''
     + lib.optionalString wrapped ''
       mkdir -p "${rawBin}"
