@@ -198,6 +198,7 @@ impl Broker {
                 let picked = id.map(|id| {
                     let job = state.jobs.get_mut(&id).unwrap();
                     job.state = "running";
+                    job.selection = None;
                     job.promoted = false;
                     if job.started == 0.0 {
                         job.started = now();
@@ -215,8 +216,22 @@ impl Broker {
             self.changed.notify_waiters();
             let runner = self.runner.clone();
             let model = self.config.model.clone();
+            let broker = self.clone();
+            let selected_id = id.clone();
             let outcome = tokio::task::spawn_blocking(move || {
                 let selection = runner.select(&model, &cancel);
+                {
+                    let mut state = broker.state.lock().unwrap();
+                    let Some(job) = state.jobs.get_mut(&selected_id) else {
+                        return Err("cancelled");
+                    };
+                    if job.terminal() || cancel.load(Ordering::Relaxed) != 0 {
+                        return Err("cancelled");
+                    }
+                    job.selection = Some(selection.clone());
+                    job.updated = now();
+                }
+                broker.changed.notify_waiters();
                 let outcome =
                     runner
                         .infer(&request, &selection.model, &cancel)
@@ -230,7 +245,7 @@ impl Broker {
                             };
                             (result, usage)
                         });
-                Ok((selection, outcome))
+                outcome
             })
             .await
             .unwrap_or(Err("runtime_failure"));
@@ -243,27 +258,22 @@ impl Broker {
                 if job.terminal() {
                     continue;
                 }
-                let outcome = outcome
-                    .and_then(|(selection, outcome)| {
-                        job.selection = Some(selection);
-                        outcome
-                    })
-                    .and_then(|(value, usage)| {
-                        if let Some(model) = usage["model"]
-                            .as_str()
-                            .filter(|m| validation::identifier(m))
-                        {
-                            if let Some(selection) = &mut job.selection {
-                                selection.model = model.into();
-                            }
+                let outcome = outcome.and_then(|(value, usage)| {
+                    if let Some(model) = usage["model"]
+                        .as_str()
+                        .filter(|m| validation::identifier(m))
+                    {
+                        if let Some(selection) = &mut job.selection {
+                            selection.model = model.into();
                         }
-                        for (index, key) in ["input", "output"].into_iter().enumerate() {
-                            if let Some(n) = usage[key].as_u64() {
-                                job.tokens[index] = job.tokens[index].saturating_add(n);
-                            }
+                    }
+                    for (index, key) in ["input", "output"].into_iter().enumerate() {
+                        if let Some(n) = usage[key].as_u64() {
+                            job.tokens[index] = job.tokens[index].saturating_add(n);
                         }
-                        value
-                    });
+                    }
+                    value
+                });
                 match outcome {
                     Ok(value) => {
                         job.result = Some(value);
@@ -435,6 +445,7 @@ impl Broker {
                                 "cancel" => job.finish("cancelled", ""),
                                 "retry" => {
                                     job.state = "queued";
+                                    job.selection = None;
                                     job.transient = 0;
                                     job.invalid_outputs = 0;
                                     job.error = "";

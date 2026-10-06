@@ -81,6 +81,8 @@ else:
         reply=protocol.rpc(path, {'op':'submit','request':protocol.payload()})
         protocol.eventually(lambda:calls.read_text().splitlines()==['haiku'])
         identity=dict(id=reply['job']['id'],epoch=reply['epoch'])
+        running=protocol.rpc(path,dict(op='status',**identity))['job']
+        assert running['state']=='running' and running['model']=='claude:haiku' and running['selectionReason']=='codex_quota_exhausted',running
         assert protocol.rpc(path,dict(op='cancel',**identity))['ok']
         assert protocol.rpc(path,dict(op='wait',**identity))['job']['state']=='cancelled'
         assert calls.read_text().splitlines()==['haiku']
