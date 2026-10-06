@@ -2,6 +2,7 @@
 //! compiled schemas, source context, prompts, and results are memory-only.
 pub mod health;
 pub mod lifecycle;
+pub mod routing;
 pub mod runner;
 pub mod transport;
 pub mod validation;

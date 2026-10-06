@@ -80,9 +80,11 @@ Column {
         Text {
           width: parent.width; visible: card.expanded
           text: card.modelData.model + " · attempt " + card.modelData.attempts
+            + (card.modelData.choice ? "\n" + card.modelData.choice : "")
             + "\n" + card.modelData.tokens.input + " input · " + card.modelData.tokens.output + " output tokens"
             + "\nQueued " + Math.floor(card.modelData.queueDuration) + "s · " + card.modelData.id
             + (card.modelData.error ? "\n" + card.modelData.error : "")
+            + (card.modelData.connectionHelp ? "\n" + card.modelData.connectionHelp : "")
           textFormat: Text.PlainText
           color: panel.theme.subtext
           font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption
