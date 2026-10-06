@@ -1,4 +1,4 @@
-"""Production restore UI with fake authenticated helper and dialogs; no root action."""
+"""Production workflow under a test-only helper seam; installed binary rejects spoofed escalation."""
 import json
 import os
 from pathlib import Path
@@ -46,7 +46,14 @@ else:raise AssertionError(name)
 ''');script.chmod(0o700)
     for name in ('run0','zenity','shellctl'):(tools/name).symlink_to(script)
     env=dict(os.environ,STATE=str(root),DESTINATION=str(destination),XDG_RUNTIME_DIR=str(runtime),SEELE_BACKUP_FILES_HELPER='/fixture/root-helper',SEELE_SHELLCTL=str(tools/'shellctl'),PATH=str(tools)+os.pathsep+os.environ['PATH'])
-    result=subprocess.run([str(binary),str(source)],env=env,capture_output=True,timeout=15)
+    if '--test-binary' in sys.argv:
+        env['SEELE_TEST_RESTORE_PATH']=str(source)
+        result=subprocess.run([str(binary),'--exact','tests::ui_fixture_child','--nocapture'],env=env,capture_output=True,timeout=15)
+    else:
+        result=subprocess.run([str(binary),str(source)],env=env,capture_output=True,timeout=15)
+        assert result.returncode!=0 and not destination.exists() and not (root/'calls').exists()
+        print('restore UI: installed executable rejects untrusted helper and PATH run0 before escalation')
+        sys.exit(0)
     assert result.returncode==0,result.stderr
     assert source.read_bytes()==b'current bytes\n' and destination.read_bytes()==b'backup bytes\n'
     assert destination.stat().st_mode&0o777==0o600 and (root/'previewed').exists()
