@@ -164,3 +164,5 @@ empty and hostile global instructions stay outside the request. Exit 77 identifi
 package checks require a supported Codex rather than weakening those flags.
 Run that check whenever the packaged Codex changes. No fixture performs remote
 inference. QML, rendering, transparency and animation are unchanged.
+
+The parent host integration pins `SEELE_BROKER_CODEXBAR` to its packaged quota probe. Standalone broker users must provide that executable explicitly (or put `codexbar` on PATH); without it quota stays unknown and the preferred Codex model remains selected. The child package carries Claude and Secret Service runtime tools, while the host owns CodexBar packaging. Running activity publishes the chosen provider as soon as routing finishes, before inference; retry clears the previous choice.
