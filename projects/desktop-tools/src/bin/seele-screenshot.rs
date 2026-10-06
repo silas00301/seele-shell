@@ -2,11 +2,11 @@
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.len() > 1
-        || args
-            .first()
-            .is_some_and(|mode| !matches!(mode.as_str(), "capture" | "annotate" | "upload"))
+        || args.first().is_some_and(|mode| {
+            !matches!(mode.as_str(), "capture" | "annotate" | "upload" | "linear")
+        })
     {
-        eprintln!("Usage: seele-screenshot [capture|annotate|upload]");
+        eprintln!("Usage: seele-screenshot [capture|annotate|upload|linear]");
         std::process::exit(2);
     }
     let result = seele_runtime::process::termination_signal().and_then(|cancel| {

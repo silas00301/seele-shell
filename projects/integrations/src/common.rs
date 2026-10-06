@@ -69,6 +69,17 @@ pub async fn launch(command: Command, timeout: Duration, cancel: CancellationTok
         .await
         .map(|_| ())
 }
+/// Explicit clipboard handoff; input stays off argv and the successful owner survives.
+pub async fn handoff(
+    command: Command,
+    input: Vec<u8>,
+    timeout: Duration,
+    cancel: CancellationToken,
+) -> Result<()> {
+    execute(command, input, timeout, 4096, cancel, true)
+        .await
+        .map(|_| ())
+}
 async fn execute(
     mut command: Command,
     input: Vec<u8>,
