@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory() as root:
     link=root/'link';link.symlink_to(path);assert invoke('--',link).returncode!=0
     fifo=root/'fifo';os.mkfifo(fifo);assert invoke('--',fifo).returncode!=0
     fake=root/'bin';fake.mkdir(); clip=fake/('pbcopy' if sys.platform=='darwin' else 'wl-copy');receipt=root/'receipt'
-    clip.write_text('#!/usr/bin/env python3\nimport sys,os\nfrom pathlib import Path\nassert sys.argv[1:]==["--type","text/plain;charset=utf-8"]\nPath(os.environ["COPY_RECEIPT"]).write_bytes(sys.stdin.buffer.read())\n');clip.chmod(0o700)
+    clip.write_text('#!/usr/bin/env python3\nimport sys,os\nfrom pathlib import Path\nassert sys.argv[1:]==([] if sys.platform=="darwin" else ["--type","text/plain;charset=utf-8"])\nPath(os.environ["COPY_RECEIPT"]).write_bytes(sys.stdin.buffer.read())\n');clip.chmod(0o700)
     env={**os.environ,'PATH':str(fake)+os.pathsep+os.environ['PATH'],'COPY_RECEIPT':str(receipt)}
     assert invoke('--copy','--',path,env=env).returncode==0
     assert receipt.read_text()==expected and path.read_bytes()==data
