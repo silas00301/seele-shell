@@ -18,6 +18,23 @@ TestCase {
   SignalSpy { id: closeSpy; target: test.panel; signalName: "dismissed" }
   function init() { panel = createTemporaryObject(component, test); verify(panel); pasteSpy.clear(); copySpy.clear(); closeSpy.clear(); wait(250) }
   function cleanup() { panel = null }
+  function test_csv_selector_copy_and_invalid_rows() {
+    var button = findChild(panel, "workbenchMode-csv-markdown")
+    verify(button !== null)
+    button.forceActiveFocus()
+    keyClick(Qt.Key_Return)
+    compare(panel.mode, "csv-markdown")
+    panel.input = "a,b\n1,2"
+    tryCompare(panel, "canCopy", true)
+    panel.focusInput()
+    keyClick(Qt.Key_Return, Qt.ControlModifier)
+    compare(copySpy.signalArguments[0][0], "| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+    panel.receiveCopy(panel.revision, true, "")
+    panel.input = "a,b\n1"
+    wait(250)
+    compare(panel.canCopy, false)
+    compare(panel.result.output, "")
+  }
   function test_no_implicit_clipboard_and_unicode() {
     compare(pasteSpy.count, 0)
     panel.choice = 4

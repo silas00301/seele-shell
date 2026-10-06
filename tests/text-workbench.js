@@ -58,6 +58,7 @@ assert.equal(new Set(modes.map(mode => mode.id)).size, modes.length);
 const preview = panelSource.match(/function preview\(\) \{([\s\S]*?)\n  \}/)[1];
 const panelContext = vm.createContext({Native: nativeBridge(), editor: {text: ''}, mode: '', result: null});
 for (const [id, input, output] of [
+  ['csv-markdown', 'a,b\n1,2', '| a | b |\n| --- | --- |\n| 1 | 2 |\n'],
   ['base64url-encode', '\uffff🦀', '77-_8J-mgA'],
   ['base64url-decode', '77-_8J-mgA', '\uffff🦀'],
   ['base64url-decode', '77-_8J-mgA==', '\uffff🦀'],
