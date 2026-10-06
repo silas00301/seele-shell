@@ -5,6 +5,7 @@ function verificationCode(entry) { return Bridge.call("notifications.verificatio
 function appQuiet(entry, quietApps) { return Bridge.call("notifications.appQuiet",[entry,quietApps]) }
 function groupKey(entry) { return Bridge.call("notifications.groupKey",[entry]) }
 function stackedRows(entries, expanded) { return Bridge.call("notifications.stackedRows",[entries,expanded]) }
+function cursor(rows, id, position, step) { return Bridge.call("notifications.cursor",[rows,id,Bridge.number(position),Bridge.number(step)]) }
 function localImage(source) { return Bridge.call("notifications.localImage",[source]) }
 function imageRoles(entry) { return Bridge.call("notifications.imageRoles",[entry]) }
 function bodyMarkup(body) { return Bridge.call("notifications.bodyMarkup",[body]) }
