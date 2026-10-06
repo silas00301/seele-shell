@@ -18,6 +18,20 @@ TestCase {
   SignalSpy { id: closeSpy; target: test.panel; signalName: "dismissed" }
   function init() { panel = createTemporaryObject(component, test); verify(panel); pasteSpy.clear(); copySpy.clear(); closeSpy.clear(); wait(250) }
   function cleanup() { panel = null }
+  function test_jwt_selector_warning_and_close() {
+    var button = findChild(panel, "workbenchMode-jwt-inspect")
+    verify(button !== null)
+    button.forceActiveFocus()
+    keyClick(Qt.Key_Return)
+    compare(panel.mode, "jwt-inspect")
+    panel.input = "e30.e30.AA"
+    tryCompare(panel, "canCopy", true)
+    verify(panel.result.output.indexOf("SIGNATURE NOT VERIFIED") === 0)
+    verify(panel.modes[panel.choice].hint.indexOf("NOT verified") >= 0)
+    panel.clear()
+    wait(250)
+    compare(panel.result.output, "")
+  }
   function test_no_implicit_clipboard_and_unicode() {
     compare(pasteSpy.count, 0)
     panel.choice = 4
