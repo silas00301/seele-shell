@@ -17,3 +17,11 @@ function filter(notes, query) {
 }
 function when(seconds, now) { return Bridge.call("notes.when", Bridge.localDates(seconds, now)) }
 function status(state, seconds, now) { return Bridge.call("notes.status", [state].concat(Bridge.localDates(seconds, now))) }
+
+function statistics(text) {
+  // UTF-16 length is a lower bound on UTF-8 bytes. Refuse definite oversize
+  // before ABI serialization; the native byte check handles multibyte text.
+  if (text.length > 2 * 1024 * 1024)
+    return {available: false, label: "Statistics unavailable above 2 MiB"}
+  return Bridge.call("notes.statistics", [text])
+}

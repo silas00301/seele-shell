@@ -722,6 +722,17 @@ Shared.Theme {
               onEdited: text => store.edit(text)
             }
 
+            Text {
+              objectName: "noteStatistics"
+              Layout.fillWidth: true
+              visible: editor.statistics.label !== ""
+              text: editor.statistics.label
+              textFormat: Text.PlainText
+              color: root.subtext
+              font.family: root.fontFamily
+              font.pixelSize: root.textCaption
+              horizontalAlignment: Text.AlignRight
+            }
             AudioStrip {
               id: audio
 
