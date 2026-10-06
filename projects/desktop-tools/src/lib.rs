@@ -7,3 +7,6 @@ pub mod brave;
 pub mod windows;
 
 pub mod firmware;
+
+#[cfg(target_os = "linux")]
+pub mod recording;
