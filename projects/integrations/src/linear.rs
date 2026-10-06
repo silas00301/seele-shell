@@ -308,8 +308,8 @@ pub async fn run(args: Vec<String>, cancel: CancellationToken) -> Result<()> {
         PathBuf::from(path)
     };
     let (bytes, mime) = capture(&path)?;
-    let Some(fields)=dialog(vec!["--forms".into(),"--title=Linear capture draft".into(),"--text=Create a new Seele issue or attach a comment to an existing issue. Nothing uploads before final review.".into(),"--add-entry=Existing issue ID (blank creates a new issue)".into(),"--add-entry=Title".into(),"--add-entry=Description".into(),"--separator=|".into()],vec![],cancel.clone()).await? else{return Ok(())};
-    let mut fields = fields.splitn(3, '|');
+    let Some(fields)=dialog(vec!["--forms".into(),"--title=Linear capture draft".into(),"--text=Create a new Seele issue or attach a comment to an existing issue. Nothing uploads before final review.".into(),"--add-entry=Existing issue ID (blank creates a new issue)".into(),"--add-entry=Title".into(),"--add-entry=Description".into(),"--separator=\u{1f}".into()],vec![],cancel.clone()).await? else{return Ok(())};
+    let mut fields = fields.splitn(3, '\u{1f}');
     let target = fields.next().unwrap_or("").trim();
     let title = fields.next().unwrap_or("").trim();
     let description = fields.next().ok_or("Invalid draft.")?;

@@ -15,7 +15,7 @@ name=pathlib.Path(sys.argv[0]).name;args=sys.argv[1:];state=pathlib.Path(os.envi
 with (state/'calls').open('a') as f:f.write(json.dumps([name,args])+'\n')
 if name=='zenity':
  if '--password' in args:print('synthetic-linear-api-key')
- elif '--forms' in args and os.environ.get('METADATA_CANCEL'):print('|Fixture title|Fixture description')
+ elif '--forms' in args and os.environ.get('METADATA_CANCEL'):assert '--separator=\x1f' in args;print('\x1fFixture | title\x1fFixture | description')
  elif '--checklist' in args:assert '--print-column=2' in args;sys.exit(1)
  else:sys.exit(1)
 elif name=='secret-tool':
