@@ -199,6 +199,8 @@ pkgs.stdenvNoCC.mkDerivation {
     substituteInPlace "$out/share/seele-shell/QuickLook.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./QuickLookMedia.qml} "$out/share/seele-shell/QuickLookMedia.qml"
     substituteInPlace "$out/share/seele-shell/QuickLookMedia.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
+    install -m644 ${./QuickLookImage.qml} "$out/share/seele-shell/QuickLookImage.qml"
+    substituteInPlace "$out/share/seele-shell/QuickLookImage.qml" --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./quicklook.js} "$out/share/seele-shell/quicklook.js"
     install -m644 ${../vicinae/seele.svg} "$out/share/seele-shell/seele.svg"
     install -m644 ${./claude.svg} "$out/share/seele-shell/claude.svg"
@@ -398,7 +400,7 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     test -s "$out/share/seele-shell/shared/grain.png"
     head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
-    for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
+    for source in QuickLook.qml QuickLookMedia.qml QuickLookImage.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done
     test -f "$out/share/seele-shell/media.js"
@@ -422,6 +424,7 @@ pkgs.stdenvNoCC.mkDerivation {
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway
     bash ${tests}/home-assistant-panel.sh ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway ${tests}/home-assistant-panel.qml
+    bash ${tests}/quicklook-image.sh "$out/share/seele-shell" ${tests}/tst_quicklookimage.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     bash ${tests}/color-lab-interaction.sh "$out/share/seele-shell" \
       ${tests}/tst_colorlab.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
       ${nativeQml}/lib/qt-6/qml ${quickshell}/lib/qt-6/qml
