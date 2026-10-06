@@ -104,6 +104,7 @@ pub fn run(arguments: &[String]) -> Result {
     let mut json = false;
     let mut open = None;
     let mut index = 1;
+    let mut source_given = false;
     let mut repo = None;
     let mut args = arguments.iter();
     while let Some(arg) = args.next() {
@@ -111,6 +112,7 @@ pub fn run(arguments: &[String]) -> Result {
             "--json" => json = true,
             "--open" => open = Some(args.next().ok_or("--open needs an exact key")?.clone()),
             "--source" => {
+                source_given = true;
                 index = args
                     .next()
                     .ok_or("--source needs a positive index")?
@@ -148,7 +150,7 @@ pub fn run(arguments: &[String]) -> Result {
         let editor = env::var_os("SEELE_INSPECT_EDITOR").unwrap_or_else(|| "nvim".into());
         return Err(Command::new(editor).arg("--").arg(path).exec().into());
     }
-    if repo.is_some() || index != 1 {
+    if repo.is_some() || source_given {
         return Err("--repo and --source require --open".into());
     }
     let selected: Vec<_> = rows
@@ -211,11 +213,18 @@ mod tests {
     fn checkout_opening_cannot_escape_through_suffix_or_symlink() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("modules/features")).unwrap();
-        fs::write(dir.path().join("modules/features/fish.nix"), "{}").unwrap();
+        fs::write(
+            dir.path()
+                .canonicalize()
+                .unwrap()
+                .join("modules/features/fish.nix"),
+            "{}",
+        )
+        .unwrap();
         assert!(
             source(&row(), 1, Some(dir.path()), Path::new("/nix/store/source"))
                 .unwrap()
-                .starts_with(dir.path())
+                .starts_with(dir.path().canonicalize().unwrap())
         );
         let mut bad = row();
         bad.sources = vec!["/source/modules/../../outside.nix".into()];
