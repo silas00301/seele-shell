@@ -180,7 +180,7 @@ FocusScope {
     Rectangle {
       visible: ribbon.cells.length === 0
       anchors.fill: parent
-      radius: 2
+      radius: panel.theme.shapeExtraSmall
       color: panel.theme.wellColor
     }
     Repeater {
@@ -192,7 +192,7 @@ FocusScope {
         x: modelData.from / panel.dayMinutes * ribbon.width + panel.theme.hairline / 2
         width: Math.max(1, (modelData.to - modelData.from) / panel.dayMinutes * ribbon.width - panel.theme.hairline)
         height: ribbon.height
-        radius: 2
+        radius: panel.theme.shapeExtraSmall
         color: work ? panel.theme.alpha(panel.theme.accent, 0.34)
           : modelData.kind === "edge" ? panel.theme.alpha(panel.theme.accent, 0.13) : panel.theme.wellColor
         Text {
@@ -216,7 +216,7 @@ FocusScope {
         x: from + panel.theme.hairline / 2
         width: Math.max(2, Math.min(ribbon.width, panel.position(modelData.end, ribbon.width)) - from - panel.theme.hairline)
         height: ribbon.height
-        radius: 2
+        radius: panel.theme.shapeExtraSmall
         // Google's colours arrive as strings; Qt.alpha takes either form.
         color: Qt.alpha(modelData.color || panel.theme.accent, 0.72)
         clip: true
@@ -252,14 +252,14 @@ FocusScope {
       y: -2
       width: Math.max(4, panel.selectedDuration / panel.dayMinutes * ribbon.width) + 2
       height: ribbon.height + 4
-      radius: 3
+      radius: panel.theme.shapeExtraSmall
       color: panel.theme.alpha(panel.theme.accent, 0.12)
       border.width: 2
       border.color: panel.theme.accent
       antialiasing: true
       Behavior on x {
         enabled: !panel.dragging
-        NumberAnimation { duration: panel.theme.durationFast; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: panel.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springFastSpatial }
       }
     }
   }
@@ -336,11 +336,10 @@ FocusScope {
     }
     background: Rectangle {
       radius: panel.theme.radius
-      color: choice.down ? panel.theme.pressColor : choice.chosen ? panel.theme.selectedColor : panel.theme.cardColor
-      border.width: panel.theme.hairline
-      border.color: choice.visualFocus ? panel.theme.accent : panel.theme.cardBorder
+      color: choice.chosen ? panel.theme.selectedColor : panel.theme.cardColor
       Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
-      Shared.HoverWash { theme: panel.theme; hovered: choice.hovered }
+      Shared.HoverWash { theme: panel.theme; hovered: choice.hovered; pressed: choice.down }
+      Shared.FocusRing { theme: panel.theme; shown: choice.visualFocus }
       Text {
         anchors { right: parent.right; top: parent.top; margins: panel.theme.spaceSmall }
         text: String(choice.index + 1)
@@ -411,7 +410,6 @@ FocusScope {
       height: readout.implicitHeight + panel.theme.cardPadding * 2
       radius: panel.theme.radius
       color: panel.theme.cardColor
-      Shared.CardEdge { theme: panel.theme }
       Column {
         id: readout
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -492,7 +490,7 @@ FocusScope {
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
-      label: "SUGGESTED"
+      label: "Suggested"
       Shared.ActionButton {
         objectName: "meetingNextFit"
         theme: panel.theme
@@ -528,7 +526,7 @@ FocusScope {
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
-      label: "ZONES"
+      label: "Zones"
       Repeater {
         model: [{tint: panel.theme.alpha(panel.theme.accent, 0.34), text: "Mon–Fri 09–17"},
           {tint: panel.theme.alpha(panel.theme.accent, 0.13), text: "07–09 · 17–20"}]
@@ -536,7 +534,7 @@ FocusScope {
           id: legend
           required property var modelData
           spacing: panel.theme.spaceTight
-          Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10; height: 8; radius: 2; color: legend.modelData.tint }
+          Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10; height: 8; radius: panel.theme.shapeExtraSmall; color: legend.modelData.tint }
           Caption { text: legend.modelData.text; color: panel.theme.overlay }
         }
       }
@@ -591,7 +589,7 @@ FocusScope {
       x: panel.position(panel.startAt(grid.mouseX, grid.width), grid.width)
       width: Math.max(4, panel.selectedDuration / panel.dayMinutes * grid.width)
       height: rows.implicitHeight + 4
-      radius: 3
+      radius: panel.theme.shapeExtraSmall
       color: panel.theme.alpha(panel.theme.text, 0.05)
       border.width: panel.theme.hairline
       border.color: panel.theme.alpha(panel.theme.accent, 0.4)

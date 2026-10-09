@@ -21,13 +21,12 @@ FocusScope {
       title: panel.store.error
       Shared.ActionButton { theme: panel.theme; text: "Retry"; onClicked: panel.store.retry() }
     }
-    Shared.SectionRule { width: parent.width; theme: panel.theme; label: "INTERFACE"; detail: panel.store.snapshot.limited ? "Up to " + panel.store.snapshot.interfaceLimit + " interfaces" : "Local kernel counters" }
+    Shared.SectionRule { width: parent.width; theme: panel.theme; label: "Interface"; detail: panel.store.snapshot.limited ? "Up to " + panel.store.snapshot.interfaceLimit + " interfaces" : "Local kernel counters" }
     Rectangle {
       width: parent.width
       height: interfaceRow.implicitHeight + panel.theme.cardPadding * 2
       radius: panel.theme.radius
       color: panel.theme.cardColor
-      Shared.CardEdge { theme: panel.theme }
       Row {
         id: interfaceRow
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -66,13 +65,12 @@ FocusScope {
       width: parent.width
       spacing: panel.theme.panelSpacing
       visible: !!panel.entry
-      Shared.SectionRule { width: parent.width; theme: panel.theme; label: "LIVE ACTIVITY"; detail: "Receive ↓  ·  Send ↑" }
+      Shared.SectionRule { width: parent.width; theme: panel.theme; label: "Live activity"; detail: "Receive ↓  ·  Send ↑" }
       Rectangle {
         width: parent.width
         height: activityContent.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: activityContent
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -81,20 +79,20 @@ FocusScope {
             width: parent.width
             spacing: panel.theme.spaceLarge
             Repeater {
-              model: [ {title: "↓ RECEIVING", value: panel.entry ? panel.entry.rxLabel : "—", tint: panel.theme.green}, {title: "↑ SENDING", value: panel.entry ? panel.entry.txLabel : "—", tint: panel.theme.accent} ]
+              model: [ {title: "↓ Receiving", value: panel.entry ? panel.entry.rxLabel : "—", tint: panel.theme.green}, {title: "↑ Sending", value: panel.entry ? panel.entry.txLabel : "—", tint: panel.theme.accent} ]
               Column {
                 id: rate
                 required property var modelData
                 width: (parent.width - panel.theme.spaceLarge) / 2
                 spacing: panel.theme.spaceTight
-                Text { text: rate.modelData.title; color: rate.modelData.tint; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textLabel; font.weight: panel.theme.weightMedium; font.letterSpacing: panel.theme.trackingLabel }
+                Text { text: rate.modelData.title; color: rate.modelData.tint; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textLabel; font.weight: panel.theme.weightStrong }
                 Text { text: rate.modelData.value; color: panel.theme.text; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textDisplay; font.weight: panel.theme.weightLight }
               }
             }
           }
           Row {
             width: parent.width
-            Text { width: parent.width / 2; text: "SCALE  " + (panel.entry ? panel.entry.scaleLabel : "—"); color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
+            Text { width: parent.width / 2; text: "Scale  " + (panel.entry ? panel.entry.scaleLabel : "—"); color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
             Text { width: parent.width / 2; text: panel.store.snapshot.historyCapacity + " samples · newest at right"; horizontalAlignment: Text.AlignRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
           }
           Shared.HistoryChart {
@@ -119,7 +117,7 @@ FocusScope {
       Shared.SectionRule {
         width: parent.width
         theme: panel.theme
-        label: "SESSION TOTALS"
+        label: "Session totals"
         detail: String(panel.store.snapshot.elapsed || 0) + " seconds"
         Shared.ActionButton {
           objectName: "resetActivity"
@@ -135,7 +133,6 @@ FocusScope {
         height: totals.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: totals
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

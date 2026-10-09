@@ -1,8 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 
-// A keyboard-accessible action on the shared IconButton material. Keep the
-// glyph, its accessible name and its tooltip together in every host.
+// A keyboard-accessible icon action on the shared IconButton container. Keep
+// the glyph, its accessible name and its tooltip together in every host.
 Button {
   id: button
   required property var theme
@@ -21,7 +21,7 @@ Button {
   opacity: enabled ? 1 : theme.disabledOpacity
   contentItem: CenteredGlyph {
     text: button.glyph
-    color: button.selected ? button.theme.accent : button.theme.subtext
+    color: button.selected ? button.theme.textOnSecondaryContainer : button.theme.subtext
     font.family: button.theme.fontFamily
     font.pixelSize: button.theme.textIcon
   }
@@ -32,30 +32,12 @@ Button {
     pressed: button.down
     // Keyboard focus is a ring, never the selected fill, so a focused action
     // cannot be mistaken for one that is on.
-    Rectangle {
-      anchors.fill: parent
-      radius: parent.radius
-      color: button.theme.clearColor
-      border.width: 1
-      border.color: button.visualFocus ? button.theme.accent : button.theme.alpha(button.theme.accent, 0)
-      antialiasing: true
-    }
+    FocusRing { theme: button.theme; shown: button.visualFocus }
   }
   HoverHandler { cursorShape: button.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-  ToolTip {
-    id: tip
+  PlainTooltip {
+    theme: button.theme
     visible: button.hovered && button.text !== ""
-    delay: 0
     text: button.text
-    font.family: button.theme.fontFamily
-    font.pixelSize: button.theme.textCaption
-    padding: button.theme.spaceMedium
-    contentItem: Text {
-      text: button.text
-      textFormat: Text.PlainText
-      color: button.theme.text
-      font: tip.font
-    }
-    background: PanelSurface { theme: button.theme }
   }
 }

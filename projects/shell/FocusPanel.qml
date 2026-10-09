@@ -46,8 +46,6 @@ Column {
     color: panel.theme.cardColor
     antialiasing: true
 
-    Shared.CardEdge { theme: panel.theme }
-
     Column {
       id: focusReadout
 
@@ -83,12 +81,12 @@ Column {
   Shared.SectionRule {
     theme: panel.theme
     width: parent.width
-    label: "SESSION"
+    label: "Session"
     detail: "1 / 2 / 3"
   }
 
   // The three durations are one choice, and while a session runs the
-  // one it was started from stays lit, so the well doubles as the
+  // one it was started from stays filled, so the group doubles as the
   // report of what is running.
   Shared.SegmentWell {
     theme: panel.theme

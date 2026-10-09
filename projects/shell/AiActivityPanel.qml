@@ -40,7 +40,6 @@ Column {
       height: content.implicitHeight + panel.theme.cardPadding * 2
       radius: panel.theme.radius
       color: panel.theme.cardColor
-      Shared.CardEdge { theme: panel.theme }
       HoverHandler { id: hover }
       Shared.HoverWash { theme: panel.theme; hovered: hover.hovered }
       Column {

@@ -14,7 +14,7 @@ function block(start, end) {
 }
 const focus = block('        FocusPanel {\n          id: focusContent', '\n      }\n    }\n  }\n\n  // Calendar');
 const clock = block('                Item {\n                  id: zoneTimeLabels', '\n                Shared.ActionButton');
-const addresses = block('              SectionRule {\n                width: parent.width\n                label: "IP ADDRESSES"', '\n              Text {\n                width: parent.width\n                visible: networkWindow.addresses.length');
+const addresses = block('              SectionRule {\n                width: parent.width\n                label: "IP addresses"', '\n              Text {\n                width: parent.width\n                visible: networkWindow.addresses.length');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-panel-tests-'));
 try {
   const shared = fs.existsSync(path.join(source, 'shared')) ? path.join(source, 'shared') : path.resolve(source, '../shared');
@@ -44,7 +44,6 @@ TestCase {
   width: 480; height: 800
   Shared.Theme { id: root; function closeOverlays() {} }
   component PanelHeader: Shared.PanelHeader { theme: root }
-  component CardEdge: Shared.CardEdge { theme: root }
   component SectionLabel: Shared.SectionLabel { theme: root }
   component SeeleListView: Shared.SeeleListView { theme: root }
   component SlimScrollBar: Shared.SlimScrollBar { theme: root }
@@ -120,7 +119,7 @@ TestCase {
   function test_addressesStayCompact() {
     compare(addressList.height, 0)
     compare(addressList.visible, false)
-    var label = findText(addressHost, "IP ADDRESSES")
+    var label = findText(addressHost, "IP addresses")
     verify(label !== null)
     mouseClick(label, label.width / 2, label.height / 2)
     tryCompare(networkWindow, "addressesExpanded", true)

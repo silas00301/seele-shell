@@ -54,21 +54,19 @@ ColumnLayout {
   Shared.SectionRule {
     Layout.fillWidth: true
     theme: strip.theme
-    label: strip.store.recording ? "RECORDING" : "AUDIO"
+    label: strip.store.recording ? "Recording" : "Audio"
     detail: strip.store.recording
       ? Notes.duration(strip.store.recordingDuration)
       : String(strip.tracks.length)
-    detailColor: strip.store.recording ? strip.theme.red : strip.theme.overlay
+    detailColor: strip.store.recording ? strip.theme.red : strip.theme.subtext
   }
 
   Rectangle {
     Layout.fillWidth: true
     Layout.preferredHeight: strip.theme.rowHeight
     visible: strip.store.recording
-    radius: strip.theme.radiusSmall
+    radius: strip.theme.radiusRow
     color: strip.theme.wellColor
-    border.width: 1
-    border.color: strip.theme.cardBorder
     antialiasing: true
 
     Shared.Waveform {
@@ -107,7 +105,7 @@ ColumnLayout {
 
         width: tracks.width
         height: strip.theme.rowHeight
-        radius: strip.theme.radiusSmall
+        radius: strip.theme.radiusRow
         color: track.current ? strip.theme.selectedColor : strip.theme.rowColor
         antialiasing: true
 

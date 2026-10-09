@@ -246,13 +246,27 @@ Shared.Theme {
   // The palette the colour picker measures a sampled pixel against. It is the
   // same block every surface here is drawn from, named by role, so the picker
   // can only ever report a token this desktop actually has -- and a repaint
-  // through theme.json moves the picker's answers with everything else.
-  readonly property var colorTokens: ({
-    base: String(root.base), mantle: String(root.mantle), crust: String(root.crust),
-    surface: String(root.surface), overlay: String(root.overlay), text: String(root.text),
-    subtext: String(root.subtext), accent: String(root.accent), red: String(root.red),
-    green: String(root.green), yellow: String(root.yellow)
-  })
+  // through theme.json moves the picker's answers with everything else. The
+  // surfaces are painted in Material roles derived from the palette, so those
+  // roles are named too; a role that is a palette colour keeps the palette's
+  // name, so one pixel is never two tokens.
+  readonly property var colorTokens: {
+    var tokens = {
+      base: String(root.base), mantle: String(root.mantle), crust: String(root.crust),
+      surface: String(root.surface), overlay: String(root.overlay), text: String(root.text),
+      subtext: String(root.subtext), accent: String(root.accent), red: String(root.red),
+      green: String(root.green), yellow: String(root.yellow)
+    }
+    var taken = Object.keys(tokens).map(key => tokens[key])
+    var roles = root.roles
+    Object.keys(roles).forEach(function(role) {
+      var value = roles[role]
+      if (typeof value !== "string" || taken.indexOf(String(Qt.color(value))) >= 0) return
+      tokens[role] = String(Qt.color(value))
+      taken.push(tokens[role])
+    })
+    return tokens
+  }
 
   function focusedScreen(screen) {
     return !Hyprland.focusedMonitor || Hyprland.focusedMonitor.name === screen.name
@@ -2290,27 +2304,9 @@ Shared.Theme {
 
   component ControlSwitch: Shared.ControlSwitch { theme: root }
 
-  // Depth wash, drawn under a surface's content and inside its border. The
-  // light gathers along the top edge, thins out across the middle, and the
-  // surface settles into ink at the bottom, so a tall panel is lit rather
-  // than merely tinted.
+  // The state layer: the content's own colour over a control while the
+  // pointer is on it, laid over whatever the control already says.
   component HoverWash: Shared.HoverWash { theme: root }
-
-  component SurfaceWash: Shared.SurfaceWash { theme: root }
-
-  // The light on a surface's inside edge. The grounding ring outside is what
-  // cuts the panel out of the wallpaper; this is what keeps the cut reading as
-  // glass rather than as a hole. A hairline runs the whole perimeter and a
-  // brighter crown sits along the top, held clear of the corner arcs, because
-  // a straight line drawn into a rounded corner reads as a nick in it.
-  component SurfaceEdge: Shared.SurfaceEdge { theme: root }
-
-  // Grain film, drawn over a surface's content so the texture is even across
-  // the panel and the cards inside it. It accepts no input, so everything
-  // underneath stays clickable. A tiled image cannot follow a rounded corner,
-  // so `inset` pulls the film inside the arc: anything past
-  // radius * (1 - 1 / sqrt(2)) stays within the surface.
-  component SurfaceGrain: Shared.SurfaceGrain { theme: root }
 
   component HoverTip: PopupWindow {
     id: hoverTip
@@ -2325,8 +2321,8 @@ Shared.Theme {
 
     visible: mouse !== null && mouse.containsMouse && text !== ""
       && (hoverTip.inOverlay || (root.controlPanel === "" && !root.agentsOpen && !root.trayMenuOpen))
-    implicitWidth: hoverTipLabel.implicitWidth + 20
-    implicitHeight: 26
+    implicitWidth: hoverTipLabel.implicitWidth + root.spaceMedium * 2
+    implicitHeight: root.tooltipHeight
     color: "transparent"
     grabFocus: false
 
@@ -2349,21 +2345,19 @@ Shared.Theme {
       }
     }
 
+    // Material's plain tooltip: a short label on the inverse surface, on the
+    // extra-small corner, so it reads as a note about the control rather
+    // than as another panel.
     Rectangle {
       anchors.fill: parent
-      radius: root.radiusSmall
-      color: root.panelColor
-      border.color: root.panelBorder
-      border.width: 1
-
-      SurfaceWash { radius: root.radiusSmall - 1 }
-      SurfaceEdge { radius: root.radiusSmall - 1 }
+      radius: root.shapeExtraSmall
+      color: root.inverseSurface
 
       Text {
         id: hoverTipLabel
         anchors.centerIn: parent
         text: hoverTip.text
-        color: root.text
+        color: root.inverseOnSurface
         font.family: root.fontFamily
         font.pixelSize: root.textLabel
       }
@@ -2414,16 +2408,16 @@ Shared.Theme {
     }
   }
 
-  // Every panel introduces itself the same way: its mark in a tinted well, the
+  // Every panel introduces itself the same way: its mark in an Expressive shape, the
   // panel's name, an optional line of context beneath it, and a trailing slot
   // for whatever that panel keeps beside its title. Panels used to assemble this
   // row by hand and had drifted apart on glyph size, header height and
   // baseline, so the header is a component and the drift has nowhere to live.
   component PanelHeader: Shared.PanelHeader { theme: root }
 
-  // The uppercase rule that introduces a group inside a panel. It had drifted
-  // between two sizes and two colours; here it is one thing, and the tracking
-  // is what keeps a run of capitals from reading as a shout.
+  // The subheader that introduces a group inside a panel. It had drifted
+  // between two sizes and two colours; here it is one thing: Material's
+  // sentence-case label in the primary colour.
   component SectionLabel: Shared.SectionLabel { theme: root }
 
   // The shell's drawing vocabulary lives in ../shared so Seele Notes and any
@@ -2432,8 +2426,6 @@ Shared.Theme {
   component SectionRule: Shared.SectionRule { theme: root }
 
   component MeterBar: Shared.MeterBar { theme: root }
-
-  component CardEdge: Shared.CardEdge { theme: root }
 
   component FocusRing: Shared.FocusRing { theme: root }
 
@@ -2463,7 +2455,7 @@ Shared.Theme {
     color: root.wellColor
 
     Behavior on displayedRatio {
-      NumberAnimation { duration: 520; easing.type: Easing.OutCubic }
+      NumberAnimation { duration: root.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springDefaultSpatial }
     }
 
     onDisplayedRatioChanged: gaugeCanvas.requestPaint()
@@ -2475,8 +2467,7 @@ Shared.Theme {
       color: speedGauge.tint
       font.family: root.fontFamily
       font.pixelSize: root.textLabel
-      font.weight: root.weightMedium
-      font.letterSpacing: root.trackingLabel
+      font.weight: root.weightStrong
     }
 
     Canvas {
@@ -2497,7 +2488,7 @@ Shared.Theme {
 
         context.lineCap = "round"
         context.lineWidth = 6
-        context.strokeStyle = root.alpha(root.overlay, 0.28)
+        context.strokeStyle = Qt.tint(root.surfaceContainerHigh, root.alpha(speedGauge.tint, 0.24))
         context.beginPath()
         context.arc(centerX, centerY, radius, start, end, false)
         context.stroke()
@@ -2511,7 +2502,7 @@ Shared.Theme {
 
         context.lineCap = "butt"
         context.lineWidth = 1
-        context.strokeStyle = root.alpha(root.text, 0.34)
+        context.strokeStyle = root.outline
         for (var tick = 0; tick <= 10; tick++) {
           var tickAngle = start + sweep * tick / 10
           var tickInner = radius - (tick % 5 === 0 ? 9 : 6)
@@ -2557,9 +2548,8 @@ Shared.Theme {
   // top of the content's own edge.
   component SlimScrollBar: Shared.SlimScrollBar { theme: root }
 
-  // Every bar entry is a rounded pill on the same radius as windows, buttons,
-  // and panels, and takes its hover, press, and open state from here so the
-  // whole strip reacts identically. The entry itself spans the bar's full
+  // Every bar entry is a full pill, and takes its hover, press, and open state
+  // from here so the whole strip reacts identically. The entry itself spans the bar's full
   // height while only the pill is inset, so a pointer thrown at the top of the
   // screen still lands on the entry under it.
   component BarItem: Item {
@@ -2586,8 +2576,10 @@ Shared.Theme {
       anchors.bottomMargin: root.barPadding
       anchors.leftMargin: root.barSpacing / 2
       anchors.rightMargin: root.barSpacing / 2
-      radius: root.radius
-      // The open entry keeps the accent and the pointer is reported over it.
+      radius: height / 2
+      // The open entry sits in the secondary container, the way Material marks
+      // the destination a navigation item has opened, and the pointer is
+      // reported over it.
       // Branching on `active` first left the one entry the pointer is most
       // often on -- the one whose panel was just opened by clicking it -- as
       // the only entry in the strip that could not report a pointer at all.
@@ -2743,7 +2735,9 @@ Shared.Theme {
 
   // The dedicated Audio panel uses one horizontal level row for either output
   // or microphone, with the same batching and mute behavior as the compact
-  // Control Center controls below.
+  // Control Center controls below: the shared level track, and the mute
+  // beside it as an icon button that fills with the error colour while the
+  // level is silenced.
   component AudioLevelRow: Row {
     id: audioLevelRow
 
@@ -2753,49 +2747,27 @@ Shared.Theme {
       : (root.volumeDrag >= 0 ? root.volumeDrag : Number(root.systemData.volume))
     readonly property bool muted: audioLevelRow.microphone ? !!root.systemData.microphoneMuted : !!root.systemData.muted
 
-    spacing: 8
+    spacing: root.spaceMedium
 
-    Rectangle {
-      width: audioLevelRow.width - 52
-      height: 44
-      radius: root.radius
-      color: root.wellColor
-      clip: true
-
-      Rectangle {
-        width: parent.width * root.audioFillRatio(audioLevelRow.shown)
-        radius: parent.radius
-        height: parent.height
-        color: audioLevelRow.muted ? root.fillDanger : root.fillColor
-      }
-
-      Row {
-        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          width: parent.width - root.levelValueWidth
-          text: audioLevelRow.microphone
-            ? (audioLevelRow.muted ? "󰍭  Microphone muted" : root.systemData.microphoneActive ? "󰍬  Microphone in use" : "󰍬  Microphone")
-            : (audioLevelRow.muted ? "󰝟  Output muted" : "󰕾  Output")
-          color: root.text
-          font.family: root.fontFamily
-          font.pixelSize: root.textBody
-          font.weight: root.weightStrong
-        }
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          width: root.levelValueWidth
-          text: audioLevelRow.shown + "%"
-          color: root.subtext
-          font.family: root.fontFamily
-          font.pixelSize: root.textBody
-          horizontalAlignment: Text.AlignRight
-        }
-      }
+    Shared.LevelTrack {
+      theme: root
+      width: audioLevelRow.width - height - audioLevelRow.spacing
+      height: root.levelHeight
+      ratio: root.audioFillRatio(audioLevelRow.shown)
+      muted: audioLevelRow.muted
+      hovered: audioLevelMouse.containsMouse
+      pressed: audioLevelMouse.pressed
+      glyph: audioLevelRow.microphone ? (audioLevelRow.muted ? "󰍭" : "󰍬") : (audioLevelRow.muted ? "󰝟" : "󰕾")
+      title: audioLevelRow.microphone
+        ? (audioLevelRow.muted ? "Microphone muted" : root.systemData.microphoneActive ? "Microphone in use" : "Microphone")
+        : (audioLevelRow.muted ? "Output muted" : "Output")
+      value: audioLevelRow.shown + "%"
 
       MouseArea {
+        id: audioLevelMouse
         anchors.fill: parent
         hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
         function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
         onPressed: function(mouse) {
           if (audioLevelRow.microphone) {
@@ -2831,12 +2803,13 @@ Shared.Theme {
       }
     }
 
-    Rectangle {
-      width: 44
-      height: 44
-      radius: root.radius
-      color: audioMuteMouse.pressed ? root.pressColor : audioLevelRow.muted ? root.dangerColor : audioMuteMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
+    IconButton {
+      width: root.levelHeight
+      height: root.levelHeight
+      active: audioLevelRow.muted
+      tint: root.red
+      hovered: audioMuteMouse.containsMouse
+      pressed: audioMuteMouse.pressed
 
       Text {
         anchors.centerIn: parent
@@ -2861,11 +2834,11 @@ Shared.Theme {
     }
   }
 
-  // One compact horizontal level inside the shared Control Center Audio card.
-  // The mute button sits inside the track instead of consuming another column.
-  // Focused, the level takes Left and Right a volume key's step at a time and
-  // Space mutes it, so the card is reachable without the pointer.
-  component ControlLevel: Rectangle {
+  // One compact horizontal level inside the shared Control Center Audio card:
+  // the mute button leading the shared level track. Focused, the level takes
+  // Left and Right a volume key's step at a time and Space mutes it, so the
+  // card is reachable without the pointer.
+  component ControlLevel: Item {
     id: controlLevel
 
     property bool microphone: false
@@ -2876,9 +2849,6 @@ Shared.Theme {
     readonly property real fillRatio: root.audioFillRatio(controlLevel.shown)
     readonly property string name: controlLevel.microphone ? "Microphone" : "Output"
 
-    radius: root.radius
-    color: root.wellColor
-    clip: true
     activeFocusOnTab: true
     Accessible.role: Accessible.Slider
     Accessible.name: controlLevel.name + (controlLevel.muted ? ", muted" : "")
@@ -2894,67 +2864,17 @@ Shared.Theme {
       }
     }
 
-    Rectangle {
-      width: parent.width * controlLevel.fillRatio
-      height: parent.height
-      radius: parent.radius
-      color: controlLevel.muted ? root.fillDanger : root.fillColor
-    }
+    IconButton {
+      id: controlLevelMute
 
-    Text {
-      anchors.right: parent.right
-      anchors.rightMargin: root.cardPadding
-      anchors.verticalCenter: parent.verticalCenter
-      text: controlLevel.shown + "%"
-      color: root.text
-      font.family: root.fontFamily
-      font.pixelSize: root.textLabel
-      font.weight: root.weightStrong
-    }
-
-    MouseArea {
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
-      function updateValue(value) {
-        if (controlLevel.microphone) {
-          root.microphoneDrag = value
-          microphoneDragTimer.restart()
-        } else {
-          root.volumeDrag = value
-          volumeDragTimer.restart()
-        }
-      }
-      onPressed: function(mouse) { updateValue(valueAt(mouse.x)) }
-      onPositionChanged: function(mouse) {
-        if (pressed) updateValue(valueAt(mouse.x))
-      }
-      onReleased: function(mouse) {
-        var value = valueAt(mouse.x)
-        if (controlLevel.microphone) {
-          root.microphoneDrag = value
-          microphoneDragTimer.stop()
-          root.runControl("microphone", String(value))
-        } else {
-          root.volumeDrag = value
-          volumeDragTimer.stop()
-          root.runControl("volume", String(value))
-        }
-      }
-      onWheel: function(wheel) { root.adjustAudioFromWheel(wheel, controlLevel.microphone) }
-    }
-
-    Rectangle {
-      z: 2
       anchors.left: parent.left
-      anchors.leftMargin: (parent.height - height) / 2
       anchors.verticalCenter: parent.verticalCenter
       width: root.knobSize
       height: root.knobSize
-      radius: width / 2
-      color: controlLevelMuteMouse.pressed ? root.pressColor : controlLevel.muted ? root.dangerColor : controlLevelMuteMouse.containsMouse ? root.hoveredColor(root.alpha(root.crust, 0.7)) : root.alpha(root.crust, 0.7)
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
+      active: controlLevel.muted
+      tint: root.red
+      hovered: controlLevelMuteMouse.containsMouse
+      pressed: controlLevelMuteMouse.pressed
 
       Text {
         anchors.centerIn: parent
@@ -2979,14 +2899,62 @@ Shared.Theme {
       }
     }
 
-    FocusRing { z: 3; shown: controlLevel.activeFocus }
+    Shared.LevelTrack {
+      theme: root
+      anchors.left: controlLevelMute.right
+      anchors.leftMargin: root.spaceSmall
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      ratio: controlLevel.fillRatio
+      muted: controlLevel.muted
+      hovered: controlLevelMouse.containsMouse
+      pressed: controlLevelMouse.pressed
+      focused: controlLevel.activeFocus
+      value: controlLevel.shown + "%"
+
+      MouseArea {
+        id: controlLevelMouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        function valueAt(x) { return Math.max(0, Math.min(root.audioTrackMaximum, Math.round(x / width * root.audioTrackMaximum))) }
+        function updateValue(value) {
+          if (controlLevel.microphone) {
+            root.microphoneDrag = value
+            microphoneDragTimer.restart()
+          } else {
+            root.volumeDrag = value
+            volumeDragTimer.restart()
+          }
+        }
+        onPressed: function(mouse) { updateValue(valueAt(mouse.x)) }
+        onPositionChanged: function(mouse) {
+          if (pressed) updateValue(valueAt(mouse.x))
+        }
+        onReleased: function(mouse) {
+          var value = valueAt(mouse.x)
+          if (controlLevel.microphone) {
+            root.microphoneDrag = value
+            microphoneDragTimer.stop()
+            root.runControl("microphone", String(value))
+          } else {
+            root.volumeDrag = value
+            volumeDragTimer.stop()
+            root.runControl("volume", String(value))
+          }
+        }
+        onWheel: function(wheel) { root.adjustAudioFromWheel(wheel, controlLevel.microphone) }
+      }
+    }
   }
 
   // One application's own level in the Audio panel. It is the master row's
-  // anatomy a step down the ramp — a track that leads with a mark and a name
-  // and ends with a percentage, with the mute action beside it — because the
-  // two levels above it in the same panel are already that shape, and a
-  // per-application control that invented its own would read as a visitor.
+  // anatomy a step down the ramp -- the same track at `rowHeight`, led by the
+  // application's own icon instead of a glyph, with the mute action beside
+  // it -- because the two levels above it in the same panel are already that
+  // shape, and a per-application control that invented its own would read as
+  // a visitor.
   component ApplicationLevelRow: Row {
     id: applicationLevelRow
 
@@ -3001,86 +2969,49 @@ Shared.Theme {
 
     spacing: root.spaceMedium
 
-    Rectangle {
+    Shared.LevelTrack {
       id: applicationTrack
 
-      width: applicationLevelRow.width - root.rowHeight - root.spaceMedium
+      theme: root
+      width: applicationLevelRow.width - root.rowHeight - applicationLevelRow.spacing
       height: root.rowHeight
-      radius: root.radius
-      color: root.wellColor
-      clip: true
-
-      Rectangle {
-        width: parent.width * root.audioFillRatio(applicationLevelRow.shown)
-        height: parent.height
-        radius: parent.radius
-        color: applicationLevelRow.muted ? root.fillDanger : root.fillColor
-        opacity: applicationLevelRow.playing ? 1 : root.disabledOpacity
-      }
-
-      // The pointer is reported by the surface itself. The wash cannot come
+      ratio: root.audioFillRatio(applicationLevelRow.shown)
+      muted: applicationLevelRow.muted
+      dimmed: !applicationLevelRow.playing
+      // The pointer is reported by the track itself. The layer cannot come
       // from the drag area's own hover, because that area is the one thing in
-      // the row the pointer is most often on and it would then be the one
-      // thing that never lights.
+      // the row the pointer is most often on.
+      hovered: applicationTrackHover.hovered
+      pressed: applicationLevelMouse.pressed
+      leadingInset: root.rowIconSize + root.spaceSmall
+      title: applicationLevelRow.label
+      value: applicationLevelRow.shown + "%"
+
       HoverHandler { id: applicationTrackHover }
-      HoverWash { hovered: applicationTrackHover.hovered }
 
-      Row {
-        anchors.fill: parent
-        anchors.leftMargin: root.cardPadding
-        anchors.rightMargin: root.cardPadding
-        spacing: root.spaceSmall
+      Item {
+        x: root.spaceLarge
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.rowIconSize
+        height: root.rowIconSize
 
-        Item {
-          anchors.verticalCenter: parent.verticalCenter
-          width: root.rowIconSize
-          height: root.rowIconSize
-
-          IconImage {
-            anchors.fill: parent
-            visible: applicationLevelRow.iconSource !== ""
-            source: applicationLevelRow.iconSource
-            asynchronous: true
-            mipmap: true
-          }
-
-          // An application that names no icon still gets a mark, because the
-          // column it leads has to stay a column.
-          Text {
-            anchors.centerIn: parent
-            visible: applicationLevelRow.iconSource === ""
-            text: "󰝚"
-            color: root.subtext
-            font.family: root.fontFamily
-            font.pixelSize: root.textStrong
-          }
+        IconImage {
+          anchors.fill: parent
+          visible: applicationLevelRow.iconSource !== ""
+          source: applicationLevelRow.iconSource
+          asynchronous: true
+          mipmap: true
         }
 
+        // An application that names no icon still gets a mark, because the
+        // column it leads has to stay a column.
         Text {
-          anchors.verticalCenter: parent.verticalCenter
-          width: parent.width - root.rowIconSize - applicationLevelValue.width - root.spaceSmall * 2
-          text: applicationLevelRow.label
-          textFormat: Text.PlainText
-          elide: Text.ElideRight
-          color: root.text
-          font.family: root.fontFamily
-          font.pixelSize: root.textBody
-          font.weight: root.weightMedium
-        }
-
-        // The numeral column is pinned so the levels below one another stay
-        // comparable: a right edge that moves with the number makes two bars
-        // stop being two readings of the same thing.
-        Text {
-          id: applicationLevelValue
-
-          anchors.verticalCenter: parent.verticalCenter
-          width: root.levelValueWidth
-          text: applicationLevelRow.shown + "%"
+          anchors.centerIn: parent
+          visible: applicationLevelRow.iconSource === ""
+          text: "󰝚"
           color: root.subtext
           font.family: root.fontFamily
-          font.pixelSize: root.textLabel
-          horizontalAlignment: Text.AlignRight
+          font.pixelSize: root.textStrong
         }
       }
 
@@ -3109,17 +3040,17 @@ Shared.Theme {
       }
     }
 
-    Rectangle {
+    IconButton {
       id: applicationMute
 
       width: root.rowHeight
       height: root.rowHeight
-      radius: root.radius
-      color: applicationMuteMouse.pressed ? root.pressColor : applicationLevelRow.muted ? root.dangerColor : root.cardColor
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
+      active: applicationLevelRow.muted
+      tint: root.red
+      hovered: applicationMuteHover.hovered
+      pressed: applicationMuteMouse.pressed
 
       HoverHandler { id: applicationMuteHover }
-      HoverWash { hovered: applicationMuteHover.hovered && !applicationMuteMouse.pressed }
 
       Text {
         anchors.centerIn: parent
@@ -3180,27 +3111,35 @@ Shared.Theme {
       }
     }
 
+    // The radio itself, as an Expressive toggle: a round knob on the highest
+    // surface step while it is off, a primary square-cornered one while it is
+    // on, and pinched while it is held.
     Rectangle {
       id: connectivityKnob
 
       anchors.verticalCenter: parent.verticalCenter
       width: root.knobSize
       height: root.knobSize
-      radius: width / 2
+      radius: connectivityKnobMouse.pressed ? root.shapeSmall
+        : connectivityRow.active ? root.shapeMedium
+        : width / 2
       opacity: connectivityRow.toggleEnabled ? 1 : root.disabledOpacity
-      color: connectivityKnobMouse.pressed ? root.pressColor : connectivityRow.active ? root.accent : root.wellColor
-      border.width: connectivityRow.active ? 0 : root.hairline
-      border.color: root.edgeLight
+      color: connectivityRow.active ? root.primary : root.surfaceContainerHighest
       antialiasing: true
       Behavior on color { ColorAnimation { duration: root.durationFast } }
+      Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
 
-      HoverWash { hovered: connectivityKnobMouse.containsMouse }
+      HoverWash {
+        hovered: connectivityKnobMouse.containsMouse
+        pressed: connectivityKnobMouse.pressed
+        tint: root.alpha(connectivityRow.active ? root.textOnPrimary : root.text, root.stateHover)
+      }
 
       Text {
         visible: !connectivityRow.busy
         anchors.centerIn: parent
         text: connectivityRow.icon
-        color: connectivityRow.active ? root.crust : root.text
+        color: connectivityRow.active ? root.textOnPrimary : root.text
         font.family: root.fontFamily
         font.pixelSize: root.textSubhead
       }
@@ -3211,7 +3150,7 @@ Shared.Theme {
         width: root.rowIconSize
         height: root.rowIconSize
         spinning: visible
-        color: connectivityRow.active ? root.crust : root.text
+        color: connectivityRow.active ? root.textOnPrimary : root.text
         font.pixelSize: root.textBody
       }
 
@@ -3235,9 +3174,10 @@ Shared.Theme {
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.bottom: parent.bottom
-      radius: root.radius
-      color: connectivityLabelMouse.pressed ? root.pressColor : connectivityLabelMouse.containsMouse ? root.hoverColor : root.clearColor
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
+      radius: root.radiusRow
+      color: root.clearColor
+
+      HoverWash { hovered: connectivityLabelMouse.containsMouse; pressed: connectivityLabelMouse.pressed }
 
       Column {
         anchors.verticalCenter: parent.verticalCenter
@@ -3260,7 +3200,7 @@ Shared.Theme {
         anchors.rightMargin: root.spaceMedium
         anchors.verticalCenter: parent.verticalCenter
         text: "󰅂"
-        color: root.overlay
+        color: root.subtext
         font.family: root.fontFamily
         font.pixelSize: root.textStrong
       }
@@ -3272,14 +3212,17 @@ Shared.Theme {
       }
     }
 
-    FocusRing { shown: connectivityRow.activeFocus }
+    FocusRing { shown: connectivityRow.activeFocus; baseRadius: root.radiusRow }
   }
 
-  // A Control Center module tile. The glyph is a component slot because each
-  // supported headphone family has its own silhouette. A tile whose glyph is
-  // also a control draws it as a knob, the way a connectivity row does: the
-  // knob acts, and the rest of the tile opens the module. From the keyboard,
-  // Space is the knob and Enter the tile.
+  // A Control Center module tile, drawn as Material 3 Expressive's quick
+  // setting: a card on the large corner while the module is quiet, the
+  // primary container rounded into a pill while it is active, pinched to the
+  // medium corner while it is held. The glyph is a component slot because
+  // each supported headphone family has its own silhouette. A tile whose
+  // glyph is also a control draws it as a knob, the way a connectivity row
+  // does: the knob acts, and the rest of the tile opens the module. From the
+  // keyboard, Space is the knob and Enter the tile.
   component ControlTile: Rectangle {
     id: controlTile
 
@@ -3293,10 +3236,14 @@ Shared.Theme {
     signal activated()
     signal knobClicked()
 
-    radius: root.radius
+    readonly property color content: controlTile.active ? root.textOnPrimaryContainer : root.text
+
+    radius: controlTileMouse.pressed ? root.shapeMedium : controlTile.active ? height / 2 : root.radius
     opacity: controlTile.module !== "" && root.dragModule === controlTile.module ? root.disabledOpacity : 1
-    color: controlTileMouse.pressed ? root.pressColor : controlTile.hovered ? root.hoveredColor(controlTile.active ? root.activeTint : root.cardColor) : controlTile.active ? root.activeTint : root.cardColor
+    color: controlTile.active ? root.primaryContainer : root.cardColor
+    antialiasing: true
     Behavior on color { ColorAnimation { duration: root.durationFast } }
+    Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: controlTile.label
@@ -3313,9 +3260,8 @@ Shared.Theme {
       }
     }
 
-    CardEdge {}
-
     HoverHandler { id: controlTileHover }
+    HoverWash { hovered: controlTile.hovered; pressed: controlTileMouse.pressed; tint: root.alpha(controlTile.content, root.stateHover) }
 
     Row {
       // Above the tile's own drag area, so a knob answers its own clicks.
@@ -3333,13 +3279,11 @@ Shared.Theme {
           anchors.centerIn: parent
           width: root.knobSize
           height: root.knobSize
-          radius: width / 2
-          color: controlTileKnob.pressed ? root.pressColor : root.wellColor
-          border.width: root.hairline
-          border.color: root.edgeLight
+          radius: controlTileKnob.pressed ? root.shapeSmall : width / 2
+          color: root.surfaceContainerHighest
           antialiasing: true
-          Behavior on color { ColorAnimation { duration: root.durationFast } }
-          HoverWash { hovered: controlTileKnob.containsMouse }
+          Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
+          HoverWash { hovered: controlTileKnob.containsMouse; pressed: controlTileKnob.pressed }
         }
         Loader { anchors.centerIn: parent; sourceComponent: controlTile.glyph }
         MouseArea {
@@ -3358,8 +3302,8 @@ Shared.Theme {
         width: parent.width - root.knobSize - parent.spacing
         spacing: root.hairline
 
-        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
-        Text { width: parent.width; visible: text !== ""; text: controlTile.detail; elide: Text.ElideRight; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
+        Text { width: parent.width; text: controlTile.label; elide: Text.ElideRight; color: controlTile.content; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
+        Text { width: parent.width; visible: text !== ""; text: controlTile.detail; elide: Text.ElideRight; color: controlTile.active ? controlTile.content : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
       }
     }
 
@@ -3377,9 +3321,9 @@ Shared.Theme {
   // name, because a launcher that spends a full-width tile on a sentence about
   // itself is what turned the panel into a list. The sentence moved to the
   // tooltip. A utility that has something to report — how much is waiting,
-  // how far a transfer got — says it in the corner, lifts onto the active
-  // tint and takes that state's own colour on its glyph; otherwise it stays
-  // quiet.
+  // how far a transfer got — says it in the corner, fills with that state's
+  // own colour toned over the card and takes the colour on its glyph;
+  // otherwise it stays quiet. Held, it pinches like every Expressive tile.
   component UtilityTile: Rectangle {
     id: utilityTile
 
@@ -3391,9 +3335,11 @@ Shared.Theme {
     property bool active: false
     signal activated()
 
-    radius: root.radius
-    color: utilityTileMouse.pressed ? root.pressColor : utilityTile.active ? root.activeTint : root.cardColor
+    radius: utilityTileMouse.pressed ? root.shapeMedium : root.radius
+    color: utilityTile.active ? Qt.tint(root.cardColor, root.alpha(utilityTile.valueColor, 0.2)) : root.cardColor
+    antialiasing: true
     Behavior on color { ColorAnimation { duration: root.durationFast } }
+    Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: utilityTile.label + (utilityTile.value !== "" ? ", " + utilityTile.value : "")
@@ -3406,9 +3352,7 @@ Shared.Theme {
       }
     }
 
-    CardEdge {}
-
-    HoverWash { hovered: utilityTileMouse.containsMouse && !utilityTileMouse.pressed }
+    HoverWash { hovered: utilityTileMouse.containsMouse; pressed: utilityTileMouse.pressed }
 
     Column {
       anchors.centerIn: parent
@@ -3573,8 +3517,6 @@ Shared.Theme {
 
       HoverHandler { id: controlCenterMediaHover }
 
-      CardEdge {}
-
       ModuleDragArea {
         id: controlCenterMediaMouse
         module: "media"
@@ -3596,8 +3538,6 @@ Shared.Theme {
         height: controlGrid.controlsHeight
         radius: root.radius
         color: root.cardColor
-
-        CardEdge {}
 
         Column {
           anchors.left: parent.left
@@ -3669,8 +3609,6 @@ Shared.Theme {
         opacity: root.dragModule === "audio" ? root.disabledOpacity : 1
 
         HoverHandler { id: controlCenterAudioHover }
-
-        CardEdge {}
 
         ModuleDragArea {
           id: controlCenterAudioMouse
@@ -3874,7 +3812,7 @@ Shared.Theme {
     readonly property bool busy: controlAction !== "" && root.controlBusy(controlAction, value, extra)
     readonly property bool failed: controlAction !== "" && root.controlFailed(controlAction, value, extra)
     readonly property bool complete: controlAction !== "" && root.controlCompleted(controlAction, value, extra)
-    implicitWidth: Math.max(buttonMeasure.width, feedbackMeasure.width) + root.spaceMedium * 2 + (actionIcon ? root.textLabel + root.spaceTight : 0)
+    implicitWidth: Math.max(buttonMeasure.width, feedbackMeasure.width) + root.spaceLarge * 2 + (actionIcon ? root.textLabel + root.spaceTight : 0)
     width: Math.min(implicitWidth, parent.width)
     implicitHeight: root.chipHeight
     TextMetrics {
@@ -3906,18 +3844,22 @@ Shared.Theme {
       textFormat: Text.PlainText
       elide: Text.ElideRight
       text: notificationButton.busy ? "Working…" : notificationButton.failed ? "Failed · retry" : notificationButton.complete ? notificationButton.successLabel : notificationButton.label
-      color: notificationButton.failed ? root.red : notificationButton.complete ? root.green : root.text
+      color: notificationButton.failed ? root.red : notificationButton.complete ? root.green : root.textOnSecondaryContainer
       font.family: root.fontFamily
       font.pixelSize: root.textCaption
+      font.weight: root.weightMedium
       verticalAlignment: Text.AlignVCenter
       horizontalAlignment: Text.AlignHCenter
     }
+    // Material's small tonal button: a pill in the secondary container that
+    // pinches while it is held.
     background: Rectangle {
-      radius: root.radius
-      color: notificationButton.down ? root.pressColor : notificationButton.hovered ? root.hoveredColor(root.wellColor) : root.wellColor
-      border.width: notificationButton.activeFocus ? 1 : 0
-      border.color: root.accent
-      Behavior on color { ColorAnimation { duration: root.durationFast } }
+      radius: notificationButton.down ? root.shapeSmall : height / 2
+      color: root.secondaryContainer
+      antialiasing: true
+      Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
+      HoverWash { hovered: notificationButton.hovered; pressed: notificationButton.down; tint: root.alpha(root.textOnSecondaryContainer, root.stateHover) }
+      FocusRing { shown: notificationButton.activeFocus }
     }
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }
@@ -4007,12 +3949,8 @@ Shared.Theme {
         height: root.spaceSmall
         radius: root.radius
         color: root.cardColor
-        CardEdge {}
       }
     }
-    SurfaceWash { radius: root.radius - 1 }
-    CardEdge {}
-    SurfaceGrain { inset: root.radius * (1 - 1 / Math.sqrt(2)) }
     Component.onDestruction: if (notificationCard.popup && notificationHover.hovered) root.setNotificationPopupHovered(false)
 
     Item {
@@ -4030,7 +3968,7 @@ Shared.Theme {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         text: "󰂚"
-        color: root.accent
+        color: root.primary
         font.family: root.fontFamily
         font.pixelSize: root.textSubhead
       }
@@ -4055,11 +3993,12 @@ Shared.Theme {
         asynchronous: true
         cache: true
       }
+      // A sender's picture is an avatar, which Material draws as a circle.
       RoundedSource {
         anchors.fill: parent
         visible: notificationCard.profileImageReady
         source: notificationProfileImage
-        radius: root.radius
+        radius: width / 2
       }
       Rectangle {
         id: notificationAppBadge
@@ -4070,10 +4009,12 @@ Shared.Theme {
         height: width
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        radius: root.radiusSmall
+        anchors.rightMargin: -root.hairline * 2
+        anchors.bottomMargin: -root.hairline * 2
+        radius: width / 2
         color: root.cardColor
-        border.width: 1
-        border.color: root.panelBorder
+        border.width: root.hairline * 2
+        border.color: notificationCard.color
 
         IconImage {
           anchors.fill: parent
@@ -4150,14 +4091,14 @@ Shared.Theme {
             width: visible ? Math.max(parent.height, stackCount.implicitWidth + root.spaceSmall) : 0
             height: parent.height
             radius: height / 2
-            color: root.alpha(root.text, 0.09)
+            color: root.secondaryContainer
             antialiasing: true
 
             Text {
               id: stackCount
               anchors.centerIn: parent
               text: notificationCard.count
-              color: root.subtext
+              color: root.textOnSecondaryContainer
               font.family: root.fontFamily
               font.pixelSize: root.textCaption
               font.weight: root.weightStrong
@@ -4214,7 +4155,6 @@ Shared.Theme {
             visible: notificationCard.collapsible
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
             hovered: notificationCollapseMouse.containsMouse
             pressed: notificationCollapseMouse.pressed
 
@@ -4240,7 +4180,6 @@ Shared.Theme {
             visible: notificationCard.unfoldable
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
             hovered: notificationUnfoldMouse.containsMouse
             pressed: notificationUnfoldMouse.pressed
 
@@ -4268,7 +4207,6 @@ Shared.Theme {
             visible: !notificationCard.history
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
             // Destructive, so the pointer is answered in red rather than in
             // neutral light: this is the one control that says what it will
             // do before it is pressed.
@@ -4442,7 +4380,7 @@ Shared.Theme {
       height: notificationGroupColumn.implicitHeight + notificationGroup.stackReach
       clip: true
 
-      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
+      Behavior on height { NumberAnimation { duration: root.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springDefaultSpatial } }
 
       Column {
         id: notificationGroupColumn
@@ -4480,7 +4418,7 @@ Shared.Theme {
             alwaysUnfolded: notificationList.alwaysUnfolded
 
             // The card arrives with the fold rather than at the end of it.
-            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: Easing.OutCubic }
+            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationFast; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastEffects }
           }
         }
       }
@@ -4618,25 +4556,37 @@ Shared.Theme {
   }
 
   // A transport control. The one the block is aimed at -- play and pause -- is
-  // filled in the accent and takes the row height, while the four around it
-  // rest on nothing at the control height, so the set reads as one action with
-  // its neighbours rather than as five glyphs of equal claim. The pointer is
-  // reported by a wash laid over whatever the button already put down, so the
-  // shuffle or repeat that is on is still the one that lights under it, and the
-  // keyboard gets the shared ring, because a button that can be tabbed to and
-  // shows nothing for it cannot be used from the keyboard at all.
+  // Material 3 Expressive's filled button at the row height: round while the
+  // player is paused and squared towards the large corner while it plays, so
+  // the shape says the state before the glyph does. The four around it are
+  // icon buttons at the control height that rest on nothing, so the set reads
+  // as one action with its neighbours rather than as five glyphs of equal
+  // claim; a shuffle or repeat that is on fills with the secondary container
+  // and squares off the way an Expressive toggle does. Every one pinches
+  // while it is held. The pointer is reported by a state layer over whatever
+  // the button already put down, and the keyboard gets the shared ring,
+  // because a button that can be tabbed to and shows nothing for it cannot be
+  // used from the keyboard at all.
   component MediaButton: Rectangle {
     id: mediaButton
 
     property string icon: ""
     property bool primary: false
     property bool active: false
+    // Set on the primary button while the player plays.
+    property bool playing: false
     property string hint: ""
     signal activated()
+    readonly property color content: mediaButton.primary ? root.textOnPrimary
+      : mediaButton.active ? root.textOnSecondaryContainer
+      : root.text
 
     width: mediaButton.primary ? root.rowHeight : root.controlHeight
     height: mediaButton.width
-    radius: root.radius
+    radius: mediaButtonMouse.pressed ? root.shapeSmall
+      : mediaButton.primary ? (mediaButton.playing ? root.shapeLarge : width / 2)
+      : mediaButton.active ? root.shapeMedium
+      : width / 2
     opacity: mediaButton.enabled ? 1 : root.disabledOpacity
     activeFocusOnTab: enabled
     antialiasing: true
@@ -4647,18 +4597,18 @@ Shared.Theme {
         event.accepted = true
       }
     }
-    color: mediaButtonMouse.pressed ? root.pressColor
-      : mediaButton.primary ? root.alpha(root.accent, 0.22)
-      : mediaButton.active ? root.activeTint
+    color: mediaButton.primary ? root.primary
+      : mediaButton.active ? root.secondaryContainer
       : root.clearColor
     Behavior on color { ColorAnimation { duration: root.durationFast } }
+    Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
 
-    HoverWash { hovered: mediaButtonMouse.containsMouse }
+    HoverWash { hovered: mediaButtonMouse.containsMouse; pressed: mediaButtonMouse.pressed; tint: root.alpha(mediaButton.content, root.stateHover) }
 
     CenteredGlyph {
       anchors.fill: parent
       text: mediaButton.icon
-      color: mediaButton.active ? root.accent : root.text
+      color: mediaButton.content
       font.family: root.fontFamily
       font.pixelSize: mediaButton.primary ? root.textDisplay : root.textTitle
     }
@@ -4670,9 +4620,8 @@ Shared.Theme {
   }
 
   // The player's own volume. It is a level rather than a number between two
-  // nudge buttons, drawn in the shape the Audio panel gives the output the
-  // shell mixes, and the mark that silences the player rides in the track it
-  // belongs to instead of taking a column of its own.
+  // nudge buttons, drawn as the shared level track the Audio panel gives the
+  // output the shell mixes, with the mark that silences the player beside it.
   component PlayerLevelRow: Item {
     id: playerLevel
 
@@ -4726,60 +4675,31 @@ Shared.Theme {
       PlayerVolume.adjust(playerLevel.player, event.key === Qt.Key_Right ? 0.05 : -0.05)
     }
 
-    Rectangle {
+    Shared.LevelTrack {
       id: playerLevelTrack
 
+      theme: root
       anchors.left: parent.left
       anchors.right: playerLevelMute.left
       anchors.rightMargin: root.spaceMedium
       height: parent.height
-      radius: root.radius
-      color: root.wellColor
-      border.width: 1
-      border.color: playerLevel.activeFocus ? root.accent : root.alpha(root.text, 0.05)
-      clip: true
-      antialiasing: true
+      ratio: playerLevel.fillRatio
+      dimmed: !playerLevel.supported
+      hovered: playerLevelHover.hovered && playerLevel.writable
+      pressed: playerLevelMouse.pressed
+      focused: playerLevel.activeFocus
+      // The track names the player it belongs to, because this is that
+      // player's own level rather than the output the shell mixes. Why a
+      // player offers no level is the group's rule to state, not a second
+      // sentence in the track.
+      glyph: playerLevel.glyph
+      title: root.mediaPlayerName(playerLevel.player)
+      value: playerLevel.supported ? playerLevel.percent + "%" : ""
 
-      Rectangle {
-        width: parent.width * playerLevel.fillRatio
-        height: parent.height
-        radius: parent.radius
-        color: root.fillColor
-        antialiasing: true
-      }
-
-      Text {
-        id: playerLevelReadout
-
-        anchors.right: parent.right
-        anchors.rightMargin: root.spaceLarge
-        anchors.verticalCenter: parent.verticalCenter
-        text: playerLevel.supported ? playerLevel.percent + "%" : ""
-        color: root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textBody
-      }
-
-      Text {
-        anchors.left: parent.left
-        anchors.leftMargin: root.spaceLarge
-        anchors.right: playerLevelReadout.left
-        anchors.rightMargin: root.spaceMedium
-        anchors.verticalCenter: parent.verticalCenter
-        // The track names the player it belongs to, because this is that
-        // player's own level rather than the output the shell mixes. Why a
-        // player offers no level is the group's rule to state, not a second
-        // sentence in the track.
-        text: playerLevel.glyph + "  " + root.mediaPlayerName(playerLevel.player)
-        textFormat: Text.PlainText
-        elide: Text.ElideRight
-        color: playerLevel.supported ? root.text : root.subtext
-        font.family: root.fontFamily
-        font.pixelSize: root.textBody
-        font.weight: root.weightStrong
-      }
+      HoverHandler { id: playerLevelHover }
 
       MouseArea {
+        id: playerLevelMouse
         anchors.fill: parent
         enabled: playerLevel.writable
         hoverEnabled: true
@@ -4805,9 +4725,9 @@ Shared.Theme {
       anchors.right: parent.right
       width: root.rowHeight
       height: root.rowHeight
-      opacity: playerLevel.writable ? 1 : 0.35
+      opacity: playerLevel.writable ? 1 : root.disabledOpacity
       active: playerLevel.silent
-      tint: playerLevel.silent ? root.red : root.accent
+      tint: root.red
       hovered: playerLevelMuteMouse.containsMouse
       pressed: playerLevelMuteMouse.pressed
 
@@ -4872,29 +4792,32 @@ Shared.Theme {
       height: root.trackTarget
 
       // The position is a filled track like every other one in the shell, so
-      // it is the shared meter rather than a second copy of its gradient. Only
-      // its hairline is the timeline's own, because the keyboard has to be
-      // able to say it is here.
+      // it is the shared meter, and while the player plays it is the meter's
+      // wave, flowing, the way Material 3 Expressive draws media progress.
       MeterBar {
+        id: timelineMeter
         visible: !mediaTimeline.live
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         ratio: mediaTimeline.ratio
-        border.color: mediaTimeline.activeFocus ? root.accent : root.alpha(root.text, 0.05)
+        wavy: !!mediaTimeline.player && mediaTimeline.player.isPlaying && mediaTimeline.draggedPosition < 0
+        flowing: wavy
       }
 
-      // The head appears under the pointer as well as under the drag, because
-      // a track that only grows a handle once it has already been grabbed
-      // never says it could be.
+      FocusRing { shown: mediaTimeline.activeFocus; baseRadius: height / 2; gap: 0 }
+
+      // The head is the slider's upright bar. It appears under the pointer as
+      // well as under the drag, because a track that only grows a handle once
+      // it has already been grabbed never says it could be.
       Rectangle {
         visible: !mediaTimeline.live && (timelineMouse.containsMouse || mediaTimeline.draggedPosition >= 0)
         x: Math.max(0, Math.min(parent.width - width, parent.width * mediaTimeline.ratio - width / 2))
         anchors.verticalCenter: parent.verticalCenter
-        width: root.trackHead
-        height: root.trackHead
+        width: timelineMouse.pressed ? root.trackHead / 2 : root.trackHead
+        height: parent.height
         radius: width / 2
-        color: timelineMouse.pressed ? root.text : root.accent
+        color: root.primary
         antialiasing: true
       }
 
@@ -4927,12 +4850,11 @@ Shared.Theme {
         id: liveTimelineLabel
         visible: mediaTimeline.live
         anchors.centerIn: parent
-        text: "LIVE"
-        color: root.overlay
+        text: "Live"
+        color: root.subtext
         font.family: root.fontFamily
         font.pixelSize: root.textLabel
-        font.weight: root.weightMedium
-        font.letterSpacing: root.trackingLabel
+        font.weight: root.weightStrong
       }
 
       // A live stream has no position to draw, so the rule it gets is broken
@@ -4973,10 +4895,12 @@ Shared.Theme {
     }
   }
 
-  // The dropdown this shell draws. A choice that is not worth a well of its
-  // own -- which of the running players the panel follows, which rate it plays
-  // at -- sits on the well material behind the same fold arrow a section rule
-  // uses and opens its list on the floating material. Everything that is not
+  // The dropdown this shell draws, as Material's menu behind a chip. A choice
+  // that is not worth a button group of its own -- which of the running
+  // players the panel follows, which rate it plays at -- sits on a chip on the
+  // highest surface step behind the same fold arrow a section rule uses, and
+  // opens Material's menu: the large corner on the high surface step, with
+  // the current row in the secondary container. Everything that is not
   // the choice itself lives here, because the media panel drew one of these
   // and then wanted a second, and two hand-built combo boxes drift apart on
   // corner, chevron, popup width and row fill before the second one is
@@ -5031,18 +4955,16 @@ Shared.Theme {
     }
 
     background: Rectangle {
-      radius: root.radius
-      color: panelPicker.pressed ? root.pressColor : root.wellColor
-      border.width: 1
-      border.color: panelPicker.popup.visible ? root.alpha(root.accent, 0.55) : root.cardBorder
+      radius: root.shapeSmall
+      color: panelPicker.popup.visible ? root.secondaryContainer : root.surfaceContainerHighest
       antialiasing: true
 
       Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-      HoverWash { hovered: panelPicker.hovered }
+      HoverWash { hovered: panelPicker.hovered; pressed: panelPicker.pressed }
 
-      // The open list already outlines the box in accent, so the ring is for
-      // the closed box the keyboard has reached and nothing else would show.
+      // The open list already says where the box is, so the ring is for the
+      // closed box the keyboard has reached and nothing else would show.
       FocusRing { shown: panelPicker.visualFocus && !panelPicker.popup.visible }
     }
 
@@ -5067,7 +4989,7 @@ Shared.Theme {
           width: parent.width
           text: panelPicker.label(panelChoice.modelData)
           textFormat: Text.PlainText
-          color: panelChoice.current ? root.accent : root.text
+          color: panelChoice.current ? root.textOnSecondaryContainer : root.text
           elide: Text.ElideRight
           font.family: root.fontFamily
           font.pixelSize: root.textBody
@@ -5086,16 +5008,15 @@ Shared.Theme {
       }
 
       background: Rectangle {
-        radius: root.radiusSmall
-        color: panelChoice.pressed ? root.pressColor
-          : panelChoice.current ? root.selectedColor
+        radius: root.shapeMedium
+        color: panelChoice.current ? root.selectedColor
           : panelChoice.highlighted ? root.hoverColor
           : root.clearColor
         antialiasing: true
 
         Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-        HoverWash { hovered: panelChoice.hovered }
+        HoverWash { hovered: panelChoice.hovered; pressed: panelChoice.pressed }
       }
     }
 
@@ -5118,13 +5039,10 @@ Shared.Theme {
       }
 
       background: Rectangle {
-        radius: root.radius
-        color: root.floatColor
-        border.width: 1
+        radius: root.shapeLarge
+        color: root.surfaceContainerHigh
+        border.width: root.hairline
         border.color: root.panelBorder
-
-        SurfaceEdge { radius: parent.radius }
-        SurfaceGrain { inset: 3 }
       }
     }
   }
@@ -5181,7 +5099,7 @@ Shared.Theme {
         CenteredGlyph {
           anchors.fill: parent
           text: "󰎆"
-          color: mediaBody.player ? root.accent : root.overlay
+          color: mediaBody.player ? root.primary : root.overlay
           font.family: root.fontFamily
           font.pixelSize: root.textHero
         }
@@ -5208,7 +5126,7 @@ Shared.Theme {
         radius: root.radius
         opacity: mediaBodyArt.status === Image.Ready ? 1 : 0
 
-        Behavior on opacity { NumberAnimation { duration: root.durationNormal } }
+        Behavior on opacity { NumberAnimation { duration: root.durationFast } }
       }
     }
 
@@ -5284,6 +5202,7 @@ Shared.Theme {
           anchors.verticalCenter: parent.verticalCenter
           icon: mediaBody.player && mediaBody.player.isPlaying ? "󰏤" : "󰐊"
           primary: true
+          playing: !!mediaBody.player && mediaBody.player.isPlaying
           hint: mediaBody.player && mediaBody.player.isPlaying ? "Pause" : "Play"
           enabled: !!mediaBody.player && mediaBody.player.canTogglePlaying
           onActivated: mediaBody.player.togglePlaying()
@@ -5431,10 +5350,13 @@ Shared.Theme {
               y: (y0 - uriHint.y0) * uriWindow.height - 1
               width: w * uriWindow.width + 2
               height: h * uriWindow.height + 2
-              radius: root.radiusSmall
-              color: uriLinkMouse.pressed ? root.pressColor : root.activeTint
-              border.width: 1
-              border.color: root.accent
+              // Laid over the frozen pixels it marks, so the fill is a tint of
+              // the primary colour rather than a container that would hide
+              // the link under it.
+              radius: root.shapeSmall
+              color: root.alpha(root.primary, uriLinkMouse.pressed ? 0.32 : 0.18)
+              border.width: root.focusWidth
+              border.color: root.primary
               HoverWash { hovered: uriHover.hovered; radius: parent.radius }
               HoverHandler {
                 id: uriHover
@@ -5455,27 +5377,18 @@ Shared.Theme {
             y: uriHint.position.y - uriHint.y
             width: uriWindow.badgeWidth
             height: uriWindow.badgeHeight
-            radius: root.radiusSmall
-            color: root.floatColor
-            border.width: 1
-            border.color: root.panelBorder
-            SurfaceWash { radius: parent.radius - 1 }
-            Rectangle {
-              anchors.fill: parent
-              radius: parent.radius
-              color: uriNumberMouse.pressed ? root.pressColor : uriNumberHover.hovered ? root.hoverColor : root.clearColor
-              Behavior on color { ColorAnimation { duration: root.durationFast } }
-            }
+            // Material's large badge: the number on the primary colour.
+            radius: height / 2
+            color: root.primary
+            HoverWash { hovered: uriNumberHover.hovered; pressed: uriNumberMouse.pressed; tint: root.alpha(root.textOnPrimary, root.stateHover) }
             Text {
               anchors.centerIn: parent
               text: uriHint.number
-              color: root.accent
+              color: root.textOnPrimary
               font.family: root.fontFamily
               font.pixelSize: root.textStrong
               font.weight: root.weightStrong
             }
-            SurfaceEdge { radius: root.radiusSmall - 1 }
-            SurfaceGrain { inset: root.radiusSmall / 3 }
             HoverHandler { id: uriNumberHover }
             MouseArea {
               id: uriNumberMouse
@@ -5497,17 +5410,12 @@ Shared.Theme {
             y: placement.y - uriHint.y
             width: placement.w
             height: placement.h
-            radius: root.radiusSmall
+            radius: root.shapeSmall
             color: root.floatColor
-            border.width: 1
+            border.width: root.hairline
             border.color: root.panelBorder
             clip: true
-            SurfaceWash { radius: parent.radius - 1 }
-            Rectangle {
-              anchors.fill: parent
-              radius: parent.radius
-              color: codeMouse.pressed ? root.pressColor : codeHover.hovered ? root.hoverColor : root.clearColor
-            }
+            HoverWash { hovered: codeHover.hovered; pressed: codeMouse.pressed }
             Text {
               id: codeText
               x: root.spaceSmall
@@ -5520,8 +5428,6 @@ Shared.Theme {
               font.family: root.fontFamily
               font.pixelSize: root.textBody
             }
-            SurfaceEdge { radius: root.radiusSmall - 1 }
-            SurfaceGrain { inset: root.radiusSmall / 3 }
             HoverHandler { id: codeHover }
             MouseArea {
               id: codeMouse
@@ -5561,7 +5467,7 @@ Shared.Theme {
       anchors.bottom: true
       margins.bottom: root.panelMargin
       implicitWidth: Math.min(modelData.width - root.panelMargin * 2, root.controlHeight * 16)
-      implicitHeight: uriStatus.implicitHeight + root.cardPadding * 2
+      implicitHeight: uriStatus.implicitHeight + root.panelMargin * 2
       visible: uriPicker.presented || uriPicker.notice !== ""
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -5570,19 +5476,14 @@ Shared.Theme {
       WlrLayershell.namespace: "seele-shell-uris-status"
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-      Rectangle {
+      PanelSurface {
         anchors.fill: parent
-        radius: root.radius
-        color: root.panelColor
-        border.width: 1
-        border.color: root.panelBorder
-        SurfaceWash { radius: root.radius - 1 }
         Column {
           id: uriStatus
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.top: parent.top
-          anchors.margins: root.cardPadding
+          anchors.margins: root.panelMargin
           spacing: root.spaceSmall
           PanelHeader {
             width: parent.width
@@ -5604,13 +5505,11 @@ Shared.Theme {
             text: uriPicker.hoveredUri
             textFormat: Text.PlainText
             elide: Text.ElideMiddle
-            color: root.accent
+            color: root.primary
             font.family: root.fontFamily
             font.pixelSize: root.textBody
           }
         }
-        SurfaceEdge {}
-        SurfaceGrain { inset: root.radius / 3 }
       }
     }
   }
@@ -5678,10 +5577,10 @@ Shared.Theme {
       // The lens magnifies the frozen pixels already uploaded for the image
       // behind it rather than re-reading the capture, so aiming costs no
       // decode. It sits centred on the point, because a loupe that dodges the
-      // thing it magnifies is harder to aim than one that does not. It takes
-      // the shell's float material and edge but deliberately neither the wash
-      // nor the grain: both are films laid over their whole surface, and a
-      // film over the pixels being measured changes the colour being read.
+      // thing it magnifies is harder to aim than one that does not. It is a
+      // floating container on the large corner, edged like a panel, and
+      // nothing is laid over the pixels it shows, because a state layer over
+      // the pixels being measured changes the colour being read.
       Rectangle {
         id: colorLens
         readonly property real scaleX: colorWindow.frame ? colorWindow.width / colorWindow.frame.width : 1
@@ -5761,8 +5660,6 @@ Shared.Theme {
             font.weight: root.weightMedium
           }
         }
-
-        SurfaceEdge { radius: root.radius - 1 }
       }
 
       Connections {
@@ -5784,7 +5681,7 @@ Shared.Theme {
       anchors.bottom: true
       margins.bottom: root.panelMargin
       implicitWidth: Math.min(modelData.width - root.panelMargin * 2, root.controlHeight * 16)
-      implicitHeight: colorStatus.implicitHeight + root.cardPadding * 2
+      implicitHeight: colorStatus.implicitHeight + root.panelMargin * 2
       visible: colorPicker.presented || colorPicker.copyingNow || colorPicker.notice !== ""
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
@@ -5801,7 +5698,7 @@ Shared.Theme {
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.top: parent.top
-          anchors.margins: root.cardPadding
+          anchors.margins: root.panelMargin
           spacing: root.spaceSmall
 
           PanelHeader {
@@ -5959,13 +5856,10 @@ Shared.Theme {
         anchors { top: parent.top; left: parent.left; right: parent.right }
         height: root.barHeight
         // The strip is the one surface that is always on screen, so it is the
-        // darkest material in the shell and the quietest: ink the wallpaper
-        // shows through, and it closes on a hairline rather than on a coloured
-        // rule. Nothing lights its top edge, because there is no wallpaper
-        // above the screen for that edge to be lit against.
-        color: root.alpha(root.crust, 0.86)
-
-        SurfaceWash {}
+        // lowest step of the surface ramp and the quietest: on a dark scheme
+        // the palette's own ink, with no divider under it, as Material draws a
+        // top app bar that nothing has scrolled beneath.
+        color: root.surfaceContainerLowest
 
         Row {
           anchors.left: parent.left
@@ -5998,6 +5892,7 @@ Shared.Theme {
           Repeater {
             model: root.workspaceIds(barWindow.modelData)
             Item {
+              id: workspaceSlot
               required property int modelData
               readonly property bool active: root.workspaceActive(modelData, barWindow.modelData)
               readonly property bool occupied: root.workspaceOccupied(modelData)
@@ -6005,38 +5900,45 @@ Shared.Theme {
               height: parent.height
 
               Behavior on width {
-                NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial }
               }
 
+              // Material 3 Expressive's page indicator. Three steps, and only
+              // the top one is lit: the workspace in front of the user
+              // stretches into a primary pill, one holding windows sits in the
+              // secondary container, and an empty one is barely there. The
+              // pill travels on the spatial spring, so a switch overshoots and
+              // settles the way the rest of the shell moves.
               Rectangle {
                 id: workspacePill
-                width: parent.active ? 42 : 20
+                width: workspaceSlot.active ? 42 : 20
                 height: root.barItemHeight
                 anchors.centerIn: parent
-                radius: root.radius
-                // Three steps, and only the top one is lit: the workspace in
-                // front of the user is accent, one holding windows is a tint of
-                // the strip's own light, and an empty one is barely there.
-                color: parent.active ? root.accent
-                  : workspaceMouse.containsMouse ? root.alpha(root.accent, 0.5)
-                  : parent.occupied ? root.alpha(root.text, 0.16)
-                  : root.alpha(root.text, 0.07)
+                radius: height / 2
+                color: workspaceSlot.active ? root.primary
+                  : workspaceSlot.occupied ? root.secondaryContainer
+                  : root.surfaceContainerHigh
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
 
                 Behavior on width {
-                  NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic }
+                  NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial }
+                }
+
+                HoverWash {
+                  hovered: workspaceMouse.containsMouse
+                  pressed: workspaceMouse.pressed
+                  tint: root.alpha(workspaceSlot.active ? root.textOnPrimary : root.text, root.stateHover)
                 }
 
                 Text {
                   anchors.centerIn: parent
-                  text: String(parent.parent.modelData)
-                  color: parent.parent.active ? root.crust
-                    : workspaceMouse.containsMouse ? root.crust
-                    : parent.parent.occupied ? root.text
-                    : root.alpha(root.text, 0.45)
+                  text: String(workspaceSlot.modelData)
+                  color: workspaceSlot.active ? root.textOnPrimary
+                    : workspaceSlot.occupied ? root.textOnSecondaryContainer
+                    : root.overlay
                   font.family: root.fontFamily
                   font.pixelSize: root.textLabel
-                  font.weight: parent.parent.active ? root.weightStrong : root.weightRegular
+                  font.weight: workspaceSlot.active ? root.weightStrong : root.weightRegular
                 }
               }
 
@@ -6266,8 +6168,8 @@ Shared.Theme {
             hovered: microphoneMutedIndicator.containsMouse
             Rectangle {
               anchors.centerIn: parent
-              width: 26; height: 18; radius: root.radiusSmall
-              color: root.alpha(root.overlay, 0.35)
+              width: 26; height: 18; radius: height / 2
+              color: root.surfaceContainerHighest
               Text {
                 anchors.centerIn: parent
                 text: "󰍭"
@@ -6934,25 +6836,26 @@ Shared.Theme {
           }
         }
 
-        SurfaceGrain {}
-
         // The bar is the drop target for a module drag, so it says so while one
-        // is in flight and brightens once the pointer is actually over it.
+        // is in flight and brightens once the pointer is actually over it. The
+        // tint is laid over the strip's entries, so it is the primary colour
+        // at a state layer's strength rather than a container that hides them.
         Rectangle {
           visible: root.dragModule !== ""
           anchors.fill: parent
           z: 1
-          color: root.dragOverBar ? root.selectedColor : root.activeTint
+          color: root.alpha(root.primary, root.dragOverBar ? root.stateDragged : root.stateHover)
 
           Behavior on color { ColorAnimation { duration: root.durationFast } }
         }
 
         Rectangle {
+          visible: root.dragModule !== ""
           anchors.bottom: parent.bottom
           width: parent.width
-          height: root.dragModule !== "" ? 2 : 1
+          height: root.focusWidth
           z: 1
-          color: root.dragModule !== "" ? root.accent : root.alpha(root.crust, 0.85)
+          color: root.primary
         }
       }
     }
@@ -7059,12 +6962,11 @@ Shared.Theme {
                 readonly property bool hovered: applicationActionHover.hovered
                 width: parent.width
                 height: root.controlHeight
-                radius: root.radius
+                radius: root.radiusRow
                 color: modelData.force
                   ? applicationActionMouse.pressed ? root.dangerPress : hovered ? root.dangerColor : root.dangerTint
                   : applicationActionMouse.pressed ? root.pressColor : hovered ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
-                CardEdge { border.color: modelData.force ? root.alpha(root.red, 0.22) : root.cardBorder }
 
                 HoverHandler { id: applicationActionHover }
 
@@ -7308,10 +7210,9 @@ Shared.Theme {
               visible: !calendarWindow.settingsOpen
               width: 84
               height: root.controlHeight
-              radius: root.radius
+              radius: height / 2
               color: todayMouse.pressed ? root.pressColor : todayMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
-              CardEdge {}
               Text { anchors.centerIn: parent; text: "Today"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
               MouseArea {
                 id: todayMouse
@@ -7460,17 +7361,17 @@ Shared.Theme {
                         anchors.horizontalCenter: parent.horizontalCenter
                         y: 2
                         width: root.chipHeight - 4; height: width; radius: width / 2
-                        color: calendarCell.modelData.today ? root.accent
+                        color: calendarCell.modelData.today ? root.primary
                           : calendarCell.selected ? root.selectedColor : root.hoverColor
-                        border.width: calendarCell.selected && !calendarCell.modelData.today ? 1 : 0
-                        border.color: root.alpha(root.accent, 0.5)
                       }
                       Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.verticalCenter: calendarDisc.verticalCenter
                         text: calendarCell.modelData.week ? "W" + calendarCell.modelData.label
                           : calendarCell.modelData.inMonth ? calendarCell.modelData.day : ""
-                        color: calendarCell.modelData.week ? root.mutedText : calendarCell.modelData.today ? root.crust : root.text
+                        color: calendarCell.modelData.week ? root.mutedText
+                          : calendarCell.modelData.today ? root.textOnPrimary
+                          : calendarCell.selected ? root.textOnSecondaryContainer : root.text
                         font.family: root.fontFamily
                         font.pixelSize: calendarCell.modelData.week ? root.textCaption : root.textLabel
                         font.weight: calendarCell.modelData.today || calendarCell.modelData.week ? root.weightStrong : root.weightRegular
@@ -7565,8 +7466,8 @@ Shared.Theme {
         // A dictation surface is a reading, so it is built the way the level
         // OSD is: the mark that says what is being read on the left, the
         // instrument beside it, and the state under it in one caption. The
-        // level track is cut back to the ink like every other well, and the
-        // wave takes the colour the menu bar already gives recording.
+        // level track sits on the highest surface step like every other track,
+        // and the wave takes the colour the menu bar already gives recording.
         Column {
           id: dictationContent
           anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
@@ -7615,10 +7516,8 @@ Shared.Theme {
             width: parent.width
             height: root.rowHeight
             visible: dictation.status === "recording"
-            radius: root.radiusSmall
+            radius: root.radiusRow
             color: root.wellColor
-            border.width: 1
-            border.color: root.alpha(root.text, 0.05)
             antialiasing: true
 
             Shared.Waveform {
@@ -7741,35 +7640,20 @@ Shared.Theme {
             width: parent.width
             Repeater {
               model: ["Clocks", "Plan meeting"]
-              Button {
+              Shared.SegmentChoice {
                 id: modeButton
                 required property string modelData
                 required property int index
+                theme: root
                 width: parent.width / 2
                 height: parent.height
                 text: modelData
-                hoverEnabled: true
-                focusPolicy: Qt.StrongFocus
-                contentItem: Text {
-                  text: modeButton.text
-                  color: root.meetingPlanning === (modeButton.index === 1) ? root.accent : root.subtext
-                  font.family: root.fontFamily; font.pixelSize: root.textLabel
-                  horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                }
-                background: Shared.Segment {
-                  theme: root
-                  selected: root.meetingPlanning === (modeButton.index === 1)
-                  hovered: modeButton.hovered; pressed: modeButton.down
-                  border.width: root.hairline
-                  border.color: modeButton.visualFocus ? root.accent : root.clearColor
-                }
-                Keys.onReturnPressed: clicked()
+                selected: root.meetingPlanning === (modeButton.index === 1)
                 onClicked: {
                   root.setMeetingPlanning(index === 1)
                   if (root.meetingPlanning) meetingPanel.forceActiveFocus()
                   else timezoneSearch.forceActiveFocus()
                 }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
               }
             }
           }
@@ -7809,7 +7693,7 @@ Shared.Theme {
               Column {
                 Layout.fillWidth: true
                 spacing: root.spaceTight
-                SectionLabel { text: "LOCAL TIME" }
+                SectionLabel { text: "Local time" }
                 Text { text: Qt.formatDate(root.now, "yyyy-MM-dd") + " · " + ((root.clockData.local || {}).abbreviation || ""); color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
               }
               Text {
@@ -7829,7 +7713,6 @@ Shared.Theme {
                 HoverTip { mouse: localTimeCopyMouse; inOverlay: true; text: "Copy local ISO timestamp" }
               }
             }
-            CardEdge {}
           }
           TextField {
             id: timezoneSearch
@@ -7838,10 +7721,10 @@ Shared.Theme {
             height: root.controlHeight
             placeholderText: "Search city, country, zone, or UTC offset…"
             color: root.text; placeholderTextColor: root.subtext
-            selectionColor: root.accent; selectedTextColor: root.base
+            selectionColor: root.selectedColor; selectedTextColor: root.text
             font.family: root.fontFamily; font.pixelSize: root.textBody
             leftPadding: root.spaceLarge; rightPadding: root.spaceLarge
-            background: Rectangle { radius: root.radius; color: root.wellColor; border.color: timezoneSearch.activeFocus ? root.accent : root.cardBorder; border.width: 1 }
+            background: Rectangle { radius: height / 2; color: root.surfaceContainerHighest; border.color: root.primary; border.width: timezoneSearch.activeFocus ? root.focusWidth : 0 }
             onTextChanged: {
               timezoneList.currentIndex = 0
               timezoneList.positionViewAtBeginning()
@@ -7904,11 +7787,10 @@ Shared.Theme {
               readonly property bool pinned: root.timezonePinned(modelData.id)
               width: ListView.view.width
               height: Math.max(root.notificationRowHeight, zoneTimeLabels.implicitHeight + root.spaceMedium * 2)
-              radius: root.radius
+              radius: root.radiusRow
               color: timezoneList.currentIndex === timezoneRow.index ? root.selectedColor : root.cardColor
               antialiasing: true
               Behavior on color { ColorAnimation { duration: root.durationFast } }
-              CardEdge {}
               HoverWash { hovered: rowHover.hovered }
               RowLayout {
                 anchors.fill: parent
@@ -8009,7 +7891,7 @@ Shared.Theme {
               font.weight: root.weightStrong
             }
             Rectangle {
-              width: 72; height: 26; radius: root.radius
+              width: 72; height: 26; radius: height / 2
               anchors.verticalCenter: parent.verticalCenter
               color: trayHideMouse.pressed ? root.pressColor : trayHideMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -8033,7 +7915,7 @@ Shared.Theme {
               }
             }
             Rectangle {
-              width: 30; height: 30; radius: root.radius
+              width: 30; height: 30; radius: width / 2
               color: trayMenuCloseMouse.pressed ? root.pressColor : trayMenuCloseMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "󰅖"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
@@ -8065,7 +7947,7 @@ Shared.Theme {
               Rectangle {
                 visible: !parent.modelData.isSeparator
                 anchors.fill: parent
-                radius: root.radius
+                radius: root.radiusRow
                 color: trayMenuEntryMouse.pressed ? root.pressColor : trayMenuEntryMouse.containsMouse && parent.modelData.enabled ? root.hoverColor : root.clearColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
               }
@@ -8199,7 +8081,7 @@ Shared.Theme {
                 anchors.verticalCenter: parent.verticalCenter
                 width: root.controlHeight
                 height: root.controlHeight
-                radius: root.radius
+                radius: width / 2
                 color: refreshMouse.pressed ? root.pressColor : root.agentRefreshing ? root.activeTint : refreshMouse.containsMouse ? root.hoverColor : root.clearColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.agentRefreshing }
@@ -8227,7 +8109,7 @@ Shared.Theme {
                   Text {
                     anchors.centerIn: parent
                     text: agentsTab.modelData === "usage" ? "Usage" : "AI Activity"
-                    color: agentsTab.selected ? root.accent : root.subtext
+                    color: agentsTab.selected ? root.textOnSecondaryContainer : root.subtext
                     font.family: root.fontFamily
                     font.pixelSize: root.textLabel
                     font.weight: agentsTab.selected ? root.weightStrong : root.weightRegular
@@ -8251,7 +8133,7 @@ Shared.Theme {
               visible: agentsWindow.tab === "usage"
             SectionRule {
               width: parent.width
-              label: "SESSIONS"
+              label: "Sessions"
               detail: root.agentSummary()
             }
 
@@ -8269,8 +8151,6 @@ Shared.Theme {
               color: root.cardColor
               visible: indicators.length > 0
               antialiasing: true
-
-              CardEdge {}
 
               Row {
                 anchors.fill: parent
@@ -8306,7 +8186,7 @@ Shared.Theme {
                       anchors.centerIn: parent
                       spacing: root.spaceSmall
 
-                      // Lit while a session is running and a well in the card
+                      // Lit while a session is running and an outlined dot
                       // while nothing is, beating only while the session is
                       // actually doing something.
                       Rectangle {
@@ -8316,8 +8196,8 @@ Shared.Theme {
                         radius: width / 2
                         antialiasing: true
                         color: agentIndicator.live ? agentIndicator.stateColor : root.wellColor
-                        border.width: agentIndicator.live ? 0 : 1
-                        border.color: root.edgeLight
+                        border.width: agentIndicator.live ? 0 : root.hairline
+                        border.color: root.outline
 
                         SequentialAnimation on opacity {
                           running: agentIndicator.status === "working" || agentIndicator.status === "input"
@@ -8365,8 +8245,6 @@ Shared.Theme {
               color: osSessionMouse.pressed ? root.pressColor : osSessionMouse.containsMouse ? root.selectedColor : root.activeTint
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-              CardEdge { border.color: root.alpha(root.accent, 0.28) }
-
               Row {
                 anchors.fill: parent
                 anchors.leftMargin: root.cardPadding + 2
@@ -8407,7 +8285,7 @@ Shared.Theme {
               }
             }
 
-            SectionRule { width: parent.width; label: "CAPACITY" }
+            SectionRule { width: parent.width; label: "Capacity" }
 
             Rectangle {
               width: parent.width
@@ -8415,8 +8293,6 @@ Shared.Theme {
               radius: root.radius
               color: root.cardColor
               antialiasing: true
-
-              CardEdge {}
 
               Column {
                 id: capacityContent
@@ -8544,7 +8420,7 @@ Shared.Theme {
               }
             }
 
-            SectionRule { width: parent.width; label: "USAGE" }
+            SectionRule { width: parent.width; label: "Usage" }
 
             Rectangle {
               width: parent.width
@@ -8552,8 +8428,6 @@ Shared.Theme {
               radius: root.radius
               color: root.cardColor
               antialiasing: true
-
-              CardEdge {}
 
               Column {
                 id: usageContent
@@ -8586,7 +8460,7 @@ Shared.Theme {
                       Text {
                         anchors.centerIn: parent
                         text: metricPeriod.modelData.label
-                        color: metricPeriod.selected ? root.accent : root.subtext
+                        color: metricPeriod.selected ? root.textOnSecondaryContainer : root.subtext
                         font.family: root.fontFamily
                         font.pixelSize: root.textLabel
                         font.weight: metricPeriod.selected ? root.weightStrong : root.weightRegular
@@ -8658,8 +8532,6 @@ Shared.Theme {
               color: root.cardColor
               visible: root.agentUsageOpen && (root.agentData.local.daily || []).length > 0
               antialiasing: true
-
-              CardEdge {}
 
               Column {
                 id: dailyFold
@@ -8741,7 +8613,7 @@ Shared.Theme {
 
             SectionRule {
               width: parent.width
-              label: "TOP MODELS"
+              label: "Top models"
               collapsible: true
               expanded: root.agentModelsOpen
               onToggled: root.agentModelsOpen = !root.agentModelsOpen
@@ -8754,8 +8626,6 @@ Shared.Theme {
               color: root.cardColor
               visible: root.agentModelsOpen && (root.agentMetricData.models || []).length > 0
               antialiasing: true
-
-              CardEdge {}
 
               Column {
                 id: modelFold
@@ -8992,7 +8862,7 @@ Shared.Theme {
           }
 
           // Reviews and authored pulls are two views of one inbox, not two
-          // errands, so they are a well with the one being read lit inside it.
+          // errands, so they are one button group with the one being read filled.
           SegmentWell {
             width: parent.width
             height: root.controlHeight
@@ -9018,7 +8888,7 @@ Shared.Theme {
                   anchors.centerIn: parent
                   text: githubTab.modelData.label
                   textFormat: Text.PlainText
-                  color: githubTab.selected ? root.text : root.subtext
+                  color: githubTab.selected ? root.textOnSecondaryContainer : root.subtext
                   font.family: root.fontFamily
                   font.pixelSize: root.textLabel
                   font.weight: githubTab.selected ? root.weightStrong : root.weightMedium
@@ -9113,7 +8983,6 @@ Shared.Theme {
 
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-              CardEdge {}
               HoverWash { hovered: githubPullHover.hovered }
 
               Column {
@@ -9332,7 +9201,6 @@ Shared.Theme {
                 }
                 HoverHandler { id: prFocusEnterHover }
                 HoverWash { hovered: prFocusEnterHover.hovered }
-                CardEdge {}
                 FocusRing { shown: prFocusEnter.activeFocus }
                 Row {
                   id: prFocusEnterRow
@@ -9384,7 +9252,6 @@ Shared.Theme {
                 implicitHeight: prFocusPinBody.implicitHeight + root.cardPadding * 2
                 radius: root.radius
                 color: root.cardColor
-                CardEdge {}
                 Column {
                   id: prFocusPinBody
                   anchors.left: parent.left
@@ -10043,8 +9910,6 @@ Shared.Theme {
             color: root.cardColor
             antialiasing: true
 
-            CardEdge {}
-
             MediaBody {
               anchors.fill: parent
               player: mediaWindow.player
@@ -10057,7 +9922,7 @@ Shared.Theme {
           SectionRule {
             visible: !!mediaWindow.player
             width: parent.width
-            label: "VOLUME"
+            label: "Volume"
             detail: playerVolumeLevel.supported
               ? (playerVolumeLevel.writable ? "" : "Set by the player")
               : "Not offered by this player"
@@ -10071,8 +9936,8 @@ Shared.Theme {
             player: mediaWindow.player
           }
 
-          // A rate is one of a short exclusive set, but not one worth a well:
-          // the well spent a whole row on five segments, and drew a single
+          // A rate is one of a short exclusive set, but not one worth a button
+          // group: the group spent a whole row on five segments, and drew a single
           // segment for a player whose one rate is not a choice at all. The
           // set is a dropdown on the group's own rule instead, and the group
           // withdraws unless there is something to choose between.
@@ -10083,7 +9948,7 @@ Shared.Theme {
 
             visible: playbackSpeedRule.rates.length > 1
             width: parent.width
-            label: "SPEED"
+            label: "Speed"
 
             // A control labelled from its own state changes width as that
             // state changes, and this one is anchored to the end of the rule,
@@ -10165,7 +10030,7 @@ Shared.Theme {
           // rule rather than standing in a row of its own above it.
           SectionRule {
             width: parent.width
-            label: "OUTPUT DEVICES"
+            label: "Output devices"
             detail: root.failedControlAction === "audio-outputs" ? "Could not change outputs" : ""
             detailColor: root.red
 
@@ -10203,7 +10068,7 @@ Shared.Theme {
                 required property var modelData
                 readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
                 readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                width: ListView.view.width; height: root.chipHeight; radius: root.radiusRow
                 color: outputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : (modelData.selected || modelData.default) || complete ? root.selectedColor : root.rowColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 HoverWash { hovered: outputDeviceMouse.containsMouse }
@@ -10223,7 +10088,7 @@ Shared.Theme {
               }
             }
           }
-          SectionRule { width: parent.width; label: "INPUT DEVICE" }
+          SectionRule { width: parent.width; label: "Input device" }
           DeviceListCard {
             width: parent.width
             listHeight: audioControlsWindow.inputHeight
@@ -10239,7 +10104,7 @@ Shared.Theme {
                 required property var modelData
                 readonly property bool busy: root.controlBusy("audio-device", String(modelData.id))
                 readonly property bool complete: root.controlCompleted("audio-device", String(modelData.id))
-                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                width: ListView.view.width; height: root.chipHeight; radius: root.radiusRow
                 color: inputDeviceMouse.pressed ? root.pressColor : busy ? root.activeTint : modelData.default || complete ? root.selectedColor : root.rowColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 HoverWash { hovered: inputDeviceMouse.containsMouse }
@@ -10265,7 +10130,7 @@ Shared.Theme {
           SectionRule {
             width: parent.width
             visible: audioControlsWindow.streams.length > 0
-            label: "APPLICATIONS"
+            label: "Applications"
             detail: root.failedControlAction === "stream-volume"
               ? "Could not change that application"
               : audioControlsWindow.streamsPlaying > 0 ? audioControlsWindow.streamsPlaying + " playing" : "Idle"
@@ -10354,7 +10219,7 @@ Shared.Theme {
             text: "Network activity  ↗"
             onClicked: root.toggleControl("network-activity", networkWindow.modelData.name, root.overlayAnchorX)
           }
-          SectionRule { width: parent.width; label: "CONNECTION" }
+          SectionRule { width: parent.width; label: "Connection" }
 
           // The connection's name led a line of its own above this card while
           // the card held the addresses that belong to it. They are one thing,
@@ -10365,8 +10230,6 @@ Shared.Theme {
             radius: root.radius
             color: root.cardColor
             antialiasing: true
-
-            CardEdge {}
 
             Column {
               id: connectionContent
@@ -10415,7 +10278,7 @@ Shared.Theme {
               }
               SectionRule {
                 width: parent.width
-                label: "IP ADDRESSES"
+                label: "IP addresses"
                 detail: String(networkWindow.addresses.length)
                 collapsible: networkWindow.addresses.length > 0
                 expanded: networkWindow.addressesExpanded
@@ -10431,7 +10294,7 @@ Shared.Theme {
                 visible: height > 0
                 clip: true
                 model: networkWindow.addresses
-                Behavior on height { NumberAnimation { duration: root.durationNormal } }
+                Behavior on height { NumberAnimation { duration: root.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springDefaultSpatial } }
                 delegate: Item {
                   id: addressRow
                   required property var modelData
@@ -10481,13 +10344,12 @@ Shared.Theme {
             }
           }
 
-          SectionRule { width: parent.width; label: "SPEED TEST"; detail: root.speedtestData.server || "" }
+          SectionRule { width: parent.width; label: "Speed test"; detail: root.speedtestData.server || "" }
 
           Rectangle {
             id: speedtestCard
 
             width: parent.width; height: 204; radius: root.radius; color: root.cardColor
-            CardEdge {}
             Column {
               anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 10; rightMargin: 10; topMargin: 8 }
               spacing: 8
@@ -10498,7 +10360,7 @@ Shared.Theme {
                   spacing: 0
                   SectionLabel {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "PING"
+                    text: "Ping"
                   }
                   Text {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -10511,7 +10373,7 @@ Shared.Theme {
                 }
                 Rectangle {
                   anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                  width: 64; height: 24; radius: root.radius
+                  width: 64; height: 24; radius: height / 2
                   color: speedtestMouse.pressed ? root.pressColor : speedtestProcess.running ? root.selectedColor : speedtestMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
                   Text { visible: !speedtestProcess.running; anchors.centerIn: parent; text: root.speedtestReceived ? "Again" : "Run"; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -10522,8 +10384,8 @@ Shared.Theme {
               Row {
                 width: parent.width; height: 140; spacing: 8
                 SpeedGauge {
-                  width: (parent.width - 8) / 2; height: parent.height; radius: root.radius
-                  label: "DOWNLOAD"
+                  width: (parent.width - 8) / 2; height: parent.height; radius: root.radiusRow
+                  label: "Download"
                   icon: "󰇚"
                   value: Number(root.speedtestData.download)
                   maximum: root.speedtestScale()
@@ -10531,8 +10393,8 @@ Shared.Theme {
                   active: root.speedtestPhase === "download"
                 }
                 SpeedGauge {
-                  width: (parent.width - 8) / 2; height: parent.height; radius: root.radius
-                  label: "UPLOAD"
+                  width: (parent.width - 8) / 2; height: parent.height; radius: root.radiusRow
+                  label: "Upload"
                   icon: "󰕒"
                   value: Number(root.speedtestData.upload)
                   maximum: root.speedtestScale()
@@ -10555,7 +10417,7 @@ Shared.Theme {
                 readonly property bool busy: root.controlBusy(modelData.action, modelData.value)
                 readonly property bool complete: root.controlCompleted(modelData.action, modelData.value)
                 readonly property bool failed: root.controlFailed(modelData.action, modelData.value)
-                width: (parent.width - 8) / 2; height: 38; radius: root.radius
+                width: (parent.width - 8) / 2; height: 38; radius: height / 2
                 color: networkActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : networkActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -10618,7 +10480,6 @@ Shared.Theme {
             color: failed ? root.dangerTint : tailscaleMenuMouse.pressed ? root.pressColor : tailscaleCard.hovered ? root.hoveredColor(state.connected ? root.activeTint : root.cardColor) : state.connected ? root.activeTint : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             HoverHandler { id: tailscaleCardHover }
-            CardEdge {}
             MouseArea {
               id: tailscaleMenuMouse
               anchors.fill: parent
@@ -10657,7 +10518,6 @@ Shared.Theme {
             readonly property string mode: busy ? root.pendingControlValue : String(state.mode || "off")
             width: parent.width; height: 94; radius: root.radius
             color: failed ? root.dangerTint : mode !== "off" ? root.activeTint : root.cardColor
-            CardEdge {}
             Column {
               anchors.fill: parent; anchors.margins: 10; spacing: 8
               Row {
@@ -10698,7 +10558,7 @@ Shared.Theme {
                     hovered: sshModeMouse.containsMouse
                     pressed: sshModeMouse.pressed
 
-                    Text { visible: !sshMode.busy; anchors.centerIn: parent; text: sshMode.modelData.label; color: sshMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: sshMode.selected ? root.weightStrong : root.weightRegular }
+                    Text { visible: !sshMode.busy; anchors.centerIn: parent; text: sshMode.modelData.label; color: sshMode.selected ? root.textOnSecondaryContainer : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: sshMode.selected ? root.weightStrong : root.weightRegular }
                     RefreshGlyph { visible: sshMode.busy; anchors.centerIn: parent; width: 14; height: 14; spinning: visible; font.pixelSize: root.textLabel }
                     MouseArea {
                       id: sshModeMouse
@@ -10722,7 +10582,6 @@ Shared.Theme {
             readonly property bool failed: root.controlFailed("proton-vpn", action)
             width: parent.width; height: 66; radius: root.radius
             color: failed ? root.dangerTint : state.connected ? root.activeTint : root.cardColor
-            CardEdge {}
             Row {
               anchors.fill: parent; anchors.margins: 10; spacing: 9
               Text { width: 24; anchors.verticalCenter: parent.verticalCenter; text: "󰒃"; color: protonVpnCard.state.connected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCard; horizontalAlignment: Text.AlignHCenter }
@@ -10734,7 +10593,7 @@ Shared.Theme {
                 Text { width: parent.width; text: protonVpnCard.failed ? "Quick connect failed · open the app" : root.protonVpnDetail(); elide: Text.ElideRight; color: protonVpnCard.failed ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textCaption }
               }
               Rectangle {
-                width: 32; height: 32; radius: root.radius
+                width: 32; height: 32; radius: width / 2
                 anchors.verticalCenter: parent.verticalCenter
                 color: protonAppMouse.pressed ? root.pressColor : protonAppMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
@@ -10852,7 +10711,7 @@ Shared.Theme {
               font.pixelSize: root.textBody
             }
             Rectangle {
-              width: root.controlHeight; height: root.controlHeight; radius: root.radius
+              width: root.controlHeight; height: root.controlHeight; radius: width / 2
               color: bluetoothScanMouse.pressed ? root.pressColor : root.bluetoothScanActive ? root.activeTint : bluetoothScanMouse.containsMouse ? root.hoverColor : root.clearColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               RefreshGlyph { anchors.centerIn: parent; width: 20; height: 20; spinning: root.bluetoothScanActive }
@@ -10886,7 +10745,7 @@ Shared.Theme {
               // one of the buttons the hover had just revealed.
               readonly property bool hovered: deviceHover.hovered
               readonly property bool rowActions: !busy && modelData.paired && (hovered || forgetArmed)
-              width: ListView.view.width; height: root.rowHeight; radius: root.radius
+              width: ListView.view.width; height: root.rowHeight; radius: root.radiusRow
               color: deviceMouse.pressed ? root.pressColor : busy ? root.selectedColor : hovered ? root.hoveredColor(modelData.connected ? root.activeTint : root.rowColor) : modelData.connected ? root.activeTint : root.rowColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
@@ -10930,7 +10789,7 @@ Shared.Theme {
                 anchors.right: parent.right
                 anchors.rightMargin: 38
                 anchors.verticalCenter: parent.verticalCenter
-                width: 44; height: 24; radius: root.radius
+                width: 44; height: 24; radius: height / 2
                 color: autoConnectMouse.pressed ? root.pressColor : modelData.trusted ? root.selectedColor : root.floatColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 HoverWash { hovered: autoConnectMouse.containsMouse }
@@ -10943,7 +10802,7 @@ Shared.Theme {
                 anchors.right: parent.right
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                width: 24; height: 24; radius: root.radius
+                width: 24; height: 24; radius: width / 2
                 color: forgetMouse.pressed || forgetArmed ? root.dangerPress : forgetMouse.containsMouse ? root.dangerColor : root.floatColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { anchors.centerIn: parent; text: "󰅖"; color: forgetArmed || forgetMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody }
@@ -11026,7 +10885,7 @@ Shared.Theme {
             anchors.horizontalCenter: parent.horizontalCenter
             width: parent.width
             height: 52
-            radius: root.radius
+            radius: root.radiusRow
             color: root.wellColor
             Text {
               anchors.centerIn: parent
@@ -11050,17 +10909,27 @@ Shared.Theme {
             maximumLength: pairingWindow.kind === "pincode" ? 16 : 6
             color: root.accent
             placeholderTextColor: root.overlay
-            selectionColor: root.accent
-            selectedTextColor: root.base
+            selectionColor: root.selectedColor
+            selectedTextColor: root.text
             font.family: root.fontFamily
             font.pixelSize: root.textCode
             font.weight: root.weightStrong
             font.letterSpacing: 4
+            // Material's filled field: the highest surface step closed by an
+            // active indicator that thickens into the primary colour on focus.
             background: Rectangle {
-              radius: root.radius
-              color: root.wellColor
-              border.color: pairingCodeField.activeFocus ? root.accent : root.clearColor
-              border.width: 1
+              topLeftRadius: root.shapeExtraSmall
+              topRightRadius: root.shapeExtraSmall
+              bottomLeftRadius: 0
+              bottomRightRadius: 0
+              color: root.surfaceContainerHighest
+              Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: pairingCodeField.activeFocus ? root.focusWidth : root.hairline
+                color: pairingCodeField.activeFocus ? root.primary : root.subtext
+              }
             }
             onAccepted: root.answerBluetoothPairing("accept", pairingCodeField.text)
             Keys.onEscapePressed: root.answerBluetoothPairing("reject", "")
@@ -11087,7 +10956,7 @@ Shared.Theme {
             Rectangle {
               width: (pairingCard.width - 8) / 2
               height: 30
-              radius: root.radius
+              radius: height / 2
               color: pairingRejectMouse.pressed ? root.dangerPress : pairingRejectMouse.containsMouse ? root.dangerColor : root.floatColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "Reject"; color: pairingRejectMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
@@ -11096,7 +10965,7 @@ Shared.Theme {
             Rectangle {
               width: (pairingCard.width - 8) / 2
               height: 30
-              radius: root.radius
+              radius: height / 2
               color: pairingAcceptMouse.pressed ? root.pressColor : pairingAcceptMouse.containsMouse ? root.hoveredColor(root.selectedColor) : root.selectedColor
               Behavior on color { ColorAnimation { duration: root.durationFast } }
               Text { anchors.centerIn: parent; text: "Confirm"; color: root.accent; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
@@ -11109,7 +10978,7 @@ Shared.Theme {
             anchors.horizontalCenter: parent.horizontalCenter
             width: parent.width
             height: 30
-            radius: root.radius
+            radius: height / 2
             color: pairingDismissMouse.pressed ? root.pressColor : pairingDismissMouse.containsMouse ? root.hoveredColor(root.floatColor) : root.floatColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { anchors.centerIn: parent; text: "Dismiss"; color: root.subtext; font.family: root.fontFamily; font.pixelSize: root.textBody; font.weight: root.weightStrong }
@@ -11156,7 +11025,7 @@ Shared.Theme {
           }
           SectionRule {
             width: parent.width
-            label: "NOISE CONTROL"
+            label: "Noise control"
             detail: nothingHeadphones && !headphones.controls ? "Connecting…" : ""
           }
           SegmentWell {
@@ -11178,12 +11047,12 @@ Shared.Theme {
                 width: parent.width / 4
                 // Acknowledgement outranks the resting choice for the moment it
                 // lasts, so a mode that failed says so where it was pressed.
-                color: noiseMode.failed ? root.dangerColor : noiseMode.complete ? root.successColor : noiseMode.pressed ? root.pressColor : noiseMode.selected ? root.selectedColor : root.clearColor
+                fill: noiseMode.failed ? root.errorContainer : noiseMode.complete ? root.successContainer : noiseMode.selected ? root.selectedColor : root.surfaceContainerHighest
                 selected: headphones.noiseMode === modelData.mode || busy
                 hovered: airpodsModeMouse.containsMouse
                 pressed: airpodsModeMouse.pressed
 
-                Text { visible: !noiseMode.busy; anchors.centerIn: parent; text: noiseMode.failed ? "×" : noiseMode.complete ? "✓ " + noiseMode.modelData.label : noiseMode.modelData.label; color: noiseMode.failed ? root.red : noiseMode.complete ? root.green : noiseMode.selected ? root.accent : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: noiseMode.selected ? root.weightStrong : root.weightRegular }
+                Text { visible: !noiseMode.busy; anchors.centerIn: parent; text: noiseMode.failed ? "×" : noiseMode.complete ? "✓ " + noiseMode.modelData.label : noiseMode.modelData.label; color: noiseMode.failed ? root.red : noiseMode.complete ? root.green : noiseMode.selected ? root.textOnSecondaryContainer : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: noiseMode.selected ? root.weightStrong : root.weightRegular }
                 RefreshGlyph { visible: noiseMode.busy; anchors.centerIn: parent; width: 16; height: 16; spinning: visible; font.pixelSize: root.textStrong }
                 MouseArea { id: airpodsModeMouse; anchors.fill: parent; enabled: !nothingHeadphones || headphones.controls; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.runControl("headphones", noiseMode.modelData.mode) }
               }
@@ -11212,7 +11081,7 @@ Shared.Theme {
             readonly property bool busy: root.controlBusy("headphones", "open")
             readonly property bool complete: root.controlCompleted("headphones", "open")
             readonly property bool failed: root.controlFailed("headphones", "open")
-            width: parent.width; height: 38; radius: root.radius
+            width: parent.width; height: 38; radius: height / 2
             color: airpodsDetailsMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : airpodsDetailsMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
             Behavior on color { ColorAnimation { duration: root.durationFast } }
             Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Could not open" : parent.complete ? "✓ Opened" : "Battery and AirPods settings"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -11352,7 +11221,7 @@ Shared.Theme {
       readonly property int quietAppCount: (root.systemData.notifications.quietApps || []).length
       property bool quietMenuOpen: false
       // Every way silence can be set, in one menu, so the header carries one
-      // control instead of a switch beside a well. A length starts a period
+      // control instead of a switch beside a button group. A length starts a period
       // from now, zero holds the shell quiet with no end, and the way out only
       // appears once there is something to leave. Two further rows appear only
       // while they apply: syncing with the focus timer while that timer is
@@ -11553,16 +11422,7 @@ Shared.Theme {
                 hovered: quietMouse.containsMouse
                 pressed: quietMouse.pressed
 
-                Rectangle {
-                  anchors.fill: parent
-                  radius: parent.radius
-                  color: root.clearColor
-                  border.width: 1
-                  border.color: quietButton.activeFocus ? root.accent : root.alpha(root.accent, 0)
-                  antialiasing: true
-
-                  Behavior on border.color { ColorAnimation { duration: root.durationFast } }
-                }
+                FocusRing { shown: quietButton.activeFocus }
               }
 
               Row {
@@ -11635,7 +11495,7 @@ Shared.Theme {
             }
           }
           // Current and history are two views of one list, not two errands, so
-          // they are a well with the one being read lit inside it. Clear is a
+          // they are one button group with the one being read filled. Clear is a
           // one-shot action and stays a button beside it.
           Row {
             id: notificationViews
@@ -11665,7 +11525,7 @@ Shared.Theme {
                   Text {
                     anchors.centerIn: parent
                     text: notificationView.modelData.label
-                    color: notificationView.selected ? root.accent : root.subtext
+                    color: notificationView.selected ? root.textOnSecondaryContainer : root.subtext
                     font.family: root.fontFamily
                     font.pixelSize: root.textLabel
                     font.weight: notificationView.selected ? root.weightStrong : root.weightRegular
@@ -11692,12 +11552,11 @@ Shared.Theme {
 
               width: 96
               height: root.chipHeight
-              radius: root.radius
+              radius: height / 2
               color: clearMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : root.cardColor
               antialiasing: true
               Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-              CardEdge {}
               HoverWash { hovered: clearMouse.containsMouse }
 
               Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Cleared" : "Clear"; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -11766,13 +11625,14 @@ Shared.Theme {
           anchors.rightMargin: root.panelMargin
           anchors.top: parent.top
           anchors.topMargin: root.panelMargin + notificationHeader.height + root.spaceTight
+          // Material's menu: the large corner on the high surface step, edged
+          // like a panel because it overlaps rows whose own fill moves under
+          // the pointer.
           radius: root.radius
-          // The one nearly solid step in the ramp, because this surface
-          // overlaps rows whose own fill moves under the pointer.
-          color: root.floatColor
+          color: root.surfaceContainerHigh
+          border.width: root.hairline
+          border.color: root.panelBorder
           antialiasing: true
-
-          CardEdge {}
 
           Column {
             anchors.fill: parent
@@ -11820,18 +11680,16 @@ Shared.Theme {
                   anchors.fill: parent
                   anchors.leftMargin: root.spaceTight
                   anchors.rightMargin: root.spaceTight
-                  radius: root.radiusSmall
-                  color: quietChoiceMouse.pressed ? root.pressColor : root.clearColor
-                  border.width: 1
-                  border.color: quietChoice.activeFocus ? root.accent
-                    : quietChoice.modelData.suggested && !quietChoice.selected ? root.alpha(root.accent, 0.55)
-                    : root.alpha(root.accent, 0)
+                  radius: root.shapeMedium
+                  // A row the moment suggests -- holding silence until the
+                  // meeting under way ends -- sits in the secondary container.
+                  color: quietChoice.modelData.suggested && !quietChoice.selected ? root.secondaryContainer : root.clearColor
                   antialiasing: true
 
                   Behavior on color { ColorAnimation { duration: root.durationFast } }
-                  Behavior on border.color { ColorAnimation { duration: root.durationFast } }
 
-                  HoverWash { hovered: quietChoiceMouse.containsMouse }
+                  HoverWash { hovered: quietChoiceMouse.containsMouse; pressed: quietChoiceMouse.pressed }
+                  FocusRing { shown: quietChoice.activeFocus; gap: 0 }
                 }
 
                 Text {
@@ -11909,7 +11767,7 @@ Shared.Theme {
             detail: root.systemData.cameraActive ? "Camera is in use" : cameraWindow.deviceCount + " camera device" + (cameraWindow.deviceCount === 1 ? "" : "s")
             detailColor: root.systemData.cameraActive ? root.red : root.subtext
           }
-          SectionRule { width: parent.width; label: "PREVIEW DEVICE"; detail: cameraWindow.deviceCount === 0 ? "No camera detected" : "" }
+          SectionRule { width: parent.width; label: "Preview device"; detail: cameraWindow.deviceCount === 0 ? "No camera detected" : "" }
           DeviceListCard {
             visible: cameraWindow.deviceCount > 0
             width: parent.width
@@ -11924,7 +11782,7 @@ Shared.Theme {
               delegate: Rectangle {
                 required property var modelData
                 readonly property bool selected: cameraWindow.camera && String(cameraWindow.camera.device || "") === String(modelData.device || "")
-                width: ListView.view.width; height: root.chipHeight; radius: root.radius
+                width: ListView.view.width; height: root.chipHeight; radius: root.radiusRow
                 color: cameraDeviceMouse.pressed ? root.pressColor : selected ? root.selectedColor : root.rowColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 HoverWash { hovered: cameraDeviceMouse.containsMouse }
@@ -11986,7 +11844,7 @@ Shared.Theme {
                 readonly property bool busy: root.controlBusy(modelData.action, device)
                 readonly property bool complete: root.controlCompleted(modelData.action, device)
                 readonly property bool failed: root.controlFailed(modelData.action, device)
-                width: (parent.width - 8) / 2; height: 42; radius: root.radius
+                width: (parent.width - 8) / 2; height: 42; radius: height / 2
                 color: cameraActionMouse.pressed ? root.pressColor : failed ? root.dangerColor : complete ? root.successColor : busy ? root.selectedColor : cameraActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
                 Text { visible: !parent.busy; anchors.centerIn: parent; text: parent.failed ? "× Failed" : parent.complete ? "✓ Opened" : modelData.label; color: parent.failed ? root.red : parent.complete ? root.green : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
@@ -12019,7 +11877,7 @@ Shared.Theme {
               SectionRule {
                 width: parent.width
                 // Several lights take a stable number in identity order.
-                label: "LITRA GLOW" + (cameraWindow.litraGlowCount > 1 ? " " + (litraGroup.index + 1) : "")
+                label: "Litra Glow" + (cameraWindow.litraGlowCount > 1 ? " " + (litraGroup.index + 1) : "")
                 detail: root.litraGlowSummary(litraGroup.modelData)
                 collapsible: true
                 expanded: litraGroup.expanded
@@ -12030,14 +11888,13 @@ Shared.Theme {
                 height: litraGroup.expanded ? litraCard.implicitHeight : 0
                 visible: height > 0
                 clip: true
-                Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: Easing.OutCubic } }
+                Behavior on height { NumberAnimation { duration: root.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springDefaultSpatial } }
                 Rectangle {
                   id: litraCard
                   width: parent.width
                   implicitHeight: litraControls.implicitHeight + root.cardPadding * 2
                   radius: root.radius
                   color: root.cardColor
-                  CardEdge {}
                   Column {
                     id: litraControls
                     anchors { left: parent.left; right: parent.right; top: parent.top; margins: root.cardPadding }
@@ -12126,17 +11983,28 @@ Shared.Theme {
                 {label:"Reboot", icon:"󰜉", action:"reboot", variant:"default"},
                 {label:"Shut down", icon:"󰐥", action:"shutdown", variant:"destructive"}
               ]
+              // One action in the Power grid: a tile on the card step that
+              // pinches to the medium corner while it is held. A destructive
+              // action sits in the error container. The lock and the greeter
+              // draw the same grid.
               Rectangle {
                 required property var modelData
-                width: (parent.width - 16) / 3; height: 72; radius: root.radius
-                color: modelData.variant === "destructive" ? (sessionActionMouse.pressed ? root.dangerPress : sessionActionMouse.containsMouse ? root.dangerColor : root.dangerTint) : sessionActionMouse.pressed ? root.pressColor : sessionActionMouse.containsMouse ? root.hoveredColor(root.cardColor) : root.cardColor
-                Behavior on color { ColorAnimation { duration: root.durationFast } }
-                CardEdge { border.color: modelData.variant === "destructive" ? root.alpha(root.red, 0.22) : root.cardBorder }
+                readonly property bool destructive: modelData.variant === "destructive"
+                width: (parent.width - 16) / 3; height: 72
+                radius: sessionActionMouse.pressed ? root.shapeMedium : root.radius
+                color: destructive ? root.errorContainer : root.cardColor
+                antialiasing: true
+                Behavior on radius { NumberAnimation { duration: root.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: root.springFastSpatial } }
+                HoverWash {
+                  hovered: sessionActionMouse.containsMouse
+                  pressed: sessionActionMouse.pressed
+                  tint: root.alpha(parent.destructive ? root.textOnErrorContainer : root.text, root.stateHover)
+                }
                 Column {
                   anchors.centerIn: parent
                   spacing: root.spaceTight
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: modelData.variant === "destructive" ? root.red : root.accent; font.family: root.fontFamily; font.pixelSize: root.textTitle }
-                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.icon; color: parent.parent.destructive ? root.textOnErrorContainer : root.primary; font.family: root.fontFamily; font.pixelSize: root.textTitle }
+                  Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: parent.parent.destructive ? root.textOnErrorContainer : root.text; font.family: root.fontFamily; font.pixelSize: root.textLabel; font.weight: root.weightStrong }
                 }
                 MouseArea {
                   id: sessionActionMouse
@@ -12236,12 +12104,24 @@ Shared.Theme {
           width: parent.width - 44
           spacing: 13
 
-          Text {
+          Item {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: ""
-            color: root.yellow
-            font.family: root.fontFamily
-            font.pixelSize: root.textHero
+            width: root.emptyMarkSize
+            height: width
+
+            Shared.MaterialShape {
+              theme: root
+              anchors.fill: parent
+              color: root.warningContainer
+            }
+
+            Text {
+              anchors.centerIn: parent
+              text: ""
+              color: root.textOnWarningContainer
+              font.family: root.fontFamily
+              font.pixelSize: root.textDisplay
+            }
           }
 
           Text {

@@ -36,12 +36,12 @@ FocusScope {
     return items.length ? "events" : "empty"
   }
   readonly property string dayLabel: {
-    if (!day) return "AGENDA"
+    if (!day) return "Agenda"
     var offset = Math.round((new Date(day + "T12:00:00") - new Date(today + "T12:00:00")) / 86400000)
-    if (offset === 0) return "TODAY"
-    if (offset === 1) return "TOMORROW"
-    if (offset === -1) return "YESTERDAY"
-    return Qt.formatDate(new Date(day + "T12:00:00"), "ddd d MMM").toUpperCase()
+    if (offset === 0) return "Today"
+    if (offset === 1) return "Tomorrow"
+    if (offset === -1) return "Yesterday"
+    return Qt.formatDate(new Date(day + "T12:00:00"), "ddd d MMM")
   }
   readonly property bool offline: status === "offline" || status === "expired"
   readonly property string detail: {
@@ -244,7 +244,7 @@ FocusScope {
       objectName: "calendarEvent_" + modelData.key
       width: ListView.view.width
       height: rowBody.implicitHeight + agenda.theme.spaceMedium * 2
-      radius: agenda.theme.radius
+      radius: agenda.theme.radiusRow
       color: row.expanded ? agenda.theme.cardColor : agenda.theme.rowColor
       activeFocusOnTab: true
       Accessible.role: Accessible.Button
@@ -256,7 +256,6 @@ FocusScope {
       }
       Behavior on color { ColorAnimation { duration: agenda.theme.durationFast } }
 
-      Shared.CardEdge { theme: agenda.theme; visible: row.expanded }
       Shared.HoverWash { theme: agenda.theme; hovered: rowMouse.containsMouse }
       Shared.FocusRing { theme: agenda.theme; shown: row.activeFocus }
 

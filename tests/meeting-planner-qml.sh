@@ -20,7 +20,7 @@ path = Path(sys.argv[1])
 source = path.read_text().split('  FileView {')[0]
 source = re.sub(r'import Quickshell.*\n', '', source).replace('ShellRoot {', 'Item {')
 source = source.replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ', '')
-source = source.replace('Qt.resolvedUrl("grain.png")', '""')
+source = source
 path.write_text(source + '}\n')
 PY
 cp "$fixture" "$work/tst_meetingplanner.qml"

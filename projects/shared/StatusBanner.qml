@@ -2,8 +2,9 @@ import QtQuick
 
 // One inline strip for the things a surface has to say about itself: a failed
 // write, a file that changed underneath, a directory that cannot be written
-// to. It carries its own actions, because a message without one is a message
-// the reader can do nothing about.
+// to. It is a card in the container tone of its own colour -- the error
+// container for a failure -- and carries its own actions, because a message
+// without one is a message the reader can do nothing about.
 Rectangle {
   id: statusBanner
 
@@ -17,19 +18,17 @@ Rectangle {
   implicitHeight: Math.max(
     statusBannerText.implicitHeight,
     statusBannerActions.implicitHeight
-  ) + statusBanner.theme.spaceMedium * 2
+  ) + statusBanner.theme.spaceLarge * 2
   radius: statusBanner.theme.radius
-  color: statusBanner.theme.alpha(statusBanner.tint, 0.14)
+  color: Qt.tint(statusBanner.theme.surfaceContainerHigh, statusBanner.theme.alpha(statusBanner.tint, 0.22))
   antialiasing: true
-
-  CardEdge { theme: statusBanner.theme }
 
   CenteredGlyph {
     id: statusBannerGlyph
 
     visible: statusBanner.glyph !== ""
     anchors.left: parent.left
-    anchors.leftMargin: statusBanner.theme.spaceMedium
+    anchors.leftMargin: statusBanner.theme.spaceLarge
     anchors.verticalCenter: parent.verticalCenter
     width: statusBanner.glyph !== "" ? statusBanner.theme.textDisplay : 0
     height: width
@@ -52,7 +51,7 @@ Rectangle {
     Text {
       width: parent.width
       text: statusBanner.title
-      color: statusBanner.tint
+      color: statusBanner.theme.text
       font.family: statusBanner.theme.fontFamily
       font.pixelSize: statusBanner.theme.textBody
       font.weight: statusBanner.theme.weightMedium

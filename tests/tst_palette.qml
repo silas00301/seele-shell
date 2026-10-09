@@ -57,9 +57,23 @@ TestCase {
     Palette.assign(subject,{base:"",accent:null})
     compare(subject.base,baseline.base)
     compare(subject.accent,baseline.accent)
-    compare(subject.radius,8)
-    compare(subject.durationFast,110)
-    compare(subject.durationNormal,180)
-    compare(subject.grainOpacity,0.07)
+    compare(subject.radius,16)
+    compare(subject.radiusPanel,28)
+    compare(subject.durationFast,138)
+    compare(subject.durationNormal,348)
+    compare(subject.springFastSpatial.length,48)
+  }
+  // The Material roles follow the palette: Qt reads the same derivation the
+  // auth clients do, and a reassigned palette repaints them without a reload.
+  function test_material_roles_follow_the_palette() {
+    var expected=Palette.roles(subject)
+    for (var role of ["primary","textOnPrimary","primaryContainer","secondaryContainer","surfaceContainer","surfaceContainerHighest","errorContainer"])
+      verify(Qt.colorEqual(subject[role],expected[role]),role)
+    verify(Qt.colorEqual(subject.panelColor,subject.surfaceContainer))
+    verify(Qt.colorEqual(subject.cardColor,subject.surfaceContainerHigh))
+    Palette.assign(subject,{base:"#eff1f5",mantle:"#e6e9ef",crust:"#dce0e8",text:"#4c4f69",subtext:"#6c6f85",accent:"#7287fd"})
+    verify(!subject.darkScheme,"a light palette is a light scheme")
+    verify(Qt.colorEqual(subject.primaryContainer,Palette.roles(subject).primaryContainer))
+    verify(Qt.colorEqual(subject.textOnPrimary,"#eff1f5"))
   }
 }

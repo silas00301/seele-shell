@@ -1,4 +1,5 @@
 import QtQuick
+import "Motion.js" as Motion
 import "Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
@@ -10,9 +11,8 @@ ShellRoot {
   // Seele's native desktop shell.
   property color base: Palette.fallback.base
   property color mantle: Palette.fallback.mantle
-  // The darkest step in the palette. Chrome is cut out of the wallpaper with
-  // it, wells are cut back to it, and every surface is grounded on it, so the
-  // shell's depth comes from ink rather than from grey.
+  // The darkest step in the palette. On a dark scheme it is the lowest surface
+  // container, and on any scheme it is the ink drawn on a pale fill.
   property color crust: Palette.fallback.crust
   property color surface: Palette.fallback.surface
   property color overlay: Palette.fallback.overlay
@@ -33,11 +33,24 @@ ShellRoot {
   readonly property var temperatureSpectrum: ["#ff9a45", "#fff1e2", "#9fc2ff"]
   property string wallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || Palette.fallback.wallpaper
 
-  // Shared shape and surface tokens. Hyprland rounds windows at 8px, so every
-  // panel, button, and bar entry rounds the same way, and each hover, press,
-  // and selection tint is defined once instead of per widget.
-  readonly property int radius: 8
-  readonly property int radiusSmall: 6
+  // Shape. Seele follows Material 3 Expressive's corner scale, so a surface
+  // picks the step for the role it plays rather than a pixel count: the
+  // larger a container, the rounder its corners, and a control the pointer
+  // aims at is a full pill, `height / 2`.
+  readonly property int shapeExtraSmall: 4
+  readonly property int shapeSmall: 8
+  readonly property int shapeMedium: 12
+  readonly property int shapeLarge: 16
+  readonly property int shapeLargeIncreased: 20
+  readonly property int shapeExtraLarge: 28
+  // The roles those steps play. A floating panel takes the extra-large
+  // corner a Material sheet does; a card inside it the large one; a row, a
+  // field or a dropdown the medium one; a part nested inside an already
+  // rounded part the small one.
+  readonly property int radiusPanel: shapeExtraLarge
+  readonly property int radius: shapeLarge
+  readonly property int radiusRow: shapeMedium
+  readonly property int radiusSmall: shapeSmall
   readonly property int barHeight: 30
   readonly property int barItemHeight: 22
   readonly property int barSpacing: 2
@@ -54,7 +67,13 @@ ShellRoot {
   readonly property int panelSpacing: 10
   readonly property int scrollGutter: 8
   readonly property int scrollInset: 4
-  readonly property int panelHeaderHeight: 28
+  // A panel's header: its mark in an Expressive shape beside the title, and
+  // a little taller when a line of context sits under that title.
+  readonly property int panelHeaderHeight: 32
+  readonly property int panelHeaderDetailHeight: 42
+  readonly property int panelMarkSize: 32
+  // The shape an empty state's mark sits in.
+  readonly property int emptyMarkSize: 56
   // One type ramp for the whole shell. Steps are named for the role they play
   // rather than for their value, so a surface picks a level instead of
   // inventing a number, and the ramp is the only place a size is decided. A
@@ -80,11 +99,6 @@ ShellRoot {
   readonly property int weightMedium: Font.Medium
   readonly property int weightStrong: Font.DemiBold
   readonly property int weightLight: Font.Light
-  // Uppercase section labels are the one place tracking earns its width, and
-  // they earn more of it than a run of capitals at ordinary spacing would: a
-  // rule reads as a rule, rather than as a shouted word, once the letters are
-  // far enough apart to be seen individually.
-  readonly property real trackingLabel: 1.4
   // Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`.
   readonly property int spaceTight: 4
   readonly property int hairline: 1
@@ -98,6 +112,27 @@ ShellRoot {
   readonly property int chipHeight: 28
   readonly property int controlHeight: 34
   readonly property int rowHeight: 40
+  // A labelled button is a pill padded this far either side of its label,
+  // and a plain tooltip is this tall.
+  readonly property int buttonPadding: 16
+  readonly property int tooltipHeight: 24
+  // Material's switch at the shell's density: its 52 by 32 track scaled to
+  // sit in a row, with the outline and the handle's inset scaled with it.
+  readonly property int switchWidth: 44
+  readonly property int switchHeight: 26
+  readonly property int switchOutline: 2
+  readonly property int switchInset: 3
+  // A meter is drawn this tall, and its filled part is held this far from
+  // the rest of its track.
+  readonly property int meterHeight: 6
+  readonly property int meterGap: 3
+  // Expressive's wavy progress: how far a crest reaches from the track, how
+  // long one wave is, and how long one wave takes to flow past.
+  readonly property int meterWaveAmplitude: 3
+  readonly property int meterWavelength: 24
+  readonly property int meterWavePeriod: 1600
+  // The space between two choices in a connected button group.
+  readonly property int segmentGap: 2
   // A row that leads with a mark and sets a caption line under its title, with
   // its own controls at the far end.
   readonly property int detailRowHeight: 52
@@ -124,28 +159,77 @@ ShellRoot {
   readonly property int notificationRowHeight: 54
   // Text needs more contrast than decorative borders and inactive glyphs.
   readonly property color mutedText: subtext
-  // Textured chrome. Surfaces stay translucent so the compositor's blur
-  // shows through, a quiet vertical wash gives them depth, and a fixed grain
-  // film keeps a large panel from reading as flat plastic. The film is fine
-  // and clumped rather than raw noise, so it carries further before it is
-  // seen: it is laid on a little heavier than a coarse one could be.
-  readonly property string grain: Qt.resolvedUrl("grain.png")
-  readonly property real grainOpacity: 0.07
-  readonly property color panelColor: alpha(mantle, 0.88)
-  // Edges. A surface is cut out of the wallpaper by a grounding ring in the
-  // palette's darkest ink, and lit again on the inside by a hairline that is
-  // brightest along the top, where light would actually land. Neither edge
-  // carries the accent: outlining every panel in lavender spends the accent
-  // on chrome, and it is worth more kept for state.
-  readonly property color panelBorder: alpha(crust, 0.9)
-  readonly property color edgeLight: alpha(text, 0.08)
-  readonly property color edgeCrown: alpha(text, 0.16)
-  // Interaction. The pointer is reported in neutral light and the commit is
-  // reported in accent, so hovering the shell does not set it glowing and a
-  // press still reads as something having been asked for. `hoverColor` is a
-  // wash: filled controls composite it over their resting material instead of
-  // replacing that material with a nearly transparent colour.
-  readonly property color hoverColor: alpha(text, 0.07)
+
+  // Colour roles. Material 3 names colours by what they do -- the container a
+  // control sits on and the colour of what is drawn on it. Palette.js derives
+  // every role from the palette above, so a preset, the theme switcher and
+  // the auth clients repaint them all at once. QML reserves the `on` prefix
+  // for signal handlers, so Material's `onPrimary` is `textOnPrimary` here,
+  // and its `onSurface` and `onSurfaceVariant` are the palette's own `text`
+  // and `subtext`.
+  readonly property var roles: Palette.roles({
+    base: base, mantle: mantle, crust: crust, surface: surface, overlay: overlay,
+    text: text, subtext: subtext, accent: accent, red: red, green: green, yellow: yellow
+  })
+  readonly property bool darkScheme: roles.darkScheme
+  readonly property color primary: roles.primary
+  readonly property color textOnPrimary: roles.textOnPrimary
+  readonly property color primaryContainer: roles.primaryContainer
+  readonly property color textOnPrimaryContainer: roles.textOnPrimaryContainer
+  readonly property color secondary: roles.secondary
+  readonly property color secondaryContainer: roles.secondaryContainer
+  readonly property color textOnSecondaryContainer: roles.textOnSecondaryContainer
+  readonly property color error: roles.error
+  readonly property color textOnError: roles.textOnError
+  readonly property color errorContainer: roles.errorContainer
+  readonly property color textOnErrorContainer: roles.textOnErrorContainer
+  readonly property color successContainer: roles.successContainer
+  readonly property color textOnSuccessContainer: roles.textOnSuccessContainer
+  readonly property color warningContainer: roles.warningContainer
+  readonly property color textOnWarningContainer: roles.textOnWarningContainer
+  readonly property color outline: roles.outline
+  readonly property color outlineVariant: roles.outlineVariant
+  readonly property color inverseSurface: roles.inverseSurface
+  readonly property color inverseOnSurface: roles.inverseOnSurface
+  readonly property color scrim: roles.scrim
+  readonly property color surfaceContainerLowest: roles.surfaceContainerLowest
+  readonly property color surfaceContainerLow: roles.surfaceContainerLow
+  readonly property color surfaceContainer: roles.surfaceContainer
+  readonly property color surfaceContainerHigh: roles.surfaceContainerHigh
+  readonly property color surfaceContainerHighest: roles.surfaceContainerHighest
+
+  // Elevation is tonal. Material draws depth by stepping up the surface ramp
+  // rather than by translucency, a texture or a lit edge, so a panel is a
+  // solid container, a card on it is the next step up, a row inside that
+  // card the step above again, and a track, a field or an unset switch the
+  // highest step. `floatColor` is a control that overlaps a row whose own
+  // fill moves under the pointer.
+  readonly property color panelColor: surfaceContainer
+  readonly property color cardColor: surfaceContainerHigh
+  readonly property color rowColor: surfaceContainerHighest
+  readonly property color wellColor: surfaceContainerHighest
+  readonly property color floatColor: surfaceContainerHighest
+  // Material containers carry no stroke. A floating panel is the exception
+  // on a desktop that cannot cast a shadow under a layer surface: a hairline
+  // of the outline variant is what keeps a dark panel from dissolving into a
+  // dark window behind it. Cards and controls inside it take none.
+  readonly property color panelBorder: alpha(outlineVariant, 0.9)
+  readonly property color edgeLight: alpha(text, 0.1)
+  readonly property color separatorColor: outlineVariant
+
+  // State layers. Material reports hover, focus and press as a layer of the
+  // content's own colour over whatever the control already says: 8% for the
+  // pointer, 10% for a press, 16% for a drag. `hoverColor` is the layer;
+  // filled controls composite it over their resting container instead of
+  // replacing it.
+  readonly property real stateHover: 0.08
+  readonly property real statePressed: 0.1
+  readonly property real stateDragged: 0.16
+  readonly property color hoverColor: alpha(text, stateHover)
+  // Focus is an outline in the secondary colour, held this far clear of the
+  // control and drawn this thick.
+  readonly property int focusGap: 2
+  readonly property int focusWidth: 2
   // Where a tint rests on nothing at all it fades to its own colour at zero
   // alpha rather than to `transparent`. Qt interpolates a colour channel by
   // channel and `transparent` is black, so a tint animated against it is
@@ -154,34 +238,44 @@ ShellRoot {
   // light arriving on it.
   readonly property color clearColor: alpha(text, 0)
   readonly property color clearDanger: alpha(red, 0)
-  readonly property color pressColor: alpha(accent, 0.3)
-  readonly property color selectedColor: alpha(accent, 0.2)
-  readonly property color activeTint: alpha(accent, 0.12)
-  readonly property color fillColor: alpha(accent, 0.45)
-  readonly property color fillDanger: alpha(red, 0.45)
-  readonly property color successColor: alpha(green, 0.25)
-  readonly property color dangerTint: alpha(red, 0.14)
-  readonly property color dangerColor: alpha(red, 0.28)
-  readonly property color dangerPress: alpha(red, 0.48)
-  // Elevation. A panel is translucent, so a card on it is a tint of the same
-  // material rather than an opaque block, a row inside that card is a lighter
-  // tint again, and a track or well is cut back to the ink. Depth then
-  // comes from how much of the wallpaper each layer still lets through instead
-  // of from a stack of flat greys. `floatColor` is the one nearly solid step,
-  // for a control that overlaps a row whose own fill moves under the pointer.
-  readonly property color cardColor: alpha(surface, 0.5)
-  readonly property color rowColor: alpha(surface, 0.3)
-  readonly property color wellColor: alpha(crust, 0.62)
-  readonly property color floatColor: alpha(surface, 0.92)
-  readonly property color cardBorder: alpha(text, 0.06)
-  readonly property color separatorColor: alpha(text, 0.09)
-  // Motion. Only in-surface state changes animate, and they share one pair of
-  // durations so the whole shell settles at the same speed. A finish cue is
-  // the exception that has to be read without looking at the bar: it comes in
-  // on `durationFast`, holds for `durationGlance`, and leaves on
+  // A press replaces a resting fill where a surface has no layer of its own
+  // to lay over it, so it is the card already carrying the pressed layer.
+  readonly property color pressColor: Qt.tint(cardColor, alpha(text, statePressed + stateHover))
+  readonly property color selectedColor: secondaryContainer
+  readonly property color activeTint: primaryContainer
+  readonly property color fillColor: primary
+  readonly property color successColor: successContainer
+  readonly property color dangerTint: errorContainer
+  readonly property color dangerColor: Qt.tint(errorContainer, alpha(red, 0.18))
+  readonly property color dangerPress: Qt.tint(errorContainer, alpha(red, 0.34))
+
+  // Motion. Material 3 Expressive moves on springs: a spatial spring for
+  // anything that travels, grows or changes shape, which may overshoot a
+  // little and settle, and an effects spring for colour and opacity, which
+  // never does. Qt animates on durations, so each spring is sampled into a
+  // Bézier spline over its own settling time and handed to the animation as
+  // its easing curve; Motion.js holds the arithmetic. The fast pair is the
+  // shell's default, because a desktop answers a pointer sooner than a phone
+  // answers a thumb; only the default spatial spring is slow enough for a
+  // surface that unfolds. Each spring is Material's Expressive stiffness and
+  // damping ratio.
+  readonly property real fastSpatialStiffness: Motion.fastSpatialStiffness
+  readonly property real fastSpatialDamping: Motion.fastSpatialDamping
+  readonly property real defaultSpatialStiffness: Motion.defaultSpatialStiffness
+  readonly property real defaultSpatialDamping: Motion.defaultSpatialDamping
+  readonly property real fastEffectsStiffness: Motion.fastEffectsStiffness
+  readonly property real fastEffectsDamping: Motion.fastEffectsDamping
+  readonly property var springFastSpatial: springCurve(fastSpatialStiffness, fastSpatialDamping)
+  readonly property var springDefaultSpatial: springCurve(defaultSpatialStiffness, defaultSpatialDamping)
+  readonly property var springFastEffects: springCurve(fastEffectsStiffness, fastEffectsDamping)
+  readonly property int durationFastSpatial: springDuration(fastSpatialStiffness, fastSpatialDamping)
+  readonly property int durationDefaultSpatial: springDuration(defaultSpatialStiffness, defaultSpatialDamping)
+  // `durationFast` is the fast effects spring: a tint or a fade. A finish cue
+  // is the exception that has to be read without looking at the bar: it
+  // comes in on `durationFast`, holds for `durationGlance`, and leaves on
   // `durationSettle`.
-  readonly property int durationFast: 110
-  readonly property int durationNormal: 180
+  readonly property int durationFast: springDuration(fastEffectsStiffness, fastEffectsDamping)
+  readonly property int durationNormal: durationFastSpatial
   readonly property int durationGlance: 560
   readonly property int durationSettle: 480
   // How far a screen-edge finish cue reaches in from the bezel, as a fraction
@@ -191,11 +285,16 @@ ShellRoot {
   readonly property real edgeCueAlpha: 0.82
   // Disabled actions stay legible while clearly withdrawing interaction.
   readonly property real disabledOpacity: 0.45
-  // A track the pointer has to hit is drawn thin and targeted tall: the strip
-  // gives the meter inside it room to be grabbed without the meter itself
-  // growing into a slab, and the head that rides on it rounds on its own size.
-  readonly property int trackTarget: 16
-  readonly property int trackHead: 10
+  // A track the pointer has to hit is targeted taller than it is drawn, and
+  // the handle that rides on it is Material's bar rather than a dot: a thin
+  // upright held clear of the track on either side by `trackHandleGap`.
+  readonly property int trackTarget: 20
+  readonly property int trackHead: 4
+  readonly property int trackHandleGap: 4
+  // A level that is itself a card's subject -- the volume a Control Center
+  // module sets -- is Material's extra-large slider: a track tall enough to
+  // carry its own mark.
+  readonly property int levelHeight: 40
   // The media block is one object at one size, so its height is decided here
   // rather than by whichever surface happens to be holding it.
   readonly property int mediaBodyHeight: 148
@@ -295,6 +394,27 @@ ShellRoot {
 
   function hoveredColor(base) {
     return layeredColor(base, hoverColor)
+  }
+
+  // The palette's own ink that reads on `color`.
+  function inkOn(color) {
+    return Palette.inkOn(color, { base: base, crust: crust, text: text })
+  }
+
+  function springPosition(stiffness, dampingRatio, seconds) {
+    return Motion.springPosition(stiffness, dampingRatio, seconds)
+  }
+
+  function springSettle(stiffness, dampingRatio) {
+    return Motion.springSettle(stiffness, dampingRatio)
+  }
+
+  function springDuration(stiffness, dampingRatio) {
+    return Motion.springDuration(stiffness, dampingRatio)
+  }
+
+  function springCurve(stiffness, dampingRatio) {
+    return Motion.springCurve(stiffness, dampingRatio)
   }
 
   FileView {

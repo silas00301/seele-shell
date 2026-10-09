@@ -2,6 +2,7 @@
 
 import QtQuick
 import "../shared/Palette.js" as Palette
+import "../shared/Shapes.js" as Shapes
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Polkit
@@ -12,8 +13,8 @@ ShellRoot {
 
   property color base: Palette.fallback.base
   property color mantle: Palette.fallback.mantle
-  // The palette's darkest ink. Chrome is cut out of the wallpaper with it and
-  // wells are cut back to it, the same way Seele Shell builds its depth.
+  // The palette's darkest step, which the shared role derivation reads for
+  // the lowest surface container and for ink on a pale fill.
   property color crust: Palette.fallback.crust
   property color surface: Palette.fallback.surface
   property color overlay: Palette.fallback.overlay
@@ -25,27 +26,27 @@ ShellRoot {
   property color yellow: Palette.fallback.yellow
   property string fontFamily: Palette.fallback.fontFamily
 
-  // Shell chrome tokens. These mirror the block at the top of seele-shell's
-  // shell.qml so the dialog is the same material as every other surface rather
-  // than a lookalike: one radius, the same translucent fill the compositor
-  // blurs, the same wash and grain film over it.
-  readonly property int radius: 8
-  readonly property string grain: "grain.png"
-  readonly property real grainOpacity: 0.07
-  readonly property color panelColor: alpha(mantle, 0.88)
-  // The same two-part edge Seele Shell frames a panel with: a grounding ring
-  // in ink outside, a hairline of light inside, and the accent kept for state.
-  readonly property color panelBorder: alpha(crust, 0.9)
-  readonly property color edgeLight: alpha(text, 0.08)
-  readonly property color edgeCrown: alpha(text, 0.16)
-  // A well, cut back to the ink like every input the shell draws.
-  readonly property color wellColor: alpha(crust, 0.62)
+  // Shell chrome tokens. These mirror Seele Shell's own so the dialog is the
+  // same object as every other surface rather than a lookalike: Material's
+  // dialog corner, the colour roles from the shared derivation in Palette.js,
+  // and the hairline a floating surface is edged with.
+  readonly property int radiusPanel: 28
+  readonly property int hairline: 1
+  readonly property int focusWidth: 2
+  readonly property int markSize: 56
+  readonly property var roles: Palette.roles({
+    base: base, mantle: mantle, crust: crust, surface: surface, overlay: overlay,
+    text: text, subtext: subtext, accent: accent, red: red, green: green, yellow: yellow
+  })
+  // Material puts a dialog on the high surface step.
+  readonly property color panelColor: roles.surfaceContainerHigh
+  readonly property color panelBorder: alpha(roles.outlineVariant, 0.9)
   // The shell's type ramp and weights, so the dialog is the same object as the
   // lock's prompt and Seele Shell's own YubiKey notice.
   readonly property int textBody: 11
   readonly property int textLead: 13
   readonly property int textCard: 17
-  readonly property int textHero: 34
+  readonly property int textDisplay: 20
   readonly property int weightStrong: Font.DemiBold
 
   // `flow` is null whenever polkit has nothing outstanding, so every binding
@@ -110,68 +111,6 @@ ShellRoot {
       + escapeMarkup(text.substring(split))
   }
 
-  component SurfaceWash: Rectangle {
-    anchors.fill: parent
-    anchors.margins: 1
-    color: "transparent"
-
-    gradient: Gradient {
-      GradientStop { position: 0.0; color: root.alpha(root.text, 0.075) }
-      GradientStop { position: 0.28; color: root.alpha(root.text, 0.02) }
-      GradientStop { position: 0.6; color: "transparent" }
-      GradientStop { position: 1.0; color: root.alpha(root.crust, 0.5) }
-    }
-  }
-
-  // The light on a surface's inside edge, drawn inside the grounding ring.
-  component SurfaceEdge: Item {
-    id: surfaceEdge
-
-    property real radius: root.radius - 1
-
-    anchors.fill: parent
-    z: 1
-
-    Rectangle {
-      anchors.fill: parent
-      anchors.margins: 1
-      radius: surfaceEdge.radius
-      color: "transparent"
-      border.width: 1
-      border.color: root.edgeLight
-      antialiasing: true
-    }
-
-    Rectangle {
-      anchors.top: parent.top
-      anchors.topMargin: 1
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.leftMargin: surfaceEdge.radius
-      anchors.rightMargin: surfaceEdge.radius
-      height: 1
-      color: root.edgeCrown
-    }
-  }
-
-  component SurfaceGrain: Item {
-    id: grainLayer
-
-    property real inset: 0
-
-    anchors.fill: parent
-    z: 1
-
-    Image {
-      anchors.fill: parent
-      anchors.margins: grainLayer.inset
-      source: root.grain
-      fillMode: Image.Tile
-      opacity: root.grainOpacity
-      smooth: false
-    }
-  }
-
   FileView {
     path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/seele-shell/theme.json"
     watchChanges: true
@@ -228,7 +167,7 @@ ShellRoot {
 
     Rectangle {
       anchors.fill: parent
-      color: root.alpha(root.mantle, 0.4)
+      color: root.roles.scrim
 
       MouseArea {
         anchors.fill: parent
@@ -242,15 +181,11 @@ ShellRoot {
       anchors.centerIn: parent
       width: 360
       height: column.implicitHeight + 44
-      radius: root.radius
+      radius: root.radiusPanel
       color: root.panelColor
-      border.width: 1
+      border.width: root.hairline
       border.color: root.panelBorder
       antialiasing: true
-
-      SurfaceWash { radius: root.radius - 1 }
-      SurfaceEdge {}
-      SurfaceGrain { inset: 3 }
 
       // Swallow clicks so the click-away behind cannot cancel through the card.
       MouseArea {
@@ -268,12 +203,32 @@ ShellRoot {
         spacing: 13
         z: 2
 
-        Text {
+        // Material's dialog leads with its icon. The key sits in the shell's
+        // shape, in the warning container, because a touch is being waited on.
+        Item {
           anchors.horizontalCenter: parent.horizontalCenter
-          text: ""
-          color: root.yellow
-          font.family: root.fontFamily
-          font.pixelSize: root.textHero
+          width: root.markSize
+          height: root.markSize
+
+          Canvas {
+            anchors.fill: parent
+            antialiasing: true
+            property color fill: root.roles.warningContainer
+            onFillChanged: requestPaint()
+            onPaint: {
+              var context = getContext("2d")
+              context.reset()
+              Shapes.fill(context, Shapes.radii("cookie9"), width, height, 0, fill)
+            }
+          }
+
+          Text {
+            anchors.centerIn: parent
+            text: ""
+            color: root.roles.textOnWarningContainer
+            font.family: root.fontFamily
+            font.pixelSize: root.textDisplay
+          }
         }
 
         Text {
@@ -299,22 +254,24 @@ ShellRoot {
           wrapMode: Text.WordWrap
         }
 
+        // The lock's password field: an outlined pill, in the primary colour
+        // while it has the keyboard and in the error colour when PAM says so.
         Rectangle {
           width: parent.width
           height: 48
-          radius: root.radius
-          color: root.wellColor
-          border.width: 2
+          radius: height / 2
+          color: root.alpha(root.panelColor, 0)
+          border.width: root.focusWidth
           border.color: root.prompting && root.flow.supplementaryIsError
-            ? root.red
-            : passwordInput.activeFocus ? root.accent : root.overlay
+            ? root.roles.error
+            : passwordInput.activeFocus ? root.roles.primary : root.roles.outline
 
           TextInput {
             id: passwordInput
 
             anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
+            anchors.leftMargin: 24
+            anchors.rightMargin: 24
             enabled: root.prompting
             focus: true
             activeFocusOnPress: true
@@ -331,7 +288,7 @@ ShellRoot {
             passwordCharacter: "●"
             passwordMaskDelay: 0
             color: root.text
-            selectionColor: root.alpha(root.accent, 0.45)
+            selectionColor: root.roles.secondaryContainer
             selectedTextColor: root.text
             font.family: root.fontFamily
             font.pixelSize: root.textCard
@@ -357,9 +314,9 @@ ShellRoot {
 
           Text {
             anchors.left: parent.left
-            anchors.leftMargin: 16
+            anchors.leftMargin: 24
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: 24
             anchors.verticalCenter: parent.verticalCenter
             visible: passwordInput.text.length === 0
             // While the key is still being waited on the field is live but PAM
@@ -374,7 +331,7 @@ ShellRoot {
                   : root.flow.supplementaryMessage.length > 0
                     ? root.flow.supplementaryMessage
                     : "…or type your password"
-            color: root.prompting && root.flow.supplementaryIsError ? root.red : root.subtext
+            color: root.prompting && root.flow.supplementaryIsError ? root.roles.error : root.subtext
             font.family: root.fontFamily
             font.pixelSize: root.textBody
             elide: Text.ElideRight

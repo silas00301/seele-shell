@@ -19,7 +19,13 @@ TestCase {
     overlay: "#7f849c", subtext: "#a6adc8",
     cardColor: "#302e2e46", selectedColor: "#503e365f",
     dangerTint: "#30f38ba8", pressColor: "#60454b66",
-    cardBorder: "#40454b66", hoverColor: "#20cdd6f4"
+    cardBorder: "#40454b66", hoverColor: "#14cdd6f4",
+    primary: "#cba6f7", textOnPrimary: "#11111b", secondary: "#b4a8d8",
+    secondaryContainer: "#484a63", textOnSecondaryContainer: "#c8d1f6",
+    errorContainer: "#5a3d50", textOnErrorContainer: "#e4a9c6",
+    shapeSmall: 8, shapeMedium: 12, buttonPadding: 16, focusGap: 2, focusWidth: 2,
+    stateHover: 0.08, statePressed: 0.1, durationFastSpatial: 348,
+    springFastSpatial: [0.2, 0, 0, 1, 1, 1]
   })
   Shared.ActionButton { id: subject; theme: testCase.palette; x: 10; y: 10; width: 280; text: "Laptop · 2 files" }
   Shared.ActionButton { id: baseline; theme: testCase.palette; x: 330; y: 10; width: 280; text: subject.text }

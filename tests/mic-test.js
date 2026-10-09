@@ -203,7 +203,7 @@ assert.match(card, /Shared\.ActionButton\s*\{[^}]*text: "Stop"[^}]*enabled: card
 assert.doesNotMatch(card, /MouseArea/, 'the test controls stay keyboard-reachable buttons');
 assert.match(card, /Flow \{/, 'the controls wrap rather than leaving a narrow panel');
 assert.match(card, /headphones/i, 'the feedback hint must precede live mode');
-assert.match(card, /CLIPPING/);
+assert.match(card, /"Clipping"/);
 
 // Production wiring.
 assert.match(shell, /MicTestStore \{\s*\n\s*id: micTest/);

@@ -1,5 +1,8 @@
 import QtQuick
 
+// The container every floating panel is drawn on: a solid step of the surface
+// ramp on the extra-large corner, edged with the outline variant's hairline
+// because a layer surface casts no shadow to lift it off the window below.
 Rectangle {
   required property var theme
   id: panelSurface
@@ -7,14 +10,11 @@ Rectangle {
   readonly property bool hovered: panelHover.hovered
 
   anchors.fill: parent
-  radius: panelSurface.theme.radius
+  radius: panelSurface.theme.radiusPanel
   color: panelSurface.theme.panelColor
   border.color: panelSurface.theme.panelBorder
-  border.width: 1
+  border.width: panelSurface.theme.hairline
   antialiasing: true
 
-  SurfaceWash { theme: panelSurface.theme; radius: panelSurface.theme.radius - 1 }
-  SurfaceEdge { theme: panelSurface.theme;}
-  SurfaceGrain { theme: panelSurface.theme; inset: 3 }
   HoverHandler { id: panelHover }
 }

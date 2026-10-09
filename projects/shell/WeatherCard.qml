@@ -69,7 +69,7 @@ FocusScope {
   visible: mode !== "unavailable"
   implicitHeight: visible ? (expanded ? unfoldedHeight : foldedHeight) : 0
   height: implicitHeight
-  Behavior on height { NumberAnimation { duration: card.theme.durationNormal; easing.type: Easing.OutCubic } }
+  Behavior on height { NumberAnimation { duration: card.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: card.theme.springDefaultSpatial } }
 
   // Escape steps back out one level: the search, then the unfolded card.
   Keys.onPressed: event => {
@@ -85,8 +85,6 @@ FocusScope {
     radius: card.theme.radius
     color: card.theme.cardColor
     clip: true
-
-    Shared.CardEdge { theme: card.theme }
 
     // The line itself is the control that folds the card.
     Rectangle {
@@ -259,7 +257,7 @@ FocusScope {
           theme: card.theme
           width: parent.width
           visible: hourStrip.visible
-          label: "NEXT HOURS"
+          label: "Next hours"
         }
         Rectangle {
           id: hourStrip
@@ -267,7 +265,7 @@ FocusScope {
           width: parent.width
           height: hourColumns.implicitHeight + card.theme.spaceMedium * 2
           visible: !card.placeStep && card.store.hours.length > 0
-          radius: card.theme.radius
+          radius: card.theme.radiusRow
           color: card.theme.rowColor
 
           Row {
@@ -332,7 +330,7 @@ FocusScope {
           theme: card.theme
           width: parent.width
           visible: dayList.visible
-          label: "THIS WEEK"
+          label: "This week"
         }
         Rectangle {
           id: dayList
@@ -340,7 +338,7 @@ FocusScope {
           width: parent.width
           height: dayRows.implicitHeight + card.theme.spaceTight * 2
           visible: !card.placeStep && card.store.days.length > 0
-          radius: card.theme.radius
+          radius: card.theme.radiusRow
           color: card.theme.rowColor
 
           // The widest weekday label and reading, so the columns stay straight.
@@ -465,7 +463,7 @@ FocusScope {
           theme: card.theme
           width: parent.width
           visible: card.placeStep
-          label: "PLACE"
+          label: "Place"
         }
 
         Item {
@@ -571,7 +569,7 @@ FocusScope {
               objectName: "weatherResult_" + modelData.id
               width: parent.width
               height: card.theme.detailRowHeight - card.theme.spaceMedium
-              radius: card.theme.radius
+              radius: card.theme.radiusRow
               color: card.theme.rowColor
               activeFocusOnTab: true
               Accessible.role: Accessible.Button

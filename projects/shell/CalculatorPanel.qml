@@ -91,7 +91,6 @@ FocusScope {
         height: calculation.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: calculation
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -188,7 +187,6 @@ FocusScope {
         height: panel.tape.length ? Math.min(tapeList.contentHeight, panel.theme.detailRowHeight * 4) : empty.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Shared.EmptyState {
           id: empty
           theme: panel.theme
@@ -242,7 +240,6 @@ FocusScope {
         height: guide.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Text {
           id: guide
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

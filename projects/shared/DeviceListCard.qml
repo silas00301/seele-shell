@@ -1,8 +1,8 @@
 import QtQuick
 
 // A list of choices sits in a card the way every other group on a panel does,
-// so the rows inside it can take the lighter tint the elevation ramp gives
-// them instead of floating on the panel's own material.
+// so the rows inside it can take the next step of the surface ramp instead of
+// floating on the panel's own container.
 Rectangle {
   id: deviceListCard
 
@@ -16,6 +16,4 @@ Rectangle {
   radius: deviceListCard.theme.radius
   color: deviceListCard.theme.cardColor
   antialiasing: true
-
-  CardEdge { theme: deviceListCard.theme }
 }

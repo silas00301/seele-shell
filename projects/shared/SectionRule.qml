@@ -1,15 +1,15 @@
 import QtQuick
 
-// The heading a group of rows sits under: an uppercase label on the left, a
-// quiet summary on the right, an optional control after it, and a fold arrow
-// when the group can be closed.
+// The heading a group of rows sits under: a subheader on the left, a quiet
+// summary on the right, an optional control after it, and a fold arrow when
+// the group can be closed.
 Item {
   id: sectionRule
 
   required property var theme
   property string label: ""
   property string detail: ""
-  property color detailColor: sectionRule.theme.overlay
+  property color detailColor: sectionRule.theme.subtext
   // Icon actions have more empty space around their ink than these small labels.
   property real textBottomInset: 0
   property real detailTrailingSpacing: sectionRule.theme.spaceMedium
@@ -28,11 +28,9 @@ Item {
     anchors.bottomMargin: sectionRule.textBottomInset
     text: sectionRule.label
     textFormat: Text.PlainText
-    color: sectionRule.collapsible && sectionRuleMouse.pressed
-      ? sectionRule.theme.accent
-      : sectionRule.collapsible && sectionRuleMouse.containsMouse
-        ? sectionRule.theme.text
-        : sectionRule.theme.overlay
+    color: sectionRule.collapsible && sectionRuleMouse.containsMouse
+      ? sectionRule.theme.textOnPrimaryContainer
+      : sectionRule.theme.primary
   }
 
   // Everything in the rule sits on its bottom edge, so a group's label, its
@@ -68,7 +66,7 @@ Item {
     anchors.bottom: parent.bottom
     anchors.bottomMargin: -2
     text: sectionRule.expanded ? "󰅃" : "󰅀"
-    color: sectionRuleMouse.containsMouse ? sectionRule.theme.text : sectionRule.theme.overlay
+    color: sectionRuleMouse.containsMouse ? sectionRule.theme.text : sectionRule.theme.subtext
     font.family: sectionRule.theme.fontFamily
     font.pixelSize: sectionRule.theme.textBody
     horizontalAlignment: Text.AlignRight

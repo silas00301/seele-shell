@@ -65,7 +65,7 @@ FocusScope {
     Keys.priority: Keys.BeforeItem
     Keys.onPressed: event => panel.handleKey(event)
     selectByMouse: true
-    borderColor: !field.valid ? panel.theme.red : field.activeFocus ? panel.theme.accent : panel.theme.cardBorder
+    invalid: !field.valid
   }
 
   Column {
@@ -146,7 +146,6 @@ FocusScope {
     Rectangle {
       width: parent.width; height: contrastBody.implicitHeight + panel.theme.cardPadding * 2
       radius: panel.theme.radius; color: panel.theme.cardColor
-      Shared.CardEdge { theme: panel.theme }
       Row {
         id: contrastBody
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -194,7 +193,7 @@ FocusScope {
             color: swatch.modelData.hex; radius: panel.theme.radiusSmall
             Shared.HoverWash { theme: panel.theme; hovered: swatch.hovered }
             Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: panel.theme.spaceTight } height: panel.theme.spaceTight; radius: height / 2; visible: swatch.modelData.pass; color: panel.theme.green }
-            Shared.FocusRing { anchors.fill: parent; theme: panel.theme; shown: swatch.visualFocus; radius: panel.theme.radiusSmall }
+            Shared.FocusRing { theme: panel.theme; shown: swatch.visualFocus; baseRadius: panel.theme.radiusSmall }
           }
           HoverHandler { cursorShape: Qt.PointingHandCursor }
           ToolTip.visible: hovered

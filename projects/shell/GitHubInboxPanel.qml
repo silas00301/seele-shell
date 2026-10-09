@@ -105,7 +105,7 @@ FocusScope {
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
-      label: "INBOX"
+      label: "Inbox"
       detail: panel.snapshot.count + " unread" + (panel.snapshot.complete ? "" : " so far · still loading")
     }
     Shared.EmptyState {
@@ -148,7 +148,6 @@ FocusScope {
         antialiasing: true
         clip: true
         Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
-        Shared.CardEdge { theme: panel.theme }
 
         Item {
           id: rowHead
@@ -213,7 +212,7 @@ FocusScope {
           height: row.open ? rowDetail.implicitHeight + panel.theme.cardPadding : 0
           visible: height > 0
           clip: true
-          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+          Behavior on height { NumberAnimation { duration: panel.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springDefaultSpatial } }
           Column {
             id: rowDetail
             anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: panel.theme.cardPadding; rightMargin: panel.theme.cardPadding }
@@ -262,12 +261,12 @@ FocusScope {
                     var sections = []
                     var triage = row.view.triage
                     if (triage) sections.push(
-                      { label: "NEEDS YOUR ATTENTION", body: triage.attention },
-                      { label: "SUGGESTED NEXT ACTION", body: triage.nextAction },
-                      { label: "WHAT CHANGED", body: triage.changes },
-                      { label: "WHY YOU WERE NOTIFIED", body: triage.reason })
+                      { label: "Needs your attention", body: triage.attention },
+                      { label: "Suggested next action", body: triage.nextAction },
+                      { label: "What changed", body: triage.changes },
+                      { label: "Why you were notified", body: triage.reason })
                     var previous = row.view.previous
-                    if (previous) sections.push({ label: "EARLIER ANALYSIS · " + panel.chip({ triage: previous }).text.toUpperCase(), body: previous.summary })
+                    if (previous) sections.push({ label: "Earlier analysis · " + panel.chip({ triage: previous }).text, body: previous.summary })
                     return sections
                   }
                   Column {
@@ -281,7 +280,7 @@ FocusScope {
                 }
               }
             }
-            Shared.SectionLabel { theme: panel.theme; text: "THREAD" }
+            Shared.SectionLabel { theme: panel.theme; text: "Thread" }
             Repeater {
               model: row.open ? panel.store.detailModel : null
               Rectangle {

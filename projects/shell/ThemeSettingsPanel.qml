@@ -18,8 +18,10 @@ FocusScope {
   // A schedule time, sent once when it is a real `HH:MM` and has changed:
   // on Enter or when the field is left. Escape puts the saved time back and
   // hands the keyboard to the panel, so only a second Escape closes it.
-  component TimeField: TextField {
+  component TimeField: Shared.ValueField {
     id: field
+    theme: panel.theme
+    invalid: !field.acceptableInput && !field.activeFocus
     property string committed: ""
     property string sent: ""
     signal chosen(string value)
@@ -29,10 +31,6 @@ FocusScope {
     horizontalAlignment: Text.AlignHCenter
     maximumLength: 5
     validator: RegularExpressionValidator { regularExpression: /^([01][0-9]|2[0-3]):[0-5][0-9]$/ }
-    color: panel.theme.text
-    selectionColor: panel.theme.selectedColor
-    font.family: panel.theme.fontFamily
-    font.pixelSize: panel.theme.textBody
     function commit() {
       if (!acceptableInput || text === committed || text === sent) return
       sent = text
@@ -44,12 +42,6 @@ FocusScope {
     onCommittedChanged: sent = ""
     onEditingFinished: commit()
     Keys.onEscapePressed: event => { text = committed; content.forceActiveFocus(); event.accepted = true }
-    background: Rectangle {
-      radius: panel.theme.radiusSmall
-      color: panel.theme.wellColor
-      border.width: 1
-      border.color: field.activeFocus ? panel.theme.accent : field.acceptableInput ? panel.theme.cardBorder : panel.theme.red
-    }
   }
 
   // A preset's colours as a small chip: its base, carrying its accent and
@@ -61,8 +53,8 @@ FocusScope {
     height: 24
     radius: panel.theme.radiusSmall
     color: swatch.preset ? swatch.preset.base : panel.theme.wellColor
-    border.width: 1
-    border.color: panel.theme.alpha(panel.theme.text, 0.14)
+    border.width: panel.theme.hairline
+    border.color: panel.theme.outlineVariant
     antialiasing: true
     Row {
       anchors.centerIn: parent

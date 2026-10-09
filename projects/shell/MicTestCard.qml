@@ -28,7 +28,7 @@ Column {
   Shared.SectionRule {
     theme: card.theme
     width: parent.width
-    label: "MICROPHONE TEST"
+    label: "Microphone test"
     detail: card.store.inputName
 
     Shared.StatusChip {
@@ -47,8 +47,6 @@ Column {
     radius: card.theme.radius
     color: card.theme.cardColor
     antialiasing: true
-
-    Shared.CardEdge { theme: card.theme }
 
     Column {
       id: body
@@ -95,13 +93,12 @@ Column {
           anchors.verticalCenter: parent.verticalCenter
           visible: card.view.clipped || card.view.sampleClipped
           width: visible ? implicitWidth : 0
-          text: "CLIPPING"
+          text: "Clipping"
           textFormat: Text.PlainText
           color: card.theme.red
           font.family: card.theme.fontFamily
           font.pixelSize: card.theme.textMicro
-          font.weight: card.theme.weightMedium
-          font.letterSpacing: card.theme.trackingLabel
+          font.weight: card.theme.weightStrong
         }
       }
 

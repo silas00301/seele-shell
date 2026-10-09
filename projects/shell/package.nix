@@ -186,7 +186,6 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./FocusExitRim.qml} "$out/share/seele-shell/FocusExitRim.qml"
     mkdir -p "$out/share/seele-shell/shared"
     cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-shell/shared/"
-    ${tools}/bin/seele-grain "$out/share/seele-shell/shared/grain.png"
     substituteInPlace "$out/share/seele-shell/shell.qml" \
       --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
     install -m644 ${./DictationState.qml} "$out/share/seele-shell/DictationState.qml"
@@ -396,8 +395,6 @@ pkgs.stdenvNoCC.mkDerivation {
     for mark in claude cursor openai opencode pi; do
       test -f "$out/share/seele-shell/$mark.svg"
     done
-    test -s "$out/share/seele-shell/shared/grain.png"
-    head -c 8 "$out/share/seele-shell/shared/grain.png" | od -An -tx1 | grep -q "89 50 4e 47"
     for source in QuickLook.qml QuickLookMedia.qml quicklook.js ResourcesState.qml ResourcesStore.qml ResourcesPanel.qml NetworkActivityStore.qml NetworkActivityPanel.qml SensorsStore.qml SensorsPanel.qml TextWorkbenchPanel.qml TextWorkbenchSession.qml ColorLabPanel.qml MeetingPlanner.qml CalculatorPanel.qml ColorPicker.qml color-picker.js CaffeinateStore.qml CaffeinatePanel.qml MaintenanceStore.qml MaintenancePanel.qml TransfersStore.qml TransfersPanel.qml PortsStore.qml PortsPanel.qml DriftStore.qml DriftPanel.qml drift.js ThemeStore.qml ThemePanel.qml ThemeSettingsPanel.qml AiActivityStore.qml AiActivityPanel.qml ai-activity.js health.js IntegrationHealthStore.qml SystemHealthPanel.qml AiPrompt.qml ai-prompt.js FocusTimer.qml FocusPanel.qml FocusExitCue.qml FocusExitRim.qml focus.js HomeAssistantStore.qml CalendarStore.qml CalendarAgenda.qml CalendarSettings.qml WeatherStore.qml WeatherCard.qml GitHubInboxStore.qml GitHubInboxPanel.qml GitHubStore.qml PrFocusStore.qml github.js network.js player-volume.js media-speed.js MicTestStore.qml MicTestCard.qml mic-test.js; do
       test -f "$out/share/seele-shell/$source"
     done

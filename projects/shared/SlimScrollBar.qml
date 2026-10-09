@@ -25,6 +25,6 @@ ScrollBar {
     implicitWidth: scrollBar.theme.scrollGutter - 4
     radius: width / 2
     opacity: 1
-    color: scrollBar.theme.alpha(scrollBar.theme.text, scrollBar.pressed ? 0.6 : 0.32)
+    color: scrollBar.pressed ? scrollBar.theme.subtext : scrollBar.theme.outline
   }
 }

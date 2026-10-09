@@ -1,14 +1,17 @@
 import QtQuick
 import QtQuick.Controls
 
-// A keyboard-accessible choice inside a SegmentWell. Segment owns the selected
-// and pointer treatment; FocusRing makes keyboard position explicit without
-// turning the segment itself into a one-off outlined control.
+// A keyboard-accessible choice inside a SegmentWell. Segment owns the
+// container, its shape and the pointer; FocusRing makes keyboard position
+// explicit without turning the choice itself into a one-off outlined control.
 Button {
   id: choice
 
   required property var theme
   property bool selected: false
+  // Set by the group and handed to the container.
+  property bool groupStart: false
+  property bool groupEnd: false
 
   hoverEnabled: true
   focusPolicy: Qt.StrongFocus
@@ -23,24 +26,19 @@ Button {
     font.family: choice.theme.fontFamily
     font.pixelSize: choice.theme.textLabel
     font.weight: choice.selected ? choice.theme.weightStrong : choice.theme.weightMedium
-    color: choice.selected ? choice.theme.text : choice.theme.subtext
+    color: choice.selected ? choice.theme.textOnSecondaryContainer : choice.theme.subtext
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
   }
 
-  background: Item {
-    Segment {
-      anchors.fill: parent
-      theme: choice.theme
-      selected: choice.selected
-      hovered: choice.hovered
-      pressed: choice.down
-    }
-    FocusRing {
-      theme: choice.theme
-      shown: choice.visualFocus
-      radius: choice.theme.radiusSmall
-    }
+  background: Segment {
+    theme: choice.theme
+    selected: choice.selected
+    hovered: choice.hovered
+    pressed: choice.down
+    groupStart: choice.groupStart
+    groupEnd: choice.groupEnd
+    FocusRing { theme: choice.theme; shown: choice.visualFocus }
   }
 
   HoverHandler { cursorShape: choice.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }

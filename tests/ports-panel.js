@@ -16,8 +16,7 @@ try {
   const themePath = path.join(work, 'production/shared/Theme.qml');
   const theme = fs.readFileSync(themePath, 'utf8').split('  FileView {')[0]
     .replace(/import Quickshell.*\n/g, '').replace('ShellRoot {', 'Item {')
-    .replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ', '')
-    .replace('Qt.resolvedUrl("grain.png")', '""');
+    .replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ', '');
   fs.writeFileSync(themePath, theme + '}\n');
   fs.writeFileSync(path.join(work, 'tst_ports.qml'), fs.readFileSync(path.resolve(__dirname, 'tst_ports.qml'), 'utf8')
     .replace('property string screenshotPath: ""', 'property string screenshotPath: ' + JSON.stringify(process.env.SEELE_PORTS_SCREENSHOT || '')));
