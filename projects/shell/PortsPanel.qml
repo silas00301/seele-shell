@@ -98,7 +98,7 @@ FocusScope {
     Shared.SectionRule {
       theme: panel.theme
       width: parent.width
-      label: "LISTENING"
+      label: "Listening"
       detail: panel.store.model.count === panel.store.total
         ? panel.store.total + " TCP"
         : panel.store.model.count + " of " + panel.store.total + " TCP"
@@ -177,7 +177,6 @@ FocusScope {
         antialiasing: true
         clip: true
         Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
-        Shared.CardEdge { theme: panel.theme }
 
         Item {
           id: head
@@ -246,7 +245,7 @@ FocusScope {
           height: row.open ? detail.implicitHeight + panel.theme.cardPadding : 0
           visible: height > 0
           clip: true
-          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+          Behavior on height { NumberAnimation { duration: panel.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springDefaultSpatial } }
           Column {
             id: detail
             anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: panel.theme.cardPadding; rightMargin: panel.theme.cardPadding }
@@ -321,7 +320,7 @@ FocusScope {
               width: parent.width
               visible: row.owners.length > 1
               spacing: panel.theme.spaceSmall
-              Shared.SectionRule { theme: panel.theme; width: parent.width; label: "OWNERS"; detail: row.owners.length + " processes" }
+              Shared.SectionRule { theme: panel.theme; width: parent.width; label: "Owners"; detail: row.owners.length + " processes" }
               Repeater {
                 model: row.owners
                 Shared.ActionButton {

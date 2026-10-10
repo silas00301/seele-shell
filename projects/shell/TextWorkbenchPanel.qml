@@ -143,7 +143,6 @@ FocusScope {
           height: panel.theme.textWorkbenchEditorHeight
           radius: panel.theme.radius
           color: panel.theme.wellColor
-          Shared.CardEdge { theme: panel.theme }
           HoverHandler { id: inputHover }
           Shared.SeeleFlickable {
             theme: panel.theme
@@ -193,7 +192,6 @@ FocusScope {
           height: panel.theme.textWorkbenchEditorHeight
           radius: panel.theme.radius
           color: panel.theme.cardColor
-          Shared.CardEdge { theme: panel.theme }
           HoverHandler { id: outputHover }
           Shared.SeeleFlickable {
             theme: panel.theme

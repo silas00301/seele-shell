@@ -89,7 +89,6 @@ FocusScope {
         height: metrics.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Row {
           id: metrics
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -105,7 +104,7 @@ FocusScope {
           Rectangle { width: panel.theme.hairline; height: metrics.implicitHeight; color: panel.theme.separatorColor }
           Metric {
             width: (parent.width - panel.theme.cardPadding * 2 - panel.theme.hairline) / 2
-            label: "MEMORY"
+            label: "Memory"
             value: panel.memory ? panel.bytes(panel.memory.used) : "—"
             detail: panel.memory ? panel.bytes(panel.memory.available) + " available / " + panel.bytes(panel.memory.total) : "Memory readings unavailable"
             values: panel.snapshot.memoryHistory || []
@@ -119,7 +118,7 @@ FocusScope {
       }
       Shared.SectionRule {
         width: parent.width; theme: panel.theme
-        label: "STORAGE"; detail: panel.storageDetail()
+        label: "Storage"; detail: panel.storageDetail()
         detailColor: panel.storageState === "stale" || panel.storageState === "unavailable" ? panel.theme.yellow : panel.theme.overlay
       }
       Rectangle {
@@ -128,7 +127,6 @@ FocusScope {
         height: storageColumn.implicitHeight + panel.theme.cardPadding * 2
         radius: panel.theme.radius
         color: panel.theme.cardColor
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: storageColumn
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -188,7 +186,7 @@ FocusScope {
         Keys.onUpPressed: event => { processes.decrementCurrentIndex(); event.accepted = true }
         Keys.onReturnPressed: event => { panel.chooseCurrent(); event.accepted = true }
       }
-      Shared.SectionRule { width: parent.width; theme: panel.theme; label: "PROCESSES"; detail: panel.snapshot.matched + " of " + panel.snapshot.total }
+      Shared.SectionRule { width: parent.width; theme: panel.theme; label: "Processes"; detail: panel.snapshot.matched + " of " + panel.snapshot.total }
       Shared.SegmentWell {
         theme: panel.theme
         width: parent.width
@@ -210,7 +208,6 @@ FocusScope {
         height: visible ? processDetail.implicitHeight + panel.theme.cardPadding * 2 : 0
         color: panel.theme.activeTint
         radius: panel.theme.radius
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: processDetail
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -262,7 +259,7 @@ FocusScope {
           Rectangle {
             anchors.fill: parent
             anchors.bottomMargin: panel.theme.spaceTight
-            radius: panel.theme.radius
+            radius: panel.theme.radiusRow
             color: rowMouse.pressed ? panel.theme.pressColor : panel.store.selected === row.entry.id ? panel.theme.selectedColor : row.index === processes.currentIndex ? panel.theme.rowColor : panel.theme.cardColor
             Shared.HoverWash { theme: panel.theme; hovered: rowHover.hovered }
             Row {

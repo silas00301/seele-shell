@@ -383,9 +383,9 @@ FocusScope {
             : card.offset < 0 ? card.origin + card.offset * (panel.sliceWidth + panel.sliceGap)
             : card.origin + panel.cardWidth + panel.sliceGap + (card.offset - 1) * (panel.sliceWidth + panel.sliceGap)
           y: (strip.height - height) / 2
-          Behavior on x { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
-          Behavior on width { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
-          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+          Behavior on x { NumberAnimation { duration: panel.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springFastSpatial } }
+          Behavior on width { NumberAnimation { duration: panel.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springFastSpatial } }
+          Behavior on height { NumberAnimation { duration: panel.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springFastSpatial } }
 
           Loader {
             anchors.fill: parent

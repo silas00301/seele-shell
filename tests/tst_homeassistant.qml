@@ -84,7 +84,7 @@ TestCase {
     panel.maximumHeight = theme.homeAssistantMaximumHeight
     child("deviceSearch").clear()
     panel.opened()
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
   }
   function cleanup() { panel.closed() }
 
@@ -92,7 +92,7 @@ TestCase {
     var reading = child("reading:sensor.temperature")
     var control = child("control:light.desk")
     panel.expanded = "light.desk"
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
     var slider = findChild(control, "Brightness")
     slider.forceActiveFocus()
     var next = JSON.parse(JSON.stringify(fixture.entities))
@@ -147,7 +147,7 @@ TestCase {
   }
   function test_slider_commits_once_and_keeps_requested_value() {
     panel.expanded = "light.desk"
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
     var slider = findChild(child("control:light.desk"), "Brightness")
     slider.forceActiveFocus()
     keyClick(Qt.Key_Right)
@@ -160,7 +160,7 @@ TestCase {
   }
   function test_drag_ignores_live_values_until_release() {
     panel.expanded = "light.desk"
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
     var slider = findChild(child("control:light.desk"), "Brightness")
     mousePress(slider, slider.width * 0.65, slider.height / 2)
     mouseMove(slider, slider.width * 0.8, slider.height / 2)
@@ -181,7 +181,7 @@ TestCase {
     wait(20)
     verify(!child("power:light.desk").enabled)
     panel.expanded = "light.desk"
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
     verify(!findChild(child("control:light.desk"), "Brightness").enabled)
     compare(child("reading:sensor.temperature").payload.state_label, "21.4")
     compare(fixture.writes.length, 0)
@@ -197,7 +197,7 @@ TestCase {
     search.clear()
     wait(30)
     panel.editingId = "light.desk"
-    wait(theme.durationNormal + 20)
+    wait(theme.durationDefaultSpatial + 20)
     var device = child("device:light.desk")
     var fields = []
     function collect(item) {

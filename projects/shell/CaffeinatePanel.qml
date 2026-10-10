@@ -16,7 +16,6 @@ Column {
     height: body.implicitHeight + panel.theme.cardPadding * 2
     radius: panel.theme.radius
     color: panel.theme.cardColor
-    Shared.CardEdge { theme: panel.theme }
     Column {
       id: body
       anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

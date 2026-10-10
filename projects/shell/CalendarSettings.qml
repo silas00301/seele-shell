@@ -56,7 +56,7 @@ FocusScope {
       id: accountRule
       theme: settings.theme
       width: parent.width
-      label: "GOOGLE ACCOUNT"
+      label: "Google account"
       detail: settings.statusText
       detailColor: settings.statusColor
     }
@@ -75,31 +75,16 @@ FocusScope {
       Explanation {
         text: "Redirect URI: http://127.0.0.1:<port>. Seele chooses the port at sign-in. Desktop app clients do not need a redirect URI entered in Google Cloud. If Cloud asks for one, check the client type."
       }
-      TextField {
+      Shared.ValueField {
         id: clientId
+        theme: settings.theme
         objectName: "calendarClientId"
         width: parent.width
         implicitHeight: settings.theme.controlHeight
         placeholderText: "…apps.googleusercontent.com"
-        color: settings.theme.text
-        placeholderTextColor: settings.theme.overlay
-        selectionColor: settings.theme.selectedColor
-        selectedTextColor: settings.theme.text
-        font.family: settings.theme.fontFamily
-        font.pixelSize: settings.theme.textBody
-        leftPadding: settings.theme.cardPadding
-        rightPadding: settings.theme.cardPadding
         selectByMouse: true
-        verticalAlignment: TextInput.AlignVCenter
         Accessible.name: "Google Desktop OAuth client ID"
         onAccepted: if (text.trim() !== "") settings.store.setup(text.trim())
-        background: Rectangle {
-          color: settings.theme.wellColor
-          radius: settings.theme.radius
-          border.width: settings.theme.hairline
-          border.color: clientId.activeFocus ? settings.theme.accent : settings.theme.cardBorder
-          Behavior on border.color { ColorAnimation { duration: settings.theme.durationFast } }
-        }
       }
       Row {
         spacing: settings.theme.spaceSmall
@@ -132,35 +117,20 @@ FocusScope {
           ? "Finish signing in in your browser. This closes by itself after five minutes."
           : "If Google gave your Desktop client a secret, enter it here. An empty field reuses a saved secret. Seele keeps credentials in the system wallet."
       }
-      TextField {
+      Shared.ValueField {
         id: clientSecret
+        theme: settings.theme
         objectName: "calendarClientSecret"
         width: parent.width
         implicitHeight: settings.theme.controlHeight
         placeholderText: "Google OAuth client secret (optional)"
         echoMode: TextInput.Password
         enabled: !settings.signingIn
-        color: settings.theme.text
-        placeholderTextColor: settings.theme.overlay
-        selectionColor: settings.theme.selectedColor
-        selectedTextColor: settings.theme.text
-        font.family: settings.theme.fontFamily
-        font.pixelSize: settings.theme.textBody
-        leftPadding: settings.theme.cardPadding
-        rightPadding: settings.theme.cardPadding
         selectByMouse: true
-        verticalAlignment: TextInput.AlignVCenter
         Accessible.name: "Google OAuth client secret"
         onAccepted: if (settings.store.ready && !settings.signingIn) {
           settings.store.signin(text.trim())
           text = ""
-        }
-        background: Rectangle {
-          color: settings.theme.wellColor
-          radius: settings.theme.radius
-          border.width: settings.theme.hairline
-          border.color: clientSecret.activeFocus ? settings.theme.accent : settings.theme.cardBorder
-          Behavior on border.color { ColorAnimation { duration: settings.theme.durationFast } }
         }
       }
       Row {
@@ -203,7 +173,6 @@ FocusScope {
       height: accountRow.implicitHeight + settings.theme.cardPadding * 2
       radius: settings.theme.radius
       color: settings.theme.cardColor
-      Shared.CardEdge { theme: settings.theme }
 
       Row {
         id: accountRow
@@ -216,14 +185,13 @@ FocusScope {
           anchors.verticalCenter: parent.verticalCenter
           width: settings.theme.chipHeight
           height: width
-          radius: settings.theme.radiusSmall
-          color: settings.theme.alpha(settings.theme.accent, 0.1)
-          border.width: 1
-          border.color: settings.theme.alpha(settings.theme.accent, 0.22)
+          // The account is an avatar, which Material draws as a circle.
+          radius: width / 2
+          color: settings.theme.primaryContainer
           Shared.CenteredGlyph {
             anchors.fill: parent
             text: "󰊭"
-            color: settings.theme.accent
+            color: settings.theme.textOnPrimaryContainer
             font.family: settings.theme.fontFamily
             font.pixelSize: settings.theme.textSubhead
           }
@@ -306,7 +274,7 @@ FocusScope {
       visible: settings.signedIn
       theme: settings.theme
       width: parent.width
-      label: "CALENDARS"
+      label: "Calendars"
       detail: settings.store.calendars.length
         ? settings.store.selectedCount + " of " + settings.store.calendars.length + " shown"
         : ""
@@ -408,7 +376,7 @@ FocusScope {
       objectName: "calendarChoice_" + modelData.id
       width: ListView.view.width
       height: settings.theme.rowHeight
-      radius: settings.theme.radius
+      radius: settings.theme.radiusRow
       color: settings.theme.rowColor
       activeFocusOnTab: true
       Accessible.role: Accessible.CheckBox

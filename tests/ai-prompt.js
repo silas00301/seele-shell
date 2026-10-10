@@ -78,7 +78,7 @@ for (const [feature, pattern] of Object.entries({
   "explicit insert shortcut": /text: "Insert · Ctrl\+Enter"/,
   "private screen disclosure": /captured once when you press Send/,
   "stale context rejection": /!acceptsContext\(String\(message\.kind \|\| ""\), Number\(message\.token \|\| 0\)\)/,
-  "answer-only response card": /label: "ANSWER"/,
+  "answer-only response card": /label: "Answer"/,
   "mention completion list": /id: completionMenu/,
   "completion stays in the scroll": /height: 112 \+ \(prompt\.completionOpen \? completionMenu\.height \+ prompt\.theme\.spaceTight : 0\)/,
   "completion keeps the field focused": /onClicked: \{\n\s*prompt\.acceptMention\(completionRow\.modelData\.kind\)\n\s*promptField\.forceActiveFocus\(\)/,

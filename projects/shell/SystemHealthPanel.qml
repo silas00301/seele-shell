@@ -37,8 +37,8 @@ Column {
   }
 
   // Which of the two views is being read is one exclusive choice, so it is one
-  // well with the chosen side lit, not two outlined buttons side by side each
-  // spending an outline to say what the lit fill already says.
+  // connected button group with the chosen side filled, not two outlined
+  // buttons side by side each spending an outline to say what the fill says.
   Shared.SegmentWell {
     theme: panel.theme
     width: parent.width
@@ -66,7 +66,7 @@ Column {
           text: healthView.modelData.tab === "maintenance" && panel.maintenanceCount
             ? healthView.modelData.label + " · " + panel.maintenanceCount
             : healthView.modelData.label
-          color: healthView.selected ? panel.theme.accent : panel.theme.subtext
+          color: healthView.selected ? panel.theme.textOnSecondaryContainer : panel.theme.subtext
           font.family: panel.theme.fontFamily
           font.pixelSize: panel.theme.textLabel
           font.weight: healthView.selected ? panel.theme.weightStrong : panel.theme.weightRegular
@@ -145,8 +145,6 @@ Column {
           implicitHeight: body.implicitHeight + card.inset * 2
           radius: panel.theme.radius
           color: panel.theme.cardColor
-
-          Shared.CardEdge { theme: panel.theme }
 
           Column {
             id: body

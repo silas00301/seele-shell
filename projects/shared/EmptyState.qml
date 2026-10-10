@@ -3,6 +3,8 @@ import QtQuick
 // What a surface says when it has nothing to show. Each of these is a distinct
 // situation with its own way out, so the state carries its own mark, its own
 // sentence and its own action rather than all of them sharing one grey line.
+// The mark sits in one of Material 3 Expressive's shapes, the way an empty
+// state on Android leads with an illustration rather than a bare icon.
 Item {
   id: emptyState
 
@@ -10,7 +12,8 @@ Item {
   property string glyph: ""
   property string title: ""
   property string detail: ""
-  property color tint: emptyState.theme.overlay
+  property color tint: emptyState.theme.subtext
+  property string markShape: "softBurst"
   default property alias action: emptyStateAction.data
 
   implicitHeight: emptyStateColumn.implicitHeight
@@ -22,14 +25,27 @@ Item {
     width: Math.min(parent.width - emptyState.theme.cardPadding * 2, 320)
     spacing: emptyState.theme.spaceSmall
 
-    CenteredGlyph {
+    Item {
       visible: emptyState.glyph !== ""
       width: parent.width
-      height: emptyState.glyph !== "" ? emptyState.theme.textHero : 0
-      text: emptyState.glyph
-      color: emptyState.tint
-      font.family: emptyState.theme.fontFamily
-      font.pixelSize: emptyState.theme.textHero
+      height: emptyState.glyph !== "" ? emptyState.theme.emptyMarkSize : 0
+
+      MaterialShape {
+        theme: emptyState.theme
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: parent.height
+        height: width
+        shape: emptyState.markShape
+        color: Qt.tint(emptyState.theme.surfaceContainerHighest, emptyState.theme.alpha(emptyState.tint, 0.16))
+      }
+
+      CenteredGlyph {
+        anchors.fill: parent
+        text: emptyState.glyph
+        color: emptyState.tint
+        font.family: emptyState.theme.fontFamily
+        font.pixelSize: emptyState.theme.textDisplay
+      }
     }
 
     Text {
@@ -37,10 +53,10 @@ Item {
       visible: emptyState.title !== ""
       text: emptyState.title
       textFormat: Text.PlainText
-      color: emptyState.theme.subtext
+      color: emptyState.theme.text
       font.family: emptyState.theme.fontFamily
       font.pixelSize: emptyState.theme.textBody
-      font.weight: emptyState.theme.weightMedium
+      font.weight: emptyState.theme.weightStrong
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.Wrap
     }
@@ -50,7 +66,7 @@ Item {
       visible: emptyState.detail !== ""
       text: emptyState.detail
       textFormat: Text.PlainText
-      color: emptyState.theme.overlay
+      color: emptyState.theme.subtext
       font.family: emptyState.theme.fontFamily
       font.pixelSize: emptyState.theme.textCaption
       horizontalAlignment: Text.AlignHCenter

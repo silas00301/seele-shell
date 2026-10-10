@@ -1,5 +1,11 @@
 import QtQuick
 
+// A persistent on/off state, drawn as Material 3's switch. Off, the track is
+// the highest surface step inside an outline with a small handle in the
+// outline's colour; on, the track fills with the primary colour and the
+// handle grows and carries a check. Held, the handle grows again, so the
+// press is felt before the state flips. Work that takes a moment shows the
+// loading indicator in the handle rather than replacing the switch.
 Rectangle {
   id: control
   required property var theme
@@ -8,46 +14,72 @@ Rectangle {
   property bool busy: false
   signal toggled()
 
-  implicitWidth: 40
-  implicitHeight: 22
-  opacity: enabled ? 1 : 0.42
+  readonly property bool held: switchMouse.pressed
+  readonly property real handleSize: control.held ? control.height - control.theme.switchInset
+    : control.checked || control.busy ? control.height - control.theme.switchInset * 2
+    : control.height / 2
+  readonly property color handleColor: control.checked ? control.theme.textOnPrimary
+    : control.held || switchMouse.containsMouse ? control.theme.subtext
+    : control.theme.outline
+
+  implicitWidth: control.theme.switchWidth
+  implicitHeight: control.theme.switchHeight
+  opacity: enabled ? 1 : control.theme.disabledOpacity
   radius: height / 2
   antialiasing: true
-  // Off, the track is a well cut into the surface rather than a grey pill,
-  // so an unset switch is quiet and a set one is the only lit thing in the
-  // row.
-  color: switchMouse.pressed ? control.theme.alpha(control.checked ? control.theme.accent : control.theme.text, 0.6) : control.checked ? control.theme.accent : control.theme.wellColor
-  border.width: 1
-  border.color: control.busy ? control.theme.accent
-    : switchMouse.containsMouse ? control.theme.alpha(control.theme.accent, 0.55)
-    : control.checked ? control.theme.clearColor : control.theme.edgeLight
+  color: control.checked ? control.theme.primary : control.theme.surfaceContainerHighest
+  border.width: control.checked ? 0 : control.theme.switchOutline
+  border.color: control.theme.outline
 
   Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
-  Behavior on border.color { ColorAnimation { duration: control.theme.durationFast } }
 
+  // The state layer is a disc around the handle, as Material draws it, so
+  // the pointer is reported where the switch will move.
   Rectangle {
-    visible: !control.busy
-    width: parent.height - 6
+    width: control.height + control.theme.spaceMedium
     height: width
     radius: width / 2
-    y: 3
-    x: control.checked ? control.width - width - 3 : 3
-    color: control.checked ? control.theme.crust : control.theme.alpha(control.theme.text, 0.82)
+    anchors.centerIn: switchHandle
+    color: control.held ? control.theme.alpha(control.checked ? control.theme.primary : control.theme.text, control.theme.statePressed)
+      : switchMouse.containsMouse ? control.theme.alpha(control.checked ? control.theme.primary : control.theme.text, control.theme.stateHover)
+      : control.theme.alpha(control.theme.text, 0)
     antialiasing: true
-
-    Behavior on x { NumberAnimation { duration: control.theme.durationFast; easing.type: Easing.OutCubic } }
     Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
   }
 
-  RefreshGlyph {
-    theme: control.theme
-    visible: control.busy
-    anchors.centerIn: parent
-    width: 16
-    height: 16
-    spinning: visible
-    color: control.checked ? control.theme.crust : control.theme.text
-    font.pixelSize: control.theme.textBody
+  Rectangle {
+    id: switchHandle
+
+    width: control.handleSize
+    height: width
+    radius: width / 2
+    anchors.verticalCenter: parent.verticalCenter
+    x: control.checked ? control.width - control.height / 2 - width / 2 : control.height / 2 - width / 2
+    color: control.handleColor
+    antialiasing: true
+
+    Behavior on x { NumberAnimation { duration: control.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: control.theme.springFastSpatial } }
+    Behavior on width { NumberAnimation { duration: control.theme.durationFastSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: control.theme.springFastSpatial } }
+    Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
+
+    CenteredGlyph {
+      visible: control.checked && !control.busy
+      anchors.fill: parent
+      text: "󰄬"
+      color: control.theme.textOnPrimaryContainer
+      font.family: control.theme.fontFamily
+      font.pixelSize: control.theme.textLabel
+    }
+
+    RefreshGlyph {
+      theme: control.theme
+      visible: control.busy
+      anchors.fill: parent
+      anchors.margins: control.theme.spaceTight / 2
+      spinning: visible
+      color: control.checked ? control.theme.primary : control.theme.surfaceContainerHighest
+      font.pixelSize: control.theme.textBody
+    }
   }
 
   MouseArea { id: switchMouse; anchors.fill: parent; enabled: control.enabled && !control.busy; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: control.toggled() }

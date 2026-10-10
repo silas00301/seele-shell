@@ -67,7 +67,7 @@ ColumnLayout {
   Shared.SectionRule {
     Layout.fillWidth: true
     theme: setup.theme
-    label: "VAULTS FOUND"
+    label: "Vaults found"
     detail: String(setup.store.vaults.length)
     visible: setup.store.vaults.length > 0
   }
@@ -96,7 +96,7 @@ ColumnLayout {
   Shared.SectionRule {
     Layout.fillWidth: true
     theme: setup.theme
-    label: "VAULT FOLDER"
+    label: "Vault folder"
     detail: setup.store.browse ? (setup.store.browse.vault ? "Obsidian vault" : "Not a vault") : ""
     detailColor: setup.store.browse && setup.store.browse.vault ? setup.theme.green : setup.theme.overlay
 
@@ -197,7 +197,7 @@ ColumnLayout {
   Shared.SectionRule {
     Layout.fillWidth: true
     theme: setup.theme
-    label: "CAPTURE FOLDER"
+    label: "Capture folder"
     detail: setup.folder.trim() ? "" : "A name is required"
     detailColor: setup.theme.red
   }

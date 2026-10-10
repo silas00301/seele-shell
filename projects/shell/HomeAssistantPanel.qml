@@ -87,29 +87,11 @@ Column {
     textFormat: Text.PlainText
     wrapMode: Text.WordWrap
   }
-  component Field: TextField {
+  component Field: Shared.ValueField {
     id: field
+    theme: panel.theme
     implicitHeight: panel.theme.controlHeight
-    color: panel.theme.text
-    placeholderTextColor: panel.theme.overlay
-    selectionColor: panel.theme.selectedColor
-    selectedTextColor: panel.theme.text
-    font.family: panel.theme.fontFamily
-    font.pixelSize: panel.theme.textBody
-    leftPadding: panel.theme.cardPadding
-    rightPadding: panel.theme.cardPadding
-    verticalAlignment: TextInput.AlignVCenter
     selectByMouse: true
-    // The same well SearchField is cut into, so every input in the shell
-    // reports focus with one ring.
-    background: Rectangle {
-      color: panel.theme.wellColor
-      radius: panel.theme.radius
-      border.width: 1
-      border.color: field.activeFocus ? panel.theme.accent : panel.theme.cardBorder
-      antialiasing: true
-      Behavior on border.color { ColorAnimation { duration: panel.theme.durationFast } }
-    }
   }
   component Mark: Shared.CenteredGlyph {
     width: panel.theme.controlHeight
@@ -177,13 +159,12 @@ Column {
       id: setupContent
       width: parent.width
       spacing: panel.theme.panelSpacing
-      Shared.SectionRule { theme: panel.theme; width: parent.width; label: "CONNECT YOUR HOME" }
+      Shared.SectionRule { theme: panel.theme; width: parent.width; label: "Connect your home" }
       Rectangle {
         width: parent.width
         height: setupFields.implicitHeight + panel.theme.cardPadding * 2
         color: panel.theme.cardColor
         radius: panel.theme.radius
-        Shared.CardEdge { theme: panel.theme }
         Column {
           id: setupFields
           anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -296,7 +277,7 @@ Column {
           objectName: "device:" + payload.entity_id
           width: ListView.view.width
           height: deviceHeader.height + editor.height
-          radius: panel.theme.radiusSmall
+          radius: panel.theme.radiusRow
           color: panel.theme.rowColor
           clip: true
           Shared.HoverWash { theme: panel.theme; hovered: deviceHover.hovered }
@@ -350,7 +331,7 @@ Column {
             height: device.editing ? editorContent.implicitHeight + panel.theme.cardPadding * 2 : 0
             visible: height > 0
             clip: true
-            Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+            Behavior on height { NumberAnimation { duration: panel.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springDefaultSpatial } }
             Column {
               id: editorContent
               anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -436,8 +417,8 @@ Column {
             id: headingMetrics
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.textLabel
-            font.letterSpacing: panel.theme.trackingLabel
-            text: group.payload.heading.toUpperCase()
+            font.weight: panel.theme.weightStrong
+            text: group.payload.heading
             elide: Text.ElideRight
             elideWidth: group.width
           }
@@ -447,7 +428,6 @@ Column {
             height: groupContent.implicitHeight + panel.theme.cardPadding * 2
             color: panel.theme.cardColor
             radius: panel.theme.radius
-            Shared.CardEdge { theme: panel.theme }
             Column {
               id: groupContent
               anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -466,7 +446,7 @@ Column {
                     objectName: "reading:" + payload.entity_id
                     width: (readingGrid.width - (readingGrid.columns - 1) * readingGrid.spacing) / readingGrid.columns
                     height: readingContent.implicitHeight + panel.theme.cardPadding * 2
-                    radius: panel.theme.radiusSmall
+                    radius: panel.theme.radiusRow
                     color: panel.theme.rowColor
                     Accessible.role: Accessible.StaticText
                     Accessible.name: payload.name + ": " + payload.state_label + (payload.unit || "") + (!panel.store.connected ? ", last known value" : "")
@@ -508,7 +488,7 @@ Column {
                   objectName: "control:" + payload.entity_id
                   width: groupContent.width
                   height: controlHeader.height + levels.height
-                  radius: panel.theme.radiusSmall
+                  radius: panel.theme.radiusRow
                   color: panel.theme.rowColor
                   clip: true
                   function changeState() { if (actionable) panel.store.setState(payload, isOn ? "off" : "on") }
@@ -535,7 +515,7 @@ Column {
                         if (homeRow.adjustable) panel.expanded = homeRow.unfolded ? "" : homeRow.payload.entity_id
                         else homeRow.changeState()
                       }
-                      background: Rectangle { color: rowButton.activeFocus ? panel.theme.selectedColor : panel.theme.clearColor; radius: panel.theme.radiusSmall }
+                      background: Rectangle { color: rowButton.activeFocus ? panel.theme.selectedColor : panel.theme.clearColor; radius: panel.theme.radiusRow }
                       contentItem: RowLayout {
                         spacing: panel.theme.spaceSmall
                         Mark { text: homeRow.payload.glyph; color: homeRow.payload.available && homeRow.isOn ? panel.theme.accent : panel.theme.subtext }
@@ -571,7 +551,7 @@ Column {
                         event.accepted = true
                       }
                       onClicked: homeRow.changeState()
-                      background: Rectangle { color: powerButton.activeFocus ? panel.theme.selectedColor : panel.theme.clearColor; radius: panel.theme.radiusSmall }
+                      background: Rectangle { color: powerButton.activeFocus ? panel.theme.selectedColor : panel.theme.clearColor; radius: panel.theme.radiusRow }
                       Shared.ControlSwitch {
                         id: powerSwitch
                         theme: panel.theme
@@ -590,7 +570,7 @@ Column {
                     height: homeRow.unfolded ? levelContent.implicitHeight + panel.theme.cardPadding * 2 : 0
                     visible: height > 0
                     clip: true
-                    Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: panel.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springDefaultSpatial } }
                     Column {
                       id: levelContent
                       anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

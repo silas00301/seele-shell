@@ -633,10 +633,13 @@ Scope {
                 id: promptWell
                 width: parent.width
                 height: 112
+                // The prompt is the panel's one field, so it is the highest
+                // surface step, outlined in the primary colour while it has
+                // the keyboard.
                 radius: prompt.theme.radius
-                color: prompt.theme.wellColor
-                border.width: 1
-                border.color: promptField.activeFocus ? prompt.theme.edgeCrown : prompt.theme.cardBorder
+                color: prompt.theme.surfaceContainerHighest
+                border.width: promptField.activeFocus ? prompt.theme.focusWidth : 0
+                border.color: prompt.theme.primary
                 antialiasing: true
 
                 TextArea {
@@ -679,15 +682,12 @@ Scope {
                 anchors.top: promptWell.bottom
                 anchors.topMargin: prompt.theme.spaceTight
                 radius: prompt.theme.radius
-                color: prompt.theme.floatColor
-                border.width: 1
+                color: prompt.theme.surfaceContainerHigh
+                border.width: prompt.theme.hairline
                 border.color: prompt.theme.panelBorder
                 antialiasing: true
                 implicitHeight: completionList.implicitHeight + prompt.theme.spaceTight * 2
                 height: implicitHeight
-
-                Shared.SurfaceEdge { theme: prompt.theme; radius: completionMenu.radius - 1 }
-                Shared.SurfaceGrain { theme: prompt.theme; inset: 3 }
 
                 Column {
                   id: completionList
@@ -726,12 +726,12 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                         width: prompt.theme.chipHeight
                         height: width
-                        radius: prompt.theme.radiusSmall
-                        color: prompt.theme.activeTint
+                        radius: width / 2
+                        color: prompt.theme.primaryContainer
                         Shared.CenteredGlyph {
                           anchors.fill: parent
                           text: completionRow.modelData.glyph
-                          color: prompt.theme.accent
+                          color: prompt.theme.textOnPrimaryContainer
                           font.family: prompt.theme.fontFamily
                           font.pixelSize: prompt.theme.textIcon
                         }
@@ -805,7 +805,7 @@ Scope {
               Shared.SectionRule {
                 theme: prompt.theme
                 width: parent.width
-                label: "CONTEXT"
+                label: "Context"
                 detail: prompt.mentionedContexts.length + " selected"
               }
 
@@ -817,10 +817,8 @@ Scope {
                   required property var modelData
                   width: parent.width
                   height: Math.max(prompt.theme.rowHeight, contextText.implicitHeight + prompt.theme.cardPadding * 2)
-                  radius: prompt.theme.radiusSmall
+                  radius: prompt.theme.radiusRow
                   color: prompt.theme.rowColor
-                  border.width: 1
-                  border.color: prompt.theme.cardBorder
                   antialiasing: true
 
                   Rectangle {
@@ -831,12 +829,12 @@ Scope {
                     anchors.topMargin: prompt.theme.cardPadding
                     width: prompt.theme.chipHeight
                     height: width
-                    radius: prompt.theme.radiusSmall
-                    color: prompt.theme.activeTint
+                    radius: width / 2
+                    color: prompt.theme.primaryContainer
                     Shared.CenteredGlyph {
                       anchors.fill: parent
                       text: contextRow.modelData.glyph
-                      color: prompt.theme.accent
+                      color: prompt.theme.textOnPrimaryContainer
                       font.family: prompt.theme.fontFamily
                       font.pixelSize: prompt.theme.textIcon
                     }
@@ -916,7 +914,7 @@ Scope {
               Shared.SectionRule {
                 theme: prompt.theme
                 width: parent.width
-                label: "ANSWER"
+                label: "Answer"
                 detail: prompt.busy ? "Working" : prompt.notice !== "" ? prompt.notice : prompt.answer !== "" ? "Enter copies · Ctrl+Enter inserts" : ""
                 detailColor: prompt.error !== "" ? prompt.theme.yellow : prompt.theme.overlay
               }
@@ -925,9 +923,8 @@ Scope {
                 width: parent.width
                 height: prompt.answer !== "" ? 190 : 86
                 radius: prompt.theme.radius
-                color: prompt.theme.cardColor
-                border.width: 1
-                border.color: prompt.error !== "" ? prompt.theme.alpha(prompt.theme.yellow, 0.3) : prompt.theme.cardBorder
+                // A failed turn tones the card into the warning container.
+                color: prompt.error !== "" && prompt.answer === "" ? prompt.theme.warningContainer : prompt.theme.cardColor
                 antialiasing: true
 
                 Row {
@@ -956,7 +953,7 @@ Scope {
                   visible: !prompt.busy && prompt.answer === "" && prompt.error !== ""
                   text: prompt.error
                   textFormat: Text.PlainText
-                  color: prompt.theme.yellow
+                  color: prompt.theme.textOnWarningContainer
                   font.family: prompt.theme.fontFamily
                   font.pixelSize: prompt.theme.textBody
                   wrapMode: Text.WordWrap

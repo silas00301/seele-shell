@@ -2,7 +2,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 
-// Native ComboBox navigation and accessibility, with the shell's well material.
+// Native ComboBox navigation and accessibility, drawn as Material's exposed
+// dropdown menu: the filled field the value sits in, and a menu on the
+// extra-large surface step with the current choice in the secondary container.
 ComboBox {
   id: choice
   required property var theme
@@ -22,16 +24,23 @@ ComboBox {
   }
   indicator: Text {
     anchors { right: parent.right; rightMargin: choice.theme.spaceLarge; verticalCenter: parent.verticalCenter }
-    text: "⌄"
-    color: choice.theme.subtext
+    text: choice.popup.visible ? "󰅃" : "󰅀"
+    color: choice.activeFocus ? choice.theme.primary : choice.theme.subtext
+    font.family: choice.theme.fontFamily
     font.pixelSize: choice.theme.textIcon
   }
   background: Rectangle {
-    radius: choice.theme.radiusSmall
-    color: choice.theme.wellColor
-    border.width: choice.theme.hairline
-    border.color: choice.activeFocus ? choice.theme.accent : choice.theme.cardBorder
+    topLeftRadius: choice.theme.shapeExtraSmall
+    topRightRadius: choice.theme.shapeExtraSmall
+    bottomLeftRadius: 0
+    bottomRightRadius: 0
+    color: choice.theme.surfaceContainerHighest
     HoverWash { theme: choice.theme; hovered: choice.hovered && choice.enabled }
+    Rectangle {
+      anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+      height: choice.activeFocus || choice.popup.visible ? choice.theme.focusWidth : choice.theme.hairline
+      color: choice.activeFocus || choice.popup.visible ? choice.theme.primary : choice.theme.subtext
+    }
   }
   delegate: ItemDelegate {
     id: option
@@ -45,14 +54,15 @@ ComboBox {
     contentItem: Text {
       text: choice.textRole ? option.modelData[choice.textRole] : option.modelData
       textFormat: Text.PlainText
-      color: option.highlighted ? choice.theme.accent : choice.theme.text
+      color: option.highlighted ? choice.theme.textOnSecondaryContainer : choice.theme.text
       font.family: choice.theme.fontFamily
       font.pixelSize: choice.theme.textBody
       verticalAlignment: Text.AlignVCenter
       elide: Text.ElideRight
     }
     background: Rectangle {
-      color: option.highlighted ? choice.theme.selectedColor : choice.theme.clearColor
+      radius: choice.theme.shapeMedium
+      color: option.highlighted ? choice.theme.secondaryContainer : choice.theme.clearColor
       HoverWash { theme: choice.theme; hovered: option.hovered }
     }
     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -71,10 +81,10 @@ ComboBox {
       ScrollBar.vertical: SlimScrollBar { theme: choice.theme; popupHovered: true }
     }
     background: Rectangle {
-      color: choice.theme.floatColor
-      radius: choice.theme.radius
+      color: choice.theme.surfaceContainerHigh
+      radius: choice.theme.shapeLarge
       border.width: choice.theme.hairline
-      border.color: choice.theme.edgeLight
+      border.color: choice.theme.panelBorder
     }
   }
   HoverHandler { cursorShape: choice.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }

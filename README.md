@@ -284,8 +284,9 @@ If a scan finds no links or codes, it releases the frozen screens and keyboard
 immediately. A click-through result card remains for five seconds. Capture
 failures and timeouts follow the same dismissal behavior.
 
-The overlay uses the shell's existing palette, Maple typography, surface tokens,
-header, edges and grain. It has no opening animation or full-screen blur pass.
+The overlay uses the shell's palette, Maple typography, colour roles and panel
+header: regions are tinted in the primary colour, numbers sit on Material badges.
+It has no opening animation or full-screen blur pass.
 Each output displays its own capture; normalized OCR coordinates also handle
 fractional scaling, mixed resolutions, negative monitor positions and rotated
 outputs. Output removal or size changes dismiss the picker.

@@ -143,22 +143,22 @@ console.log("application mixer level, drag ownership, latch release, mute and ic
 // The group itself: it has to disappear rather than leave a hole, stay bounded,
 // and reuse the routing the panel already owns instead of adding a second path.
 const panel = source.slice(source.indexOf("id: audioControlsWindow"), source.indexOf("// Network controls"));
-assert.match(panel, /label: "APPLICATIONS"/);
+assert.match(panel, /label: "Applications"/);
 assert.equal((panel.match(/visible: audioControlsWindow\.streams\.length > 0/g) || []).length, 2,
   "both the rule and the card stand down when nothing has played");
 assert.match(panel, /Math\.min\(4, audioControlsWindow\.streams\.length\) \* \(root\.rowHeight \+ root\.spaceTight\)/,
   "the group is bounded to four rows and measured from the row it draws");
 assert.match(panel, /delegate: ApplicationLevelRow/);
-assert.ok(!/setAudioOutputs|audio-device/.test(panel.slice(panel.indexOf('label: "APPLICATIONS"'))),
+assert.ok(!/setAudioOutputs|audio-device/.test(panel.slice(panel.indexOf('label: "Applications"'))),
   "the application group adds no second output-routing path");
 
 const row = source.slice(source.indexOf("component ApplicationLevelRow: Row"), source.indexOf("component ConnectivityRow:"));
 assert.match(row, /HoverHandler \{ id: applicationTrackHover \}/);
-assert.match(row, /HoverWash \{ hovered: applicationTrackHover\.hovered \}/);
+assert.match(row, /hovered: applicationTrackHover\.hovered/);
 assert.ok(!/HoverWash \{ hovered: applicationLevelMouse\.containsMouse/.test(row),
   "the track's hover comes from the surface, not from the drag area covering it");
 assert.match(row, /HoverHandler \{ id: applicationMuteHover \}/);
-assert.match(row, /HoverWash \{ hovered: applicationMuteHover\.hovered && !applicationMuteMouse\.pressed \}/);
+assert.match(row, /hovered: applicationMuteHover\.hovered/);
 assert.ok(!/applicationLevelRow\.muted \? root\.dangerColor : applicationMuteMouse\.containsMouse/.test(row),
   "a muted action still receives the neutral hover wash");
 assert.ok(!/\b(width|height|font\.pixelSize|radius): [0-9]/.test(row),

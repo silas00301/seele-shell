@@ -1,13 +1,16 @@
 import QtQuick
 
+// Asynchronous work in place. At rest it is the refresh glyph that asks for
+// the work; while the work is live it is the shared loading indicator, so a
+// control that is busy keeps its geometry and says so without a spinner of
+// its own.
 Item {
   required property var theme
   id: refreshGlyph
 
   property bool spinning: false
-  property color color: refreshGlyph.theme.accent
+  property color color: refreshGlyph.theme.primary
   property alias font: idleRefresh.font
-  onColorChanged: activitySpinner.requestPaint()
 
   Text {
     id: idleRefresh
@@ -22,34 +25,11 @@ Item {
     verticalAlignment: Text.AlignVCenter
   }
 
-  Canvas {
-    id: activitySpinner
-
+  LoadingIndicator {
     visible: refreshGlyph.spinning
     anchors.centerIn: parent
-    width: Math.min(parent.width, parent.height, idleRefresh.font.pixelSize)
+    width: Math.min(parent.width, parent.height, idleRefresh.font.pixelSize * 1.15)
     height: width
-    antialiasing: true
-    transformOrigin: Item.Center
-    onVisibleChanged: if (visible) requestPaint()
-    onWidthChanged: requestPaint()
-    onPaint: {
-      var context = getContext("2d")
-      context.clearRect(0, 0, width, height)
-      context.beginPath()
-      context.lineWidth = Math.max(1.5, width * 0.14)
-      context.lineCap = "round"
-      context.strokeStyle = refreshGlyph.color
-      context.arc(width / 2, height / 2, Math.max(1, width / 2 - context.lineWidth), -Math.PI / 2, Math.PI)
-      context.stroke()
-    }
-
-    NumberAnimation on rotation {
-      from: 0
-      to: 360
-      duration: 720
-      loops: Animation.Infinite
-      running: activitySpinner.visible
-    }
+    color: refreshGlyph.color
   }
 }

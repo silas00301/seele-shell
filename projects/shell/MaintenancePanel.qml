@@ -97,8 +97,8 @@ Column {
     detail: "Everything the maintenance service checks is currently in order."
   }
 
-  // Machine output — the check's own detail, an AI reading of it — is cut back
-  // to the ink like every other well, so it reads as something quoted into the
+  // Machine output — the check's own detail, an AI reading of it — sits a step
+  // up the surface ramp from the card, so it reads as something quoted into the
   // card rather than as more of the card's own text.
   component Well: Rectangle {
     default property alias content: wellColumn.data
@@ -148,8 +148,6 @@ Column {
     radius: panel.theme.radius
     color: panel.theme.cardColor
 
-    Shared.CardEdge { theme: panel.theme }
-
     Column {
       id: body
 
@@ -177,15 +175,7 @@ Column {
           card.toggle()
         }
 
-        Rectangle {
-          visible: head.activeFocus
-          anchors.fill: parent
-          radius: panel.theme.radiusSmall
-          color: "transparent"
-          border.width: 1
-          border.color: panel.theme.accent
-          antialiasing: true
-        }
+        Shared.FocusRing { theme: panel.theme; shown: head.activeFocus; baseRadius: panel.theme.radiusSmall }
 
         Rectangle {
           id: headMark
@@ -194,10 +184,9 @@ Column {
           anchors.top: parent.top
           width: panel.theme.chipHeight - 2
           height: width
-          radius: panel.theme.radiusSmall
-          color: panel.theme.alpha(panel.urgencyTint(card.finding), 0.12)
-          border.width: 1
-          border.color: panel.theme.alpha(panel.urgencyTint(card.finding), 0.24)
+          // The finding's mark, as an avatar in the tone of its urgency.
+          radius: width / 2
+          color: Qt.tint(panel.theme.surfaceContainerHighest, panel.theme.alpha(panel.urgencyTint(card.finding), 0.2))
           antialiasing: true
 
           Shared.CenteredGlyph {
@@ -298,7 +287,7 @@ Column {
         visible: height > 0
         clip: true
 
-        Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+        Behavior on height { NumberAnimation { duration: panel.theme.durationDefaultSpatial; easing.type: Easing.BezierSpline; easing.bezierCurve: panel.theme.springDefaultSpatial } }
 
         Column {
           id: detail
@@ -365,7 +354,7 @@ Column {
           Shared.SectionLabel {
             theme: panel.theme
             visible: !card.finding.resolved
-            text: "SNOOZE FOR"
+            text: "Snooze for"
           }
 
           Flow {
@@ -390,31 +379,17 @@ Column {
               }
             }
 
-            TextField {
+            Shared.ValueField {
               id: customMinutes
+              theme: panel.theme
 
               // The field takes the same control height as the buttons it sits
               // beside, so the row of snooze controls keeps one line.
               width: panel.theme.controlHeight * 3
               height: panel.theme.controlHeight
-              leftPadding: panel.theme.spaceMedium
-              rightPadding: panel.theme.spaceMedium
               placeholderText: "Minutes"
               validator: IntValidator { bottom: 1; top: 43200 }
-              color: panel.theme.text
-              placeholderTextColor: panel.theme.overlay
-              font.family: panel.theme.fontFamily
               font.pixelSize: panel.theme.textCaption
-
-              // A field holds a query rather than content, so it is cut back to
-              // the ink like every other well in the shell.
-              background: Rectangle {
-                radius: panel.theme.radius
-                color: panel.theme.wellColor
-                border.width: 1
-                border.color: customMinutes.activeFocus ? panel.theme.accent : panel.theme.cardBorder
-                antialiasing: true
-              }
             }
 
             Shared.ActionButton {
@@ -632,7 +607,7 @@ Column {
     theme: panel.theme
     width: parent.width
     visible: panel.store.activeModel.count > 0
-    label: "ACTIVE"
+    label: "Active"
     detail: String(panel.store.activeModel.count)
   }
 
@@ -649,7 +624,7 @@ Column {
     theme: panel.theme
     width: parent.width
     visible: panel.store.snoozedModel.count > 0
-    label: "SNOOZED"
+    label: "Snoozed"
     detail: String(panel.store.snoozedModel.count)
     collapsible: true
     expanded: panel.showSnoozed
@@ -672,7 +647,7 @@ Column {
     theme: panel.theme
     width: parent.width
     visible: panel.store.historyModel.count > 0
-    label: "HISTORY"
+    label: "History"
     detail: String(panel.store.historyModel.count)
     collapsible: true
     expanded: panel.showHistory

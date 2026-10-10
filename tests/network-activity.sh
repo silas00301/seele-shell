@@ -20,7 +20,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 source = path.read_text().split('  FileView {')[0]
 source = re.sub(r'import Quickshell.*\n', '', source).replace('ShellRoot {', 'Item {')
-source = source.replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ', '').replace('Qt.resolvedUrl("grain.png")', '""')
+source = source.replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ', '')
 path.write_text(source + '}\n')
 PY
 # Transport stand-ins exercise the production store's Component ownership and

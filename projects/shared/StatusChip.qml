@@ -1,9 +1,9 @@
 import QtQuick
 
 // A short state named in its own tint: a priority, a severity, the stage a row
-// has reached. It is a tinted plate on the shell's small radius rather than a
-// pill, because pills are kept for switches, meters and status dots, and it
-// takes no pointer because it is a readout rather than a control.
+// has reached. It is Material's chip -- the small corner, a container toned
+// from its own colour -- rather than a pill, because a pill is a control the
+// pointer aims at, and it takes no pointer because it is a readout.
 Rectangle {
   id: statusChip
 
@@ -14,9 +14,7 @@ Rectangle {
   implicitWidth: statusChipLabel.implicitWidth + statusChip.theme.spaceMedium * 2
   implicitHeight: statusChip.theme.chipHeight
   radius: statusChip.theme.radiusSmall
-  color: statusChip.theme.alpha(statusChip.tint, 0.14)
-  border.width: 1
-  border.color: statusChip.theme.alpha(statusChip.tint, 0.24)
+  color: Qt.tint(statusChip.theme.surfaceContainerHighest, statusChip.theme.alpha(statusChip.tint, 0.2))
   antialiasing: true
 
   Behavior on color { ColorAnimation { duration: statusChip.theme.durationFast } }

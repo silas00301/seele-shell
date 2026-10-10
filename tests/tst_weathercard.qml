@@ -92,7 +92,7 @@ Rectangle {
       store.place = { name: "Berlin", detail: "Timezone city · Europe/Berlin", chosen: false, city: "Berlin" }
       store.search = { query: "", busy: false, error: "", results: [] }
       card.reset(false)
-      wait(card.theme.durationNormal + 40)
+      wait(card.theme.durationDefaultSpatial + 40)
     }
 
     function test_the_folded_line_is_one_quiet_row() {

@@ -52,13 +52,12 @@ FocusScope {
         required property var modelData
         width: content.width
         spacing: panel.theme.panelSpacing
-        Shared.SectionRule { width: parent.width; theme: panel.theme; label: device.modelData.title.toUpperCase(); detail: device.modelData.detail }
+        Shared.SectionRule { width: parent.width; theme: panel.theme; label: device.modelData.title; detail: device.modelData.detail }
         Rectangle {
           width: parent.width
           height: readings.implicitHeight + panel.theme.cardPadding * 2
           radius: panel.theme.radius
           color: panel.theme.cardColor
-          Shared.CardEdge { theme: panel.theme }
           Column {
             id: readings
             anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -131,7 +130,7 @@ FocusScope {
       width: parent.width
       theme: panel.theme
       visible: panel.store.rows.length > 0
-      label: "SESSION"
+      label: "Session"
       detail: "Peaks over " + (panel.snapshot.elapsed || 0) + " seconds"
       Shared.ActionButton {
         objectName: "resetSensors"

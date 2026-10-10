@@ -24,9 +24,6 @@ Shared.Theme {
   property alias digits: uriPicker.digits
   property alias hoveredUri: uriPicker.hoveredUri
   signal activated(string uri, bool copy)
-  component SurfaceWash: Shared.SurfaceWash { theme: root }
-  component SurfaceEdge: Shared.SurfaceEdge { theme: root }
-  component SurfaceGrain: Shared.SurfaceGrain { theme: root }
   component HoverWash: Shared.HoverWash { theme: root }
   Rectangle { anchors.fill: parent; color: root.crust }
   ListModel { id: linkModel }

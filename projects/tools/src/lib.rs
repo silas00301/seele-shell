@@ -11,7 +11,6 @@ mod command;
 mod control;
 mod daemon;
 pub mod drift;
-mod grain;
 mod launch;
 mod litra;
 mod live;
@@ -54,7 +53,6 @@ pub enum Tool {
     YubikeyWatch,
     Lock,
     Greeter,
-    Grain,
 }
 
 const TOOLS: &[(&str, &str, Tool)] = &[
@@ -87,7 +85,6 @@ const TOOLS: &[(&str, &str, Tool)] = &[
     ("yubikey-watch", "seele-yubikey-watch", Tool::YubikeyWatch),
     ("lock-run", "seele-lock-run", Tool::Lock),
     ("greeter-run", "seele-greeter-run", Tool::Greeter),
-    ("grain", "seele-grain", Tool::Grain),
 ];
 
 impl Tool {
@@ -114,7 +111,6 @@ impl Tool {
             Self::YubikeyWatch => bluetooth::watch_yubikey(),
             Self::Lock => launch::lock(&arguments),
             Self::Greeter => launch::greeter(&arguments),
-            Self::Grain => grain::run(&arguments),
         }
     }
 }

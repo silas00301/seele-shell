@@ -13,31 +13,38 @@ Item {
   property color detailColor: panelHeader.theme.subtext
   default property alias trailing: panelHeaderTrailing.data
 
-  height: panelHeader.detail !== "" ? 42 : panelHeader.theme.panelHeaderHeight
+  // The shape the mark sits in. Every panel takes the same one unless it has
+  // a reason not to, so the shape reads as the shell's signature rather
+  // than as decoration.
+  property string markShape: "cookie9"
 
-  // The panel's mark sits in a tinted well rather than loose on the
-  // material. The well is what carries the weight in the row, so the glyph
-  // inside it takes a step below the title instead of the step above it a
-  // glyph beside text would take, and a panel whose subject is drawn rather
-  // than typed lands in the same well.
-  Rectangle {
+  height: panelHeader.detail !== "" ? panelHeader.theme.panelHeaderDetailHeight : panelHeader.theme.panelHeaderHeight
+
+  // The panel's mark sits in one of Material 3 Expressive's shapes, filled
+  // with the primary container. The shape is what carries the weight in the
+  // row, so the glyph inside it takes a step below the title instead of the
+  // step above it a glyph beside text would take, and a panel whose subject
+  // is drawn rather than typed lands in the same shape.
+  Item {
     id: panelHeaderGlyph
 
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: panelHeader.theme.chipHeight - 2
+    width: panelHeader.theme.panelMarkSize
     height: width
-    radius: panelHeader.theme.radiusSmall
-    color: panelHeader.theme.alpha(panelHeader.theme.accent, 0.1)
-    border.width: 1
-    border.color: panelHeader.theme.alpha(panelHeader.theme.accent, 0.22)
-    antialiasing: true
+
+    MaterialShape {
+      theme: panelHeader.theme
+      anchors.fill: parent
+      shape: panelHeader.markShape
+      color: panelHeader.theme.primaryContainer
+    }
 
     CenteredGlyph {
       visible: panelHeader.mark === null
       anchors.fill: parent
       text: panelHeader.glyph
-      color: panelHeader.theme.accent
+      color: panelHeader.theme.textOnPrimaryContainer
       font.family: panelHeader.theme.fontFamily
       font.pixelSize: panelHeader.theme.textSubhead
     }
@@ -50,7 +57,7 @@ Item {
 
   Column {
     anchors.left: panelHeaderGlyph.right
-    anchors.leftMargin: panelHeader.theme.spaceMedium
+    anchors.leftMargin: panelHeader.theme.spaceLarge
     anchors.right: panelHeaderTrailing.left
     anchors.rightMargin: panelHeaderTrailing.width > 0 ? panelHeader.theme.spaceLarge : 0
     anchors.verticalCenter: parent.verticalCenter

@@ -393,8 +393,8 @@ Shared.Theme {
             }
 
             // Notes and Trash are two views of one folder rather than two
-            // errands, so they are a well with the one being read lit inside
-            // it instead of two buttons competing for the same width.
+            // errands, so they are one button group with the one being read
+            // filled instead of two buttons competing for the same width.
             Shared.SegmentWell {
               theme: root
               Layout.fillWidth: true
@@ -467,26 +467,20 @@ Shared.Theme {
 
                 width: noteList.width
                 height: rowText.implicitHeight + root.cardPadding * 2
-                radius: root.radius
-                color: rowMouse.pressed
-                  ? root.pressColor
-                  : row.chosen ? root.selectedColor : root.cardColor
+                radius: root.radiusRow
+                color: row.chosen ? root.selectedColor : root.cardColor
                 antialiasing: true
 
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
 
-                Shared.CardEdge { theme: root }
-                Shared.HoverWash { theme: root; hovered: rowHover.hovered }
+                Shared.HoverWash { theme: root; hovered: rowHover.hovered; pressed: rowMouse.pressed }
                 HoverHandler { id: rowHover }
 
-                Rectangle {
-                  visible: noteList.activeFocus && noteList.currentIndex === row.index
-                  anchors.fill: parent
-                  radius: parent.radius
-                  color: "transparent"
-                  border.width: 1
-                  border.color: root.accent
-                  antialiasing: true
+                // The list clips, so the ring is drawn on the row's own edge.
+                Shared.FocusRing {
+                  theme: root
+                  shown: noteList.activeFocus && noteList.currentIndex === row.index
+                  gap: 0
                 }
 
                 Column {
@@ -568,7 +562,7 @@ Shared.Theme {
               anchors.horizontalCenter: parent.horizontalCenter
               width: 1
               height: parent.height
-              color: grabHover.hovered || grab.drag.active ? root.accent : root.separatorColor
+              color: grabHover.hovered || grab.drag.active ? root.primary : root.separatorColor
 
               Behavior on color { ColorAnimation { duration: root.durationFast } }
             }
@@ -672,8 +666,6 @@ Shared.Theme {
               radius: root.radius
               color: root.cardColor
               antialiasing: true
-
-              Shared.CardEdge { theme: root }
 
               Flow {
                 id: hints

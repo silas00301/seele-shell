@@ -41,8 +41,7 @@ try {
   const themePath = path.join(work, 'shared/Theme.qml');
   const theme = fs.readFileSync(themePath, 'utf8').split('  FileView {')[0]
     .replace(/import Quickshell.*\n/g, '').replace('ShellRoot {', 'Item {')
-    .replace(/Quickshell.env\("SEELE_SHELL_WALLPAPER"\) \|\| /, '')
-    .replace('Qt.resolvedUrl("grain.png")', '""');
+    .replace(/Quickshell.env\("SEELE_SHELL_WALLPAPER"\) \|\| /, '');
   fs.writeFileSync(themePath, theme + '}\n');
   fs.writeFileSync(path.join(work, 'tst_controlcenter.qml'), `
 import QtQuick
@@ -121,8 +120,8 @@ TestCase {
   }
   Timer { id: volumeDragTimer }
   Timer { id: microphoneDragTimer }
-  component CardEdge: Shared.CardEdge { theme: root }
   component HoverWash: Shared.HoverWash { theme: root }
+  component IconButton: Shared.IconButton { theme: root }
   component FocusRing: Shared.FocusRing { theme: root }
   component PanelHeader: Shared.PanelHeader { theme: root }
   component PanelSurface: Shared.PanelSurface { theme: root }
