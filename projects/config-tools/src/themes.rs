@@ -324,13 +324,19 @@ impl Catalog {
         Ok(())
     }
     /// What `selection.json`, and so `seele-shell/theme.json`, carries: the
-    /// preset's document, the publication format `version` Neovim checks, and
-    /// the configured `wallpaper` the lock screen draws. No preset has an image
-    /// of its own, so that is the image the contract's wallpaper fallback names.
+    /// theme's document, the publication format `version` Neovim checks, and
+    /// the `wallpaper` the desktop and the lock screen draw. That is the
+    /// theme's own image when its folder names one, and otherwise the
+    /// configured wallpaper, so a theme without an image keeps the one already
+    /// on screen. No preset has an image of its own.
     fn publication(&self, theme: &Theme) -> Result<serde_json::Value> {
         let mut selection = theme.document(&self.font_family)?;
         selection["version"] = 2.into();
-        selection["wallpaper"] = self.wallpaper.clone().into();
+        let own = selection["wallpaper"]
+            .as_str()
+            .filter(|image| !image.is_empty())
+            .map(str::to_owned);
+        selection["wallpaper"] = own.unwrap_or_else(|| self.wallpaper.clone()).into();
         theme_contract::check(&selection)?;
         Ok(selection)
     }

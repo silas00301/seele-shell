@@ -438,6 +438,8 @@ pkgs.stdenvNoCC.mkDerivation {
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
     node ${tests}/auth-navigation.js ${../shared} ${nativeQml}/lib/qt-6/qml \
       ${../lock/shell.qml} ${../greeter/shell.qml}
+    test -f "$out/share/seele-shell/shared/Wallpaper.qml"
+    bash ${tests}/wallpaper.sh "$out/share/seele-shell/shared" ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
     ${quickshell}/bin/quickshell --private-check-compat
     bash ${tests}/shell-load.sh ${quickshell}/bin/quickshell \
       "$out/share/seele-shell" ${pkgs.sway-unwrapped}/bin/sway

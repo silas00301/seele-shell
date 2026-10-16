@@ -67,15 +67,18 @@ A drop-in theme folder (`themes/README.md`) is a catalog entry with a
 `document`: the `theme.json` that `seele-theme register <id> <folder> <out>`
 wrote at build time. `register` reads only the folder, holds it to the contract
 and to the folder rules in `src/theme_folder.rs` (the Base16 `palette`, opaque
-roles, the folder's name as `id`, named files inside the folder), copies the
+roles, the folder's name as `id`, named files inside the folder, a `wallpaper`
+that `src/picture.rs` finds to be a complete PNG or JPEG within Qt's 256 MiB
+decode limit), copies the
 files it names into `<out>` and resolves their names there, or exits 1 naming the
 folder and every rule it broke without writing anything. Reading the catalog
 holds each registered document to the same rules and to its entry's identity and
 palette. Its roles and every slot it supplies are published as registered; the
 terminal colours still come from its Base16 palette.
 
-The selected preset's document, with the format `version` and the configured
-wallpaper, is stored in mode-0600
+The selected preset's document, with the format `version` and the `wallpaper`
+the desktop and the lock screen draw (the theme's own image, or the configured
+wallpaper when it has none), is stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
 contain Ghostty, Fish, tmux, X resources and Hyprland includes, copies of the
 Stylix-generated GTK, GtkSourceView, Qt/Kvantum, KDE, Spicetify and Zen assets,
@@ -106,7 +109,8 @@ read-only and carries no Spotify or account data. When the catalog names a
 Vesktop directory, publication replaces the helper's marked block in QuickCSS
 in place so Vencord's file watcher repaints a running window. It removes only
 fixed Catppuccin Discord theme links and keeps other links and user CSS.
-No wallpaper, font, application content, or user account data is modified.
+No wallpaper file, font, application content, or user account data is
+modified; switching only names a different image in the selection.
 
 Run `python3 projects/config-tools/tests/themes.py target/debug/seele-theme`
 after building this crate. The package runs the same fixture against the

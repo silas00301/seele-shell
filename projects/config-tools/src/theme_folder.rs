@@ -9,8 +9,7 @@
 //! build instead of reaching a surface. The catalog then points at the
 //! registered `theme.json`, and the helper holds it to the same rules again
 //! whenever it reads the catalog.
-use crate::theme_contract;
-use crate::Result;
+use crate::{picture, theme_contract, Result};
 use seele_runtime::fs::read_bounded;
 use serde_json::{Map, Value};
 use std::{
@@ -22,6 +21,8 @@ use std::{
 
 const DOCUMENT_LIMIT: usize = 65536;
 const FILE_LIMIT: u64 = 16 * 1024 * 1024;
+/// The contract's slot for a theme's own background image.
+const WALLPAPER: &str = "wallpaper";
 pub const BASE16_KEYS: [&str; 16] = [
     "base00", "base01", "base02", "base03", "base04", "base05", "base06", "base07", "base08",
     "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
@@ -41,9 +42,7 @@ fn base16_color(value: &str) -> bool {
 
 /// What a folder must hold beyond the contract's own rules, which are about
 /// the shell alone: the Base16 palette, opaque roles, and no key the helper
-/// writes itself. A theme's own wallpaper is refused until the desktop draws
-/// one, because the publication would otherwise replace it with the
-/// configured image without a word.
+/// writes itself.
 fn folder_violations(object: &Map<String, Value>) -> Result<Vec<String>> {
     let mut errors = Vec::new();
     match object.get("palette") {
@@ -85,9 +84,6 @@ fn folder_violations(object: &Map<String, Value>) -> Result<Vec<String>> {
                 "{key}: the helper adds it when the theme is published"
             ));
         }
-    }
-    if object.contains_key("wallpaper") {
-        errors.push("wallpaper: a theme's own image is not drawn yet".to_owned());
     }
     Ok(errors)
 }
@@ -172,7 +168,13 @@ pub fn register(id: &str, folder: &Path, out: &Path) -> Result {
         if name.is_empty() {
             continue;
         }
-        match resolve(folder, &root, slot, name) {
+        let resolved = resolve(folder, &root, slot, name).and_then(|file| {
+            match (slot == WALLPAPER).then(|| picture::fault(&file)).flatten() {
+                Some(fault) => Err(format!("{slot}: \"{name}\" {fault}")),
+                None => Ok(file),
+            }
+        });
+        match resolved {
             Ok(file) => {
                 files.insert(name.clone(), file);
                 object.insert(
@@ -248,6 +250,8 @@ pub fn load(
         if let Some(Value::String(file)) = object.get(slot) {
             if !file.is_empty() && !Path::new(file).is_file() {
                 errors.push(format!("{slot}: \"{file}\" is missing"));
+            } else if slot == WALLPAPER && !file.is_empty() && !picture::signed(Path::new(file)) {
+                errors.push(format!("{slot}: \"{file}\" is not a PNG or JPEG image"));
             }
         }
     }
@@ -440,13 +444,95 @@ mod tests {
         );
         refuses(with("version", json!(2)), "version: the helper adds it");
         refuses(
-            with("wallpaper", json!("wallpaper.jpg")),
-            "wallpaper: a theme's own image",
-        );
-        refuses(
             json!(["not", "an", "object"]),
             "a theme document is a JSON object",
         );
+    }
+
+    use crate::picture::tests::{jpeg_image, png_image};
+
+    #[test]
+    fn a_theme_carries_its_own_wallpaper_as_a_png_or_a_jpeg() {
+        for (name, bytes) in [
+            ("wallpaper.png", png_image(16, 9)),
+            ("images/dusk #1?.jpg", jpeg_image(1920, 1080)),
+        ] {
+            let folder = Folder::new(&with("wallpaper", json!(name)));
+            folder.write(name, &bytes);
+            let registered = folder.register().unwrap();
+            let copy = folder.out().join(name);
+            assert_eq!(registered["wallpaper"], json!(copy.to_str().unwrap()));
+            assert_eq!(fs::read(&copy).unwrap(), bytes);
+            let palette: BTreeMap<String, String> = serde_json::from_value(palette()).unwrap();
+            let loaded = load(
+                &folder.out().join("theme.json"),
+                "example",
+                "Example",
+                "dark",
+                &palette,
+            )
+            .unwrap();
+            assert_eq!(loaded["wallpaper"], registered["wallpaper"]);
+        }
+    }
+
+    #[test]
+    fn a_wallpaper_qt_cannot_decode_is_refused_once() {
+        let png = png_image(16, 9);
+        let jpeg = jpeg_image(16, 9);
+        for (bytes, fault) in [
+            (&b"GIF89a"[..], "is not a PNG or JPEG image"),
+            (b"RIFF\0\0\0\0WEBPVP8 ", "is not a PNG or JPEG image"),
+            (b"\x89PN", "is not a PNG or JPEG image"),
+            (b"", "is not a PNG or JPEG image"),
+            (b"not an image\n", "is not a PNG or JPEG image"),
+            (&png[..png.len() / 2], "is not a complete PNG image"),
+            (&jpeg[..jpeg.len() - 2], "is not a complete JPEG image"),
+        ] {
+            let folder = Folder::new(&with("wallpaper", json!("wallpaper.png")));
+            folder.write("wallpaper.png", bytes);
+            let error = folder.register().unwrap_err();
+            let mut lines = error.lines();
+            assert_eq!(lines.next(), Some("Invalid theme folder example:"));
+            let line = lines.next().unwrap();
+            assert!(
+                line.starts_with(&format!("  wallpaper: \"wallpaper.png\" {fault}")),
+                "{bytes:?}: {error}"
+            );
+            assert_eq!(lines.next(), None, "reported once: {error}");
+            assert!(!folder.out().exists());
+        }
+        let folder = Folder::new(&with("wallpaper", json!("missing.png")));
+        assert!(folder
+            .register()
+            .unwrap_err()
+            .contains("wallpaper: \"missing.png\" is not a file in the theme folder"));
+    }
+
+    #[test]
+    fn a_registered_wallpaper_is_checked_again_when_the_catalog_is_read() {
+        let folder = Folder::new(&with("wallpaper", json!("wallpaper.png")));
+        folder.write("wallpaper.png", &png_image(16, 9));
+        folder.register().unwrap();
+        let palette: BTreeMap<String, String> = serde_json::from_value(palette()).unwrap();
+        let path = folder.out().join("theme.json");
+        let copy = folder.out().join("wallpaper.png");
+        fs::write(&copy, b"GIF89a").unwrap();
+        let error = load(&path, "example", "Example", "dark", &palette)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(&format!(
+                "wallpaper: \"{}\" is not a PNG or JPEG image",
+                copy.display()
+            )),
+            "{error}"
+        );
+        fs::remove_file(&copy).unwrap();
+        let error = load(&path, "example", "Example", "dark", &palette)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("is missing"), "{error}");
     }
 
     #[test]

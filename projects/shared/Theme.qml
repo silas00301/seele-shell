@@ -702,10 +702,12 @@ ShellRoot {
   property string soundLevelStep: ""         // a level OSD steps
 
   // Wallpaper ----------------------------------------------------------------
-  // A theme may carry its own image, as an absolute path. Without one the
-  // shell keeps the configured wallpaper: the session's
-  // SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in
-  // `base` under either, so a missing file still leaves the palette.
+  // A theme may carry its own image, as an absolute path. A theme without one
+  // is published with the configured wallpaper, so switching to it keeps the
+  // image already on screen; before any theme is published the shell draws
+  // the session's SEELE_SHELL_WALLPAPER, else the system image. The background
+  // is drawn in `base` under either, so a missing file still leaves the
+  // palette.
   property string wallpaper: ""
   readonly property string configuredWallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || Palette.fallback.wallpaper
   readonly property string wallpaperImage: wallpaper !== "" ? wallpaper : configuredWallpaper

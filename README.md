@@ -34,7 +34,9 @@ materials, motion, sound and wallpaper — with shared components beside it.
 `projects/shared/THEME-CONTRACT.md` explains it; `tests/theme-contract.js`
 fails on a styling literal anywhere else. A theme beyond the Base16 presets is a
 folder under `themes/` plus one line in `themes/default.nix` (`themes/README.md`);
-the build refuses an invalid or incomplete folder and names what it broke. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
+the build refuses an invalid or incomplete folder and names what it broke. A
+folder may carry its own wallpaper, which the desktop background and the lock
+screen draw while that theme is selected. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
 ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients use the same `Palette.js` fallback and
 property assignment; their existing scene dimensions and motion remain local.

@@ -19,6 +19,7 @@ code changes.
 ```
 example/
   theme.json
+  wallpaper.jpg     # the theme's own background, a PNG or a JPEG
   sounds/ping.oga   # only what theme.json names is registered
 ```
 
@@ -35,8 +36,15 @@ example/
 - Any other slot the contract lets a theme supply, such as `"radius": 14` or
   `"weightStrong": "Bold"`. Everything left out keeps its default.
 - A file slot, such as `soundNotification`, names a file relative to the folder.
+- `wallpaper`, optional, names the theme's own background image: a complete
+  PNG or JPEG of at most 16 MiB on disk and 256 MiB decoded (8192 × 8192 at
+  most for a square image). A file Qt could not draw fails the build. While
+  the theme is selected the desktop and the lock screen draw it, cropped to
+  fill each output; a theme without one keeps the configured wallpaper. Use
+  only images you made or may redistribute.
 
-`tests/theme-folders/example` is a complete folder.
+`tests/theme-folders/example` is a complete folder, and
+`tests/theme-folders/pictured` one with its own wallpaper.
 
 ## When a folder is wrong
 

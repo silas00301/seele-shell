@@ -85,9 +85,9 @@ The helper embeds `theme-contract.json` and checks every document, and the
 refuses the whole catalog, naming the document and the rule it broke, so it
 never reaches a surface; the parent flake's `checks.theme-presets` lists every
 generated preset, which makes that a build failure. `theme.json` is the
-document plus `version` and `wallpaper`, the configured image the lock screen
-draws. No preset has an image of its own, so that is also the image the
-wallpaper fallback below names.
+document plus `version` and `wallpaper`, the image the desktop background and
+the lock screen draw. No preset has an image of its own, so for a preset that is
+the configured wallpaper the fallback below names.
 
 `tests/theme-snapshots/themes.json` holds the thirteen documents as `seele-theme
 list` prints them for the pinned schemes. The pixel baselines are rendered from
@@ -110,11 +110,19 @@ desktop and not only the shell:
 - Its palette roles are opaque `#rrggbb`, as the switcher and the applications
   draw them. A folder chooses its roles itself; nothing is projected.
 - Its `id` is the folder's name. `terminal` and `version` are the helper's to
-  add, and `wallpaper` waits until a theme's own image is drawn.
+  add.
+- Its `wallpaper`, if it has one, is a complete PNG or JPEG, the formats the
+  desktop's Qt decodes without an image-format plugin, of at most the 256 MiB
+  Qt decodes one image into (four bytes a pixel, eight for a 16-bit PNG).
+  Registration decodes a PNG to its last row and walks a JPEG's markers to its
+  end, so a file that is another format, cut short or damaged is refused there
+  rather than drawn as nothing; reading the catalog rechecks the registered
+  copy's signature. The background and the lock screen escape the name into
+  the file URL, so it may hold any character a file name can.
 
 A `path` slot names a file relative to the folder, such as
-`"soundNotification": "sounds/ping.oga"`. The name has to stay inside the
-folder and lead to a file of at most 16 MiB.
+`"soundNotification": "sounds/ping.oga"` or `"wallpaper": "wallpaper.jpg"`. The
+name has to stay inside the folder and lead to a file of at most 16 MiB.
 
 `seele-theme register <id> <folder> <out>` runs at build time
 (`packages/core/themes.nix`). It holds the folder to the contract and these
@@ -135,13 +143,16 @@ before anything else, in the same form. The catalog entry names the registered
 `theme.json`, and the helper holds that document to the same rules, and to the
 entry's identity and palette, whenever it reads the catalog. `list` publishes
 it as it was registered, plus the configured typeface unless it names one and
-the terminal colours of its palette; the selection adds `version` and the
-configured wallpaper as for a preset.
+the terminal colours of its palette; the selection adds `version`, and its
+`wallpaper` is the folder's own image or, without one, the configured wallpaper
+as for a preset.
 
-`tests/theme-folders/` holds the example folder the checks register and the
-invalid folders each check refuses. `checks.theme-folders` builds every
-registered folder and the example, lists the example beside a preset, and
-proves each invalid fixture fails its own build with its message;
+`tests/theme-folders/` holds the example folder the checks register, the
+pictured folder that carries its own wallpaper, and the invalid folders each
+check refuses. `checks.theme-folders` builds every registered folder and both
+fixtures, lists them beside a preset, switches between the pictured folder, the
+example and the preset to prove which wallpaper each publishes, and proves each
+invalid fixture fails its own build with its message;
 `config-tools/tests/theme_folders.py` does the same through the CLI, and the
 pixel baselines draw the example in the switcher and the Themes panel.
 
@@ -152,11 +163,23 @@ pixel baselines draw the example in the switcher and the Themes panel.
 for that cue. An empty or omitted slot is silence, and silence is the fallback:
 nothing plays unless the theme supplies a sound. No surface plays one yet.
 
-**Wallpaper.** `wallpaper` is the theme's own image. Without one the shell keeps
-the configured wallpaper, `configuredWallpaper`: `$SEELE_SHELL_WALLPAPER` when
-the session sets it, else `/etc/wallpaper/wallpaper.jpg`. `wallpaperImage` is
-the one the background draws, over `base`, so a missing file still leaves the
-palette.
+**Wallpaper.** `wallpaper` is the theme's own image. A theme without one is
+published with the configured wallpaper, the catalog's `wallpaper`, so switching
+to it keeps the image already on screen; the flake configures that image and
+the session's `$SEELE_SHELL_WALLPAPER` as the same file. Before any theme is
+published, or if a published one names none, the shell draws
+`configuredWallpaper`: `$SEELE_SHELL_WALLPAPER` when the session sets it, else
+`/etc/wallpaper/wallpaper.jpg`. `wallpaperImage` is the one the background
+draws, over `base`, so a missing file still leaves the palette.
+
+The background draws it through `Wallpaper.qml`, which loads a new image behind
+the one on screen and shows it only once it has decoded, so a switch goes from
+one picture to the next without the bare base colour in between. The lock
+screen takes the same published `wallpaper`; the greeter runs before any user
+theme exists and keeps the system's image. `tests/tst_wallpaper.qml` drives the
+component through those switches with real image files, and
+`tests/tst_palette.qml` checks that a published theme's own image is applied and
+that one without leaves the configured wallpaper.
 
 ## What counts as styling
 
@@ -228,11 +251,12 @@ The greeter, lock screen and polkit agent are separate scenes that take only
 the palette, through `Palette.js`; their own dimensions are outside this
 version of the contract.
 
-The shell applies every slot a theme may supply from `theme.json`: Theme.qml's
-`applyTheme` sets each one to the theme's value or, where the theme leaves it
-out, the default, so a preset that follows a folder theme looks exactly as it
-always did. The pixel baselines run every preset through that same path. The
-wallpaper is the exception, since the publication fills it with the configured
-image; swapping wallpapers per theme is SIL-235, and playing the sound cues is
-SIL-240. Each builds on these rules: the contract says what a theme may set and
-what an omitted slot falls back to.
+The shell applies every slot a theme may supply from `theme.json`, its own
+wallpaper included: Theme.qml's `applyTheme` sets each one to the theme's value
+or, where the theme leaves it out, the default, so a preset that follows a
+folder theme looks exactly as it always did. The pixel baselines run every
+preset through that same path; they capture surfaces rather than the
+background, so a wallpaper changes none of them. One image per theme is SIL-235;
+choosing images per monitor or per light and dark variant is SIL-236, and
+playing the sound cues is SIL-240. Each builds on these rules: the contract says
+what a theme may set and what an omitted slot falls back to.

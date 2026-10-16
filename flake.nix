@@ -326,6 +326,7 @@
                   node tests/theme-contract.js projects
                   bash tests/palette.sh projects/shared tests/tst_palette.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
                   node tests/auth-navigation.js projects/shared ${nativeQml}/lib/qt-6/qml projects/lock/shell.qml projects/greeter/shell.qml
+                  bash tests/wallpaper.sh projects/shared ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software qmltestrunner \
                     -import ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml \
                     -import ${nativeQml}/lib/qt-6/qml -input tests/tst_nativefunctions.qml

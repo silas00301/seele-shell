@@ -14,5 +14,6 @@ base64 = { workspace = true }
 url = { workspace = true }
 cap-std = "3"
 libc = { workspace = true }
+png = "0.17"
 tempfile = { workspace = true }
 unicode-general-category = { workspace = true }
