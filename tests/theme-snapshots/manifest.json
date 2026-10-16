@@ -1,0 +1,55 @@
+{
+  "renderer": {
+    "qt": "Qt 6.11.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 11.5.0 20240719 (Red Hat 11.5.0-5)), ubuntu 24.04",
+    "platform": "offscreen",
+    "backend": "software",
+    "style": "Fusion",
+    "text": "unhinted greyscale"
+  },
+  "fonts": {
+    "MapleMono-NF-CN-Bold.ttf": "9e0c22a032c255b2da2c073d6cca6f8cf6fd6f214ae5407eb9f1aa523713729b",
+    "MapleMono-NF-CN-BoldItalic.ttf": "9d6e76fbb5767406efd1f5ae2d32f5439de3b4d4063b128e4186ad5619267120",
+    "MapleMono-NF-CN-ExtraBold.ttf": "14231bdd7e4a7fb8a8a95d7b5886adb2e210370c53228752c49f43440f53ae29",
+    "MapleMono-NF-CN-ExtraBoldItalic.ttf": "d10590f9a7b57e74608b92b52c2c2094111c3baa3b6545627035f33adb6c8b23",
+    "MapleMono-NF-CN-ExtraLight.ttf": "aa4474cad4a3cd19585b8d323d3effb1ec0321f7df64699e674868c7e57f1820",
+    "MapleMono-NF-CN-ExtraLightItalic.ttf": "0ba376b3977fb9c5737dd98f2171b3a05b14d5d92b33062ea1582922c415eba6",
+    "MapleMono-NF-CN-Italic.ttf": "39e6c6e611e65e6d0780f6279561f954f9db51221987d0924c45f6121eaf9054",
+    "MapleMono-NF-CN-Light.ttf": "1e82e3bcc0a70a97a95bdad7d56b8eb31888837e5db3c8c425464430c7f0db23",
+    "MapleMono-NF-CN-LightItalic.ttf": "ac6e062b789f37fc95c6392ed4261b253f6f8a790f5c2eb1082888a287e4a5a5",
+    "MapleMono-NF-CN-Medium.ttf": "6ffdd917c83f397ea021c96f23a54f23f5da835d75f8ddf77f8252ccb35d914f",
+    "MapleMono-NF-CN-MediumItalic.ttf": "d18b1a8295f9ef858131d8f0bcc4b82d9c8b016a7d6588920074d62bd08a0d0d",
+    "MapleMono-NF-CN-Regular.ttf": "bb8e8e8c263896f42555107202f1847f7a42c340a3e532df9c4d585c9794411c",
+    "MapleMono-NF-CN-SemiBold.ttf": "62a707a1c155e971055ce22bbdfacfa5bab50cd09d27bcb27e3ecbf1ac154aab",
+    "MapleMono-NF-CN-SemiBoldItalic.ttf": "84d3462a6c42b6eb60993d35eecd05203a8f4006d7710ce40e7d5321d1fcc5ab",
+    "MapleMono-NF-CN-Thin.ttf": "2c65cc93dab98d6e4edfb42691b12c1b93af65a4084a1ad154defbb34813e1d8",
+    "MapleMono-NF-CN-ThinItalic.ttf": "b7a6eab925124502f0a5b77d305fc23bab1377f0119392ec7c9da62ee238a6e7"
+  },
+  "themes": [
+    "fallback",
+    "catppuccin-mocha",
+    "catppuccin-macchiato",
+    "catppuccin-frappe",
+    "catppuccin-latte",
+    "rose-pine",
+    "rose-pine-moon",
+    "rose-pine-dawn",
+    "flexoki-dark",
+    "flexoki-light",
+    "gruvbox-dark-medium",
+    "gruvbox-light-medium",
+    "nord",
+    "everforest-dark-medium"
+  ],
+  "surfaces": [
+    "bar",
+    "control-center",
+    "notifications",
+    "notification-center",
+    "media",
+    "audio",
+    "session",
+    "osd",
+    "theme-switcher",
+    "theme-settings"
+  ]
+}
