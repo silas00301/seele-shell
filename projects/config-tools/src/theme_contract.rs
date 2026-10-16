@@ -136,6 +136,22 @@ impl Contract {
     }
 }
 
+/// The required palette roles, in the contract's order.
+pub fn roles() -> Result<&'static [String], String> {
+    Ok(&contract()?.required)
+}
+
+/// The slots a theme supplies a file for. A theme folder names each file
+/// relative to itself; registration resolves it to an absolute path.
+pub fn paths() -> Result<Vec<&'static str>, String> {
+    Ok(contract()?
+        .slots
+        .iter()
+        .filter(|(_, slot)| matches!(slot, Slot::Supplied(kind) if kind == "path"))
+        .map(|(name, _)| name.as_str())
+        .collect())
+}
+
 /// Every rule `document` breaks, or none. A theme document is a JSON object:
 /// its identity, every required slot, and any other slot it supplies, of that
 /// slot's type. Derived and fixed slots cannot be supplied, and a key the
@@ -245,6 +261,16 @@ mod tests {
         assert!(["palette", "terminal", "version"]
             .iter()
             .all(|key| contract.extensions.iter().any(|extension| extension == key)));
+        assert_eq!(roles().unwrap(), contract.required.as_slice());
+    }
+
+    #[test]
+    fn the_file_slots_are_the_sound_cues_and_the_wallpaper() {
+        let paths = paths().unwrap();
+        assert!(paths.contains(&"wallpaper") && paths.contains(&"soundNotification"));
+        assert!(paths
+            .iter()
+            .all(|name| *name == "wallpaper" || name.starts_with("sound")));
     }
 
     #[test]

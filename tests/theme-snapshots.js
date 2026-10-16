@@ -13,7 +13,9 @@
 // anywhere in the shell's own QML or in the native presentation policy reaches
 // the pixels. Every theme is rendered on every surface and compared with the
 // committed PNGs pixel for pixel; any difference fails. `--update` rewrites the
-// baselines instead. See theme-snapshots/README.md.
+// baselines instead. A drop-in theme folder's document (folders.json) is
+// rendered on the two Themes surfaces, the places a registered theme has to
+// appear. See theme-snapshots/README.md.
 'use strict';
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -65,6 +67,14 @@ const surfaces = [
   {name: 'theme-switcher', namespace: 'seele-shell-themes', state: {themesOpen: true}},
   {name: 'theme-settings', namespace: 'seele-shell-theme-settings', state: {controlPanel: 'themes'}},
 ];
+// Where a registered theme folder is drawn: in the switcher and in the
+// Control Center's Themes panel, beside every preset.
+const folderSurfaces = ['theme-switcher', 'theme-settings'];
+const surfacesOf = theme => theme.folder ? surfaces.filter(surface => folderSurfaces.includes(surface.name)) : surfaces;
+function counted() {
+  const folders = themes.filter(theme => theme.folder).length;
+  return `${themes.length - folders} themes on ${surfaces.length} surfaces and ${folders} theme folder${folders === 1 ? '' : 's'} on ${folderSurfaces.length}`;
+}
 
 // ---------------------------------------------------------------- PNG codec
 // Qt writes the captures and Node has no image library, so this reads the
@@ -256,7 +266,7 @@ function rewriteImports(text) {
     .replace(/"\.\.\/shared\//g, '"shared/');
 }
 
-function harness(shellText, scene, themes, output) {
+function harness(shellText, scene, themes, output, contract) {
   const lines = shellText.split('\n');
   const rootStart = lines.indexOf('Shared.Theme {'), rootEnd = lines.lastIndexOf('}');
   assert.ok(rootStart > 0 && rootEnd > rootStart, 'shell.qml roots the shell in Shared.Theme');
@@ -280,6 +290,8 @@ function harness(shellText, scene, themes, output) {
   result = replace(result, '// @surfaces@', windows);
   result = replace(result, '"@surfaces@"', JSON.stringify(surfaces.map(surface => ({name: surface.name, state: surface.state || {}}))));
   result = replace(result, '"@themes@"', JSON.stringify(themes));
+  result = replace(result, '"@folderSurfaces@"', JSON.stringify(folderSurfaces));
+  result = replace(result, '"@contract@"', JSON.stringify(contract));
   result = replace(result, '"@output@"', JSON.stringify(output));
   return result;
 }
@@ -308,8 +320,10 @@ if (options.catalog) {
   const shape = theme => JSON.parse(JSON.stringify(theme), (key, value) => typeof value === 'string' && color.test(value) ? value.toLowerCase() : value);
   assert.deepEqual(listed.map(shape), themeFile.themes.map(shape), 'themes.json no longer matches the installed catalog');
 }
-// Each preset is rendered from its contract document exactly as listed.
-const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes];
+// Each preset is rendered from its contract document exactly as listed, and
+// so is the example theme folder, as the helper lists it once registered.
+const folderFile = JSON.parse(fs.readFileSync(path.join(assets, 'folders.json'), 'utf8'));
+const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes, ...folderFile.themes.map(theme => ({...theme, folder: true}))];
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-theme-snapshots-'));
 try {
@@ -329,7 +343,8 @@ try {
   // The package installs the launcher's mark beside shell.qml for the bar.
   fs.copyFileSync(path.resolve(source, '../vicinae/seele.svg'), path.join(stage, 'seele.svg'));
   // Theme.qml without Quickshell's config IO, exactly as the other Qt
-  // fixtures strip it: the palette arrives through Palette.assign instead.
+  // fixtures strip it: each theme reaches its applyTheme directly instead,
+  // with the slots Theme.qml would read from the contract beside it.
   const themePath = path.join(stage, 'shared/Theme.qml');
   const theme = fs.readFileSync(themePath, 'utf8').split('  FileView {')[0]
     .replace(/import Quickshell.*\n/g, '').replace('ShellRoot {', 'Item {')
@@ -342,7 +357,8 @@ try {
   }
   const shellText = fs.readFileSync(path.join(source, 'shell.qml'), 'utf8');
   const scene = fs.readFileSync(path.join(assets, 'scene.qml'), 'utf8');
-  fs.writeFileSync(path.join(stage, 'tst_themesnapshots.qml'), harness(shellText, scene, themes, output));
+  const contract = JSON.parse(fs.readFileSync(path.join(shared, 'theme-contract.json'), 'utf8'));
+  fs.writeFileSync(path.join(stage, 'tst_themesnapshots.qml'), harness(shellText, scene, themes, output, contract));
   // Qt saves into an existing directory only.
   for (const theme of themes) fs.mkdirSync(path.join(output, theme.id));
 
@@ -394,7 +410,7 @@ try {
   const config = (/^Config: (.*)$/m.exec(log) || [, 'unknown'])[1];
   const renderer = {qt: config.replace(/, by .*/, '').replace(/^Using QtTest library [^,]+, /, ''), platform: 'offscreen', backend: 'software', style: 'Fusion', text: 'unhinted greyscale'};
 
-  const expected = themes.flatMap(theme => surfaces.map(surface => path.join(theme.id, `${surface.name}.png`))).sort();
+  const expected = themes.flatMap(theme => surfacesOf(theme).map(surface => path.join(theme.id, `${surface.name}.png`))).sort();
   const rendered = expected.filter(file => fs.existsSync(path.join(output, file)));
   assert.deepEqual(rendered, expected, 'every theme rendered every surface');
 
@@ -404,9 +420,10 @@ try {
       fs.mkdirSync(path.dirname(path.join(baselineDir, file)), {recursive: true});
       fs.copyFileSync(path.join(output, file), path.join(baselineDir, file));
     }
-    const record = {renderer, fonts, themes: themes.map(theme => theme.id), surfaces: surfaces.map(surface => surface.name)};
+    const record = {renderer, fonts, themes: themes.filter(theme => !theme.folder).map(theme => theme.id), surfaces: surfaces.map(surface => surface.name),
+      folders: Object.fromEntries(themes.filter(theme => theme.folder).map(theme => [theme.id, folderSurfaces]))};
     fs.writeFileSync(manifestPath, JSON.stringify(record, null, 2) + '\n');
-    console.log(`Recorded ${expected.length} baselines: ${themes.length} themes on ${surfaces.length} surfaces (${renderer.qt})`);
+    console.log(`Recorded ${expected.length} baselines: ${counted()} (${renderer.qt})`);
   } else {
     const failures = [];
     const committed = fs.existsSync(baselineDir) ? fs.readdirSync(baselineDir, {recursive: true}).filter(file => file.endsWith('.png')).sort() : [];
@@ -433,7 +450,7 @@ try {
       if (options.keep) console.error(`\nActual, baseline and diff images: ${options.keep}`);
       process.exitCode = 1;
     } else {
-      console.log(`${expected.length} snapshots match: ${themes.length} themes on ${surfaces.length} surfaces are pixel-identical`);
+      console.log(`${expected.length} snapshots match: ${counted()} are pixel-identical`);
     }
   }
 } finally {

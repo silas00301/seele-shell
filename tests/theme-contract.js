@@ -276,6 +276,29 @@ const broken = [
 ];
 for (const [document, message] of broken) assert.ok(validate(document).some(error => error.startsWith(message)), `rejects ${message}: ${validate(document)}`);
 
+// Theme.qml applies a published theme through Contract.js. It sets every slot
+// a theme may supply except the wallpaper, whose consumers opt in to it, and
+// each slot takes exactly what `resolve` above says it does.
+const runtime = vm.runInNewContext(fs.readFileSync(path.join(projects, 'shared/Contract.js'), 'utf8').replace(/^\.pragma library\s*/, '') + '\n({slots, values})');
+const applied = runtime.slots(contract);
+assert.deepEqual([...applied].map(slot => slot.name),
+  [...slots.values()].filter(slot => !Object.hasOwn(slot, 'derived') && !slot.fixed && slot.group !== 'wallpaper').map(slot => slot.name),
+  'Theme.qml applies every slot a theme may supply but the wallpaper');
+const appliedAs = document => Object.fromEntries(Object.entries(resolve(document)).filter(([name]) => applied.some(slot => slot.name === name)));
+for (const document of [minimal, {...minimal, radius: 12, weightStrong: 'Bold', easingStandard: 'OutBack', fontFamily: 'Example Sans'}, ...published.themes])
+  assert.deepEqual({...runtime.values(applied, document)}, appliedAs(document), `${document.id}: Contract.js resolves as the contract does`);
+assert.equal(runtime.values(applied, {...minimal, radius: 'round'}).radius, slots.get('radius').default, 'a value of the wrong kind leaves the default');
+
+// Drop-in theme folders (SIL-234). The fixture folders hold registered
+// documents' sources, and the snapshot harness renders what the helper lists
+// for them; both are theme documents, apart from the files a folder names.
+const folders = JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-snapshots/folders.json'), 'utf8'));
+for (const theme of folders.themes) {
+  assert.deepEqual(validate(theme), [], `${theme.id} is a valid theme document`);
+  assert.deepEqual(validate({...theme, version: 2, wallpaper: palette.wallpaper}), [], `${theme.id} is a valid theme.json`);
+}
+assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-folders/example/theme.json'), 'utf8'))), [], 'the example folder is a valid theme document');
+
 // ------------------------------------------------------------- 4. the lint
 // Comments and string contents are masked so a number in prose or a label is
 // never read as styling; string values are kept to find colour literals.
