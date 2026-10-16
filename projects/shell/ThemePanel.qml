@@ -24,10 +24,10 @@ FocusScope {
   readonly property int centre: store.carousel.order.indexOf(store.focusedId)
   readonly property var preview: centre >= 0 && centre < store.model.count ? store.model.get(centre).entry : null
   // Card and slice sizes shrink together on a short output, keeping 16:10.
-  readonly property real cardHeight: Math.max(160, Math.min(300, maximumHeight - chrome.height - labels.height - content.spacing * 2))
-  readonly property real cardWidth: Math.round(cardHeight * 1.6)
-  readonly property real sliceWidth: Math.round(cardHeight * 0.19)
-  readonly property real sliceHeight: Math.round(cardHeight * 0.86)
+  readonly property real cardHeight: Math.max(theme.themesCardMinimum, Math.min(theme.themesCardMaximum, maximumHeight - chrome.height - labels.height - content.spacing * 2))
+  readonly property real cardWidth: Math.round(cardHeight * theme.themesCardAspect)
+  readonly property real sliceWidth: Math.round(cardHeight * theme.themesSliceWidthRatio)
+  readonly property real sliceHeight: Math.round(cardHeight * theme.themesSliceHeightRatio)
   readonly property real sliceGap: theme.spaceMedium
   // As many slices on each side as the width holds.
   readonly property int sideCount: Math.max(0, Math.floor((width - cardWidth - sliceGap * 2) / 2 / (sliceWidth + sliceGap)))
@@ -61,6 +61,7 @@ FocusScope {
   // on, a slider in the accent and the preset's state colours. Every colour is one of the preset's own roles;
   // every measurement is material geometry for this one scene, scaled with the
   // card.
+  // theme-contract: artwork -- a preset drawn as a miniature desktop in its own colours; every measure is the illustration's, scaled with the card
   component Scene: Rectangle {
     id: scene
     required property var preset
@@ -276,9 +277,11 @@ FocusScope {
       }
     }
   }
+  // theme-contract: end
 
   // A neighbour as a narrow strip of itself: its bar, a window wearing its
   // accent border, and its state colours stacked beneath.
+  // theme-contract: artwork -- a neighbour drawn as a strip of its own desktop, scaled with the slice
   component Slice: Rectangle {
     id: slice
     required property var preset
@@ -318,6 +321,7 @@ FocusScope {
       }
     }
   }
+  // theme-contract: end
 
   Column {
     id: content
@@ -383,9 +387,9 @@ FocusScope {
             : card.offset < 0 ? card.origin + card.offset * (panel.sliceWidth + panel.sliceGap)
             : card.origin + panel.cardWidth + panel.sliceGap + (card.offset - 1) * (panel.sliceWidth + panel.sliceGap)
           y: (strip.height - height) / 2
-          Behavior on x { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
-          Behavior on width { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
-          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+          Behavior on x { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
+          Behavior on width { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
+          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
 
           Loader {
             anchors.fill: parent
@@ -405,9 +409,9 @@ FocusScope {
           Rectangle {
             anchors.fill: parent
             radius: panel.theme.radius
-            color: panel.theme.alpha(panel.theme.crust, card.centred ? 0 : sliceMouse.containsMouse ? 0.06 : 0.24)
-            border.width: card.centred ? 2 : 1
-            border.color: card.centred ? panel.theme.accent : panel.theme.alpha(panel.theme.text, 0.12)
+            color: panel.theme.alpha(panel.theme.crust, card.centred ? 0 : sliceMouse.containsMouse ? panel.theme.themesVeilHoverOpacity : panel.theme.themesVeilOpacity)
+            border.width: card.centred ? panel.theme.strokeStrong : panel.theme.hairline
+            border.color: card.centred ? panel.theme.accent : panel.theme.themesSliceBorder
             antialiasing: true
             Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
           }

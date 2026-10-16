@@ -105,7 +105,7 @@ Column {
     background: Rectangle {
       color: panel.theme.wellColor
       radius: panel.theme.radius
-      border.width: 1
+      border.width: panel.theme.hairline
       border.color: field.activeFocus ? panel.theme.accent : panel.theme.cardBorder
       antialiasing: true
       Behavior on border.color { ColorAnimation { duration: panel.theme.durationFast } }
@@ -350,7 +350,7 @@ Column {
             height: device.editing ? editorContent.implicitHeight + panel.theme.cardPadding * 2 : 0
             visible: height > 0
             clip: true
-            Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+            Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
             Column {
               id: editorContent
               anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -590,7 +590,7 @@ Column {
                     height: homeRow.unfolded ? levelContent.implicitHeight + panel.theme.cardPadding * 2 : 0
                     visible: height > 0
                     clip: true
-                    Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
                     Column {
                       id: levelContent
                       anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

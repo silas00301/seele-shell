@@ -41,7 +41,7 @@ FocusScope {
     width: parent ? parent.width : 0
     textFormat: Text.PlainText
     wrapMode: Text.WordWrap
-    lineHeight: 1.15
+    lineHeight: settings.theme.lineHeightProse
     color: settings.theme.subtext
     font.family: settings.theme.fontFamily
     font.pixelSize: settings.theme.textCaption
@@ -217,9 +217,9 @@ FocusScope {
           width: settings.theme.chipHeight
           height: width
           radius: settings.theme.radiusSmall
-          color: settings.theme.alpha(settings.theme.accent, 0.1)
-          border.width: 1
-          border.color: settings.theme.alpha(settings.theme.accent, 0.22)
+          color: settings.theme.markWell
+          border.width: settings.theme.hairline
+          border.color: settings.theme.markWellBorder
           Shared.CenteredGlyph {
             anchors.fill: parent
             text: "󰊭"
@@ -231,7 +231,7 @@ FocusScope {
         Column {
           anchors.verticalCenter: parent.verticalCenter
           width: parent.width - settings.theme.chipHeight - accountRefresh.width - parent.spacing * 2
-          spacing: 1
+          spacing: settings.theme.spaceLine
           Text {
             width: parent.width
             text: settings.account.account || "Google account"
@@ -440,7 +440,7 @@ FocusScope {
         height: width
         radius: width / 2
         color: row.modelData.color || settings.theme.accent
-        opacity: row.modelData.selected ? 1 : 0.5
+        opacity: row.modelData.selected ? 1 : settings.theme.deselectedOpacity
       }
       Column {
         anchors.left: swatch.right
@@ -448,7 +448,7 @@ FocusScope {
         anchors.right: rowSwitch.left
         anchors.rightMargin: settings.theme.spaceMedium
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 1
+        spacing: settings.theme.spaceLine
         Text {
           width: parent.width
           text: row.modelData.name

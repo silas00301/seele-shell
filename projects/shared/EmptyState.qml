@@ -19,7 +19,7 @@ Item {
     id: emptyStateColumn
 
     anchors.centerIn: parent
-    width: Math.min(parent.width - emptyState.theme.cardPadding * 2, 320)
+    width: Math.min(parent.width - emptyState.theme.cardPadding * 2, emptyState.theme.emptyStateWidth)
     spacing: emptyState.theme.spaceSmall
 
     CenteredGlyph {

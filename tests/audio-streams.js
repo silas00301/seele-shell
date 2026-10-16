@@ -146,7 +146,7 @@ const panel = source.slice(source.indexOf("id: audioControlsWindow"), source.ind
 assert.match(panel, /label: "APPLICATIONS"/);
 assert.equal((panel.match(/visible: audioControlsWindow\.streams\.length > 0/g) || []).length, 2,
   "both the rule and the card stand down when nothing has played");
-assert.match(panel, /Math\.min\(4, audioControlsWindow\.streams\.length\) \* \(root\.rowHeight \+ root\.spaceTight\)/,
+assert.match(panel, /Math\.min\(root\.deviceListRows, audioControlsWindow\.streams\.length\) \* \(root\.rowHeight \+ root\.spaceTight\)/,
   "the group is bounded to four rows and measured from the row it draws");
 assert.match(panel, /delegate: ApplicationLevelRow/);
 assert.ok(!/setAudioOutputs|audio-device/.test(panel.slice(panel.indexOf('label: "APPLICATIONS"'))),

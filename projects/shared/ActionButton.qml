@@ -35,7 +35,7 @@ Button {
     readonly property color resting: button.danger ? button.theme.dangerTint : button.selected ? button.theme.selectedColor : button.theme.cardColor
     radius: button.theme.radius
     color: button.down ? button.theme.pressColor : resting
-    border.width: 1
+    border.width: button.theme.hairline
     border.color: button.activeFocus ? button.theme.accent : button.theme.cardBorder
     Behavior on color { ColorAnimation { duration: button.theme.durationFast } }
     HoverWash { theme: button.theme; hovered: button.hovered && button.enabled }

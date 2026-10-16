@@ -12,7 +12,7 @@ Item {
   opacity: strength
   readonly property int depth: Math.max(1, Math.round(Math.min(width, height) * theme.edgeCueReach))
   readonly property color edge: theme.alpha(theme.green, theme.edgeCueAlpha)
-  readonly property color mid: theme.alpha(theme.green, theme.edgeCueAlpha * 0.42)
+  readonly property color mid: theme.alpha(theme.green, theme.edgeCueAlpha * theme.edgeCueFalloff)
   readonly property color fade: theme.alpha(theme.green, 0)
 
   Rectangle {
@@ -22,7 +22,7 @@ Item {
     height: rim.depth
     gradient: Gradient {
       GradientStop { position: 0.0; color: rim.edge }
-      GradientStop { position: 0.45; color: rim.mid }
+      GradientStop { position: rim.theme.edgeCueFalloffStop; color: rim.mid }
       GradientStop { position: 1.0; color: rim.fade }
     }
   }
@@ -34,7 +34,7 @@ Item {
     height: rim.depth
     gradient: Gradient {
       GradientStop { position: 0.0; color: rim.fade }
-      GradientStop { position: 0.55; color: rim.mid }
+      GradientStop { position: rim.theme.edgeCueFalloffStopMirrored; color: rim.mid }
       GradientStop { position: 1.0; color: rim.edge }
     }
   }
@@ -47,7 +47,7 @@ Item {
     gradient: Gradient {
       orientation: Gradient.Horizontal
       GradientStop { position: 0.0; color: rim.edge }
-      GradientStop { position: 0.45; color: rim.mid }
+      GradientStop { position: rim.theme.edgeCueFalloffStop; color: rim.mid }
       GradientStop { position: 1.0; color: rim.fade }
     }
   }
@@ -60,7 +60,7 @@ Item {
     gradient: Gradient {
       orientation: Gradient.Horizontal
       GradientStop { position: 0.0; color: rim.fade }
-      GradientStop { position: 0.55; color: rim.mid }
+      GradientStop { position: rim.theme.edgeCueFalloffStopMirrored; color: rim.mid }
       GradientStop { position: 1.0; color: rim.edge }
     }
   }

@@ -9,6 +9,6 @@ ListView {
   flickDeceleration: seeleListView.theme.scrollDeceleration
   maximumFlickVelocity: seeleListView.theme.scrollFlickVelocity
   rebound: Transition {
-    NumberAnimation { properties: "x,y"; duration: seeleListView.theme.scrollRebound; easing.type: Easing.OutCubic }
+    NumberAnimation { properties: "x,y"; duration: seeleListView.theme.scrollRebound; easing.type: seeleListView.theme.easingStandard }
   }
 }

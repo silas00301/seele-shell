@@ -14,11 +14,11 @@ Rectangle {
   property real from: 0
   property color fill: meterBar.theme.accent
 
-  implicitHeight: 7
+  implicitHeight: meterBar.theme.meterHeight
   radius: height / 2
   color: meterBar.theme.wellColor
-  border.width: 1
-  border.color: meterBar.theme.alpha(meterBar.theme.text, 0.05)
+  border.width: meterBar.theme.hairline
+  border.color: meterBar.theme.wellBorder
   antialiasing: true
 
   // The filled part is graded along its length rather than laid down flat,
@@ -34,7 +34,7 @@ Rectangle {
 
     gradient: Gradient {
       orientation: Gradient.Horizontal
-      GradientStop { position: 0.0; color: meterBar.theme.alpha(meterBar.fill, 0.62) }
+      GradientStop { position: 0.0; color: meterBar.theme.alpha(meterBar.fill, meterBar.theme.meterFadeOpacity) }
       GradientStop { position: 1.0; color: meterBar.fill }
     }
   }

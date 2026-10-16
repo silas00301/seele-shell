@@ -4,29 +4,29 @@ Item {
   required property var theme
   id: surfaceEdge
 
-  property real radius: surfaceEdge.theme.radius - 1
+  property real radius: surfaceEdge.theme.radius - surfaceEdge.theme.hairline
 
   anchors.fill: parent
   z: 1
 
   Rectangle {
     anchors.fill: parent
-    anchors.margins: 1
+    anchors.margins: surfaceEdge.theme.hairline
     radius: surfaceEdge.radius
     color: "transparent"
-    border.width: 1
+    border.width: surfaceEdge.theme.hairline
     border.color: surfaceEdge.theme.edgeLight
     antialiasing: true
   }
 
   Rectangle {
     anchors.top: parent.top
-    anchors.topMargin: 1
+    anchors.topMargin: surfaceEdge.theme.hairline
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.leftMargin: surfaceEdge.radius
     anchors.rightMargin: surfaceEdge.radius
-    height: 1
+    height: surfaceEdge.theme.hairline
     color: surfaceEdge.theme.edgeCrown
   }
 }

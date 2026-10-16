@@ -1,0 +1,2622 @@
+{
+  "version": 1,
+  "description": "The Seele theme contract. Every styling value the desktop shell and Seele Notes draw with is a slot here, implemented once by Theme.qml in the same order and with the same defaults; tests/theme-contract.js holds the two to each other and fails on any styling literal outside them.",
+  "documents": {
+    "description": "A theme is a JSON object: its identity, then any slots it supplies by name. It must supply every required slot. Any other slot it leaves out takes its default, which reproduces the shell as it was drawn before themes could set more than colours; sound and wallpaper slots fall back as their slots say. Derived slots are computed from the slots they name and fixed slots belong to the contract, so a theme supplies neither. Keys listed in extensions belong to other applications and are passed through.",
+    "identity": {
+      "id": {
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "description": "Stable kebab-case id, as `seele-theme` names a preset."
+      },
+      "name": {
+        "pattern": "^\\S.{0,63}$",
+        "description": "The name the switcher and the Themes panel show."
+      },
+      "mode": {
+        "enum": [
+          "light",
+          "dark"
+        ],
+        "description": "The mode a theme serves."
+      }
+    },
+    "extensions": [
+      "palette",
+      "terminal"
+    ],
+    "paths": "A path slot holds an absolute path or the empty string. A theme folder names its own files relative to itself; registration resolves them to absolute paths before the shell sees them."
+  },
+  "types": {
+    "color": "#rrggbb, or #aarrggbb with alpha first as Qt reads it.",
+    "colorList": "A non-empty array of colors.",
+    "int": "An integer: pixels, milliseconds or a count, as the slot says.",
+    "real": "A finite number: an opacity, a ratio or a fractional pixel size.",
+    "string": "Text, such as a font family.",
+    "path": "An absolute file path, or empty for none.",
+    "url": "A URL resolved against the shell's own files.",
+    "weight": "A font weight, by its name in `enums.weight`.",
+    "easing": "An easing curve, by its name in `enums.easing`."
+  },
+  "enums": {
+    "weight": {
+      "Thin": "Font.Thin",
+      "ExtraLight": "Font.ExtraLight",
+      "Light": "Font.Light",
+      "Normal": "Font.Normal",
+      "Medium": "Font.Medium",
+      "DemiBold": "Font.DemiBold",
+      "Bold": "Font.Bold",
+      "ExtraBold": "Font.ExtraBold",
+      "Black": "Font.Black"
+    },
+    "easing": {
+      "Linear": "Easing.Linear",
+      "InQuad": "Easing.InQuad",
+      "OutQuad": "Easing.OutQuad",
+      "InOutQuad": "Easing.InOutQuad",
+      "InCubic": "Easing.InCubic",
+      "OutCubic": "Easing.OutCubic",
+      "InOutCubic": "Easing.InOutCubic",
+      "InQuart": "Easing.InQuart",
+      "OutQuart": "Easing.OutQuart",
+      "InOutQuart": "Easing.InOutQuart",
+      "InQuint": "Easing.InQuint",
+      "OutQuint": "Easing.OutQuint",
+      "InOutQuint": "Easing.InOutQuint",
+      "InSine": "Easing.InSine",
+      "OutSine": "Easing.OutSine",
+      "InOutSine": "Easing.InOutSine",
+      "InExpo": "Easing.InExpo",
+      "OutExpo": "Easing.OutExpo",
+      "InOutExpo": "Easing.InOutExpo",
+      "InBack": "Easing.InBack",
+      "OutBack": "Easing.OutBack",
+      "InOutBack": "Easing.InOutBack",
+      "OutBounce": "Easing.OutBounce",
+      "OutElastic": "Easing.OutElastic"
+    }
+  },
+  "fallbacks": {
+    "sound": "Silence. An omitted or empty sound slot plays nothing.",
+    "wallpaper": "The configured wallpaper: $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg, drawn over the base colour so a missing file still leaves the palette."
+  },
+  "structural": {
+    "description": "Numbers that describe structure rather than style, which a surface may still write: they are what any theme would want there. Anything else bound to a geometry, type, shape, material or motion property is a slot.",
+    "values": [
+      "zero: no gap, no stroke, hidden",
+      "an integer count that multiplies or divides a measure: both sides of a card, the columns of a grid, the rows a list shows, the gaps between n items",
+      "a half: the middle of a span, the centre of a gradient, a circle's radius as half its size",
+      "one as the full strength of an opacity, scale or gradient end, as the unit clamp of Math.max or Math.min, or as an empty or full channel of Qt.rgba",
+      "a full turn, 360, as the end of a rotation animation",
+      "a comparison, an index or a remainder: logic about the data",
+      "\"transparent\": no paint at all, such as a layer window's own background"
+    ],
+    "artwork": "Drawing coordinates of an icon or an illustration -- the headphone silhouettes, the theme switcher's miniature desktops, the speed gauge's dial -- are marked `theme-contract: artwork` in the source with their reason. They are sized by a slot and coloured from slots, and the check lists them."
+  },
+  "members": {
+    "description": "Theme.qml properties that are not styling values and so not slots. Each is declared after the helper functions; any other property anywhere in Theme.qml must be a slot.",
+    "keyboardNavigation": "The shared keyboard navigation every surface reaches through the theme (projects/navigation)."
+  },
+  "groups": [
+    {
+      "name": "palette",
+      "section": "Palette",
+      "kind": "required",
+      "description": "The eleven colour roles. Every theme supplies all of them; they are the only required slots.",
+      "slots": [
+        {
+          "name": "base",
+          "type": "color",
+          "default": "#1e1e2e",
+          "binding": "Palette.fallback.base",
+          "required": true,
+          "description": "The ground the wallpaper sits on."
+        },
+        {
+          "name": "mantle",
+          "type": "color",
+          "default": "#181825",
+          "binding": "Palette.fallback.mantle",
+          "required": true,
+          "description": "Panel material, translucent over the wallpaper."
+        },
+        {
+          "name": "crust",
+          "type": "color",
+          "default": "#11111b",
+          "binding": "Palette.fallback.crust",
+          "required": true,
+          "description": "The darkest step in the palette. Chrome is cut out of the wallpaper with it, wells are cut back to it, and every surface is grounded on it, so the shell's depth comes from ink rather than from grey."
+        },
+        {
+          "name": "surface",
+          "type": "color",
+          "default": "#313244",
+          "binding": "Palette.fallback.surface",
+          "required": true,
+          "description": "Cards and rows, as tints of it."
+        },
+        {
+          "name": "overlay",
+          "type": "color",
+          "default": "#6c7086",
+          "binding": "Palette.fallback.overlay",
+          "required": true,
+          "description": "Quiet glyphs, rules and inactive marks."
+        },
+        {
+          "name": "text",
+          "type": "color",
+          "default": "#cdd6f4",
+          "binding": "Palette.fallback.text",
+          "required": true,
+          "description": "Primary text and glyphs."
+        },
+        {
+          "name": "subtext",
+          "type": "color",
+          "default": "#a6adc8",
+          "binding": "Palette.fallback.subtext",
+          "required": true,
+          "description": "Secondary text, held to a legibility floor."
+        },
+        {
+          "name": "accent",
+          "type": "color",
+          "default": "#b4befe",
+          "binding": "Palette.fallback.accent",
+          "required": true,
+          "description": "State, selection and the one lit control."
+        },
+        {
+          "name": "red",
+          "type": "color",
+          "default": "#f38ba8",
+          "binding": "Palette.fallback.red",
+          "required": true,
+          "description": "Danger and failure."
+        },
+        {
+          "name": "green",
+          "type": "color",
+          "default": "#a6e3a1",
+          "binding": "Palette.fallback.green",
+          "required": true,
+          "description": "Success and done."
+        },
+        {
+          "name": "yellow",
+          "type": "color",
+          "default": "#f9e2af",
+          "binding": "Palette.fallback.yellow",
+          "required": true,
+          "description": "Warnings and pending work."
+        }
+      ]
+    },
+    {
+      "name": "signal",
+      "section": "Signal colours",
+      "kind": "fixed",
+      "description": "Colours that belong to the thing they report rather than to a theme: the privacy indicators and a light's own colour temperature. They are part of the contract so every drawn colour is named, and fixed, so no theme can recolour them.",
+      "slots": [
+        {
+          "name": "iosOrange",
+          "type": "color",
+          "default": "#ff9f0a",
+          "fixed": true,
+          "description": "iOS-style privacy indicator colours, deliberately outside the theme palette."
+        },
+        {
+          "name": "iosGreen",
+          "type": "color",
+          "default": "#30d158",
+          "fixed": true,
+          "description": "iOS-style privacy indicator colours, deliberately outside the theme palette."
+        },
+        {
+          "name": "iosRed",
+          "type": "color",
+          "default": "#ff453a",
+          "fixed": true,
+          "description": "iOS-style privacy indicator colours, deliberately outside the theme palette."
+        },
+        {
+          "name": "temperatureSpectrum",
+          "type": "colorList",
+          "default": [
+            "#ff9a45",
+            "#fff1e2",
+            "#9fc2ff"
+          ],
+          "fixed": true,
+          "description": "A light's colour temperature from warm (2700 K) through neutral to cool (6500 K), drawn along the track that sets it. It is the light's own colour, so like the privacy colours it stays outside the theme palette."
+        }
+      ]
+    },
+    {
+      "name": "typography",
+      "section": "Typography",
+      "description": "The typeface, the type ramp a surface picks a level from, weights, tracking and line spacing.",
+      "slots": [
+        {
+          "name": "fontFamily",
+          "type": "string",
+          "default": "Maple Mono NF CN",
+          "binding": "Palette.fallback.fontFamily",
+          "description": "The one typeface every surface sets text and glyphs in."
+        },
+        {
+          "name": "textMicro",
+          "type": "int",
+          "default": 8,
+          "description": "A numeral riding beside a label."
+        },
+        {
+          "name": "textCaption",
+          "type": "int",
+          "default": 9,
+          "description": "Row detail and secondary state."
+        },
+        {
+          "name": "textLabel",
+          "type": "int",
+          "default": 10,
+          "description": "Button, chip and section labels."
+        },
+        {
+          "name": "textBody",
+          "type": "int",
+          "default": 11,
+          "description": "Row titles and primary body text."
+        },
+        {
+          "name": "textStrong",
+          "type": "int",
+          "default": 12,
+          "description": "Emphasised body, menu bar clock."
+        },
+        {
+          "name": "textLead",
+          "type": "int",
+          "default": 13,
+          "description": "A card's own subject."
+        },
+        {
+          "name": "textIcon",
+          "type": "int",
+          "default": 14,
+          "description": "Menu bar and list-row glyphs."
+        },
+        {
+          "name": "textSubhead",
+          "type": "int",
+          "default": 15,
+          "description": "A card's lead subject."
+        },
+        {
+          "name": "textCard",
+          "type": "int",
+          "default": 17,
+          "description": "The glyph a card leads with."
+        },
+        {
+          "name": "textTitle",
+          "type": "int",
+          "default": 18,
+          "description": "Panel titles."
+        },
+        {
+          "name": "textDisplay",
+          "type": "int",
+          "default": 20,
+          "description": "Panel glyphs and hero numerals."
+        },
+        {
+          "name": "textCode",
+          "type": "int",
+          "default": 26,
+          "description": "A pairing code, read at arm's length."
+        },
+        {
+          "name": "textHero",
+          "type": "int",
+          "default": 34,
+          "description": "The single glyph a prompt leads with."
+        },
+        {
+          "name": "weightRegular",
+          "type": "weight",
+          "default": "Normal",
+          "description": "Weight carries hierarchy instead of bolding everything: DemiBold for a title or an active label, Medium for a quiet one, Light only for the large numerals that would otherwise read as a wall."
+        },
+        {
+          "name": "weightMedium",
+          "type": "weight",
+          "default": "Medium",
+          "description": "Weight carries hierarchy instead of bolding everything: DemiBold for a title or an active label, Medium for a quiet one, Light only for the large numerals that would otherwise read as a wall."
+        },
+        {
+          "name": "weightStrong",
+          "type": "weight",
+          "default": "DemiBold",
+          "description": "Weight carries hierarchy instead of bolding everything: DemiBold for a title or an active label, Medium for a quiet one, Light only for the large numerals that would otherwise read as a wall."
+        },
+        {
+          "name": "weightLight",
+          "type": "weight",
+          "default": "Light",
+          "description": "Weight carries hierarchy instead of bolding everything: DemiBold for a title or an active label, Medium for a quiet one, Light only for the large numerals that would otherwise read as a wall."
+        },
+        {
+          "name": "trackingLabel",
+          "type": "real",
+          "default": 1.4,
+          "description": "Uppercase section labels are the one place tracking earns its width, and they earn more of it than a run of capitals at ordinary spacing would: a rule reads as a rule, rather than as a shouted word, once the letters are far enough apart to be seen individually."
+        },
+        {
+          "name": "trackingCode",
+          "type": "int",
+          "default": 4,
+          "description": "A pairing code is spaced so each digit can be read off on its own."
+        },
+        {
+          "name": "lineHeightProse",
+          "type": "real",
+          "default": 1.15,
+          "description": "Prose that wraps over several lines is set a little open, and a glyph beside wrapped text aligns to the box one line of it takes."
+        },
+        {
+          "name": "lineBoxRatio",
+          "type": "real",
+          "default": 1.4,
+          "description": "Prose that wraps over several lines is set a little open, and a glyph beside wrapped text aligns to the box one line of it takes."
+        }
+      ]
+    },
+    {
+      "name": "shape",
+      "section": "Shape",
+      "description": "Corner radii and stroke widths.",
+      "slots": [
+        {
+          "name": "radius",
+          "type": "int",
+          "default": 8,
+          "description": "Hyprland rounds windows at 8px, so every panel, button, and bar entry rounds the same way."
+        },
+        {
+          "name": "radiusSmall",
+          "type": "int",
+          "default": 6,
+          "description": "Hyprland rounds windows at 8px, so every panel, button, and bar entry rounds the same way."
+        },
+        {
+          "name": "hairline",
+          "type": "int",
+          "default": 1,
+          "description": "The one stroke every border, rule and inner edge is drawn with."
+        },
+        {
+          "name": "strokeStrong",
+          "type": "int",
+          "default": 2,
+          "description": "An emphasised outline: the card a choice lands on, the meeting being placed."
+        },
+        {
+          "name": "meetingCellRadius",
+          "type": "int",
+          "default": 2,
+          "description": "The meeting planner's ribbon cells and busy blocks round a little, and the meeting being placed a little more."
+        },
+        {
+          "name": "meetingSelectionRadius",
+          "type": "int",
+          "default": 3,
+          "description": "The meeting planner's ribbon cells and busy blocks round a little, and the meeting being placed a little more."
+        }
+      ]
+    },
+    {
+      "name": "spacing",
+      "section": "Spacing",
+      "description": "The spacing ramp inside cards and the gaps between the bar, panels and the output.",
+      "slots": [
+        {
+          "name": "barSpacing",
+          "type": "int",
+          "default": 2,
+          "description": "Between two menu bar entries."
+        },
+        {
+          "name": "barPadding",
+          "type": "int",
+          "default": 4,
+          "description": "A bar entry's pill inside the bar's height."
+        },
+        {
+          "name": "panelGap",
+          "type": "int",
+          "default": 5,
+          "description": "Between the bar, a panel and an output's edge."
+        },
+        {
+          "name": "osdGap",
+          "type": "int",
+          "default": 16,
+          "description": "Between the bar and an OSD."
+        },
+        {
+          "name": "panelMargin",
+          "type": "int",
+          "default": 16,
+          "description": "A panel's padding."
+        },
+        {
+          "name": "panelSpacing",
+          "type": "int",
+          "default": 10,
+          "description": "Between a panel's sections."
+        },
+        {
+          "name": "scrollGutter",
+          "type": "int",
+          "default": 8,
+          "description": "The gutter a scrollable keeps for its handle."
+        },
+        {
+          "name": "scrollInset",
+          "type": "int",
+          "default": 4,
+          "description": "Content's distance from that gutter."
+        },
+        {
+          "name": "spaceTight",
+          "type": "int",
+          "default": 4,
+          "description": "Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`."
+        },
+        {
+          "name": "spaceSmall",
+          "type": "int",
+          "default": 6,
+          "description": "Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`."
+        },
+        {
+          "name": "spaceMedium",
+          "type": "int",
+          "default": 8,
+          "description": "Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`."
+        },
+        {
+          "name": "spaceLarge",
+          "type": "int",
+          "default": 12,
+          "description": "Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`."
+        },
+        {
+          "name": "cardPadding",
+          "type": "int",
+          "default": 10,
+          "description": "Spacing ramp inside a card. Panels keep `panelMargin` and `panelSpacing`."
+        },
+        {
+          "name": "spaceLine",
+          "type": "int",
+          "default": 1,
+          "description": "Two lines of one item stacked under each other: a title over its detail."
+        },
+        {
+          "name": "spaceMicro",
+          "type": "int",
+          "default": 2,
+          "description": "A mark and its caption, a row of tiny marks."
+        },
+        {
+          "name": "spaceSnug",
+          "type": "int",
+          "default": 3,
+          "description": "A row's title over its detail where they need air."
+        },
+        {
+          "name": "barContentSpacing",
+          "type": "int",
+          "default": 5,
+          "description": "Inside a bar entry: its row's gaps, and the padding on either side of a label, so an entry's width is its content plus two of these."
+        },
+        {
+          "name": "barItemPadding",
+          "type": "int",
+          "default": 7,
+          "description": "Inside a bar entry: its row's gaps, and the padding on either side of a label, so an entry's width is its content plus two of these."
+        },
+        {
+          "name": "cardGlyphSpacing",
+          "type": "int",
+          "default": 9,
+          "description": "A card's glyph column is set this far from its text."
+        },
+        {
+          "name": "dialogPadding",
+          "type": "int",
+          "default": 22,
+          "description": "A dialog's card: its padding on every side and the gap between its parts."
+        },
+        {
+          "name": "dialogSpacing",
+          "type": "int",
+          "default": 13,
+          "description": "A dialog's card: its padding on every side and the gap between its parts."
+        },
+        {
+          "name": "osdPadding",
+          "type": "int",
+          "default": 14,
+          "description": "The level OSD's padding around its glyph and meter."
+        }
+      ]
+    },
+    {
+      "name": "metrics",
+      "section": "Metrics",
+      "description": "The sizes of controls, rows, marks and the parts of each surface, so a theme can resize the shell's pieces without touching a surface.",
+      "slots": [
+        {
+          "name": "barHeight",
+          "type": "int",
+          "default": 30,
+          "description": "The menu bar."
+        },
+        {
+          "name": "barItemHeight",
+          "type": "int",
+          "default": 22,
+          "description": "A bar entry's pill."
+        },
+        {
+          "name": "panelHeaderHeight",
+          "type": "int",
+          "default": 28,
+          "description": "A panel header with a title and no detail."
+        },
+        {
+          "name": "chipHeight",
+          "type": "int",
+          "default": 28,
+          "description": "The three heights a chip, a button and a list row take, so a panel keeps its rhythm no matter which surface assembled it. A tile or a card still sizes to what it holds."
+        },
+        {
+          "name": "controlHeight",
+          "type": "int",
+          "default": 34,
+          "description": "The three heights a chip, a button and a list row take, so a panel keeps its rhythm no matter which surface assembled it. A tile or a card still sizes to what it holds."
+        },
+        {
+          "name": "rowHeight",
+          "type": "int",
+          "default": 40,
+          "description": "The three heights a chip, a button and a list row take, so a panel keeps its rhythm no matter which surface assembled it. A tile or a card still sizes to what it holds."
+        },
+        {
+          "name": "detailRowHeight",
+          "type": "int",
+          "default": 52,
+          "description": "A row that leads with a mark and sets a caption line under its title, with its own controls at the far end."
+        },
+        {
+          "name": "controlTileHeight",
+          "type": "int",
+          "default": 55,
+          "description": "A Control Center tile carries a label over its own detail line beside a glyph, so it stands above the row ramp. Every tile in the grid takes it, because a grid whose tiles disagree on height reads as a mistake."
+        },
+        {
+          "name": "knobSize",
+          "type": "int",
+          "default": 30,
+          "description": "The round control a connectivity row, a tile and a level lead with. It is one size wherever it appears, so the knob that switches Wi-Fi and the one that mutes the output read as the same kind of thing, and a tile without a knob keeps the column for its glyph so its title lines up beside one."
+        },
+        {
+          "name": "switchWidth",
+          "type": "int",
+          "default": 40,
+          "description": "A switch is a pill its knob rides inside, inset on every side."
+        },
+        {
+          "name": "switchHeight",
+          "type": "int",
+          "default": 22,
+          "description": "A switch is a pill its knob rides inside, inset on every side."
+        },
+        {
+          "name": "switchKnobInset",
+          "type": "int",
+          "default": 3,
+          "description": "A switch is a pill its knob rides inside, inset on every side."
+        },
+        {
+          "name": "rowIconSize",
+          "type": "int",
+          "default": 16,
+          "description": "The square an application's own themed icon is drawn in where it leads a row's title. It is sized against that title rather than against the row, because it is standing in for the glyph that would otherwise be there."
+        },
+        {
+          "name": "cardGlyphWidth",
+          "type": "int",
+          "default": 24,
+          "description": "The glyph column a card leads with."
+        },
+        {
+          "name": "levelValueWidth",
+          "type": "int",
+          "default": 46,
+          "description": "The column a level's percentage is pinned to. Every track in a stack of them takes it, because a right edge that moves with the number stops two bars from being two readings of the same thing."
+        },
+        {
+          "name": "notificationRowHeight",
+          "type": "int",
+          "default": 54,
+          "description": "A notification card is as tall as what it holds, but never shorter than this: one line of summary over one line of body, beside the app icon. An empty list is measured against it too, so \"nothing here\" costs one card."
+        },
+        {
+          "name": "trackTarget",
+          "type": "int",
+          "default": 16,
+          "description": "A track the pointer has to hit is drawn thin and targeted tall: the strip gives the meter inside it room to be grabbed without the meter itself growing into a slab, and the head that rides on it rounds on its own size."
+        },
+        {
+          "name": "trackHead",
+          "type": "int",
+          "default": 10,
+          "description": "A track the pointer has to hit is drawn thin and targeted tall: the strip gives the meter inside it room to be grabbed without the meter itself growing into a slab, and the head that rides on it rounds on its own size."
+        },
+        {
+          "name": "colorLensCells",
+          "type": "int",
+          "default": 9,
+          "description": "The colour picker's lens magnifies this many captured pixels across: few enough that each one is still a square the eye can aim at, many enough to show which side of a one-pixel border the point is on. Its size is built from the control ramp so the lens keeps the shell's rhythm instead of arriving at a counted constant of its own."
+        },
+        {
+          "name": "colorLensSize",
+          "type": "int",
+          "derived": "controlHeight * 4",
+          "description": "The colour picker's lens magnifies this many captured pixels across: few enough that each one is still a square the eye can aim at, many enough to show which side of a one-pixel border the point is on. Its size is built from the control ramp so the lens keeps the shell's rhythm instead of arriving at a counted constant of its own."
+        },
+        {
+          "name": "panelHeaderDetailHeight",
+          "type": "int",
+          "default": 42,
+          "description": "A panel header whose title carries a detail line under it stands taller, and its mark sits in a well a step inside the chip height."
+        },
+        {
+          "name": "panelHeaderMarkSize",
+          "type": "int",
+          "derived": "chipHeight - 2",
+          "description": "A panel header whose title carries a detail line under it stands taller, and its mark sits in a well a step inside the chip height."
+        },
+        {
+          "name": "sectionRuleHeight",
+          "type": "int",
+          "default": 26,
+          "description": "A section rule is at least this tall, and a collapsible one ends in a chevron of this width, set a little below the label's baseline."
+        },
+        {
+          "name": "sectionChevronWidth",
+          "type": "int",
+          "default": 14,
+          "description": "A section rule is at least this tall, and a collapsible one ends in a chevron of this width, set a little below the label's baseline."
+        },
+        {
+          "name": "sectionChevronDrop",
+          "type": "int",
+          "default": 2,
+          "description": "A section rule is at least this tall, and a collapsible one ends in a chevron of this width, set a little below the label's baseline."
+        },
+        {
+          "name": "meterHeight",
+          "type": "int",
+          "default": 7,
+          "description": "A meter is a thin pill; a segment well holds its segments this far in."
+        },
+        {
+          "name": "segmentWellInset",
+          "type": "int",
+          "default": 2,
+          "description": "A meter is a thin pill; a segment well holds its segments this far in."
+        },
+        {
+          "name": "scrollPadding",
+          "type": "int",
+          "default": 2,
+          "description": "The scroll handle rides in the gutter, inset from both its ends, and is never shorter than `scrollThumbMinimum` or than half a short track."
+        },
+        {
+          "name": "scrollThumbWidth",
+          "type": "int",
+          "derived": "scrollGutter - 4",
+          "description": "The scroll handle rides in the gutter, inset from both its ends, and is never shorter than `scrollThumbMinimum` or than half a short track."
+        },
+        {
+          "name": "scrollThumbMinimum",
+          "type": "int",
+          "default": 36,
+          "description": "The scroll handle rides in the gutter, inset from both its ends, and is never shorter than `scrollThumbMinimum` or than half a short track."
+        },
+        {
+          "name": "scrollThumbShareLimit",
+          "type": "real",
+          "default": 0.5,
+          "description": "The scroll handle rides in the gutter, inset from both its ends, and is never shorter than `scrollThumbMinimum` or than half a short track."
+        },
+        {
+          "name": "spinnerSmall",
+          "type": "int",
+          "default": 14,
+          "description": "The activity spinner's square boxes, from a chip's to a header's."
+        },
+        {
+          "name": "spinnerMedium",
+          "type": "int",
+          "default": 16,
+          "description": "The activity spinner's square boxes, from a chip's to a header's."
+        },
+        {
+          "name": "spinnerLarge",
+          "type": "int",
+          "default": 18,
+          "description": "The activity spinner's square boxes, from a chip's to a header's."
+        },
+        {
+          "name": "spinnerHeader",
+          "type": "int",
+          "default": 20,
+          "description": "The activity spinner's square boxes, from a chip's to a header's."
+        },
+        {
+          "name": "spinnerStrokeMinimum",
+          "type": "real",
+          "default": 1.5,
+          "description": "Its stroke is a share of its size, but never thinner than the minimum."
+        },
+        {
+          "name": "spinnerStrokeRatio",
+          "type": "real",
+          "default": 0.14,
+          "description": "Its stroke is a share of its size, but never thinner than the minimum."
+        },
+        {
+          "name": "emptyStateWidth",
+          "type": "int",
+          "default": 320,
+          "description": "An empty state never sets its message wider than this."
+        },
+        {
+          "name": "compactButtonSize",
+          "type": "int",
+          "derived": "chipHeight - 4",
+          "description": "A glyph button that fits inside a chip row, and a control one text line tall."
+        },
+        {
+          "name": "lineControlHeight",
+          "type": "int",
+          "derived": "chipHeight - 6",
+          "description": "A glyph button that fits inside a chip row, and a control one text line tall."
+        },
+        {
+          "name": "eventStripeWidth",
+          "type": "int",
+          "default": 3,
+          "description": "The bar of an event's own colour that leads its agenda row."
+        },
+        {
+          "name": "swatchWidth",
+          "type": "int",
+          "default": 58,
+          "description": "A theme preset's swatch: its base, carrying four dots of its own colours."
+        },
+        {
+          "name": "swatchHeight",
+          "type": "int",
+          "default": 24,
+          "description": "A theme preset's swatch: its base, carrying four dots of its own colours."
+        },
+        {
+          "name": "swatchDotSize",
+          "type": "int",
+          "default": 8,
+          "description": "A theme preset's swatch: its base, carrying four dots of its own colours."
+        },
+        {
+          "name": "timeFieldWidth",
+          "type": "int",
+          "default": 64,
+          "description": "A schedule time field holds HH:MM."
+        },
+        {
+          "name": "tipPadding",
+          "type": "int",
+          "default": 10,
+          "description": "A hover tip: one line of label with this much room either side."
+        },
+        {
+          "name": "tipHeight",
+          "type": "int",
+          "default": 26,
+          "description": "A hover tip: one line of label with this much room either side."
+        },
+        {
+          "name": "markRasterSize",
+          "type": "int",
+          "default": 64,
+          "description": "A harness or provider mark is rasterised this large before it is drawn small, so a fine vector keeps its loops."
+        },
+        {
+          "name": "barIconItemWidth",
+          "type": "int",
+          "default": 30,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barDotItemWidth",
+          "type": "int",
+          "default": 20,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barChevronItemWidth",
+          "type": "int",
+          "default": 22,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barAgentItemWidth",
+          "type": "int",
+          "default": 28,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barLogoSize",
+          "type": "int",
+          "default": 20,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barIconSize",
+          "type": "int",
+          "default": 16,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barWindowIconSize",
+          "type": "int",
+          "default": 15,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barDotSize",
+          "type": "int",
+          "default": 6,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "privacyDotSize",
+          "type": "int",
+          "default": 9,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barBadgeWidth",
+          "type": "int",
+          "default": 26,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barBadgeHeight",
+          "type": "int",
+          "default": 18,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barLabelMaximumWidth",
+          "type": "int",
+          "default": 175,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barWindowTitleWidth",
+          "type": "int",
+          "default": 230,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barWindowLabelWidth",
+          "type": "int",
+          "default": 190,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "barMediaWidth",
+          "type": "int",
+          "default": 210,
+          "description": "Menu bar entries: an icon entry, a privacy dot's, the tray chevron's and an agent badge's widths, and what each of them draws."
+        },
+        {
+          "name": "workspaceWidth",
+          "type": "int",
+          "default": 22,
+          "description": "A workspace slot in the bar, wider while it is the active one."
+        },
+        {
+          "name": "workspaceActiveWidth",
+          "type": "int",
+          "default": 44,
+          "description": "A workspace slot in the bar, wider while it is the active one."
+        },
+        {
+          "name": "agentMarkSize",
+          "type": "int",
+          "default": 13,
+          "description": "An agent badge: its mark, the state bar under it, and the dot an agent row leads with."
+        },
+        {
+          "name": "agentStateWidth",
+          "type": "int",
+          "default": 14,
+          "description": "An agent badge: its mark, the state bar under it, and the dot an agent row leads with."
+        },
+        {
+          "name": "agentStateHeight",
+          "type": "int",
+          "default": 3,
+          "description": "An agent badge: its mark, the state bar under it, and the dot an agent row leads with."
+        },
+        {
+          "name": "agentDotSize",
+          "type": "int",
+          "default": 7,
+          "description": "An agent badge: its mark, the state bar under it, and the dot an agent row leads with."
+        },
+        {
+          "name": "agentLineHeight",
+          "type": "int",
+          "default": 16,
+          "description": "An agent row's title and detail lines."
+        },
+        {
+          "name": "agentDetailLineHeight",
+          "type": "int",
+          "default": 14,
+          "description": "An agent row's title and detail lines."
+        },
+        {
+          "name": "usageSummaryHeight",
+          "type": "int",
+          "default": 44,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "usageRowHeight",
+          "type": "int",
+          "default": 22,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "usageDateWidth",
+          "type": "int",
+          "default": 42,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "usageCostWidth",
+          "type": "int",
+          "default": 34,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "usageTokensWidth",
+          "type": "int",
+          "default": 52,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "usageNameWidth",
+          "type": "int",
+          "default": 132,
+          "description": "The usage table: its summary, its rows and its columns."
+        },
+        {
+          "name": "levelRowHeight",
+          "type": "int",
+          "default": 44,
+          "description": "A level row in the Audio panel and the mute button beside it; the Control Center's audio sliders."
+        },
+        {
+          "name": "audioSliderHeight",
+          "type": "int",
+          "default": 46,
+          "description": "A level row in the Audio panel and the mute button beside it; the Control Center's audio sliders."
+        },
+        {
+          "name": "deviceRowHeight",
+          "type": "int",
+          "default": 28,
+          "description": "A device list shows up to this many rows of this height before it scrolls; Bluetooth and battery lists show more."
+        },
+        {
+          "name": "deviceListRows",
+          "type": "int",
+          "default": 4,
+          "description": "A device list shows up to this many rows of this height before it scrolls; Bluetooth and battery lists show more."
+        },
+        {
+          "name": "bluetoothListRows",
+          "type": "int",
+          "default": 6,
+          "description": "A device list shows up to this many rows of this height before it scrolls; Bluetooth and battery lists show more."
+        },
+        {
+          "name": "batteryListRows",
+          "type": "int",
+          "default": 5,
+          "description": "A device list shows up to this many rows of this height before it scrolls; Bluetooth and battery lists show more."
+        },
+        {
+          "name": "networkAddressRows",
+          "type": "int",
+          "default": 4,
+          "description": "A device list shows up to this many rows of this height before it scrolls; Bluetooth and battery lists show more."
+        },
+        {
+          "name": "deviceRowGlyphReserve",
+          "type": "int",
+          "default": 30,
+          "description": "The width a device row reserves for the glyph that leads it."
+        },
+        {
+          "name": "actionButtonHeight",
+          "type": "int",
+          "default": 38,
+          "description": "A wide action button under a card."
+        },
+        {
+          "name": "networkStatusLineHeight",
+          "type": "int",
+          "default": 20,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "speedtestCardHeight",
+          "type": "int",
+          "default": 204,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "speedtestHeaderHeight",
+          "type": "int",
+          "default": 30,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "speedtestButtonWidth",
+          "type": "int",
+          "default": 64,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "speedtestButtonHeight",
+          "type": "int",
+          "default": 24,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "speedtestGaugeHeight",
+          "type": "int",
+          "default": 140,
+          "description": "Network panel: the status line, and the speed test card with its run button and gauges."
+        },
+        {
+          "name": "vpnCardHeight",
+          "type": "int",
+          "default": 66,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "sshCardHeight",
+          "type": "int",
+          "default": 94,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "tailscaleMenuReserve",
+          "type": "int",
+          "default": 58,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "tailscaleTextReserve",
+          "type": "int",
+          "default": 82,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "protonTextReserve",
+          "type": "int",
+          "default": 123,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "vpnAppButtonSize",
+          "type": "int",
+          "default": 32,
+          "description": "VPN panel cards, what their text columns leave for trailing controls, and the app button."
+        },
+        {
+          "name": "bluetoothGlyphWidth",
+          "type": "int",
+          "default": 18,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothReceiveReserve",
+          "type": "int",
+          "default": 74,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothDeviceReserve",
+          "type": "int",
+          "default": 62,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothSpinnerInset",
+          "type": "int",
+          "default": 14,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothTrustWidth",
+          "type": "int",
+          "default": 44,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothRowButtonHeight",
+          "type": "int",
+          "default": 24,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "bluetoothForgetSize",
+          "type": "int",
+          "default": 24,
+          "description": "Bluetooth panel: the receiver row's glyph and the room its text leaves, a device row's text and controls."
+        },
+        {
+          "name": "pairingCodeHeight",
+          "type": "int",
+          "default": 52,
+          "description": "A pairing code's box and a dialog's buttons."
+        },
+        {
+          "name": "dialogButtonHeight",
+          "type": "int",
+          "default": 30,
+          "description": "A pairing code's box and a dialog's buttons."
+        },
+        {
+          "name": "batteryRowHeight",
+          "type": "int",
+          "default": 38,
+          "description": "Battery rows: their height, the name's room and the value column."
+        },
+        {
+          "name": "batteryNameReserve",
+          "type": "int",
+          "default": 90,
+          "description": "Battery rows: their height, the name's room and the value column."
+        },
+        {
+          "name": "batteryValueWidth",
+          "type": "int",
+          "default": 60,
+          "description": "Battery rows: their height, the name's room and the value column."
+        },
+        {
+          "name": "notificationClearWidth",
+          "type": "int",
+          "default": 96,
+          "description": "The notification panel's Clear button."
+        },
+        {
+          "name": "playerPickerWidth",
+          "type": "int",
+          "default": 148,
+          "description": "The media player picker and its popup."
+        },
+        {
+          "name": "playerPickerPopupWidth",
+          "type": "int",
+          "default": 220,
+          "description": "The media player picker and its popup."
+        },
+        {
+          "name": "calendarTodayWidth",
+          "type": "int",
+          "default": 84,
+          "description": "The calendar's Today button, the room its month list leaves the agenda, and a day's disc and the marks under it."
+        },
+        {
+          "name": "calendarMonthReserve",
+          "type": "int",
+          "default": 32,
+          "description": "The calendar's Today button, the room its month list leaves the agenda, and a day's disc and the marks under it."
+        },
+        {
+          "name": "calendarDiscTop",
+          "type": "int",
+          "default": 2,
+          "description": "The calendar's Today button, the room its month list leaves the agenda, and a day's disc and the marks under it."
+        },
+        {
+          "name": "calendarDiscSize",
+          "type": "int",
+          "derived": "chipHeight - 4",
+          "description": "The calendar's Today button, the room its month list leaves the agenda, and a day's disc and the marks under it."
+        },
+        {
+          "name": "trayMenuRowHeight",
+          "type": "int",
+          "default": 34,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayMenuSeparatorHeight",
+          "type": "int",
+          "default": 9,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayMenuIconSize",
+          "type": "int",
+          "default": 18,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayMenuTitleReserve",
+          "type": "int",
+          "default": 132,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayHideWidth",
+          "type": "int",
+          "default": 72,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayHideHeight",
+          "type": "int",
+          "default": 26,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "trayCloseSize",
+          "type": "int",
+          "default": 30,
+          "description": "The tray menu: rows, separators, the icon in its header, the room its title leaves the header's buttons, and those buttons."
+        },
+        {
+          "name": "sessionCardGlyphReserve",
+          "type": "int",
+          "default": 46,
+          "description": "The NixOS session card's glyph column."
+        },
+        {
+          "name": "sessionButtonHeight",
+          "type": "int",
+          "default": 72,
+          "description": "A session action button."
+        },
+        {
+          "name": "cameraPreviewHeight",
+          "type": "int",
+          "default": 176,
+          "description": "The camera preview and its action buttons."
+        },
+        {
+          "name": "cameraActionHeight",
+          "type": "int",
+          "default": 42,
+          "description": "The camera preview and its action buttons."
+        },
+        {
+          "name": "osdMeterWidth",
+          "type": "int",
+          "default": 205,
+          "description": "The level OSD's meter, and the glyph an OSD leads with."
+        },
+        {
+          "name": "osdMeterHeight",
+          "type": "int",
+          "default": 8,
+          "description": "The level OSD's meter, and the glyph an OSD leads with."
+        },
+        {
+          "name": "osdIconSize",
+          "type": "int",
+          "default": 22,
+          "description": "The level OSD's meter, and the glyph an OSD leads with."
+        },
+        {
+          "name": "osdHeight",
+          "type": "int",
+          "default": 58,
+          "description": "The level OSD's meter, and the glyph an OSD leads with."
+        },
+        {
+          "name": "gaugeTrackWidth",
+          "type": "int",
+          "default": 6,
+          "description": "The speed gauge's dial track."
+        },
+        {
+          "name": "memoryValueWidth",
+          "type": "int",
+          "derived": "levelValueWidth * 1.5",
+          "description": "A process's memory reads wider than a percentage."
+        }
+      ]
+    },
+    {
+      "name": "layout",
+      "section": "Layout",
+      "description": "The extents of panels, windows and the larger blocks inside them.",
+      "slots": [
+        {
+          "name": "mediaBodyHeight",
+          "type": "int",
+          "default": 148,
+          "description": "The media block is one object at one size, so its height is decided here rather than by whichever surface happens to be holding it."
+        },
+        {
+          "name": "mediaPanelWidth",
+          "type": "int",
+          "default": 400,
+          "description": "Wide enough for the block to set a title and an artist beside its art without eliding either, and to carry the transport under them unsqueezed."
+        },
+        {
+          "name": "colorLabWidth",
+          "type": "int",
+          "default": 480,
+          "description": "Colour workbench: paired editors and a fixed contrast readout column."
+        },
+        {
+          "name": "colorLabScoreWidth",
+          "type": "int",
+          "default": 172,
+          "description": "Colour workbench: paired editors and a fixed contrast readout column."
+        },
+        {
+          "name": "notesWindowWidth",
+          "type": "int",
+          "default": 960,
+          "description": "The Notes window opens at this size."
+        },
+        {
+          "name": "notesWindowHeight",
+          "type": "int",
+          "default": 680,
+          "description": "The Notes window opens at this size."
+        },
+        {
+          "name": "notesMinimumWidth",
+          "type": "int",
+          "default": 420,
+          "description": "Small enough to be tiled into a column beside something else, which is where a capture window spends most of its life. The recent-notes list folds itself away before the writing area is squeezed to nothing."
+        },
+        {
+          "name": "notesMinimumHeight",
+          "type": "int",
+          "default": 420,
+          "description": "Small enough to be tiled into a column beside something else, which is where a capture window spends most of its life. The recent-notes list folds itself away before the writing area is squeezed to nothing."
+        },
+        {
+          "name": "notesSidebarWidth",
+          "type": "int",
+          "default": 232,
+          "description": "Small enough to be tiled into a column beside something else, which is where a capture window spends most of its life. The recent-notes list folds itself away before the writing area is squeezed to nothing."
+        },
+        {
+          "name": "notesSidebarMinimum",
+          "type": "int",
+          "default": 180,
+          "description": "The recent-notes list can be dragged between these, and folds itself away entirely below `notesNarrowWidth`, so a window tiled into a column keeps its measure instead of splitting what is left of it in two."
+        },
+        {
+          "name": "notesSidebarMaximum",
+          "type": "int",
+          "default": 420,
+          "description": "The recent-notes list can be dragged between these, and folds itself away entirely below `notesNarrowWidth`, so a window tiled into a column keeps its measure instead of splitting what is left of it in two."
+        },
+        {
+          "name": "notesNarrowWidth",
+          "type": "int",
+          "default": 640,
+          "description": "The recent-notes list can be dragged between these, and folds itself away entirely below `notesNarrowWidth`, so a window tiled into a column keeps its measure instead of splitting what is left of it in two."
+        },
+        {
+          "name": "notesMemoListHeight",
+          "type": "int",
+          "default": 112,
+          "description": "The recent-notes list can be dragged between these, and folds itself away entirely below `notesNarrowWidth`, so a window tiled into a column keeps its measure instead of splitting what is left of it in two."
+        },
+        {
+          "name": "notesPickerHeight",
+          "type": "int",
+          "default": 220,
+          "description": "The recent-notes list can be dragged between these, and folds itself away entirely below `notesNarrowWidth`, so a window tiled into a column keeps its measure instead of splitting what is left of it in two."
+        },
+        {
+          "name": "waveformWidth",
+          "type": "int",
+          "default": 280,
+          "description": "The dictation waveform, across the foot of the output it records on."
+        },
+        {
+          "name": "waveformBars",
+          "type": "int",
+          "default": 40,
+          "description": "The dictation waveform draws this many bars across its width."
+        },
+        {
+          "name": "hermesWidth",
+          "type": "int",
+          "default": 380,
+          "description": "The home panel stays compact, with a viewport bounded by its output. Compact Hermes connection and explicit local rebuild approval."
+        },
+        {
+          "name": "homeAssistantWidth",
+          "type": "int",
+          "default": 420,
+          "description": "The home panel stays compact, with a viewport bounded by its output. Compact Hermes connection and explicit local rebuild approval."
+        },
+        {
+          "name": "homeAssistantMaximumHeight",
+          "type": "int",
+          "default": 640,
+          "description": "The home panel stays compact, with a viewport bounded by its output. Compact Hermes connection and explicit local rebuild approval."
+        },
+        {
+          "name": "githubInboxMaximumHeight",
+          "type": "int",
+          "default": 520,
+          "description": "The GitHub inbox scrolls inside this bound, tall enough that an opened thread shows its analysis and the start of its conversation together."
+        },
+        {
+          "name": "portsMaximumHeight",
+          "type": "int",
+          "default": 520,
+          "description": "The port inspector scrolls inside this bound, tall enough that an open listener shows its address, its owners and a confirmation together."
+        },
+        {
+          "name": "resourcesWidth",
+          "type": "int",
+          "default": 480,
+          "description": "Resource charts and the process list share one output-bounded viewport."
+        },
+        {
+          "name": "resourcesMaximumHeight",
+          "type": "int",
+          "default": 720,
+          "description": "Resource charts and the process list share one output-bounded viewport."
+        },
+        {
+          "name": "quickLookWidth",
+          "type": "int",
+          "default": 1100,
+          "description": "Quick Look keeps media large enough to inspect while staying within the focused output. Its transport shares one readable maximum measure."
+        },
+        {
+          "name": "quickLookHeight",
+          "type": "int",
+          "default": 760,
+          "description": "Quick Look keeps media large enough to inspect while staying within the focused output. Its transport shares one readable maximum measure."
+        },
+        {
+          "name": "quickLookTimelineWidth",
+          "type": "int",
+          "default": 420,
+          "description": "Quick Look keeps media large enough to inspect while staying within the focused output. Its transport shares one readable maximum measure."
+        },
+        {
+          "name": "textWorkbenchWidth",
+          "type": "int",
+          "default": 760,
+          "description": "Two readable editing columns for transient local text transforms."
+        },
+        {
+          "name": "textWorkbenchEditorHeight",
+          "type": "int",
+          "default": 240,
+          "description": "Two readable editing columns for transient local text transforms."
+        },
+        {
+          "name": "networkActivityWidth",
+          "type": "int",
+          "default": 480,
+          "description": "A duplex chart and two rate columns retain their measure on this panel."
+        },
+        {
+          "name": "sensorsWidth",
+          "type": "int",
+          "default": 440,
+          "description": "A reading's label, its peak and limits, a state chip and its value share one line in the Sensors panel without eliding a typical driver label."
+        },
+        {
+          "name": "calculatorWidth",
+          "type": "int",
+          "default": 480,
+          "description": "The calculator keeps its tape within one compact workbench."
+        },
+        {
+          "name": "calculatorMaximumHeight",
+          "type": "int",
+          "default": 620,
+          "description": "The calculator keeps its tape within one compact workbench."
+        },
+        {
+          "name": "themesMaximumHeight",
+          "type": "int",
+          "default": 640,
+          "description": "The floating theme switcher stays inside this bound; on a shorter output its centre card shrinks, keeping its shape, before anything is cut off."
+        },
+        {
+          "name": "themesWidth",
+          "type": "int",
+          "default": 1040,
+          "description": "The floating carousel is wide enough for a 16:10 preview and three slices on either side of it."
+        },
+        {
+          "name": "themeSettingsWidth",
+          "type": "int",
+          "default": 440,
+          "description": "The Control Center's Themes panel: a three-way segment and two theme rows with their names beside their swatches."
+        },
+        {
+          "name": "clockWidth",
+          "type": "int",
+          "default": 480,
+          "description": "The clock popup with its world clocks, the calendar popup, and the bar's next-event entry."
+        },
+        {
+          "name": "clockRows",
+          "type": "int",
+          "default": 7,
+          "description": "The clock popup with its world clocks, the calendar popup, and the bar's next-event entry."
+        },
+        {
+          "name": "calendarMaximumHeight",
+          "type": "int",
+          "default": 640,
+          "description": "The clock popup with its world clocks, the calendar popup, and the bar's next-event entry."
+        },
+        {
+          "name": "calendarIndicatorWidth",
+          "type": "int",
+          "default": 190,
+          "description": "The clock popup with its world clocks, the calendar popup, and the bar's next-event entry."
+        },
+        {
+          "name": "meetingMaximumHeight",
+          "type": "int",
+          "default": 660,
+          "description": "Tall enough for the meeting readout, its suggestions, your calendar and four zones before the zone list scrolls, without taking an output."
+        },
+        {
+          "name": "meetingRibbonHeight",
+          "type": "int",
+          "default": 18,
+          "description": "An hour ribbon: a two-digit hour set in `textMicro` with room to breathe."
+        },
+        {
+          "name": "applicationWidth",
+          "type": "int",
+          "default": 320,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "caffeinateWidth",
+          "type": "int",
+          "default": 320,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "focusWidth",
+          "type": "int",
+          "default": 350,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "audioWidth",
+          "type": "int",
+          "default": 350,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "calendarWidth",
+          "type": "int",
+          "default": 390,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "networkWidth",
+          "type": "int",
+          "default": 390,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "vpnWidth",
+          "type": "int",
+          "default": 390,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "bluetoothWidth",
+          "type": "int",
+          "default": 360,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "cameraWidth",
+          "type": "int",
+          "default": 360,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "headphonesWidth",
+          "type": "int",
+          "default": 340,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "batteryWidth",
+          "type": "int",
+          "default": 330,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "notificationCenterWidth",
+          "type": "int",
+          "default": 400,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "sessionWidth",
+          "type": "int",
+          "default": 420,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "githubWidth",
+          "type": "int",
+          "default": 440,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "agentsWidth",
+          "type": "int",
+          "default": 500,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "trayMenuWidth",
+          "type": "int",
+          "default": 310,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "trayMenuMaximumHeight",
+          "type": "int",
+          "default": 420,
+          "description": "Panels opened from the bar, by width."
+        },
+        {
+          "name": "toastWidth",
+          "type": "int",
+          "default": 400,
+          "description": "Toasts stack in a column of this width, up to this height."
+        },
+        {
+          "name": "toastMaximumHeight",
+          "type": "int",
+          "default": 430,
+          "description": "Toasts stack in a column of this width, up to this height."
+        },
+        {
+          "name": "dialogWidth",
+          "type": "int",
+          "default": 360,
+          "description": "A dialog such as the pairing prompt or the YubiKey touch OSD, and the level OSD strip."
+        },
+        {
+          "name": "osdWidth",
+          "type": "int",
+          "default": 300,
+          "description": "A dialog such as the pairing prompt or the YubiKey touch OSD, and the level OSD strip."
+        },
+        {
+          "name": "panelScreenReserve",
+          "type": "int",
+          "default": 60,
+          "description": "A panel as tall as what it holds stops this far short of its output."
+        },
+        {
+          "name": "meetingBlockMinimumWidth",
+          "type": "int",
+          "default": 2,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingBlockTextInset",
+          "type": "int",
+          "default": 3,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingBlockTextTrailing",
+          "type": "int",
+          "default": 2,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingSelectionOverhang",
+          "type": "int",
+          "default": 1,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingSelectionMinimumWidth",
+          "type": "int",
+          "default": 4,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingBandOverhang",
+          "type": "int",
+          "default": 2,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingLegendWidth",
+          "type": "int",
+          "default": 10,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingLegendHeight",
+          "type": "int",
+          "default": 8,
+          "description": "A busy block's title is set just inside it. The meeting being placed overhangs the ribbon, and the zone list leaves it room above and below."
+        },
+        {
+          "name": "meetingBlockTitleMinimum",
+          "type": "int",
+          "default": 24,
+          "description": "A busy block narrower than this leaves its title out."
+        },
+        {
+          "name": "meetingLabelShare",
+          "type": "real",
+          "default": 0.4,
+          "description": "A zone's name never takes more than this share of its row."
+        },
+        {
+          "name": "promptWidth",
+          "type": "int",
+          "default": 640,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "promptMaximumHeight",
+          "type": "int",
+          "default": 570,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "promptEditorHeight",
+          "type": "int",
+          "default": 112,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "promptImageHeight",
+          "type": "int",
+          "default": 112,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "promptAnswerHeight",
+          "type": "int",
+          "default": 190,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "promptIdleHeight",
+          "type": "int",
+          "default": 86,
+          "description": "The prompt: as wide and tall as an output allows up to these, with an editing well, an attached image and the answer at fixed heights."
+        },
+        {
+          "name": "themesCardMinimum",
+          "type": "int",
+          "default": 160,
+          "description": "The theme switcher's centre card stays between these heights at 16:10; a neighbour is a slice of its height and of that width."
+        },
+        {
+          "name": "themesCardMaximum",
+          "type": "int",
+          "default": 300,
+          "description": "The theme switcher's centre card stays between these heights at 16:10; a neighbour is a slice of its height and of that width."
+        },
+        {
+          "name": "themesCardAspect",
+          "type": "real",
+          "default": 1.6,
+          "description": "The theme switcher's centre card stays between these heights at 16:10; a neighbour is a slice of its height and of that width."
+        },
+        {
+          "name": "themesSliceWidthRatio",
+          "type": "real",
+          "default": 0.19,
+          "description": "The theme switcher's centre card stays between these heights at 16:10; a neighbour is a slice of its height and of that width."
+        },
+        {
+          "name": "themesSliceHeightRatio",
+          "type": "real",
+          "default": 0.86,
+          "description": "The theme switcher's centre card stays between these heights at 16:10; a neighbour is a slice of its height and of that width."
+        },
+        {
+          "name": "themeScheduleShare",
+          "type": "real",
+          "default": 0.6,
+          "description": "The Themes panel's schedule source takes this share of its row."
+        }
+      ]
+    },
+    {
+      "name": "material",
+      "section": "Material",
+      "description": "How surfaces are built from the palette: translucent materials, edges, interaction tints, elevation, texture and the opacities that withdraw a control.",
+      "slots": [
+        {
+          "name": "mutedText",
+          "type": "color",
+          "derived": "subtext",
+          "description": "Text needs more contrast than decorative borders and inactive glyphs."
+        },
+        {
+          "name": "grain",
+          "type": "string",
+          "derived": "Qt.resolvedUrl(\"grain.png\")",
+          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be."
+        },
+        {
+          "name": "grainOpacity",
+          "type": "real",
+          "default": 0.07,
+          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be."
+        },
+        {
+          "name": "grainInset",
+          "type": "int",
+          "default": 3,
+          "description": "The film stops this far inside a surface's edge, so the hairline stays clean."
+        },
+        {
+          "name": "cornerGrainInset",
+          "type": "real",
+          "derived": "radius * (1 - 1 / Math.sqrt(2))",
+          "description": "On a rounded surface the film stops where the corner arc would cut it."
+        },
+        {
+          "name": "washCrownOpacity",
+          "type": "real",
+          "default": 0.075,
+          "description": "The wash a surface carries: lit at its crown, fading out by `washFadeStop`, clear from `washClearStop`, and grounded in ink at its foot."
+        },
+        {
+          "name": "washFadeOpacity",
+          "type": "real",
+          "default": 0.02,
+          "description": "The wash a surface carries: lit at its crown, fading out by `washFadeStop`, clear from `washClearStop`, and grounded in ink at its foot."
+        },
+        {
+          "name": "washFootOpacity",
+          "type": "real",
+          "default": 0.5,
+          "description": "The wash a surface carries: lit at its crown, fading out by `washFadeStop`, clear from `washClearStop`, and grounded in ink at its foot."
+        },
+        {
+          "name": "washFadeStop",
+          "type": "real",
+          "default": 0.28,
+          "description": "The wash a surface carries: lit at its crown, fading out by `washFadeStop`, clear from `washClearStop`, and grounded in ink at its foot."
+        },
+        {
+          "name": "washClearStop",
+          "type": "real",
+          "default": 0.6,
+          "description": "The wash a surface carries: lit at its crown, fading out by `washFadeStop`, clear from `washClearStop`, and grounded in ink at its foot."
+        },
+        {
+          "name": "panelColor",
+          "type": "color",
+          "derived": "alpha(mantle, 0.88)",
+          "description": "A panel's material: mantle, translucent."
+        },
+        {
+          "name": "panelBorder",
+          "type": "color",
+          "derived": "alpha(crust, 0.9)",
+          "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
+        },
+        {
+          "name": "edgeLight",
+          "type": "color",
+          "derived": "alpha(text, 0.08)",
+          "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
+        },
+        {
+          "name": "edgeCrown",
+          "type": "color",
+          "derived": "alpha(text, 0.16)",
+          "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
+        },
+        {
+          "name": "hoverColor",
+          "type": "color",
+          "derived": "alpha(text, 0.07)",
+          "description": "Interaction. The pointer is reported in neutral light and the commit is reported in accent, so hovering the shell does not set it glowing and a press still reads as something having been asked for. `hoverColor` is a wash: filled controls composite it over their resting material instead of replacing that material with a nearly transparent colour."
+        },
+        {
+          "name": "clearColor",
+          "type": "color",
+          "derived": "alpha(text, 0)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "clearDanger",
+          "type": "color",
+          "derived": "alpha(red, 0)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "pressColor",
+          "type": "color",
+          "derived": "alpha(accent, 0.3)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "selectedColor",
+          "type": "color",
+          "derived": "alpha(accent, 0.2)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "activeTint",
+          "type": "color",
+          "derived": "alpha(accent, 0.12)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "fillColor",
+          "type": "color",
+          "derived": "alpha(accent, 0.45)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "fillDanger",
+          "type": "color",
+          "derived": "alpha(red, 0.45)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "successColor",
+          "type": "color",
+          "derived": "alpha(green, 0.25)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "dangerTint",
+          "type": "color",
+          "derived": "alpha(red, 0.14)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "dangerColor",
+          "type": "color",
+          "derived": "alpha(red, 0.28)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "dangerPress",
+          "type": "color",
+          "derived": "alpha(red, 0.48)",
+          "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
+        },
+        {
+          "name": "cardColor",
+          "type": "color",
+          "derived": "alpha(surface, 0.5)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "rowColor",
+          "type": "color",
+          "derived": "alpha(surface, 0.3)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "wellColor",
+          "type": "color",
+          "derived": "alpha(crust, 0.62)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "floatColor",
+          "type": "color",
+          "derived": "alpha(surface, 0.92)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "cardBorder",
+          "type": "color",
+          "derived": "alpha(text, 0.06)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "separatorColor",
+          "type": "color",
+          "derived": "alpha(text, 0.09)",
+          "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
+        },
+        {
+          "name": "wellBorder",
+          "type": "color",
+          "derived": "alpha(text, 0.05)",
+          "description": "The faint ring a well, a meter or a slider track is cut with."
+        },
+        {
+          "name": "quietWash",
+          "type": "color",
+          "derived": "alpha(text, 0.05)",
+          "description": "The faintest wash of text: where a click would put something."
+        },
+        {
+          "name": "badgeColor",
+          "type": "color",
+          "derived": "alpha(text, 0.09)",
+          "description": "A count badge, such as a notification stack's."
+        },
+        {
+          "name": "knobColor",
+          "type": "color",
+          "derived": "alpha(crust, 0.7)",
+          "description": "A round control's resting fill, cut into the material."
+        },
+        {
+          "name": "primaryControlColor",
+          "type": "color",
+          "derived": "alpha(accent, 0.22)",
+          "description": "The primary transport control's resting fill."
+        },
+        {
+          "name": "accentRing",
+          "type": "color",
+          "derived": "alpha(accent, 0.55)",
+          "description": "A ring that says something is open or suggested."
+        },
+        {
+          "name": "selectedRing",
+          "type": "color",
+          "derived": "alpha(accent, 0.5)",
+          "description": "A selected day that is not today is ringed at half the accent."
+        },
+        {
+          "name": "accentEdge",
+          "type": "color",
+          "derived": "alpha(accent, 0.28)",
+          "description": "A card that stands for something deliberate is edged in the accent; one that destroys something is edged in red."
+        },
+        {
+          "name": "dangerBorder",
+          "type": "color",
+          "derived": "alpha(red, 0.22)",
+          "description": "A card that stands for something deliberate is edged in the accent; one that destroys something is edged in red."
+        },
+        {
+          "name": "barStripColor",
+          "type": "color",
+          "derived": "alpha(crust, 0.86)",
+          "description": "The menu bar strip is ink over the wallpaper, ruled off along its foot."
+        },
+        {
+          "name": "barRuleColor",
+          "type": "color",
+          "derived": "alpha(crust, 0.85)",
+          "description": "The menu bar strip is ink over the wallpaper, ruled off along its foot."
+        },
+        {
+          "name": "workspaceHoverColor",
+          "type": "color",
+          "derived": "alpha(accent, 0.5)",
+          "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
+        },
+        {
+          "name": "workspaceOccupiedColor",
+          "type": "color",
+          "derived": "alpha(text, 0.16)",
+          "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
+        },
+        {
+          "name": "workspaceEmptyColor",
+          "type": "color",
+          "derived": "alpha(text, 0.07)",
+          "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
+        },
+        {
+          "name": "workspaceEmptyText",
+          "type": "color",
+          "derived": "alpha(text, 0.45)",
+          "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
+        },
+        {
+          "name": "mutedBadgeColor",
+          "type": "color",
+          "derived": "alpha(overlay, 0.35)",
+          "description": "The muted microphone badge."
+        },
+        {
+          "name": "markWell",
+          "type": "color",
+          "derived": "alpha(accent, 0.1)",
+          "description": "The tinted well a panel's or a finding's mark sits in."
+        },
+        {
+          "name": "markWellBorder",
+          "type": "color",
+          "derived": "alpha(accent, 0.22)",
+          "description": "The tinted well a panel's or a finding's mark sits in."
+        },
+        {
+          "name": "swatchBorder",
+          "type": "color",
+          "derived": "alpha(text, 0.14)",
+          "description": "A swatch is ringed in faint text so a base close to the panel still reads."
+        },
+        {
+          "name": "themesSliceBorder",
+          "type": "color",
+          "derived": "alpha(text, 0.12)",
+          "description": "A neighbour in the theme switcher is ringed fainter than the centre."
+        },
+        {
+          "name": "warningBorder",
+          "type": "color",
+          "derived": "alpha(yellow, 0.3)",
+          "description": "A field whose last attempt failed is ringed in a soft warning."
+        },
+        {
+          "name": "disabledOpacity",
+          "type": "real",
+          "default": 0.45,
+          "description": "Disabled actions stay legible while clearly withdrawing interaction."
+        },
+        {
+          "name": "unavailableOpacity",
+          "type": "real",
+          "default": 0.42,
+          "description": "Present but unusable now -- a switch that cannot be set, a device that is gone -- withdraws a little further than a disabled action."
+        },
+        {
+          "name": "statusFillOpacity",
+          "type": "real",
+          "default": 0.14,
+          "description": "A status chip, banner or active icon button is a wash of its own state colour, ringed by a stronger one."
+        },
+        {
+          "name": "statusBorderOpacity",
+          "type": "real",
+          "default": 0.24,
+          "description": "A status chip, banner or active icon button is a wash of its own state colour, ringed by a stronger one."
+        },
+        {
+          "name": "findingFillOpacity",
+          "type": "real",
+          "default": 0.12,
+          "description": "A maintenance finding's mark is a lighter wash of its urgency colour."
+        },
+        {
+          "name": "switchPressedOpacity",
+          "type": "real",
+          "default": 0.6,
+          "description": "A switch track darkens to this while pressed, rings in the accent at `switchHoverOpacity` under the pointer, and its knob is text at `switchKnobOpacity` while off."
+        },
+        {
+          "name": "switchHoverOpacity",
+          "type": "real",
+          "default": 0.55,
+          "description": "A switch track darkens to this while pressed, rings in the accent at `switchHoverOpacity` under the pointer, and its knob is text at `switchKnobOpacity` while off."
+        },
+        {
+          "name": "switchKnobOpacity",
+          "type": "real",
+          "default": 0.82,
+          "description": "A switch track darkens to this while pressed, rings in the accent at `switchHoverOpacity` under the pointer, and its knob is text at `switchKnobOpacity` while off."
+        },
+        {
+          "name": "scrollThumbOpacity",
+          "type": "real",
+          "default": 0.32,
+          "description": "The scroll handle at rest and while held."
+        },
+        {
+          "name": "scrollThumbPressedOpacity",
+          "type": "real",
+          "default": 0.6,
+          "description": "The scroll handle at rest and while held."
+        },
+        {
+          "name": "meterFadeOpacity",
+          "type": "real",
+          "default": 0.62,
+          "description": "A meter's fill rises from this strength to full along its length."
+        },
+        {
+          "name": "spectrumWellOpacity",
+          "type": "real",
+          "default": 0.28,
+          "description": "A colour track shows its whole range faintly and its fill more strongly."
+        },
+        {
+          "name": "spectrumFillOpacity",
+          "type": "real",
+          "default": 0.62,
+          "description": "A colour track shows its whole range faintly and its fill more strongly."
+        },
+        {
+          "name": "waveformFloorOpacity",
+          "type": "real",
+          "default": 0.35,
+          "description": "Waveform bars rise from the floor strength, oldest, to full, newest; the two always add up to one."
+        },
+        {
+          "name": "waveformRiseOpacity",
+          "type": "real",
+          "default": 0.65,
+          "description": "Waveform bars rise from the floor strength, oldest, to full, newest; the two always add up to one."
+        },
+        {
+          "name": "pastOpacity",
+          "type": "real",
+          "default": 0.55,
+          "description": "An agenda row that has ended: its text, and its colour stripe."
+        },
+        {
+          "name": "pastMarkOpacity",
+          "type": "real",
+          "default": 0.45,
+          "description": "An agenda row that has ended: its text, and its colour stripe."
+        },
+        {
+          "name": "deselectedOpacity",
+          "type": "real",
+          "default": 0.5,
+          "description": "A calendar that is not shown keeps its colour at half strength."
+        },
+        {
+          "name": "meetingWorkOpacity",
+          "type": "real",
+          "default": 0.34,
+          "description": "The meeting planner: working and edge hours as accent washes, busy time in the calendar's own colour, the past veiled in ink, and the column a click would place the meeting in ringed in the accent."
+        },
+        {
+          "name": "meetingEdgeOpacity",
+          "type": "real",
+          "default": 0.13,
+          "description": "The meeting planner: working and edge hours as accent washes, busy time in the calendar's own colour, the past veiled in ink, and the column a click would place the meeting in ringed in the accent."
+        },
+        {
+          "name": "meetingBusyOpacity",
+          "type": "real",
+          "default": 0.72,
+          "description": "The meeting planner: working and edge hours as accent washes, busy time in the calendar's own colour, the past veiled in ink, and the column a click would place the meeting in ringed in the accent."
+        },
+        {
+          "name": "meetingPastOpacity",
+          "type": "real",
+          "default": 0.45,
+          "description": "The meeting planner: working and edge hours as accent washes, busy time in the calendar's own colour, the past veiled in ink, and the column a click would place the meeting in ringed in the accent."
+        },
+        {
+          "name": "meetingHoverBorderOpacity",
+          "type": "real",
+          "default": 0.4,
+          "description": "The meeting planner: working and edge hours as accent washes, busy time in the calendar's own colour, the past veiled in ink, and the column a click would place the meeting in ringed in the accent."
+        },
+        {
+          "name": "themesVeilOpacity",
+          "type": "real",
+          "default": 0.24,
+          "description": "The theme switcher veils its neighbours in ink, lighter under the pointer."
+        },
+        {
+          "name": "themesVeilHoverOpacity",
+          "type": "real",
+          "default": 0.06,
+          "description": "The theme switcher veils its neighbours in ink, lighter under the pointer."
+        },
+        {
+          "name": "edgeCueFalloff",
+          "type": "real",
+          "default": 0.42,
+          "description": "A finish cue falls from the bezel to this share of its strength at the falloff stop, measured from the bezel on either side of the output."
+        },
+        {
+          "name": "edgeCueFalloffStop",
+          "type": "real",
+          "default": 0.45,
+          "description": "A finish cue falls from the bezel to this share of its strength at the falloff stop, measured from the bezel on either side of the output."
+        },
+        {
+          "name": "edgeCueFalloffStopMirrored",
+          "type": "real",
+          "default": 0.55,
+          "description": "A finish cue falls from the bezel to this share of its strength at the falloff stop, measured from the bezel on either side of the output."
+        },
+        {
+          "name": "dragAwayOpacity",
+          "type": "real",
+          "default": 0.4,
+          "description": "A bar entry being dragged off the bar, paused media art, and a tray item the user hid."
+        },
+        {
+          "name": "pausedOpacity",
+          "type": "real",
+          "default": 0.4,
+          "description": "A bar entry being dragged off the bar, paused media art, and a tray item the user hid."
+        },
+        {
+          "name": "trayHiddenOpacity",
+          "type": "real",
+          "default": 0.45,
+          "description": "A bar entry being dragged off the bar, paused media art, and a tray item the user hid."
+        },
+        {
+          "name": "readOnlyOpacity",
+          "type": "real",
+          "default": 0.35,
+          "description": "A level the player will not let us set."
+        },
+        {
+          "name": "unmatchedOpacity",
+          "type": "real",
+          "default": 0.25,
+          "description": "A screen hint whose number no longer matches what is typed."
+        },
+        {
+          "name": "agentRunningOpacity",
+          "type": "real",
+          "default": 0.4,
+          "description": "An agent that is running quietly, and the low point of a busy one's pulse."
+        },
+        {
+          "name": "agentPulseOpacity",
+          "type": "real",
+          "default": 0.25,
+          "description": "An agent that is running quietly, and the low point of a busy one's pulse."
+        },
+        {
+          "name": "gaugeTrackOpacity",
+          "type": "real",
+          "default": 0.28,
+          "description": "The speed gauge's dial track and its ticks."
+        },
+        {
+          "name": "gaugeTickOpacity",
+          "type": "real",
+          "default": 0.34,
+          "description": "The speed gauge's dial track and its ticks."
+        },
+        {
+          "name": "edgeCueReach",
+          "type": "real",
+          "default": 0.1,
+          "description": "How far a screen-edge finish cue reaches in from the bezel, as a fraction of the shorter side, and how strong the Done colour is at that bezel. The light falls off inside the rim, so the work in the middle stays put."
+        },
+        {
+          "name": "edgeCueAlpha",
+          "type": "real",
+          "default": 0.82,
+          "description": "How far a screen-edge finish cue reaches in from the bezel, as a fraction of the shorter side, and how strong the Done colour is at that bezel. The light falls off inside the rim, so the work in the middle stays put."
+        }
+      ]
+    },
+    {
+      "name": "motion",
+      "section": "Motion",
+      "description": "Durations and easing curves. Every animation takes one of these.",
+      "slots": [
+        {
+          "name": "durationFast",
+          "type": "int",
+          "default": 110,
+          "description": "Only in-surface state changes animate, and they share one pair of durations so the whole shell settles at the same speed. A finish cue is the exception that has to be read without looking at the bar: it comes in on `durationFast`, holds for `durationGlance`, and leaves on `durationSettle`."
+        },
+        {
+          "name": "durationNormal",
+          "type": "int",
+          "default": 180,
+          "description": "Only in-surface state changes animate, and they share one pair of durations so the whole shell settles at the same speed. A finish cue is the exception that has to be read without looking at the bar: it comes in on `durationFast`, holds for `durationGlance`, and leaves on `durationSettle`."
+        },
+        {
+          "name": "durationGlance",
+          "type": "int",
+          "default": 560,
+          "description": "Only in-surface state changes animate, and they share one pair of durations so the whole shell settles at the same speed. A finish cue is the exception that has to be read without looking at the bar: it comes in on `durationFast`, holds for `durationGlance`, and leaves on `durationSettle`."
+        },
+        {
+          "name": "durationSettle",
+          "type": "int",
+          "default": 480,
+          "description": "Only in-surface state changes animate, and they share one pair of durations so the whole shell settles at the same speed. A finish cue is the exception that has to be read without looking at the bar: it comes in on `durationFast`, holds for `durationGlance`, and leaves on `durationSettle`."
+        },
+        {
+          "name": "scrollRebound",
+          "type": "int",
+          "default": 130,
+          "description": "One spring for every scrollable. Qt's default overshoot drifts long enough to read as lag rather than as feedback, so the flick decelerates hard and the rebound is short."
+        },
+        {
+          "name": "scrollDeceleration",
+          "type": "int",
+          "default": 9000,
+          "description": "One spring for every scrollable. Qt's default overshoot drifts long enough to read as lag rather than as feedback, so the flick decelerates hard and the rebound is short."
+        },
+        {
+          "name": "scrollFlickVelocity",
+          "type": "int",
+          "default": 2200,
+          "description": "One spring for every scrollable. Qt's default overshoot drifts long enough to read as lag rather than as feedback, so the flick decelerates hard and the rebound is short."
+        },
+        {
+          "name": "easingStandard",
+          "type": "easing",
+          "default": "OutCubic",
+          "description": "The one curve every eased transition takes."
+        },
+        {
+          "name": "easingExit",
+          "type": "easing",
+          "default": "InCubic",
+          "description": "A cue leaving the screen accelerates away instead of settling."
+        },
+        {
+          "name": "durationSpin",
+          "type": "int",
+          "default": 720,
+          "description": "One turn of the activity spinner."
+        },
+        {
+          "name": "durationGauge",
+          "type": "int",
+          "default": 520,
+          "description": "A gauge's needle sweeps to a new reading; a busy agent pulses, faster while it waits for input."
+        },
+        {
+          "name": "durationPulse",
+          "type": "int",
+          "default": 900,
+          "description": "A gauge's needle sweeps to a new reading; a busy agent pulses, faster while it waits for input."
+        },
+        {
+          "name": "durationPulseFast",
+          "type": "int",
+          "default": 600,
+          "description": "A gauge's needle sweeps to a new reading; a busy agent pulses, faster while it waits for input."
+        },
+        {
+          "name": "easingPulse",
+          "type": "easing",
+          "default": "InOutQuad",
+          "description": "A gauge's needle sweeps to a new reading; a busy agent pulses, faster while it waits for input."
+        }
+      ]
+    },
+    {
+      "name": "sound",
+      "section": "Sound",
+      "kind": "optional",
+      "description": "Optional cues. A theme may give any of them a sound; an empty slot is silence, and silence is the fallback.",
+      "slots": [
+        {
+          "name": "soundNotification",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "A notification arrives."
+        },
+        {
+          "name": "soundNotificationUrgent",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "A critical notification arrives."
+        },
+        {
+          "name": "soundFocusDone",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "The focus timer runs out."
+        },
+        {
+          "name": "soundPanelOpen",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "A panel opens."
+        },
+        {
+          "name": "soundPanelClose",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "A panel closes."
+        },
+        {
+          "name": "soundLevelStep",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Silence. An omitted or empty sound slot plays nothing.",
+          "description": "A level OSD steps."
+        }
+      ]
+    },
+    {
+      "name": "wallpaper",
+      "section": "Wallpaper",
+      "kind": "optional",
+      "description": "An optional image of the theme's own, and the configured wallpaper it falls back to.",
+      "slots": [
+        {
+          "name": "wallpaper",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "The configured wallpaper: $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg, drawn over the base colour so a missing file still leaves the palette.",
+          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+        },
+        {
+          "name": "configuredWallpaper",
+          "type": "string",
+          "derived": "Quickshell.env(\"SEELE_SHELL_WALLPAPER\") || Palette.fallback.wallpaper",
+          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+        },
+        {
+          "name": "wallpaperImage",
+          "type": "string",
+          "derived": "wallpaper !== \"\" ? wallpaper : configuredWallpaper",
+          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+        }
+      ]
+    }
+  ]
+}

@@ -182,7 +182,7 @@ Column {
           anchors.fill: parent
           radius: panel.theme.radiusSmall
           color: "transparent"
-          border.width: 1
+          border.width: panel.theme.hairline
           border.color: panel.theme.accent
           antialiasing: true
         }
@@ -192,12 +192,12 @@ Column {
 
           anchors.left: parent.left
           anchors.top: parent.top
-          width: panel.theme.chipHeight - 2
+          width: panel.theme.panelHeaderMarkSize
           height: width
           radius: panel.theme.radiusSmall
-          color: panel.theme.alpha(panel.urgencyTint(card.finding), 0.12)
-          border.width: 1
-          border.color: panel.theme.alpha(panel.urgencyTint(card.finding), 0.24)
+          color: panel.theme.alpha(panel.urgencyTint(card.finding), panel.theme.findingFillOpacity)
+          border.width: panel.theme.hairline
+          border.color: panel.theme.alpha(panel.urgencyTint(card.finding), panel.theme.statusBorderOpacity)
           antialiasing: true
 
           Shared.CenteredGlyph {
@@ -217,7 +217,7 @@ Column {
           anchors.right: headChip.left
           anchors.rightMargin: panel.theme.spaceMedium
           anchors.top: parent.top
-          spacing: 1
+          spacing: panel.theme.spaceLine
 
           Text {
             width: parent.width
@@ -298,7 +298,7 @@ Column {
         visible: height > 0
         clip: true
 
-        Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+        Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
 
         Column {
           id: detail
@@ -411,7 +411,7 @@ Column {
               background: Rectangle {
                 radius: panel.theme.radius
                 color: panel.theme.wellColor
-                border.width: 1
+                border.width: panel.theme.hairline
                 border.color: customMinutes.activeFocus ? panel.theme.accent : panel.theme.cardBorder
                 antialiasing: true
               }

@@ -17,7 +17,7 @@ Rectangle {
   radius: (parent as Rectangle) ? (parent as Rectangle).radius : focusRing.theme.radius
   visible: focusRing.shown
   color: focusRing.theme.alpha(focusRing.theme.accent, 0)
-  border.width: 1
+  border.width: focusRing.theme.hairline
   border.color: focusRing.theme.accent
   antialiasing: true
 }

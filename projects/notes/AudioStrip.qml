@@ -67,7 +67,7 @@ ColumnLayout {
     visible: strip.store.recording
     radius: strip.theme.radiusSmall
     color: strip.theme.wellColor
-    border.width: 1
+    border.width: strip.theme.hairline
     border.color: strip.theme.cardBorder
     antialiasing: true
 
@@ -129,7 +129,7 @@ ColumnLayout {
             active: track.active
             hovered: playMouse.containsMouse
             pressed: playMouse.pressed
-            opacity: playMouse.enabled ? 1 : 0.45
+            opacity: playMouse.enabled ? 1 : strip.theme.disabledOpacity
 
             Shared.CenteredGlyph {
               anchors.fill: parent

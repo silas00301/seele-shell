@@ -20,7 +20,7 @@ Rectangle {
   color: iconButton.pressed
     ? iconButton.pressTint
     : iconButton.active
-      ? iconButton.theme.alpha(iconButton.tint, 0.14)
+      ? iconButton.theme.alpha(iconButton.tint, iconButton.theme.statusFillOpacity)
       : iconButton.theme.alpha(iconButton.tint, 0)
   antialiasing: true
 

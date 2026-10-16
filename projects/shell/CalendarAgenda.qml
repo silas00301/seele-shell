@@ -95,8 +95,8 @@ FocusScope {
 
       Shared.GlyphButton {
         theme: agenda.theme
-        implicitWidth: agenda.theme.chipHeight - 4
-        implicitHeight: agenda.theme.chipHeight - 4
+        implicitWidth: agenda.theme.compactButtonSize
+        implicitHeight: agenda.theme.compactButtonSize
         visible: agenda.day !== ""
         glyph: "󰆏"
         text: "Copy " + agenda.day
@@ -105,8 +105,8 @@ FocusScope {
       Shared.GlyphButton {
         id: refreshButton
         theme: agenda.theme
-        implicitWidth: agenda.theme.chipHeight - 4
-        implicitHeight: agenda.theme.chipHeight - 4
+        implicitWidth: agenda.theme.compactButtonSize
+        implicitHeight: agenda.theme.compactButtonSize
         visible: agenda.store.signedIn
         enabled: !agenda.syncing
         glyph: agenda.syncing ? "" : "󰑐"
@@ -272,11 +272,11 @@ FocusScope {
       Rectangle {
         x: agenda.theme.spaceSmall
         y: agenda.theme.spaceMedium
-        width: 3
+        width: agenda.theme.eventStripeWidth
         height: parent.height - agenda.theme.spaceMedium * 2
         radius: width / 2
         color: row.tint
-        opacity: row.past ? 0.45 : 1
+        opacity: row.past ? agenda.theme.pastMarkOpacity : 1
       }
 
       Column {
@@ -284,12 +284,12 @@ FocusScope {
         x: agenda.theme.spaceLarge + agenda.theme.spaceTight
         y: agenda.theme.spaceMedium
         width: parent.width - x - agenda.theme.spaceMedium
-        spacing: 3
+        spacing: agenda.theme.spaceSnug
 
         // A fixed line height, so a row with a Join button is as tall as one without.
         Item {
           width: parent.width
-          height: agenda.theme.chipHeight - 6
+          height: agenda.theme.lineControlHeight
 
           Text {
             id: rowTitle
@@ -301,7 +301,7 @@ FocusScope {
             textFormat: Text.PlainText
             elide: Text.ElideRight
             color: agenda.theme.text
-            opacity: row.past ? 0.55 : 1
+            opacity: row.past ? agenda.theme.pastOpacity : 1
             font.family: agenda.theme.fontFamily
             font.pixelSize: agenda.theme.textBody
             font.weight: agenda.theme.weightStrong
@@ -328,7 +328,7 @@ FocusScope {
               objectName: "calendarQuickJoin"
               theme: agenda.theme
               visible: row.modelData.join !== "" && !row.past && !row.expanded
-              implicitHeight: agenda.theme.chipHeight - 6
+              implicitHeight: agenda.theme.lineControlHeight
               selected: row.imminent
               text: "Join"
               Accessible.name: "Join " + (row.modelData.join_label || "meeting")
@@ -351,7 +351,7 @@ FocusScope {
           textFormat: Text.PlainText
           elide: Text.ElideRight
           color: row.ongoing ? agenda.theme.accent : agenda.theme.subtext
-          opacity: row.past ? 0.55 : 1
+          opacity: row.past ? agenda.theme.pastOpacity : 1
           font.family: agenda.theme.fontFamily
           font.pixelSize: agenda.theme.textCaption
           font.weight: row.ongoing ? agenda.theme.weightMedium : agenda.theme.weightRegular
@@ -380,7 +380,7 @@ FocusScope {
                 spacing: agenda.theme.spaceSmall
                 Item {
                   width: agenda.theme.textIcon
-                  height: detailText.lineCount > 1 ? detailText.font.pixelSize * 1.4 : detailText.height
+                  height: detailText.lineCount > 1 ? detailText.font.pixelSize * agenda.theme.lineBoxRatio : detailText.height
                   Text {
                     visible: !detailLine.modelData.swatch
                     anchors.centerIn: parent
@@ -421,7 +421,7 @@ FocusScope {
               wrapMode: Text.Wrap
               maximumLineCount: 8
               elide: Text.ElideRight
-              lineHeight: 1.15
+              lineHeight: agenda.theme.lineHeightProse
               color: agenda.theme.subtext
               font.family: agenda.theme.fontFamily
               font.pixelSize: agenda.theme.textCaption

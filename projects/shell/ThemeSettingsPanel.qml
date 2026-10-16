@@ -23,7 +23,7 @@ FocusScope {
     property string committed: ""
     property string sent: ""
     signal chosen(string value)
-    width: 64
+    width: panel.theme.timeFieldWidth
     implicitHeight: panel.theme.chipHeight
     text: field.committed
     horizontalAlignment: Text.AlignHCenter
@@ -47,7 +47,7 @@ FocusScope {
     background: Rectangle {
       radius: panel.theme.radiusSmall
       color: panel.theme.wellColor
-      border.width: 1
+      border.width: panel.theme.hairline
       border.color: field.activeFocus ? panel.theme.accent : field.acceptableInput ? panel.theme.cardBorder : panel.theme.red
     }
   }
@@ -57,24 +57,24 @@ FocusScope {
   component Swatch: Rectangle {
     id: swatch
     required property var preset
-    width: 58
-    height: 24
+    width: panel.theme.swatchWidth
+    height: panel.theme.swatchHeight
     radius: panel.theme.radiusSmall
     color: swatch.preset ? swatch.preset.base : panel.theme.wellColor
-    border.width: 1
-    border.color: panel.theme.alpha(panel.theme.text, 0.14)
+    border.width: panel.theme.hairline
+    border.color: panel.theme.swatchBorder
     antialiasing: true
     Row {
       anchors.centerIn: parent
-      spacing: 4
+      spacing: panel.theme.spaceTight
       visible: !!swatch.preset
       Repeater {
         model: swatch.preset ? [swatch.preset.accent, swatch.preset.red, swatch.preset.green, swatch.preset.yellow] : []
         Rectangle {
           required property var modelData
-          width: 8
-          height: 8
-          radius: 4
+          width: panel.theme.swatchDotSize
+          height: panel.theme.swatchDotSize
+          radius: panel.theme.swatchDotSize / 2
           color: modelData
         }
       }
@@ -89,7 +89,7 @@ FocusScope {
     readonly property string chosen: panel.store.slots[slotRow.slot] || ""
     readonly property bool inUse: panel.store.mode === slotRow.slot
     width: parent ? parent.width : 0
-    height: 40
+    height: panel.theme.rowHeight
     Swatch {
       id: chip
       anchors.verticalCenter: parent.verticalCenter
@@ -97,7 +97,7 @@ FocusScope {
     }
     Column {
       anchors { left: chip.right; leftMargin: panel.theme.spaceMedium; right: use.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
-      spacing: 1
+      spacing: panel.theme.spaceLine
       Text {
         objectName: slotRow.slot + "Theme"
         width: parent.width
@@ -181,7 +181,7 @@ FocusScope {
       Shared.SegmentWell {
         theme: panel.theme
         anchors.right: parent.right
-        width: Math.round(parent.width * 0.6)
+        width: Math.round(parent.width * panel.theme.themeScheduleShare)
         height: parent.height
         Shared.SegmentChoice {
           theme: panel.theme
