@@ -52,11 +52,13 @@ two consecutive grabs, further apart than the longest transition, are
 identical, and any Qt warning fails the run, because a binding the scene left
 unsatisfied would draw a default instead of the theme.
 
-`themes.json` is the `themes` array of `seele-theme list`, the exact roles the
-shell receives. It was projected by the real `seele-theme` from the pinned
-`base16-schemes` (tinted-theming/schemes `43dd14f6`) with the configured
-Catppuccin lavender accent. On nerv, `--catalog` proves it still matches the
-installed catalog:
+`themes.json` is the `themes` array of `seele-theme list`: each preset's theme
+document, as the contract defines it (`projects/shared/THEME-CONTRACT.md`),
+and so exactly what the shell receives. It was projected by the real
+`seele-theme` from the pinned `base16-schemes` (tinted-theming/schemes
+`43dd14f6`) with the configured Catppuccin lavender accent. On nerv,
+`--catalog` proves it still matches the installed catalog document for
+document:
 
 ```sh
 seele-theme list > /tmp/catalog.json

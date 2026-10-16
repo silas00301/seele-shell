@@ -22,6 +22,9 @@ let
           "LICENSES"
         ]
       ) crates
+      # `seele-theme` checks every theme document against the shell's own
+      # theme contract, which it embeds at build time.
+      ++ lib.optional (name == "config-tools") ../../projects/shared/theme-contract.json
     );
   };
   tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };

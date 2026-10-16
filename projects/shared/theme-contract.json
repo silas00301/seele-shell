@@ -2,7 +2,7 @@
   "version": 1,
   "description": "The Seele theme contract. Every styling value the desktop shell and Seele Notes draw with is a slot here, implemented once by Theme.qml in the same order and with the same defaults; tests/theme-contract.js holds the two to each other and fails on any styling literal outside them.",
   "documents": {
-    "description": "A theme is a JSON object: its identity, then any slots it supplies by name. It must supply every required slot. Any other slot it leaves out takes its default, which reproduces the shell as it was drawn before themes could set more than colours; sound and wallpaper slots fall back as their slots say. Derived slots are computed from the slots they name and fixed slots belong to the contract, so a theme supplies neither. Keys listed in extensions belong to other applications and are passed through.",
+    "description": "A theme is a JSON object: its identity, then any slots it supplies by name. It must supply every required slot. Any other slot it leaves out takes its default, which reproduces the shell as it was drawn before themes could set more than colours; sound and wallpaper slots fall back as their slots say. Derived slots are computed from the slots they name and fixed slots belong to the contract, so a theme supplies neither. Keys listed in extensions are not styling and are passed through: the Base16 `palette` and `terminal` colours other applications take from a theme, and the publication format `version` they check.",
     "identity": {
       "id": {
         "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -22,7 +22,8 @@
     },
     "extensions": [
       "palette",
-      "terminal"
+      "terminal",
+      "version"
     ],
     "paths": "A path slot holds an absolute path or the empty string. A theme folder names its own files relative to itself; registration resolves them to absolute paths before the shell sees them."
   },

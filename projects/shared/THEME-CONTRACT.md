@@ -10,6 +10,7 @@ its own, so a theme can restyle the shell without a code change.
 | `theme-contract.json` | The schema: every slot with its group, type, default or derivation and description; the rules a theme document follows; the fallbacks; what counts as structure rather than style. |
 | `Theme.qml` | The one implementation. Every slot is a property here, in the same order and with the same default. |
 | `tests/theme-contract.js` | Holds the two to each other, validates theme documents, and fails on any styling literal outside the contract. |
+| `../config-tools/src/theme_contract.rs` | The same document rules in the theme helper, which embeds this JSON and refuses a preset that breaks them. |
 | `tests/theme-snapshots/` | Pixel baselines of every preset (SIL-232). A refactor of the contract proves it changed nothing there. |
 
 ## Slots
@@ -41,14 +42,55 @@ A theme is a JSON object: `id` (kebab-case), `name` and `mode` (`light` or
 `dark`), then any slots it supplies by name. It must supply the eleven palette
 roles. Anything else it leaves out takes its default. A derived or fixed slot
 cannot be supplied; neither can a key the contract does not name, except the
-`palette` and `terminal` extensions the theme helper keeps for other
-applications. Types are checked: an `int` slot rejects `8.5`, a `color` slot
-rejects a name, a `weight` or `easing` slot takes a name from `enums`. Every
-preset `seele-theme` publishes today is a valid document.
+extensions, which are not styling: the Base16 `palette` and `terminal` colours
+the theme helper keeps for other applications, and the publication's format
+`version`. Types are checked: an `int` slot rejects `8.5`, a `color` slot
+rejects a name, a `weight` or `easing` slot takes a name from `enums`.
 
 A `path` slot holds an absolute path or nothing. A theme folder names its own
 files relative to itself; registration resolves them before the shell sees
 them.
+
+## The existing presets
+
+The thirteen presets of the theme switcher are contract documents. `seele-theme`
+builds each one from the preset's Base16 palette in the catalog the flake
+generates:
+
+| Key | From |
+| --- | --- |
+| `id`, `name`, `mode` | the catalog entry |
+| `base`, `crust` | `base00` |
+| `mantle` | `base01` |
+| `surface` | `base02` |
+| `overlay` | `base03`, held to 3:1 against `base` |
+| `text` | `base05`, or `base06` or `base07` where a scheme files a grey in `base05` |
+| `subtext` | `base04`, held to 4.5:1 against `base` |
+| `accent` | `base0D`, which is the configured accent in the Catppuccin presets |
+| `red`, `green`, `yellow` | `base08`, `base0B`, `base0A` |
+| `fontFamily` | the configured monospace font |
+| `palette`, `terminal` | the Base16 palette and the sixteen terminal colours, as extensions |
+
+A preset supplies nothing else, so every other slot takes its default, and the
+defaults are the look these presets were drawn with. Base16 stays their source
+rather than literal colours in a file, because the flake renders each preset's
+GTK, Qt, KDE, Zen, Spicetify, Vicinae and Neovim themes from the same palette,
+and the Catppuccin presets carry the accent the flake is configured with.
+
+The helper embeds `theme-contract.json` and checks every document, and the
+`theme.json` each becomes, whenever it reads the catalog. One invalid preset
+refuses the whole catalog, naming the document and the rule it broke, so it
+never reaches a surface; the parent flake's `checks.theme-presets` lists every
+generated preset, which makes that a build failure. `theme.json` is the
+document plus `version` and `wallpaper`, the configured image the lock screen
+draws. No preset has an image of its own, so that is also the image the
+wallpaper fallback below names.
+
+`tests/theme-snapshots/themes.json` holds the thirteen documents as `seele-theme
+list` prints them for the pinned schemes. The pixel baselines are rendered from
+exactly those documents, `tests/theme-contract.js` checks each of them and its
+`theme.json` against the contract, and `config-tools/tests/themes.py` checks
+the helper's listing, its publication and its refusals.
 
 ## Optional slots and their fallbacks
 
@@ -133,9 +175,10 @@ The greeter, lock screen and polkit agent are separate scenes that take only
 the palette, through `Palette.js`; their own dimensions are outside this
 version of the contract.
 
-Today the shell still applies only the palette roles and `fontFamily` from
-`theme.json`, through `Palette.assign`. Expressing the existing presets as
-contract documents is SIL-233, registering theme folders and failing invalid
-ones at build time is SIL-234, swapping wallpapers per theme is SIL-235, and
-playing the sound cues is SIL-240. Each builds on these rules: the contract says
-what a theme may set and what an omitted slot falls back to.
+The shell applies the palette roles and `fontFamily` from `theme.json`, through
+`Palette.assign`, which is everything the existing presets supply. A theme that
+supplies other slots needs the shell to apply them as well, which comes with
+the first themes that do. Registering theme folders and failing invalid ones at
+build time is SIL-234, swapping wallpapers per theme is SIL-235, and playing
+the sound cues is SIL-240. Each builds on these rules: the contract says what a
+theme may set and what an omitted slot falls back to.

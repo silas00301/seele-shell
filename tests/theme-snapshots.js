@@ -298,14 +298,18 @@ if (!options.update) {
 
 const themeFile = JSON.parse(fs.readFileSync(path.join(assets, 'themes.json'), 'utf8'));
 if (options.catalog) {
-  // `seele-theme list` on the desktop carries every preset as the shell
-  // receives it, so it can prove the fixture still matches what is installed.
+  // `seele-theme list` on the desktop carries every preset as the theme
+  // document the shell receives, so it can prove the fixture still matches
+  // what is installed, document for document. Only a colour's hex digits may
+  // differ in case; names, the font family and every other string match
+  // exactly.
   const listed = JSON.parse(fs.readFileSync(options.catalog, 'utf8')).themes;
-  const roles = ['base', 'mantle', 'crust', 'surface', 'overlay', 'text', 'subtext', 'accent', 'red', 'green', 'yellow'];
-  const shape = theme => Object.fromEntries(['id', 'mode', ...roles].map(key => [key, String(theme[key]).toLowerCase()]));
+  const color = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+  const shape = theme => JSON.parse(JSON.stringify(theme), (key, value) => typeof value === 'string' && color.test(value) ? value.toLowerCase() : value);
   assert.deepEqual(listed.map(shape), themeFile.themes.map(shape), 'themes.json no longer matches the installed catalog');
 }
-const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes.map(theme => ({...theme, fontFamily: themeFile.fontFamily}))];
+// Each preset is rendered from its contract document exactly as listed.
+const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes];
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-theme-snapshots-'));
 try {

@@ -54,7 +54,17 @@ safe catalog IDs, an explicit light/dark mode, exactly 16 six-digit RGB Base16
 slots (`base00`–`base0F`), and a bounded generated Vicinae asset. The catalog pins desktop command paths; themes contain
 no executable hooks. Listing is read-only and starts no desktop command.
 
-The selected ID and the complete shell palette are stored in mode-0600
+Every preset is a document of the shell's theme contract
+(`projects/shared/THEME-CONTRACT.md`): `list` returns each one as its identity,
+the eleven palette roles projected from its Base16 slots, the configured
+typeface, and its Base16 palette and terminal colours as contract extensions.
+`src/theme_contract.rs` embeds `projects/shared/theme-contract.json` and checks
+every document, and the selection each becomes, whenever the catalog is read; a
+single invalid preset refuses the whole catalog and names the document and the
+rule it broke.
+
+The selected preset's document, with the format `version` and the configured
+wallpaper, is stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
 contain Ghostty, Fish, tmux, X resources and Hyprland includes, copies of the
 Stylix-generated GTK, GtkSourceView, Qt/Kvantum, KDE, Spicetify and Zen assets,
