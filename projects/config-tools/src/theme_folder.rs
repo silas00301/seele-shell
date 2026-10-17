@@ -55,12 +55,25 @@ fn typeface(file: &Path) -> bool {
     [&b"\0\x01\0\0"[..], b"OTTO", b"true"].contains(&head.as_slice())
 }
 
+/// Whether `file` starts as a WAV file does: a RIFF container of the WAVE
+/// form. The shell plays a theme's cues through Qt's SoundEffect, which
+/// decodes WAV alone, so a cue in any other format would play as silence.
+fn wave(file: &Path) -> bool {
+    let mut head = Vec::with_capacity(12);
+    if fs::File::open(file)
+        .and_then(|file| file.take(12).read_to_end(&mut head))
+        .is_err()
+    {
+        return false;
+    }
+    head.len() == 12 && &head[..4] == b"RIFF" && &head[8..] == b"WAVE"
+}
+
 /// Why the file a slot names cannot be used, said as a refusal goes on, or
 /// nothing: a picture the shell draws (the theme's own wallpaper or the
-/// texture tiled over its surfaces) or a typeface it loads. Registration
-/// decodes a picture completely (`thorough`); a catalog read rechecks the
-/// registered copy's signature only, as for the wallpaper. A sound is handed
-/// to whatever plays it, so its bytes are not read.
+/// texture tiled over its surfaces), a typeface it loads or a sound it plays.
+/// Registration decodes a picture completely (`thorough`); a catalog read
+/// rechecks the registered copy's signature only, as for the wallpaper.
 fn fault(slot: &str, file: &Path, thorough: bool) -> Option<String> {
     if slot == WALLPAPER || slot == SURFACE_TEXTURE {
         if thorough {
@@ -70,6 +83,8 @@ fn fault(slot: &str, file: &Path, thorough: bool) -> Option<String> {
         }
     } else if slot.starts_with("fontFile") && !typeface(file) {
         Some("is not a TrueType or OpenType font".to_owned())
+    } else if slot.starts_with("sound") && !wave(file) {
+        Some("is not a WAV sound".to_owned())
     } else {
         None
     }
@@ -458,19 +473,19 @@ mod tests {
     #[test]
     fn named_files_are_resolved_into_the_registered_copy() {
         let mut document = example();
-        document["soundNotification"] = json!("sounds/ping.oga");
+        document["soundNotification"] = json!("sounds/ping.wav");
         document["soundFocusDone"] = json!("");
         let folder = Folder::new(&document);
-        folder.write("sounds/ping.oga", b"OggS");
+        folder.write("sounds/ping.wav", WAV);
         folder.write("notes.txt", b"not named, not copied");
         let registered = folder.register().unwrap();
-        let ping = folder.out().join("sounds/ping.oga");
+        let ping = folder.out().join("sounds/ping.wav");
         assert_eq!(
             registered["soundNotification"],
             json!(ping.to_str().unwrap())
         );
         assert_eq!(registered["soundFocusDone"], json!(""));
-        assert_eq!(fs::read(&ping).unwrap(), b"OggS");
+        assert_eq!(fs::read(&ping).unwrap(), WAV);
         assert!(!folder.out().join("notes.txt").exists());
     }
 
@@ -661,8 +676,10 @@ mod tests {
         );
     }
 
+    const WAV: &[u8] = b"RIFF\x24\0\0\0WAVEfmt ";
+
     #[test]
-    fn a_typeface_or_texture_qt_cannot_load_is_refused() {
+    fn a_typeface_texture_or_sound_qt_cannot_load_is_refused() {
         let png = png_image(4, 3);
         for (slot, name, bytes, fault) in [
             (
@@ -696,6 +713,21 @@ mod tests {
                 &png[..png.len() / 2],
                 "is not a complete PNG image",
             ),
+            // SoundEffect decodes WAV alone: an Ogg cue, or another RIFF
+            // form, would play as silence.
+            (
+                "soundNotification",
+                "ping.oga",
+                b"OggS\0\x02\0\0\0\0\0\0",
+                "is not a WAV sound",
+            ),
+            (
+                "soundPanelOpen",
+                "open.avi",
+                b"RIFF\x24\0\0\0AVI LIST",
+                "is not a WAV sound",
+            ),
+            ("soundLevelStep", "tick.wav", b"RIFF", "is not a WAV sound"),
         ] {
             let folder = Folder::new(&with(slot, json!(name)));
             folder.write(name, bytes);

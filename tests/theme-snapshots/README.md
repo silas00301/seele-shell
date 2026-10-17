@@ -63,7 +63,11 @@ stores' state on one fixed morning, notifications received through the
 production native policy, and the render loop. Each frame is saved only once
 two consecutive grabs, further apart than the longest transition, are
 identical, and any Qt warning fails the run, because a binding the scene left
-unsatisfied would draw a default instead of the theme.
+unsatisfied would draw a default instead of the theme. A theme's own motion,
+Cyberpunk's trim sweeping in and its glitch flickering as a panel appears,
+runs with the user's default (motion on) and ends on the still frame, so it is
+the still frame that is captured; its sounds stay off, as they are by default,
+so the scene never loads the player.
 
 `themes.json` is the `themes` array of `seele-theme list`: each preset's theme
 document, as the contract defines it (`projects/shared/THEME-CONTRACT.md`),

@@ -212,7 +212,7 @@ function objectId(member) {
 // same on every run, and `agentData` is what CodexBar would have reported.
 const replacedMembers = new Set(['HoverTip', 'now', 'agentData']);
 // Production objects the harness keeps: they read only fixtures.
-const keptObjects = new Set(['spotifyMediaSlot', 'deviceMediaSlot', 'micTest']);
+const keptObjects = new Set(['spotifyMediaSlot', 'deviceMediaSlot', 'micTest', 'themeSounds']);
 // Window members that place a Quickshell layer surface. An Item has no such
 // properties, and the harness shows each surface itself.
 const placement = /^(screen|visible|anchors|margins(\.\w+)?|exclusionMode|exclusiveZone|color|mask|focusable|aboveWindows|implicitWidth|implicitHeight|onVisibleChanged|WlrLayershell\.\w+)\s*[:{]/;

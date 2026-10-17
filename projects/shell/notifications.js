@@ -13,6 +13,9 @@ function bodyMarkup(body) { return Bridge.call("notifications.bodyMarkup",[body]
 // a byte string to QML as an opaque wrapper the native boundary refuses along
 // with the whole notification. A stack tag crosses only as text or a number.
 function hintTag(value) { return typeof value === "string" || typeof value === "number" ? value : null }
+// The specification's `suppress-sound` is a boolean; a sender that sends it as
+// a number means the same.
+function hintFlag(value) { return value === true || value === 1 }
 function fromNative(n, now) {
   var hints=n.hints || {}
   var entry=Bridge.call("notifications.fromNative",[{
@@ -20,7 +23,8 @@ function fromNative(n, now) {
     summary:n.summary,body:n.body,hasActionIcons:n.hasActionIcons,image:String(n.image || ""),
     urgency:Bridge.number(Number(n.urgency)),resident:n.resident,transient:n.transient,
     expireTimeout:Bridge.number(Number(n.expireTimeout)),hints:{value:Bridge.number(Number(hints.value)),
-      "x-dunst-stack-tag":hintTag(hints["x-dunst-stack-tag"]),"x-canonical-private-synchronous":hintTag(hints["x-canonical-private-synchronous"])}
+      "x-dunst-stack-tag":hintTag(hints["x-dunst-stack-tag"]),"x-canonical-private-synchronous":hintTag(hints["x-canonical-private-synchronous"]),
+      "suppress-sound":hintFlag(hints["suppress-sound"])}
   },now])
   // Preserve sender action insertion order and QObject identity outside JSON.
   // Qt serializes ordinary objects into QVariantMap. Null-prototype objects

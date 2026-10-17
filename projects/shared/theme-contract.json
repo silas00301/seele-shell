@@ -110,7 +110,11 @@
   "members": {
     "description": "Theme.qml properties that are not styling values and so not slots. Each is declared after the helper functions; any other property anywhere in Theme.qml must be a slot.",
     "keyboardNavigation": "The shared keyboard navigation every surface reaches through the theme (projects/navigation).",
-    "supplied": "The derived slots the published theme supplies in place of their derivations, by slot (Contract.supplied), easings as Qt enums; a suppliable slot reads it before its derivation."
+    "supplied": "The derived slots the published theme supplies in place of their derivations, by slot (Contract.supplied), easings as Qt enums; a suppliable slot reads it before its derivation.",
+    "motionEnabled": "Whether a theme's own motion plays: the user's choice, not the theme's, read from the theme helper's preferences (seele-theme motion on|off); on by default.",
+    "soundEnabled": "Whether a theme's interface sounds play: the user's choice, read from the theme helper's preferences (seele-theme sound on|off); off by default.",
+    "panelMotion": "Whether the published theme moves its panels (a cut, trimmed panel with a sweep or a glitch flicker), so the motion choice is offered only for a theme that has motion.",
+    "themeSounds": "Whether the published theme carries any sound cue, so the sound choice is offered and the player loaded only for a theme that has one."
   },
   "groups": [
     {
@@ -651,6 +655,12 @@
           "type": "int",
           "default": 0,
           "description": "A cut panel's trim: the cut lit in `panelTrimColor`, and a bar `strokeStrong` thick running `panelTrim` along the top edge from it. Past its end, a glitch: a slice `panelGlitch` long knocked down off the edge, in `panelGlitchColor`. Zero draws neither."
+        },
+        {
+          "name": "panelGlitchShift",
+          "type": "int",
+          "default": 0,
+          "description": "How far the glitch jumps to either side while it flickers (`durationPanelGlitch`)."
         },
         {
           "name": "chipHeight",
@@ -2861,6 +2871,24 @@
           "type": "int",
           "default": 0,
           "description": "The focus ring flares as it appears: it grows to `focusRingFlare` in the first quarter of this and settles to its width in the rest, on the standard curve. Zero shows it at once."
+        },
+        {
+          "name": "durationPanelTrim",
+          "type": "int",
+          "default": 0,
+          "description": "A cut panel's own motion. As the panel appears, its trim sweeps out from the cut over `durationPanelTrim` on the standard curve; then its glitch flickers `panelGlitchFlickers` times over `durationPanelGlitch`, jumping `panelGlitchShift` to either side, and flickers again when the pointer comes onto the panel. Each comes to rest where the still frame draws it. Zero keeps it still, and the user may hold all of it still."
+        },
+        {
+          "name": "durationPanelGlitch",
+          "type": "int",
+          "default": 0,
+          "description": "A cut panel's own motion. As the panel appears, its trim sweeps out from the cut over `durationPanelTrim` on the standard curve; then its glitch flickers `panelGlitchFlickers` times over `durationPanelGlitch`, jumping `panelGlitchShift` to either side, and flickers again when the pointer comes onto the panel. Each comes to rest where the still frame draws it. Zero keeps it still, and the user may hold all of it still."
+        },
+        {
+          "name": "panelGlitchFlickers",
+          "type": "int",
+          "default": 0,
+          "description": "A cut panel's own motion. As the panel appears, its trim sweeps out from the cut over `durationPanelTrim` on the standard curve; then its glitch flickers `panelGlitchFlickers` times over `durationPanelGlitch`, jumping `panelGlitchShift` to either side, and flickers again when the pointer comes onto the panel. Each comes to rest where the still frame draws it. Zero keeps it still, and the user may hold all of it still."
         }
       ]
     },

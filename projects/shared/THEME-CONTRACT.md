@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-447 slots in twelve groups, each a `// <Section> ----` header in `Theme.qml`:
+451 slots in twelve groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -128,6 +128,36 @@ each part of it is a slot whose default draws exactly what the presets draw:
 
 `themes/cyberpunk` gives all of them; `themes/CYBERPUNK.md` lists its values.
 
+## A theme's own motion and sound
+
+A theme may make its panels move and the shell sound (SIL-240). Both are the
+theme's, and whether they happen is the user's: the theme helper's preferences
+carry `motion` (on until turned off) and `sound` (off until turned on), set with
+`seele-theme motion|sound on|off` or under Effects in the Control Center's
+Themes panel, which offers each only for a theme that has it. `Theme.qml` reads
+them from `preferences.json` into `motionEnabled` and `soundEnabled`, beside
+the slots rather than among them: no theme can supply them.
+
+- **Motion.** On a cut, trimmed panel, `durationPanelTrim` sweeps the trim out
+  from the cut as the panel appears, and `durationPanelGlitch` then flickers
+  the glitch `panelGlitchFlickers` times, `panelGlitchShift` to either side; it
+  flickers again when the pointer comes onto the panel. `CutFrame` starts each
+  only on those events and ends each on the still frame, so nothing runs while
+  a panel is left alone, and with motion held still it draws the still frame at
+  once. A panel appears when its window shows or, where the window stays
+  mapped, when its surface does; hiding either puts it at rest. The sweep and
+  the jolt stay inside a frame too small for the whole trim. Zero, the default,
+  keeps a panel still.
+- **Sound.** The `sound…` slots below are played by the shell's
+  `ThemeSounds.qml` on the event each is named for, through Qt's SoundEffect,
+  which decodes WAV alone; registration refuses a cue in any other format. The
+  player is loaded only while sound is on and the theme carries a cue, and
+  presentation mode holds every cue back. A notification whose sender sets the
+  specification's `suppress-sound` hint gets no cue.
+
+`tests/tst_motion.qml` drives the motion and proves an open panel at rest draws
+no frame; `tests/theme-sounds.sh` drives when the cues play.
+
 ## Theme documents
 
 A theme is a JSON object: `id` (kebab-case), `name` and `mode` (`light` or
@@ -212,7 +242,9 @@ desktop and not only the shell:
   rechecks the registered copy's signature. The background, the lock screen
   and the surfaces escape the name into the file URL, so it may hold any
   character a file name can. Each `fontFile…` is a TrueType or an OpenType
-  font, which Qt's font loader takes, refused by its first bytes otherwise.
+  font, which Qt's font loader takes, and each `sound…` cue is a WAV file,
+  which Qt's SoundEffect plays; either is refused by its first bytes otherwise,
+  rather than loaded as nothing or played as silence.
 - It carries no `wallpaperOutputs`: output names belong to a machine, so which
   image each output shows is the host's wallpaper mapping.
 - If it records a `material` source, it is exactly the document `seele-theme
@@ -220,7 +252,7 @@ desktop and not only the shell:
   (`themes/MATERIAL.md`).
 
 A `path` slot names a file relative to the folder, such as
-`"soundNotification": "sounds/ping.oga"` or `"wallpaper": "wallpaper.jpg"`. The
+`"soundNotification": "sounds/ping.wav"` or `"wallpaper": "wallpaper.jpg"`. The
 name has to stay inside the folder and lead to a file of at most 16 MiB.
 
 `seele-theme register <id> <folder> <out>` runs at build time
@@ -272,8 +304,9 @@ curve in.
 
 **Sound.** `soundNotification`, `soundNotificationUrgent`, `soundFocusDone`,
 `soundPanelOpen`, `soundPanelClose` and `soundLevelStep` are each a file to play
-for that cue. An empty or omitted slot is silence, and silence is the fallback:
-nothing plays unless the theme supplies a sound. No surface plays one yet.
+for that cue, a WAV file. An empty or omitted slot is silence, and silence is
+the fallback: nothing plays unless the theme supplies a sound, and nothing plays
+at all until the user turns sound on.
 
 **Assets.** `fontFileLight`, `fontFileRegular`, `fontFileMedium` and
 `fontFileStrong` are the typeface files a theme carries, the faces its
@@ -397,6 +430,6 @@ folder theme looks exactly as it always did. The pixel baselines run every
 preset through that same path; they capture surfaces rather than the
 background, so a wallpaper changes none of them. One image per theme is SIL-235,
 images per output and per light and dark theme are SIL-236, a theme's own
-typeface, texture, cut panels and capitals are SIL-239, and playing the sound
-cues is SIL-240. Each builds on these rules: the contract says
+typeface, texture, cut panels and capitals are SIL-239, and a theme's own
+motion and its sound cues are SIL-240. Each builds on these rules: the contract says
 what a theme may set and what an omitted slot falls back to.

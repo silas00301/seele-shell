@@ -69,8 +69,9 @@ wrote at build time. `register` reads only the folder, holds it to the contract
 and to the folder rules in `src/theme_folder.rs` (the Base16 `palette`, opaque
 roles, the folder's name as `id`, named files inside the folder, a `wallpaper`
 that `src/picture.rs` finds to be a complete PNG or JPEG within Qt's 256 MiB
-decode limit, a `surfaceTexture` held to the same, and `fontFile…` typefaces
-that start as a TrueType or an OpenType font does), copies the
+decode limit, a `surfaceTexture` held to the same, `fontFile…` typefaces that
+start as a TrueType or an OpenType font does, and `sound…` cues that start as
+a WAV file does, the one format Qt's SoundEffect plays), copies the
 files it names into `<out>` and resolves their names there, or exits 1 naming the
 folder and every rule it broke without writing anything. Reading the catalog
 holds each registered document to the same rules and to its entry's identity and
@@ -190,6 +191,12 @@ beside Mocha), else the catalog's first preset of that mode.
   Turning it on puts the desktop where the schedule says now; off keeps the
   times for next time.
 - `tick` runs one step of the schedule, and `follow` runs it as a loop.
+- `motion <on|off>` and `sound <on|off>` say whether a theme's own motion
+  (its panel trims sweeping in, its glitch flickering) and its interface sounds
+  are let through. Motion is on and sound off until chosen, and a preferences
+  file saved before there was a choice reads that way. Neither changes the
+  theme, so nothing is published; the shell reads both from `preferences.json`,
+  and `reset` returns them to those defaults with the rest.
 
 The schedule is edge-triggered. It records the last boundary it acted on, and a
 step changes the mode only when a newer boundary has passed, so a mode chosen by
@@ -230,8 +237,8 @@ York, Sydney and Tromsø's polar day and night.
 `python3 projects/config-tools/tests/appearance.py target/debug/seele-theme`
 drives the real CLI with a fixed clock and a synthetic tz table through
 migration, both slots, the mode, restore, both schedules, a hand-chosen mode
-holding until its boundary, catch-up after a gap, and `follow` applying a
-boundary on its own.
+holding until its boundary, catch-up after a gap, `follow` applying a
+boundary on its own, and motion and sound saved without a publication.
 `python3 projects/config-tools/tests/build_idle.py target/debug/seele-theme target/debug/seele-build-idle`
 drives a fixture process list through detection, a held evening boundary, and
 the unfocused done/fail notification.
@@ -252,7 +259,9 @@ is sent, one request runs at a time, and a newer request of the same kind
 replaces one still waiting. The Control Center panel holds the rest: Light and
 Dark (`auto off`, then `mode`), Auto with sunrise and sunset or two times
 (`auto`), and `slot` for a mode that should wear a preset of the other kind.
-Its tile's knob shows Light, Dark or Auto and steps to the next.
+For a theme with motion or sounds of its own it adds Effects, a switch each
+for `motion` and `sound`. Its tile's knob shows Light, Dark or Auto and steps to
+the next.
 
 No surface treats a reply as the answer to which theme is applied: the store
 watches the published `selection.json` and `preferences.json` and reads the

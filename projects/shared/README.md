@@ -57,7 +57,12 @@ rectangle: the outline with its two corners cut, and the trim and glitch a
 theme may give it (`THEME-CONTRACT.md`, "Cut panels and capitals"), each held
 inside the frame however small it is. A theme that gives no cut never loads
 it, and a surface that is not a panel, such as `GlyphButton`'s tooltip, passes
-`cutCorners: false` and keeps the plain material.
+`cutCorners: false` and keeps the plain material. The frame also plays the
+theme's own motion -- the trim sweeping in as the panel appears, the glitch
+flickering after it and under the pointer -- and rests on the still frame when
+the panel is hidden, whether its window is unmapped or only its surface inside
+a mapped one, and when the user holds motion still (`motionEnabled`);
+`tests/tst_motion.qml`, run by `tests/palette.sh`, drives it.
 
 `HistoryChart.qml` renders bounded native histories without owning samples or
 policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`

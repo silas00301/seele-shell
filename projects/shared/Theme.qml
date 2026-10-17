@@ -162,6 +162,9 @@ ShellRoot {
   // edge, in `panelGlitchColor`. Zero draws neither.
   property int panelTrim: 0
   property int panelGlitch: 0
+  // How far the glitch jumps to either side while it flickers
+  // (`durationPanelGlitch`).
+  property int panelGlitchShift: 0
   // The three heights a chip, a button and a list row take, so a panel keeps
   // its rhythm no matter which surface assembled it. A tile or a card still
   // sizes to what it holds.
@@ -794,6 +797,15 @@ ShellRoot {
   // first quarter of this and settles to its width in the rest, on the
   // standard curve. Zero shows it at once.
   property int durationFocusRing: 0
+  // A cut panel's own motion. As the panel appears, its trim sweeps out from
+  // the cut over `durationPanelTrim` on the standard curve; then its glitch
+  // flickers `panelGlitchFlickers` times over `durationPanelGlitch`, jumping
+  // `panelGlitchShift` to either side, and flickers again when the pointer
+  // comes onto the panel. Each comes to rest where the still frame draws it.
+  // Zero keeps it still, and the user may hold all of it still.
+  property int durationPanelTrim: 0
+  property int durationPanelGlitch: 0
+  property int panelGlitchFlickers: 0
 
   // Sound --------------------------------------------------------------------
   // The cues a theme may give a sound to, each an absolute path to a file the
@@ -873,6 +885,20 @@ ShellRoot {
   // so a theme that supplies none draws exactly the derivation.
   property var supplied: ({})
 
+  // What the user lets a theme do, which is not the theme's to say: whether
+  // its own motion plays and whether its sounds do. They come from the theme
+  // helper's preferences (`seele-theme motion|sound on|off`). A theme moves
+  // unless held still, and sounds only once asked to.
+  property bool motionEnabled: true
+  property bool soundEnabled: false
+  // Whether the published theme has motion or sound of its own to let
+  // through, so a choice about them is offered only for a theme that has
+  // them.
+  readonly property bool panelMotion: panelCut > 0 && panelTrim > 0
+    && (durationPanelTrim > 0 || (panelGlitch > 0 && durationPanelGlitch > 0))
+  readonly property bool themeSounds: [soundNotification, soundNotificationUrgent, soundFocusDone,
+    soundPanelOpen, soundPanelClose, soundLevelStep].some(function(file) { return file !== "" })
+
   // A published theme sets every slot a theme may supply: its own value, or
   // the default where it leaves one out, so nothing an earlier theme set
   // outlives it. `slots` is Contract.slots of theme-contract.json.
@@ -947,13 +973,50 @@ ShellRoot {
     }
   }
 
+  // The theme helper's preferences: whether the theme's motion and sounds
+  // are let through. A preference the file does not carry, or a file that
+  // cannot be read, keeps the default.
+  FileView {
+    id: preferencesFile
+    path: (Quickshell.env("SEELE_THEME_STATE")
+      || (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/seele-theme") + "/preferences.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    // The text last read: the reload below rereads an unchanged file.
+    property string applied: ""
+    onLoaded: {
+      var source = text()
+      if (source === applied) return
+      applied = source
+      try {
+        var preferences = JSON.parse(source)
+        root.motionEnabled = preferences.motion !== false
+        root.soundEnabled = preferences.sound === true
+      } catch (error) {
+        root.motionEnabled = true
+        root.soundEnabled = false
+      }
+    }
+    // No preferences yet are the defaults.
+    onLoadFailed: {
+      applied = ""
+      root.motionEnabled = true
+      root.soundEnabled = false
+    }
+  }
+
   // The helper atomically replaces selection.json behind the Home Manager
-  // symlink. A watcher can remain attached to the old inode after that rename.
+  // symlink, and preferences.json in place. A watcher can remain attached to
+  // the old inode after that rename.
   Timer {
     interval: 1000
     running: true
     repeat: true
-    onTriggered: themeFile.reload()
+    onTriggered: {
+      themeFile.reload()
+      preferencesFile.reload()
+    }
   }
 
 }

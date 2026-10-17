@@ -26,11 +26,16 @@ Scope {
     || (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/seele-theme"
   property var catalog: ({ ok: false, current: "", themes: [] })
   // The helper's own description of both themes, the mode and the schedule.
-  property var appearance: ({ mode: "dark", dark: "", light: "", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" }, next: null })
+  property var appearance: ({ mode: "dark", dark: "", light: "", auto: { source: "off", lightAt: "07:00", darkAt: "19:00" }, motion: true, sound: false, next: null })
   property bool panelOpen: false
   // The mode and both themes, ahead of the helper while requests are pending.
   property string mode: "dark"
   property var slots: ({ dark: "", light: "" })
+  // Whether a theme's own motion and sounds are let through, ahead of the
+  // helper while a request is pending. The shell's look reads them from the
+  // preferences file itself; these are what the Themes panel shows.
+  property bool motion: true
+  property bool sound: false
   property string highlighted: ""
   // Mode and both themes as the picker opened, so Escape can put them back.
   property var opened: null
@@ -89,6 +94,8 @@ Scope {
     if (switching) return
     mode = value.mode
     slots = ({ dark: value.dark, light: value.light })
+    motion = value.motion !== false
+    sound = value.sound === true
     // What an open picker first reads is what Escape puts back.
     if (panelOpen && opened === null) opened = ({ mode: mode, dark: slots.dark, light: slots.light })
   }
@@ -154,6 +161,12 @@ Scope {
       : []
     send({ op: "auto", source: source, times: times })
   }
+  // Lets a theme's own motion or sounds through, or holds them back.
+  function setEffect(effect, on) {
+    if ((effect !== "motion" && effect !== "sound") || store[effect] === on) return
+    store[effect] = on
+    send({ op: effect, on: on })
+  }
   // Makes the preset on screen the theme for `slot`, whatever its own mode.
   function useCurrentFor(slot) {
     if ((slot !== "dark" && slot !== "light") || current === "" || slots[slot] === current) return
@@ -184,6 +197,7 @@ Scope {
     if (request.op === "slot") return ["seele-theme", "slot", request.mode, request.id]
     if (request.op === "mode") return ["seele-theme", "mode", request.mode]
     if (request.op === "restore") return ["seele-theme", "restore", request.mode, request.dark, request.light]
+    if (request.op === "motion" || request.op === "sound") return ["seele-theme", request.op, request.on ? "on" : "off"]
     return ["seele-theme", "auto", request.source].concat(request.times || [])
   }
   function next() {
