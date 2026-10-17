@@ -21,10 +21,14 @@ remain owned by the greeter.
 `Contract.js`: it reads `theme-contract.json` beside it once, then sets every
 slot a theme may supply to the theme's value or, where the theme leaves one out,
 the default, so nothing an earlier theme set outlives it. The wallpaper is
-among them: a published theme names its own image or the configured one, and
-before any publication the shell keeps its `SEELE_SHELL_WALLPAPER` selection.
-`Wallpaper.qml` draws it for the desktop background and keeps the picture on
-screen until the next has loaded. Without the contract file it falls back to
+among them: a published theme names the image the host's wallpaper mapping
+chooses for it (its own, or the configured one, unless the host maps another),
+`wallpaperOutputs` names the outputs that draw a different image, and before
+any publication the shell keeps its `SEELE_SHELL_WALLPAPER` selection.
+`wallpaperFor(<output name>)` is the image an output draws, and
+`Palette.outputImages` and `Palette.imageFor` give the lock screen the same
+lookup. `Wallpaper.qml` draws it for each output's desktop background and keeps
+the picture on screen until the next has loaded. Without the contract file it falls back to
 `Palette.assign`.
 
 Every package copies the module beside its consumer. The desktop shell and Notes

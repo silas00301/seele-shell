@@ -42,7 +42,9 @@ fn base16_color(value: &str) -> bool {
 
 /// What a folder must hold beyond the contract's own rules, which are about
 /// the shell alone: the Base16 palette, opaque roles, and no key the helper
-/// writes itself.
+/// writes itself. Which image each output shows is the host's to say, by the
+/// names its outputs have there, so a folder carries one wallpaper and no
+/// mapping.
 fn folder_violations(object: &Map<String, Value>) -> Result<Vec<String>> {
     let mut errors = Vec::new();
     match object.get("palette") {
@@ -84,6 +86,11 @@ fn folder_violations(object: &Map<String, Value>) -> Result<Vec<String>> {
                 "{key}: the helper adds it when the theme is published"
             ));
         }
+    }
+    if object.contains_key("wallpaperOutputs") {
+        errors.push(
+            "wallpaperOutputs: the host's wallpaper mapping chooses images per output".to_owned(),
+        );
     }
     Ok(errors)
 }
@@ -443,6 +450,10 @@ mod tests {
             "terminal: the helper adds it",
         );
         refuses(with("version", json!(2)), "version: the helper adds it");
+        refuses(
+            with("wallpaperOutputs", json!({"DP-1": "/x.png"})),
+            "wallpaperOutputs: the host's wallpaper mapping",
+        );
         refuses(
             json!(["not", "an", "object"]),
             "a theme document is a JSON object",

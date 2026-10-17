@@ -129,11 +129,26 @@ impl Contract {
             "real" => value.is_number(),
             "string" | "url" => text.is_some(),
             "path" => text.is_some_and(|path| path.is_empty() || path.starts_with('/')),
+            "outputPaths" => value.as_object().is_some_and(|outputs| {
+                outputs.iter().all(|(output, file)| {
+                    output_name(output) && file.as_str().is_some_and(|path| path.starts_with('/'))
+                })
+            }),
             "weight" => text.is_some_and(|name| self.weights.iter().any(|w| w == name)),
             "easing" => text.is_some_and(|name| self.easings.iter().any(|e| e == name)),
             _ => false,
         }
     }
+}
+
+/// Whether `name` can name an output, as the compositor names one (`DP-1`,
+/// `HDMI-A-1`, `eDP-1`): the contract's `outputPaths` keys, and the outputs
+/// the host's wallpaper mapping names.
+pub fn output_name(name: &str) -> bool {
+    (1..=64).contains(&name.len())
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 /// The required palette roles, in the contract's order.
@@ -265,6 +280,16 @@ mod tests {
     }
 
     #[test]
+    fn an_output_is_named_as_the_compositor_names_it() {
+        for name in ["DP-1", "HDMI-A-1", "eDP-1", "Virtual-1", "HEADLESS_2.0"] {
+            assert!(output_name(name), "{name}");
+        }
+        for name in ["", "DP 1", "DP-1\n", "../DP-1", "Ü-1", &"D".repeat(65)] {
+            assert!(!output_name(name), "{name:?}");
+        }
+    }
+
+    #[test]
     fn the_file_slots_are_the_sound_cues_and_the_wallpaper() {
         let paths = paths().unwrap();
         assert!(paths.contains(&"wallpaper") && paths.contains(&"soundNotification"));
@@ -291,6 +316,11 @@ mod tests {
             ("easingStandard", json!("OutCubic")),
             ("wallpaper", json!("/etc/wallpaper/wallpaper.jpg")),
             ("wallpaper", json!("")),
+            ("wallpaperOutputs", json!({})),
+            (
+                "wallpaperOutputs",
+                json!({"DP-1": "/x.png", "HDMI-A-1": "/y.jpg"}),
+            ),
             ("accent", json!("#ffb4befe")),
             ("palette", json!({"base00": "#1e1e2e"})),
             ("terminal", json!(["#1e1e2e"])),
@@ -321,6 +351,16 @@ mod tests {
         rejects(with("easingStandard", json!("Bounce")), "easingStandard");
         rejects(with("weightStrong", json!(600)), "weightStrong");
         rejects(with("wallpaper", json!("relative.jpg")), "wallpaper");
+        for outputs in [
+            json!({"DP-1": "relative.png"}),
+            json!({"DP 1": "/x.png"}),
+            json!({"": "/x.png"}),
+            json!({"DP-1": 7}),
+            json!(["/x.png"]),
+            json!("/x.png"),
+        ] {
+            rejects(with("wallpaperOutputs", outputs), "wallpaperOutputs");
+        }
         rejects(
             with("soundNotification", json!("ping.oga")),
             "soundNotification",

@@ -88,6 +88,7 @@ let
       python3 projects/config-tools/tests/themes.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/theme_folders.py "$out/bin/seele-theme" \
         tests/theme-folders tests/theme-snapshots/folders.json
+      python3 projects/config-tools/tests/wallpapers.py "$out/bin/seele-theme" tests/theme-folders/pictured
       python3 projects/config-tools/tests/appearance.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/build_idle.py "$out/bin/seele-theme" "$out/bin/seele-build-idle"
       python3 projects/config-tools/tests/inspector.py "$out/bin/seele-inspect"

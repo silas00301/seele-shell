@@ -14,6 +14,9 @@ TestCase {
   readonly property var keys: ["base","mantle","crust","surface","overlay","text","subtext","accent","red","green","yellow"]
   readonly property var alphas: [1,0.88,0.5,0.3,0]
   Shared.Theme { id: subject }
+  // Two outputs' backgrounds, bound as shell.qml binds each one.
+  readonly property string wideImage: subject.wallpaperFor("DP-1")
+  readonly property string sideImage: subject.wallpaperFor("HDMI-A-1")
   QtObject {
     id: baseline
     property color base: "#1e1e2e"
@@ -124,5 +127,34 @@ TestCase {
     compare(subject.weightStrong, Font.Bold)
     subject.applyTheme(preset, slots)
     compare(subject.grainOpacity, 0.07)
+  }
+  // The host's wallpaper mapping (SIL-236): the publication names the outputs
+  // that draw another image, and every other output draws the theme's.
+  function test_each_output_draws_the_image_its_mapping_gives_it() {
+    var slots = contractSlots()
+    verify(slots.some(function(slot) { return slot.name === "wallpaperOutputs" && slot.type === "outputPaths" }), "a suppliable slot")
+    var theme = {id:"catppuccin-mocha",name:"Catppuccin Mocha",mode:"dark",wallpaper:"/night.png",
+      wallpaperOutputs:{"DP-1":"/wide.png","HDMI-A-1":"/side.png"}}
+    for (var key of keys) theme[key] = baseline[key].toString()
+    subject.applyTheme(theme, slots)
+    compare(subject.wallpaperFor("DP-1"), "/wide.png")
+    compare(subject.wallpaperFor("HDMI-A-1"), "/side.png")
+    compare(subject.wallpaperFor("eDP-1"), "/night.png", "an output the mapping does not name draws the theme's image")
+    compare(subject.wallpaperFor(""), "/night.png")
+    compare([wideImage, sideImage], ["/wide.png", "/side.png"], "each output's binding follows the published theme")
+    subject.applyTheme(Object.assign({}, theme, {mode: "light", wallpaper: "/day.png", wallpaperOutputs: {"DP-1": "/wide.png"}}), slots)
+    compare([wideImage, sideImage], ["/wide.png", "/day.png"], "and a mode switch")
+    // A theme whose mapping names no output leaves none behind.
+    subject.applyTheme(Object.assign({}, theme, {wallpaperOutputs: undefined, wallpaper: "/day.png"}), slots)
+    compare(subject.wallpaperFor("DP-1"), "/day.png")
+    compare(Object.keys(subject.wallpaperOutputs).length, 0)
+    // Nor is a mapping that is not one of absolute paths applied.
+    subject.applyTheme(Object.assign({}, theme, {wallpaperOutputs: {"DP-1": "wide.png"}}), slots)
+    compare(subject.wallpaperFor("DP-1"), "/night.png")
+    subject.applyTheme(Object.assign({}, theme, {wallpaperOutputs: ["/wide.png"]}), slots)
+    compare(subject.wallpaperFor("0"), "/night.png")
+    // Before any theme names an image, every output draws the configured one.
+    subject.applyTheme(Object.assign({}, theme, {wallpaperOutputs: undefined, wallpaper: undefined}), slots)
+    compare(subject.wallpaperFor("DP-1"), subject.configuredWallpaper)
   }
 }

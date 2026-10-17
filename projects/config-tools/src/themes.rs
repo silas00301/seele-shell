@@ -2,6 +2,7 @@
 use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
 use crate::theme_contract;
 use crate::theme_folder::{self, BASE16_KEYS};
+use crate::wallpapers::Wallpapers;
 use crate::Result;
 use seele_runtime::{
     fs::{atomic_write, private_directory, read_bounded},
@@ -236,7 +237,13 @@ struct Catalog {
     version: u32,
     default: String,
     font_family: String,
+    /// The configured wallpaper: what every theme shows that neither brings
+    /// an image nor is given one by `wallpapers`.
     wallpaper: String,
+    /// The host's wallpaper mapping, per light or dark theme, per output and
+    /// per theme (`wallpapers.rs`).
+    #[serde(default)]
+    wallpapers: Wallpapers,
     themes: Vec<Theme>,
     commands: BTreeMap<String, PathBuf>,
     #[serde(default)]
@@ -248,7 +255,9 @@ fn valid_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
 }
 impl Catalog {
-    fn validate(&mut self) -> Result {
+    /// `thorough` decodes every image the wallpaper mapping names, as the
+    /// build's `check` does; every other read rechecks only their signatures.
+    fn validate(&mut self, thorough: bool) -> Result {
         if self.version != 2 || self.themes.is_empty() || self.themes.len() > 32 {
             return Err("Invalid theme catalog".into());
         }
@@ -305,6 +314,12 @@ impl Catalog {
         if self.tmux_theme.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err("Tmux theme must be absolute".into());
         }
+        let errors = self
+            .wallpapers
+            .violations(&ids.iter().map(|id| id.as_str()).collect(), thorough);
+        if !errors.is_empty() {
+            return Err(format!("Invalid wallpaper mapping:\n  {}", errors.join("\n  ")).into());
+        }
         for theme in &mut self.themes {
             if let Some(path) = &theme.document {
                 theme.supplied = Some(theme_folder::load(
@@ -325,10 +340,12 @@ impl Catalog {
     }
     /// What `selection.json`, and so `seele-shell/theme.json`, carries: the
     /// theme's document, the publication format `version` Neovim checks, and
-    /// the `wallpaper` the desktop and the lock screen draw. That is the
-    /// theme's own image when its folder names one, and otherwise the
-    /// configured wallpaper, so a theme without an image keeps the one already
-    /// on screen. No preset has an image of its own.
+    /// the `wallpaper` the desktop and the lock screen draw, with
+    /// `wallpaperOutputs` naming the outputs that draw another image. Those
+    /// are what the host's wallpaper mapping chooses for this theme, from its
+    /// own image when its folder names one and otherwise the configured
+    /// wallpaper, so a theme the mapping says nothing about keeps the image
+    /// already on screen. No preset has an image of its own.
     fn publication(&self, theme: &Theme) -> Result<serde_json::Value> {
         let mut selection = theme.document(&self.font_family)?;
         selection["version"] = 2.into();
@@ -336,7 +353,16 @@ impl Catalog {
             .as_str()
             .filter(|image| !image.is_empty())
             .map(str::to_owned);
-        selection["wallpaper"] = own.unwrap_or_else(|| self.wallpaper.clone()).into();
+        let choice = self.wallpapers.choose(
+            &theme.id,
+            theme.mode == "light",
+            own.as_deref(),
+            &self.wallpaper,
+        );
+        selection["wallpaper"] = choice.wallpaper.into();
+        if !choice.outputs.is_empty() {
+            selection["wallpaperOutputs"] = serde_json::to_value(choice.outputs)?;
+        }
         theme_contract::check(&selection)?;
         Ok(selection)
     }
@@ -1017,16 +1043,18 @@ fn scheduled_wake(catalog: &Catalog, state: &Path, now: i64) -> Option<i64> {
         .next
         .map(|boundary| boundary.at)
 }
-fn catalog_file() -> Result<Catalog> {
-    let mut catalog: Catalog = serde_json::from_slice(&read_bounded(
-        &xdg("XDG_CONFIG_HOME", ".config")?.join("seele-theme/catalog.json"),
-        131072,
-        false,
-    )?)?;
-    catalog.validate()?;
+fn catalog_at(path: &Path, thorough: bool) -> Result<Catalog> {
+    let mut catalog: Catalog = serde_json::from_slice(&read_bounded(path, 131072, false)?)?;
+    catalog.validate(thorough)?;
     Ok(catalog)
 }
-const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out>";
+fn catalog_file() -> Result<Catalog> {
+    catalog_at(
+        &xdg("XDG_CONFIG_HOME", ".config")?.join("seele-theme/catalog.json"),
+        false,
+    )
+}
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out> | check <catalog>";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
@@ -1037,6 +1065,15 @@ pub fn main() -> Result {
     // Build time: no catalog, state or desktop is involved.
     if let ["register", id, folder, out] = args.as_slice() {
         return theme_folder::register(id, Path::new(folder), Path::new(out));
+    }
+    // Build time too: the catalog a generation installs is read as every
+    // command will read it, with every image its wallpaper mapping names
+    // decoded besides, so a theme or a mapping it would refuse, or an image Qt
+    // would draw as nothing, fails that build instead of the switcher.
+    if let ["check", path] = args.as_slice() {
+        let catalog = catalog_at(Path::new(path), true)?;
+        println!("{}", serde_json::json!({"themes": catalog.themes.len()}));
+        return Ok(());
     }
     let state = xdg("XDG_STATE_HOME", ".local/state")?.join("seele-theme");
     if args == ["serve"] {

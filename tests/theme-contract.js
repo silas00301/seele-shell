@@ -73,6 +73,7 @@ function themeSlots(text) {
     else if (!readonly && (type === 'int' || type === 'real') && /^-?\d+(\.\d+)?$/.test(value)) Object.assign(slot, {type, default: Number(value)});
     else if (!readonly && type === 'string' && /^"[^"]*"$/.test(value)) Object.assign(slot, {type: group.kind === 'optional' ? 'path' : 'string', default: JSON.parse(value)});
     else if (type === 'var' && /^\[/.test(value)) Object.assign(slot, {type: 'colorList', default: JSON.parse(value)});
+    else if (!readonly && type === 'var' && /^\(\{.*\}\)$/.test(value)) Object.assign(slot, {type: 'outputPaths', default: JSON.parse(value.slice(1, -1))});
     else Object.assign(slot, {type: type === 'var' ? 'colorList' : type, derived: value});
     if (group.kind && !Object.hasOwn(slot, 'derived')) slot[group.kind] = true;
     if (group.kind === 'optional' && !Object.hasOwn(slot, 'derived')) slot.fallback = contract.fallbacks[group.name];
@@ -95,6 +96,8 @@ const types = {
   real: {qml: 'real', check: value => typeof value === 'number' && Number.isFinite(value)},
   string: {qml: 'string', check: value => typeof value === 'string'},
   path: {qml: 'string', check: value => typeof value === 'string' && (value === '' || value.startsWith('/'))},
+  outputPaths: {qml: 'var', check: value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    && Object.entries(value).every(([output, file]) => /^[A-Za-z0-9._-]{1,64}$/.test(output) && typeof file === 'string' && file.startsWith('/'))},
   url: {qml: 'string', check: value => typeof value === 'string'},
   weight: {qml: 'int', check: value => Object.hasOwn(contract.enums.weight, value)},
   easing: {qml: 'int', check: value => Object.hasOwn(contract.enums.easing, value)},
@@ -146,9 +149,12 @@ for (const name of ['sound', 'wallpaper']) assert.equal(group(name).kind, 'optio
 assert.ok(group('palette').slots.every(slot => slot.required && slot.type === 'color'), 'every palette role is a required colour');
 assert.deepEqual([...slots.values()].filter(slot => slot.required).map(slot => slot.group), group('palette').slots.map(() => 'palette'), 'only palette roles are required');
 assert.ok(group('signal').slots.every(slot => slot.fixed), 'signal colours are fixed');
+// An optional slot's default is empty, which is where its fallback applies:
+// no file, or for the wallpaper's per-output images, no output named.
+const empty = slot => slot.type === 'path' ? slot.default === '' : slot.type === 'outputPaths' && Object.keys(slot.default).length === 0;
 for (const name of ['sound', 'wallpaper']) {
   const supplied = group(name).slots.filter(slot => !Object.hasOwn(slot, 'derived'));
-  assert.ok(supplied.length > 0 && supplied.every(slot => slot.optional && slot.type === 'path' && slot.default === ''), `every ${name} slot is an optional path, empty by default`);
+  assert.ok(supplied.length > 0 && supplied.every(slot => slot.optional && (slot.type === 'path' || name === 'wallpaper') && empty(slot)), `every ${name} slot is optional and empty by default`);
   assert.ok(typeof contract.fallbacks[name] === 'string' && contract.fallbacks[name].length > 20, `the ${name} fallback is defined`);
 }
 
@@ -161,6 +167,7 @@ function qmlLiteral(slot) {
   if (slot.type === 'weight') return contract.enums.weight[slot.default];
   if (slot.type === 'easing') return contract.enums.easing[slot.default];
   if (['string', 'path', 'url'].includes(slot.type)) return JSON.stringify(slot.default);
+  if (slot.type === 'outputPaths') return `(${JSON.stringify(slot.default)})`;
   return String(slot.default);
 }
 const normalise = text => text.replace(/\s+/g, ' ').trim();
@@ -272,6 +279,9 @@ const broken = [
   [{...minimal, weightStrong: 600}, 'weightStrong'],
   [{...minimal, wallpaper: 'relative.jpg'}, 'wallpaper'],
   [{...minimal, soundNotification: 'ping.oga'}, 'soundNotification'],
+  [{...minimal, wallpaperOutputs: {'DP-1': 'relative.jpg'}}, 'wallpaperOutputs'],
+  [{...minimal, wallpaperOutputs: {'DP 1': '/x.png'}}, 'wallpaperOutputs'],
+  [{...minimal, wallpaperOutputs: ['/x.png']}, 'wallpaperOutputs'],
   [[], 'a theme document is a JSON object'],
 ];
 for (const [document, message] of broken) assert.ok(validate(document).some(error => error.startsWith(message)), `rejects ${message}: ${validate(document)}`);
@@ -305,6 +315,17 @@ assert.deepEqual(validate({...pictured, wallpaper: registeredImage}), [], 'the p
 assert.equal(runtime.values(applied, {...pictured, wallpaper: registeredImage, version: 2}).wallpaper, registeredImage, 'a published theme\'s own wallpaper is applied');
 assert.equal(runtime.values(applied, {...minimal, version: 2, wallpaper: palette.wallpaper}).wallpaper, palette.wallpaper, 'a theme without one is published with the configured wallpaper');
 assert.equal(runtime.values(applied, minimal).wallpaper, '', 'and a document that names none leaves the configured wallpaper to Theme.qml');
+
+// The host's wallpaper mapping (SIL-236): the helper publishes, beside
+// `wallpaper`, the outputs that show another image, by output name. A theme
+// that has none names no output, so every output draws `wallpaper`.
+const mapped = {...minimal, version: 2, wallpaper: '/day.png', wallpaperOutputs: {'DP-1': '/portrait.png', 'HDMI-A-1': '/wide.jpg'}};
+assert.deepEqual(validate(mapped), [], 'a theme.json with images per output is valid');
+assert.deepEqual(defaults.wallpaperOutputs, {}, 'a theme without a mapping names no output');
+assert.deepEqual(runtime.values(applied, mapped).wallpaperOutputs, mapped.wallpaperOutputs, 'the images per output are applied');
+assert.deepEqual(runtime.values(applied, minimal).wallpaperOutputs, {}, 'and a theme without them leaves none behind');
+for (const wrong of [['/x.png'], {'DP-1': 'relative.png'}, {'DP-1': 7}, 'DP-1'])
+  assert.deepEqual(runtime.values(applied, {...minimal, wallpaperOutputs: wrong}).wallpaperOutputs, {}, `${JSON.stringify(wrong)} is not applied`);
 
 // ------------------------------------------------------------- 4. the lint
 // Comments and string contents are masked so a number in prose or a label is

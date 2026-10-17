@@ -8,8 +8,8 @@
 
 // Every slot a theme may supply, with its type and default. Derived slots are
 // computed and fixed ones belong to the contract. The wallpaper is one of
-// them: the publication names the theme's own image, or the configured one
-// when it has none.
+// them: the publication names the image the host's mapping chooses for the
+// theme, and the outputs that show another one.
 function slots(contract) {
   var result = []
   if (!contract || !Array.isArray(contract.groups)) return result
@@ -27,6 +27,9 @@ function usable(slot, value) {
   if (value === undefined || value === null || typeof value !== typeof slot.value) return false
   if (typeof value === "number") return Number.isFinite(value)
   if (slot.type === "color") return /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value)
+  if (slot.type === "outputPaths") return !Array.isArray(value) && Object.keys(value).every(function(output) {
+    return typeof value[output] === "string" && value[output].charAt(0) === "/"
+  })
   return true
 }
 

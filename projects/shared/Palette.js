@@ -21,3 +21,24 @@ function assign(target, theme, wallpaper) {
       target[key] = theme[key]
   })
 }
+
+// The images a published theme gives particular outputs, by the name the
+// compositor gives each one: its `wallpaperOutputs`, keeping only absolute
+// paths. A theme without them gives none, so nothing an earlier theme mapped
+// outlives it.
+function outputImages(theme) {
+  var result = {}
+  var outputs = theme && theme.wallpaperOutputs
+  if (!outputs || typeof outputs !== "object" || Array.isArray(outputs)) return result
+  Object.keys(outputs).forEach(function(output) {
+    if (typeof outputs[output] === "string" && outputs[output].charAt(0) === "/") result[output] = outputs[output]
+  })
+  return result
+}
+
+// What the output named `output` draws: its own image from `outputs`, else
+// `fallback`, the image every other output draws.
+function imageFor(outputs, output, fallback) {
+  var own = outputs && output && Object.prototype.hasOwnProperty.call(outputs, output) ? outputs[output] : ""
+  return typeof own === "string" && own !== "" ? own : fallback
+}

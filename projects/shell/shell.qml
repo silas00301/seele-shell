@@ -6090,10 +6090,12 @@ Shared.Theme {
       WlrLayershell.namespace: "seele-shell-background"
       color: root.base
 
-      // The theme's own image, or the configured wallpaper when it has none.
+      // The image the theme's wallpaper mapping gives this output, by the
+      // name the compositor gives it: the theme's own image, or the
+      // configured wallpaper, unless the host maps another one here.
       Shared.Wallpaper {
         anchors.fill: parent
-        path: root.wallpaperImage
+        path: root.wallpaperFor(modelData.name)
       }
     }
   }

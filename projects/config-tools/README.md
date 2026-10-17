@@ -76,9 +76,31 @@ holds each registered document to the same rules and to its entry's identity and
 palette. Its roles and every slot it supplies are published as registered; the
 terminal colours still come from its Base16 palette.
 
-The selected preset's document, with the format `version` and the `wallpaper`
-the desktop and the lock screen draw (the theme's own image, or the configured
-wallpaper when it has none), is stored in mode-0600
+The catalog's optional `wallpapers` is the host's wallpaper mapping: images for
+`light` and `dark` themes, for `outputs` by the name the compositor gives each
+(`image`, `light`, `dark`), and for `themes` by ID (`image`, and `outputs` by
+name). `src/wallpapers.rs` resolves it for the theme being published, in one
+order: the image mapped to that theme on that output, to that theme, the
+theme's own image, the one mapped to that output for the theme's own light or
+dark mode, to that output, to that mode, and finally the configured
+`wallpaper`. Reading the catalog refuses the whole of it, naming every rule
+broken, when the mapping names a theme the catalog lacks, an output name the
+compositor could not give (letters, digits, `.`, `_` and `-`, at most 64), more
+than 16 outputs, a relative path or one over 1 KiB, or a file that exists and
+does not start as a PNG or a JPEG; a mapped file that is missing draws the base
+colour, as a missing configured wallpaper does, so deleting a picture never
+stops the switcher. The mapping lives only in the catalog, so a rebuild that
+changes it republishes it at activation (`init`) and nothing saved can outlive
+it. `seele-theme check <catalog>` reads a catalog file as every command reads it
+and exits 1 on a refusal, and besides decodes every mapped image with
+`src/picture.rs`, as registration decodes a folder's own, so one that is cut
+short, damaged or over Qt's 256 MiB decode limit is refused too; the flake runs
+it on the catalog it installs. Ordinary reads, which `follow` repeats each
+minute, recheck only signatures.
+
+The selected preset's document, with the format `version`, the `wallpaper` the
+desktop and the lock screen draw on every output, and `wallpaperOutputs` naming
+only the outputs the mapping gives another image, is stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
 contain Ghostty, Fish, tmux, X resources and Hyprland includes, copies of the
 Stylix-generated GTK, GtkSourceView, Qt/Kvantum, KDE, Spicetify and Zen assets,
@@ -113,10 +135,12 @@ No wallpaper file, font, application content, or user account data is
 modified; switching only names a different image in the selection.
 
 Run `python3 projects/config-tools/tests/themes.py target/debug/seele-theme`
-after building this crate. The package runs the same fixture against the
-installed executable. It covers first use, read-only listing, preservation,
-concurrent switching/activation, invalid palettes, missing generated assets,
-legacy state migration, rollback, symlink boundaries
+after building this crate, and `python3 projects/config-tools/tests/wallpapers.py
+target/debug/seele-theme tests/theme-folders/pictured` for the wallpaper mapping
+through mode switches, rebuilds and refusals. The package runs the same fixture
+against the installed executable. It covers first use, read-only listing,
+preservation, concurrent switching/activation, invalid palettes, missing
+generated assets, legacy state migration, rollback, symlink boundaries
 and exact reload arguments against fake desktop tools.
 `python3 projects/config-tools/tests/theme_folders.py target/debug/seele-theme tests/theme-folders tests/theme-snapshots/folders.json`
 registers the example and every invalid fixture folder, resolves a named file,

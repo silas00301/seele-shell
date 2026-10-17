@@ -28,6 +28,8 @@ ShellRoot {
   property color yellow: Palette.fallback.yellow
   property string fontFamily: Palette.fallback.fontFamily
   property string wallpaper: Palette.fallback.wallpaper
+  // The outputs the theme's wallpaper mapping gives another image, by name.
+  property var wallpaperOutputs: ({})
 
   // Keep authentication chrome on the same tokens as Seele Shell. The lock
   // stays a separate client, but it should not grow a second design system.
@@ -331,6 +333,7 @@ ShellRoot {
       try {
         var theme = JSON.parse(text())
         Palette.assign(root, theme, true)
+        root.wallpaperOutputs = Palette.outputImages(theme)
       } catch (error) {
         console.warn("seele-lock/theme", error)
       }
@@ -465,7 +468,10 @@ ShellRoot {
         Image {
           id: wallpaperImage
           anchors.fill: parent
-          source: "file://" + root.wallpaper.split("/").map(encodeURIComponent).join("/")
+          // The image the desktop behind the lock draws on this output, each
+          // path segment escaped so `#`, `?` and `%` stay part of the name.
+          source: "file://" + Palette.imageFor(root.wallpaperOutputs, lockSurface.screen ? lockSurface.screen.name : "", root.wallpaper)
+            .split("/").map(encodeURIComponent).join("/")
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           cache: true
