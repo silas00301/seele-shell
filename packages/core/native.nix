@@ -29,6 +29,8 @@ let
         ../../projects/shared/theme-contract.json
         ../../tests/theme-folders
         ../../tests/theme-snapshots/folders.json
+        ../../tests/theme-snapshots/registered.json
+        ../../themes
       ]
     );
   };

@@ -25,6 +25,7 @@ Item {
       to: 1
       duration: cue.theme.durationFast
       easing.type: cue.theme.easingStandard
+      easing.bezierCurve: cue.theme.easingStandardCurve
     }
     PauseAnimation { duration: cue.theme.durationGlance }
     NumberAnimation {
@@ -33,6 +34,7 @@ Item {
       to: 0
       duration: cue.theme.durationSettle
       easing.type: cue.theme.easingExit
+      easing.bezierCurve: cue.theme.easingExitCurve
     }
   }
 }

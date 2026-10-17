@@ -259,7 +259,7 @@ FocusScope {
       antialiasing: true
       Behavior on x {
         enabled: !panel.dragging
-        NumberAnimation { duration: panel.theme.durationFast; easing.type: panel.theme.easingStandard }
+        NumberAnimation { duration: panel.theme.durationFast; easing.type: panel.theme.easingStandard; easing.bezierCurve: panel.theme.easingStandardCurve }
       }
     }
   }

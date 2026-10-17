@@ -9,7 +9,7 @@
 //! build instead of reaching a surface. The catalog then points at the
 //! registered `theme.json`, and the helper holds it to the same rules again
 //! whenever it reads the catalog.
-use crate::{picture, theme_contract, Result};
+use crate::{material, picture, theme_contract, Result};
 use seele_runtime::fs::read_bounded;
 use serde_json::{Map, Value};
 use std::{
@@ -91,6 +91,25 @@ fn folder_violations(object: &Map<String, Value>) -> Result<Vec<String>> {
         errors.push(
             "wallpaperOutputs: the host's wallpaper mapping chooses images per output".to_owned(),
         );
+    }
+    // A Material 3 Expressive theme records the seed it was grown from, and
+    // is exactly what that seed grows, so editing one value by hand cannot
+    // quietly leave the scheme or a token behind. `seele-theme material`
+    // writes the document again.
+    if object.contains_key("material") {
+        let drift = material::drift(&Value::Object(object.clone()));
+        if !drift.is_empty() {
+            let shown = drift.len().min(6);
+            errors.push(format!(
+                "material: theme.json is not what its seed grows ({}{}); `seele-theme material` writes it again",
+                drift[..shown].join("; "),
+                if drift.len() > shown {
+                    format!("; and {} more", drift.len() - shown)
+                } else {
+                    String::new()
+                }
+            ));
+        }
     }
     Ok(errors)
 }
@@ -361,6 +380,45 @@ mod tests {
     }
 
     #[test]
+    fn a_material_folder_is_exactly_what_its_seed_grows() {
+        let grown = material::tokens::document(0xff67_50a4, true, 0.0, "example", "Example");
+        let folder = Folder::new(&grown);
+        assert_eq!(folder.register().unwrap(), grown);
+
+        let mut edited = grown.clone();
+        edited["radius"] = json!(9);
+        refuses(
+            edited,
+            "material: theme.json is not what its seed grows (radius: 9 here, 16 from its seed)",
+        );
+        let mut recoloured = grown.clone();
+        recoloured["accent"] = json!("#ff0000");
+        recoloured["palette"]["base0D"] = json!("#ff0000");
+        refuses(
+            recoloured,
+            "material: theme.json is not what its seed grows",
+        );
+        let mut extra = grown.clone();
+        extra["soundFocusDone"] = json!("");
+        refuses(extra, "material: theme.json is not what its seed grows");
+        let mut relit = grown.clone();
+        relit["mode"] = json!("light");
+        refuses(relit, "material: theme.json is not what its seed grows");
+        let mut unseeded = grown.clone();
+        unseeded["material"]["seed"] = json!("purple");
+        refuses(
+            unseeded,
+            "material: theme.json is not what its seed grows (material.seed: not a #rrggbb",
+        );
+        let mut source = grown;
+        source["material"]["variant"] = json!("vibrant");
+        refuses(
+            source,
+            "material: theme.json is not what its seed grows (material: names only",
+        );
+    }
+
+    #[test]
     fn named_files_are_resolved_into_the_registered_copy() {
         let mut document = example();
         document["soundNotification"] = json!("sounds/ping.oga");
@@ -443,7 +501,11 @@ mod tests {
             with("accent", json!("orange")),
             "accent: \"orange\" is not a color",
         );
-        refuses(with("panelColor", json!("#000000")), "panelColor: derived");
+        refuses(with("colorLensSize", json!(120)), "colorLensSize: derived");
+        refuses(
+            with("panelColor", json!("ink")),
+            "panelColor: \"ink\" is not a color",
+        );
         refuses(with("sparkle", json!(true)), "sparkle: not a contract slot");
         refuses(
             with("terminal", json!(["#000000"])),

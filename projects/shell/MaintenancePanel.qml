@@ -298,7 +298,7 @@ Column {
         visible: height > 0
         clip: true
 
-        Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
+        Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard; easing.bezierCurve: panel.theme.easingStandardCurve } }
 
         Column {
           id: detail

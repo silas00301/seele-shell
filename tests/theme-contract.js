@@ -15,6 +15,9 @@
 //    shell root that shadows a slot with a value of its own.
 // 3. Theme documents are checked against the contract: every preset the
 //    shell receives today validates, and documents that break each rule fail.
+//    A derived colour marked suppliable may be supplied in place of its
+//    derivation, and an easing slot takes a Bézier curve beside it exactly
+//    when it is BezierSpline.
 // 4. No styling literal is left outside the contract in the shell, its
 //    shared components or Notes: no colour literal, no colour arithmetic on a
 //    literal, no easing or weight enum, and no number bound to a geometry,
@@ -72,9 +75,15 @@ function themeSlots(text) {
     else if (!readonly && type === 'int' && enumOf('easing')) Object.assign(slot, {type: 'easing', default: enumOf('easing')});
     else if (!readonly && (type === 'int' || type === 'real') && /^-?\d+(\.\d+)?$/.test(value)) Object.assign(slot, {type, default: Number(value)});
     else if (!readonly && type === 'string' && /^"[^"]*"$/.test(value)) Object.assign(slot, {type: group.kind === 'optional' ? 'path' : 'string', default: JSON.parse(value)});
+    else if (!readonly && type === 'var' && /^\[[-\d.,\s]*\]$/.test(value)) Object.assign(slot, {type: 'curve', default: JSON.parse(value)});
     else if (type === 'var' && /^\[/.test(value)) Object.assign(slot, {type: 'colorList', default: JSON.parse(value)});
     else if (!readonly && type === 'var' && /^\(\{.*\}\)$/.test(value)) Object.assign(slot, {type: 'outputPaths', default: JSON.parse(value.slice(1, -1))});
-    else Object.assign(slot, {type: type === 'var' ? 'colorList' : type, derived: value});
+    else {
+      // `supplied.<name> ?? <derivation>`: a derived slot a theme may supply.
+      const own = new RegExp(`^supplied\\.${name} \\?\\? (.+)$`).exec(value);
+      Object.assign(slot, {type: type === 'var' ? 'colorList' : type, derived: own ? own[1] : value});
+      if (own) slot.suppliable = true;
+    }
     if (group.kind && !Object.hasOwn(slot, 'derived')) slot[group.kind] = true;
     if (group.kind === 'optional' && !Object.hasOwn(slot, 'derived')) slot.fallback = contract.fallbacks[group.name];
     slot.description = trailing ? trailing.charAt(0).toUpperCase() + trailing.slice(1) + '.' : block;
@@ -101,6 +110,8 @@ const types = {
   url: {qml: 'string', check: value => typeof value === 'string'},
   weight: {qml: 'int', check: value => Object.hasOwn(contract.enums.weight, value)},
   easing: {qml: 'int', check: value => Object.hasOwn(contract.enums.easing, value)},
+  curve: {qml: 'var', check: value => Array.isArray(value) && value.length % 6 === 0 && value.length <= 48 && value.every(number => typeof number === 'number' && Number.isFinite(number))
+    && (value.length === 0 || (value.at(-2) === 1 && value.at(-1) === 1))},
 };
 assert.equal(contract.version, 1, 'contract version');
 assert.deepEqual(Object.keys(contract.types).sort(), Object.keys(types).sort(), 'the contract describes exactly the types this check knows');
@@ -128,7 +139,13 @@ for (const group of contract.groups) {
     if (valued) assert.ok(types[slot.type].check(slot.default), `${where}: default ${JSON.stringify(slot.default)} is not a ${slot.type}`);
     if (derived) {
       assert.ok(typeof slot.derived === 'string' && slot.derived.length > 0, `${where}: derived expression`);
-      assert.ok(!slot.optional && !slot.required && !slot.fixed, `${where}: a derived slot is computed, never supplied`);
+      assert.ok(!slot.optional && !slot.required && !slot.fixed, `${where}: a derived slot is computed, never required, optional or fixed`);
+      assert.ok(!Object.hasOwn(slot, 'suppliable') || (slot.suppliable === true && slot.type === 'color' && group.name === 'material'), `${where}: only a material colour may be suppliable`);
+    } else assert.ok(!Object.hasOwn(slot, 'suppliable'), `${where}: only a derived slot is marked suppliable`);
+    if (slot.type === 'curve') {
+      const easing = contract.groups.flatMap(entry => entry.slots).find(other => other.name === slot.name.replace(/Curve$/, ''));
+      assert.ok(slot.name.endsWith('Curve') && easing && easing.type === 'easing', `${where}: a curve sits beside the easing slot it shapes`);
+      assert.deepEqual(slot.default, [], `${where}: a curve is empty by default, for its easing's named curve`);
     }
     assert.ok(!(slot.required && slot.optional) && !(slot.fixed && (slot.required || slot.optional)), `${where}: one of required, optional and fixed at most`);
     if (slot.optional) assert.equal(slot.fallback, contract.fallbacks[group.name], `${where}: an optional slot takes its group's fallback`);
@@ -168,6 +185,7 @@ function qmlLiteral(slot) {
   if (slot.type === 'easing') return contract.enums.easing[slot.default];
   if (['string', 'path', 'url'].includes(slot.type)) return JSON.stringify(slot.default);
   if (slot.type === 'outputPaths') return `(${JSON.stringify(slot.default)})`;
+  if (slot.type === 'curve') return JSON.stringify(slot.default);
   return String(slot.default);
 }
 const normalise = text => text.replace(/\s+/g, ' ').trim();
@@ -186,7 +204,7 @@ for (const [name, slot] of slots) {
   if (property.type !== types[slot.type].qml) parity.push(`${name}: Theme.qml type ${property.type}, contract ${slot.type}`);
   // Derived slots are computed; everything a theme supplies stays writable.
   if (property.readonly !== Object.hasOwn(slot, 'derived') && !slot.fixed) parity.push(`${name}: readonly in Theme.qml must match derived in the contract`);
-  const expected = Object.hasOwn(slot, 'derived') ? slot.derived : slot.binding || qmlLiteral(slot);
+  const expected = Object.hasOwn(slot, 'derived') ? (slot.suppliable ? `supplied.${name} ?? ${slot.derived}` : slot.derived) : slot.binding || qmlLiteral(slot);
   if (normalise(property.value) !== normalise(expected)) parity.push(`${name}: Theme.qml ${property.value}, contract ${expected}`);
   const bound = /^Palette\.fallback\.(\w+)$/.exec(slot.binding || '');
   if (slot.binding && (!bound || palette[bound[1]] !== slot.default)) parity.push(`${name}: default ${slot.default} is not what ${slot.binding} holds`);
@@ -232,9 +250,19 @@ function validate(document) {
     if (Object.hasOwn(identity, key) || extensions.includes(key)) continue;
     const slot = slots.get(key);
     if (!slot) errors.push(`${key}: not a contract slot`);
-    else if (Object.hasOwn(slot, 'derived')) errors.push(`${key}: derived, so a theme cannot supply it`);
+    else if (Object.hasOwn(slot, 'derived') && !slot.suppliable) errors.push(`${key}: derived, so a theme cannot supply it`);
+    else if (Object.hasOwn(slot, 'derived') && !types.color.check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
     else if (slot.fixed) errors.push(`${key}: fixed by the contract`);
-    else if (!types[slot.type].check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
+    else if (!Object.hasOwn(slot, 'derived') && !types[slot.type].check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
+  }
+  // An easing is BezierSpline exactly when its curve is supplied.
+  for (const slot of slots.values()) {
+    if (slot.type !== 'curve') continue;
+    const easing = slot.name.replace(/Curve$/, '');
+    const spline = (Object.hasOwn(document, easing) ? document[easing] : slots.get(easing).default) === 'BezierSpline';
+    const curve = Object.hasOwn(document, slot.name) ? document[slot.name] : slot.default;
+    if (Array.isArray(curve) && spline !== (curve.length > 0))
+      errors.push(spline ? `${slot.name}: ${easing} is BezierSpline, so it needs a curve` : `${slot.name}: a curve needs ${easing} to be BezierSpline`);
   }
   return errors;
 }
@@ -272,7 +300,13 @@ const broken = [
   [{...minimal, radius: 'round'}, 'radius'],
   [{...minimal, radius: 8.5}, 'radius'],
   [{...minimal, accent: 'lavender'}, 'accent'],
-  [{...minimal, panelColor: '#000000'}, 'panelColor: derived'],
+  [{...minimal, colorLensSize: 120}, 'colorLensSize: derived'],
+  [{...minimal, mutedText: '#000000'}, 'mutedText: derived'],
+  [{...minimal, panelColor: 'ink'}, 'panelColor'],
+  [{...minimal, easingStandard: 'BezierSpline'}, 'easingStandardCurve: easingStandard is BezierSpline'],
+  [{...minimal, easingStandardCurve: [0.2, 0, 0, 1, 1, 1]}, 'easingStandardCurve: a curve needs'],
+  [{...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1]}, 'easingStandardCurve'],
+  [{...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1, 0.5, 0.5]}, 'easingStandardCurve'],
   [{...minimal, iosRed: '#000000'}, 'iosRed: fixed'],
   [{...minimal, sparkle: true}, 'sparkle: not a contract slot'],
   [{...minimal, easingStandard: 'Bounce'}, 'easingStandard'],
@@ -289,11 +323,22 @@ for (const [document, message] of broken) assert.ok(validate(document).some(erro
 // Theme.qml applies a published theme through Contract.js. It sets every slot
 // a theme may supply, its own wallpaper included, and each slot takes exactly
 // what `resolve` above says it does.
-const runtime = vm.runInNewContext(fs.readFileSync(path.join(projects, 'shared/Contract.js'), 'utf8').replace(/^\.pragma library\s*/, '') + '\n({slots, values})');
+const runtime = vm.runInNewContext(fs.readFileSync(path.join(projects, 'shared/Contract.js'), 'utf8').replace(/^\.pragma library\s*/, '') + '\n({slots, values, supplied})');
 const applied = runtime.slots(contract);
 assert.deepEqual([...applied].map(slot => slot.name),
-  [...slots.values()].filter(slot => !Object.hasOwn(slot, 'derived') && !slot.fixed).map(slot => slot.name),
+  [...slots.values()].filter(slot => (!Object.hasOwn(slot, 'derived') || slot.suppliable) && !slot.fixed).map(slot => slot.name),
   'Theme.qml applies every slot a theme may supply');
+// A supplied derived colour reaches Theme.qml's `supplied`; one a theme leaves
+// out, or gives in the wrong form, is absent, so its derivation stands.
+assert.deepEqual({...runtime.supplied(applied, minimal)}, {}, 'a theme that supplies no derived colour leaves every derivation');
+assert.deepEqual({...runtime.supplied(applied, {...minimal, cardColor: '#202020', panelBorder: '#00000000', mutedText: '#ffffff'})},
+  {cardColor: '#202020', panelBorder: '#00000000'}, 'supplied derived colours are applied, and only suppliable ones');
+assert.deepEqual({...runtime.supplied(applied, {...minimal, cardColor: 'ink'})}, {}, 'a supplied colour of the wrong form is not applied');
+const spline = {...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1, 1, 1]};
+assert.deepEqual([runtime.values(applied, spline).easingStandard, [...runtime.values(applied, spline).easingStandardCurve]], ['BezierSpline', [0.2, 0, 0, 1, 1, 1]], 'a spline and its curve are applied together');
+for (const half of [{...minimal, easingStandard: 'BezierSpline'}, {...minimal, easingStandardCurve: [0.2, 0, 0, 1, 1, 1]},
+  {...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1, 0.5, 0.5]}])
+  assert.deepEqual([runtime.values(applied, half).easingStandard, [...runtime.values(applied, half).easingStandardCurve]], [slots.get('easingStandard').default, []], 'half a spline takes the defaults');
 const appliedAs = document => Object.fromEntries(Object.entries(resolve(document)).filter(([name]) => applied.some(slot => slot.name === name)));
 for (const document of [minimal, {...minimal, radius: 12, weightStrong: 'Bold', easingStandard: 'OutBack', fontFamily: 'Example Sans'}, ...published.themes])
   assert.deepEqual({...runtime.values(applied, document)}, appliedAs(document), `${document.id}: Contract.js resolves as the contract does`);
@@ -525,6 +570,13 @@ for (const file of sources()) {
       const drawn = head ? head[1] === 'color' || isStyling(head[2], `${maskedLines[index]} ${within[index]}`) : /(?:color|Color|tint|Tint|Style)\b/.test(maskedLines[index]);
       if (drawn && !/(?:[!=]==?|\(|,)\s*$/.test(before)) flag(index, `named colour "${string.value}"`);
     }
+  }
+  // An animation that takes an easing slot takes its curve too, or a theme's
+  // spline would reach that transition as a bare BezierSpline with no curve.
+  for (const match of masked.matchAll(/easing\.type:\s*((?:\w+\.)*)(easing\w+)\b/g)) {
+    const animation = masked.slice(match.index, masked.indexOf('}', match.index));
+    if (!animation.includes(`easing.bezierCurve: ${match[1]}${match[2]}Curve`))
+      flag(lineOf(match.index), `${match[1]}${match[2]} without easing.bezierCurve: ${match[1]}${match[2]}Curve`);
   }
   maskedLines.forEach((line, index) => {
     for (const match of line.matchAll(/\b(?:Easing|Font)\.[A-Z]\w*/g)) flag(index, `${match[0]} belongs in the contract`);

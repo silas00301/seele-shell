@@ -9,6 +9,8 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/projects/shared" "$work/tests" "$work/home" "$work/config"
 cp "$shared"/*.qml "$shared"/*.js "$shared"/theme-contract.json "$work/projects/shared/"
 cp "$fixture" "$work/tests/tst_palette.qml"
+# The drop-in theme folders the fixture applies, such as Material's.
+if [ -d "$shared/../../themes" ]; then cp -r "$shared/../../themes" "$work/themes"; fi
 # Quickshell's executable-only plugins cannot load in qmltestrunner. Retain
 # production palette/material bindings, replacing only config IO and ShellRoot.
 node - "$work/projects/shared/Theme.qml" <<'JS'

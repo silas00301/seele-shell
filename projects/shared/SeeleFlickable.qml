@@ -7,6 +7,6 @@ Flickable {
   flickDeceleration: seeleFlickable.theme.scrollDeceleration
   maximumFlickVelocity: seeleFlickable.theme.scrollFlickVelocity
   rebound: Transition {
-    NumberAnimation { properties: "x,y"; duration: seeleFlickable.theme.scrollRebound; easing.type: seeleFlickable.theme.easingStandard }
+    NumberAnimation { properties: "x,y"; duration: seeleFlickable.theme.scrollRebound; easing.type: seeleFlickable.theme.easingStandard; easing.bezierCurve: seeleFlickable.theme.easingStandardCurve }
   }
 }

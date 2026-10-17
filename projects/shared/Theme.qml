@@ -13,7 +13,8 @@ import Quickshell.Io
 // materials, motion, sound and wallpaper from here and never writes a styling
 // number or colour of its own; tests/theme-contract.js fails on one that does.
 // A writable property is a slot a theme may supply, except the fixed signal
-// colours; a readonly one is derived from the slots it names.
+// colours; a readonly one is derived from the slots it names. A derived
+// material colour reads `supplied` first, so a theme may give it outright.
 ShellRoot {
   id: root
 
@@ -508,88 +509,88 @@ ShellRoot {
   property real washFootOpacity: 0.5
   property real washFadeStop: 0.28
   property real washClearStop: 0.6
-  readonly property color panelColor: alpha(mantle, 0.88)  // a panel's material: mantle, translucent
+  readonly property color panelColor: supplied.panelColor ?? alpha(mantle, 0.88)  // a panel's material: mantle, translucent
   // Edges. A surface is cut out of the wallpaper by a grounding ring in the
   // palette's darkest ink, and lit again on the inside by a hairline that is
   // brightest along the top, where light would actually land. Neither edge
   // carries the accent: outlining every panel in lavender spends the accent
   // on chrome, and it is worth more kept for state.
-  readonly property color panelBorder: alpha(crust, 0.9)
-  readonly property color edgeLight: alpha(text, 0.08)
-  readonly property color edgeCrown: alpha(text, 0.16)
+  readonly property color panelBorder: supplied.panelBorder ?? alpha(crust, 0.9)
+  readonly property color edgeLight: supplied.edgeLight ?? alpha(text, 0.08)
+  readonly property color edgeCrown: supplied.edgeCrown ?? alpha(text, 0.16)
   // Interaction. The pointer is reported in neutral light and the commit is
   // reported in accent, so hovering the shell does not set it glowing and a
   // press still reads as something having been asked for. `hoverColor` is a
   // wash: filled controls composite it over their resting material instead of
   // replacing that material with a nearly transparent colour.
-  readonly property color hoverColor: alpha(text, 0.07)
+  readonly property color hoverColor: supplied.hoverColor ?? alpha(text, 0.07)
   // Where a tint rests on nothing at all it fades to its own colour at zero
   // alpha rather than to `transparent`. Qt interpolates a colour channel by
   // channel and `transparent` is black, so a tint animated against it is
   // dragged down through grey on the way in and back up through it on the way
   // out. The pill then reads as a smudge lifting off the strip instead of as
   // light arriving on it.
-  readonly property color clearColor: alpha(text, 0)
-  readonly property color clearDanger: alpha(red, 0)
-  readonly property color pressColor: alpha(accent, 0.3)
-  readonly property color selectedColor: alpha(accent, 0.2)
-  readonly property color activeTint: alpha(accent, 0.12)
-  readonly property color fillColor: alpha(accent, 0.45)
-  readonly property color fillDanger: alpha(red, 0.45)
-  readonly property color successColor: alpha(green, 0.25)
-  readonly property color dangerTint: alpha(red, 0.14)
-  readonly property color dangerColor: alpha(red, 0.28)
-  readonly property color dangerPress: alpha(red, 0.48)
+  readonly property color clearColor: supplied.clearColor ?? alpha(text, 0)
+  readonly property color clearDanger: supplied.clearDanger ?? alpha(red, 0)
+  readonly property color pressColor: supplied.pressColor ?? alpha(accent, 0.3)
+  readonly property color selectedColor: supplied.selectedColor ?? alpha(accent, 0.2)
+  readonly property color activeTint: supplied.activeTint ?? alpha(accent, 0.12)
+  readonly property color fillColor: supplied.fillColor ?? alpha(accent, 0.45)
+  readonly property color fillDanger: supplied.fillDanger ?? alpha(red, 0.45)
+  readonly property color successColor: supplied.successColor ?? alpha(green, 0.25)
+  readonly property color dangerTint: supplied.dangerTint ?? alpha(red, 0.14)
+  readonly property color dangerColor: supplied.dangerColor ?? alpha(red, 0.28)
+  readonly property color dangerPress: supplied.dangerPress ?? alpha(red, 0.48)
   // Elevation. A panel is translucent, so a card on it is a tint of the same
   // material rather than an opaque block, a row inside that card is a lighter
   // tint again, and a track or well is cut back to the ink. Depth then
   // comes from how much of the wallpaper each layer still lets through instead
   // of from a stack of flat greys. `floatColor` is the one nearly solid step,
   // for a control that overlaps a row whose own fill moves under the pointer.
-  readonly property color cardColor: alpha(surface, 0.5)
-  readonly property color rowColor: alpha(surface, 0.3)
-  readonly property color wellColor: alpha(crust, 0.62)
-  readonly property color floatColor: alpha(surface, 0.92)
-  readonly property color cardBorder: alpha(text, 0.06)
-  readonly property color separatorColor: alpha(text, 0.09)
+  readonly property color cardColor: supplied.cardColor ?? alpha(surface, 0.5)
+  readonly property color rowColor: supplied.rowColor ?? alpha(surface, 0.3)
+  readonly property color wellColor: supplied.wellColor ?? alpha(crust, 0.62)
+  readonly property color floatColor: supplied.floatColor ?? alpha(surface, 0.92)
+  readonly property color cardBorder: supplied.cardBorder ?? alpha(text, 0.06)
+  readonly property color separatorColor: supplied.separatorColor ?? alpha(text, 0.09)
   // The faint ring a well, a meter or a slider track is cut with.
-  readonly property color wellBorder: alpha(text, 0.05)
+  readonly property color wellBorder: supplied.wellBorder ?? alpha(text, 0.05)
   // The faintest wash of text: where a click would put something.
-  readonly property color quietWash: alpha(text, 0.05)
+  readonly property color quietWash: supplied.quietWash ?? alpha(text, 0.05)
   // A count badge, such as a notification stack's.
-  readonly property color badgeColor: alpha(text, 0.09)
+  readonly property color badgeColor: supplied.badgeColor ?? alpha(text, 0.09)
   // A round control's resting fill, cut into the material.
-  readonly property color knobColor: alpha(crust, 0.7)
+  readonly property color knobColor: supplied.knobColor ?? alpha(crust, 0.7)
   // The primary transport control's resting fill.
-  readonly property color primaryControlColor: alpha(accent, 0.22)
+  readonly property color primaryControlColor: supplied.primaryControlColor ?? alpha(accent, 0.22)
   // A ring that says something is open or suggested.
-  readonly property color accentRing: alpha(accent, 0.55)
+  readonly property color accentRing: supplied.accentRing ?? alpha(accent, 0.55)
   // A selected day that is not today is ringed at half the accent.
-  readonly property color selectedRing: alpha(accent, 0.5)
+  readonly property color selectedRing: supplied.selectedRing ?? alpha(accent, 0.5)
   // A card that stands for something deliberate is edged in the accent; one
   // that destroys something is edged in red.
-  readonly property color accentEdge: alpha(accent, 0.28)
-  readonly property color dangerBorder: alpha(red, 0.22)
+  readonly property color accentEdge: supplied.accentEdge ?? alpha(accent, 0.28)
+  readonly property color dangerBorder: supplied.dangerBorder ?? alpha(red, 0.22)
   // The menu bar strip is ink over the wallpaper, ruled off along its foot.
-  readonly property color barStripColor: alpha(crust, 0.86)
-  readonly property color barRuleColor: alpha(crust, 0.85)
+  readonly property color barStripColor: supplied.barStripColor ?? alpha(crust, 0.86)
+  readonly property color barRuleColor: supplied.barRuleColor ?? alpha(crust, 0.85)
   // Workspace pills: under the pointer, occupied, empty, and an empty one's
   // number.
-  readonly property color workspaceHoverColor: alpha(accent, 0.5)
-  readonly property color workspaceOccupiedColor: alpha(text, 0.16)
-  readonly property color workspaceEmptyColor: alpha(text, 0.07)
-  readonly property color workspaceEmptyText: alpha(text, 0.45)
+  readonly property color workspaceHoverColor: supplied.workspaceHoverColor ?? alpha(accent, 0.5)
+  readonly property color workspaceOccupiedColor: supplied.workspaceOccupiedColor ?? alpha(text, 0.16)
+  readonly property color workspaceEmptyColor: supplied.workspaceEmptyColor ?? alpha(text, 0.07)
+  readonly property color workspaceEmptyText: supplied.workspaceEmptyText ?? alpha(text, 0.45)
   // The muted microphone badge.
-  readonly property color mutedBadgeColor: alpha(overlay, 0.35)
+  readonly property color mutedBadgeColor: supplied.mutedBadgeColor ?? alpha(overlay, 0.35)
   // The tinted well a panel's or a finding's mark sits in.
-  readonly property color markWell: alpha(accent, 0.1)
-  readonly property color markWellBorder: alpha(accent, 0.22)
+  readonly property color markWell: supplied.markWell ?? alpha(accent, 0.1)
+  readonly property color markWellBorder: supplied.markWellBorder ?? alpha(accent, 0.22)
   // A swatch is ringed in faint text so a base close to the panel still reads.
-  readonly property color swatchBorder: alpha(text, 0.14)
+  readonly property color swatchBorder: supplied.swatchBorder ?? alpha(text, 0.14)
   // A neighbour in the theme switcher is ringed fainter than the centre.
-  readonly property color themesSliceBorder: alpha(text, 0.12)
+  readonly property color themesSliceBorder: supplied.themesSliceBorder ?? alpha(text, 0.12)
   // A field whose last attempt failed is ringed in a soft warning.
-  readonly property color warningBorder: alpha(yellow, 0.3)
+  readonly property color warningBorder: supplied.warningBorder ?? alpha(yellow, 0.3)
   // Disabled actions stay legible while clearly withdrawing interaction.
   property real disabledOpacity: 0.45
   // Present but unusable now -- a switch that cannot be set, a device that is
@@ -679,8 +680,14 @@ ShellRoot {
   property int scrollFlickVelocity: 2200
   // The one curve every eased transition takes.
   property int easingStandard: Easing.OutCubic
+  // The Bézier spline the standard curve follows when its easing is BezierSpline, as
+  // Qt's easing.bezierCurve reads it; empty while it is a named curve.
+  property var easingStandardCurve: []
   // A cue leaving the screen accelerates away instead of settling.
   property int easingExit: Easing.InCubic
+  // The Bézier spline the exit curve follows when its easing is BezierSpline, as
+  // Qt's easing.bezierCurve reads it; empty while it is a named curve.
+  property var easingExitCurve: []
   // One turn of the activity spinner.
   property int durationSpin: 720
   // A gauge's needle sweeps to a new reading; a busy agent pulses, faster
@@ -689,6 +696,9 @@ ShellRoot {
   property int durationPulse: 900
   property int durationPulseFast: 600
   property int easingPulse: Easing.InOutQuad
+  // The Bézier spline the pulse curve follows when its easing is BezierSpline, as
+  // Qt's easing.bezierCurve reads it; empty while it is a named curve.
+  property var easingPulseCurve: []
 
   // Sound --------------------------------------------------------------------
   // The cues a theme may give a sound to, each an absolute path to a file the
@@ -749,6 +759,11 @@ ShellRoot {
   // through the theme. The contract lists it as a member rather than a slot.
   property KeyboardNavigation keyboardNavigation: KeyboardNavigation { theme: root }
 
+  // The derived colours the published theme supplies itself, by slot. Each
+  // such slot reads its value here first and falls back to its derivation,
+  // so a theme that supplies none draws exactly the derived material.
+  property var supplied: ({})
+
   // A published theme sets every slot a theme may supply: its own value, or
   // the default where it leaves one out, so nothing an earlier theme set
   // outlives it. `slots` is Contract.slots of theme-contract.json.
@@ -756,8 +771,10 @@ ShellRoot {
     var values = Contract.values(slots, theme)
     for (var i = 0; i < slots.length; i++) {
       var slot = slots[i], value = values[slot.name]
+      if (slot.derived) continue
       root[slot.name] = slot.type === "weight" ? Font[value] : slot.type === "easing" ? Easing[value] : value
     }
+    root.supplied = Contract.supplied(slots, theme)
   }
 
   // The contract beside this file, read before any window maps. FileView takes
