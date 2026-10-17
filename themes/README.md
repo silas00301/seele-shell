@@ -20,6 +20,8 @@ code changes.
 example/
   theme.json
   wallpaper.jpg     # the theme's own background, a PNG or a JPEG
+  fonts/Face.ttf    # the typeface it names, one TrueType or OpenType file a weight
+  texture.png       # tiled over every surface in place of the grain film
   sounds/ping.oga   # only what theme.json names is registered
 ```
 
@@ -36,6 +38,13 @@ example/
 - Any other slot the contract lets a theme supply, such as `"radius": 14` or
   `"weightStrong": "Bold"`. Everything left out keeps its default.
 - A file slot, such as `soundNotification`, names a file relative to the folder.
+- `fontFileLight`, `fontFileRegular`, `fontFileMedium` and `fontFileStrong`,
+  optional, carry the typeface `fontFamily` names, one TrueType or OpenType
+  file for each of the contract's weights the theme sets text in, so it draws
+  the same on any machine. Ship only typefaces whose licence allows it, with
+  that licence beside them. `surfaceTexture`, optional, is tiled over every
+  surface at `grainOpacity` in place of the grain film; it is held to the
+  wallpaper's rules below.
 - `wallpaper`, optional, names the theme's own background image: a complete
   PNG or JPEG of at most 16 MiB on disk and 256 MiB decoded (8192 × 8192 at
   most for a square image). A file Qt could not draw fails the build. While
@@ -58,6 +67,16 @@ scale, corner scale, tonal elevation, state layers and timed motion, each on
 the contract slot that plays its role. Such a document records its source as
 `material`, and registration refuses it if it is not exactly what that seed
 grows. `MATERIAL.md` lists every token and the slot it reaches.
+
+## Cyberpunk
+
+`cyberpunk` draws the shell as in-game software: neon on near-black glass,
+panels cut at two corners with a trim and a glitch along their top edge
+(`panelCut`, `panelTrim`, `panelGlitch`), scanlines for a texture, square
+corners everywhere else, and its own typeface, Chakra Petch, with headings in
+capitals. Its fonts are used under the SIL Open Font License and its wallpaper
+and scanlines are drawn by `cyberpunk/art/draw.js`; `CYBERPUNK.md` lists every
+value it sets and where each file comes from.
 
 ## When a folder is wrong
 

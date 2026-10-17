@@ -8,4 +8,5 @@ Text {
   font.pixelSize: sectionLabel.theme.textCaption
   font.weight: sectionLabel.theme.weightMedium
   font.letterSpacing: sectionLabel.theme.trackingLabel
+  font.capitalization: sectionLabel.theme.labelCapitalization
 }

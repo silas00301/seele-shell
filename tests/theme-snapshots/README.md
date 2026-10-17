@@ -30,8 +30,11 @@ A drop-in theme folder is drawn too, where a registered theme has to appear:
 `seele-theme list` gives it once registered, and it is rendered on
 `theme-switcher` and `theme-settings` only, with the catalog it joins. The
 folders the shell ships (`themes/default.nix`), the Material 3 Expressive light
-and dark themes, are themes like the presets and are drawn on every surface;
-`registered.json` holds them as the helper lists them. A folder joins the
+and dark themes and Cyberpunk, are themes like the presets and are drawn on
+every surface; `registered.json` holds them as the helper lists them, except
+that a file a folder names -- Cyberpunk's typeface, scanlines and wallpaper --
+is given where it lies in the repository (`themes/<id>/<name>`), which the
+harness reads in its place. A folder joins the
 catalog only while it is the one drawn, so the presets' own snapshots keep the
 catalog of presets they were recorded with.
 

@@ -327,8 +327,20 @@ if (options.catalog) {
 // is the one drawn, so the presets keep the catalog they were recorded with.
 const folderFile = JSON.parse(fs.readFileSync(path.join(assets, 'folders.json'), 'utf8'));
 const registeredFile = JSON.parse(fs.readFileSync(path.join(assets, 'registered.json'), 'utf8'));
+// A file a shipped folder names -- its typeface, its texture, its wallpaper
+// -- is listed in registered.json where it lies in the repository,
+// `themes/<id>/<name>`, rather than at the store path it is registered to;
+// the scene reads it there.
+const repository = path.resolve(source, '../..');
+const sharedSource = fs.existsSync(path.join(source, 'shared')) ? path.join(source, 'shared') : path.resolve(source, '../shared');
+const fileSlots = new Set(JSON.parse(fs.readFileSync(path.join(sharedSource, 'theme-contract.json'), 'utf8')).groups
+  .flatMap(group => group.slots).filter(slot => slot.type === 'path').map(slot => slot.name));
+const inRepository = theme => Object.fromEntries(Object.entries(theme).map(([key, value]) =>
+  [key, fileSlots.has(key) && typeof value === 'string' && /^themes\//.test(value) ? path.join(repository, value) : value]));
+for (const theme of registeredFile.themes) for (const [key, value] of Object.entries(inRepository(theme)))
+  if (fileSlots.has(key) && value !== '') assert.ok(fs.existsSync(value), `${theme.id}: ${key} names ${value}, which is not in the repository`);
 const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes,
-  ...registeredFile.themes.map(theme => ({...theme, folder: true, shipped: true})),
+  ...registeredFile.themes.map(theme => ({...inRepository(theme), folder: true, shipped: true})),
   ...folderFile.themes.map(theme => ({...theme, folder: true}))];
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-theme-snapshots-'));

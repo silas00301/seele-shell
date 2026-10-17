@@ -8,7 +8,8 @@
 //
 // 1. The contract is well formed: unique slot names, known types, literal
 //    defaults of their declared type, required palette roles, fixed signal
-//    colours, and optional sound and wallpaper slots with defined fallbacks.
+//    colours, and optional sound, wallpaper and asset slots with defined
+//    fallbacks.
 // 2. Theme.qml and the contract agree slot for slot and in order: same name,
 //    QML type, readonly-ness and default. A Theme.qml property the contract
 //    does not list, or a slot Theme.qml does not implement, fails, as does a
@@ -74,6 +75,7 @@ function themeSlots(text) {
     else if (!readonly && type === 'color' && /^"#[0-9a-fA-F]+"$/.test(value)) Object.assign(slot, {type, default: JSON.parse(value)});
     else if (!readonly && type === 'int' && enumOf('weight')) Object.assign(slot, {type: 'weight', default: enumOf('weight')});
     else if (!readonly && type === 'int' && enumOf('easing')) Object.assign(slot, {type: 'easing', default: enumOf('easing')});
+    else if (!readonly && type === 'int' && enumOf('capitalization')) Object.assign(slot, {type: 'capitalization', default: enumOf('capitalization')});
     else if (!readonly && (type === 'int' || type === 'real') && /^-?\d+(\.\d+)?$/.test(value)) Object.assign(slot, {type, default: Number(value)});
     else if (!readonly && type === 'string' && /^"[^"]*"$/.test(value)) Object.assign(slot, {type: group.kind === 'optional' ? 'path' : 'string', default: JSON.parse(value)});
     else if (!readonly && type === 'var' && /^\[[-\d.,\s]*\]$/.test(value)) Object.assign(slot, {type: 'curve', default: JSON.parse(value)});
@@ -116,12 +118,13 @@ const types = {
   url: {qml: 'string', check: value => typeof value === 'string'},
   weight: {qml: 'int', check: value => Object.hasOwn(contract.enums.weight, value)},
   easing: {qml: 'int', check: value => Object.hasOwn(contract.enums.easing, value)},
+  capitalization: {qml: 'int', check: value => Object.hasOwn(contract.enums.capitalization, value)},
   curve: {qml: 'var', check: value => Array.isArray(value) && value.length % 6 === 0 && value.length <= 48 && value.every(number => typeof number === 'number' && Number.isFinite(number))
     && (value.length === 0 || (value.at(-2) === 1 && value.at(-1) === 1))},
 };
 assert.equal(contract.version, 1, 'contract version');
 assert.deepEqual(Object.keys(contract.types).sort(), Object.keys(types).sort(), 'the contract describes exactly the types this check knows');
-for (const [name, values] of [['weight', 'Font'], ['easing', 'Easing']])
+for (const [name, values] of [['weight', 'Font'], ['easing', 'Easing'], ['capitalization', 'Font']])
   for (const [key, value] of Object.entries(contract.enums[name])) assert.equal(value, `${values}.${key}`, `enums.${name}.${key}`);
 for (const key of ['id', 'name', 'mode']) assert.ok(contract.documents.identity[key], `documents.identity.${key}`);
 assert.ok(Array.isArray(contract.documents.extensions), 'documents.extensions');
@@ -175,14 +178,14 @@ for (const entry of contract.groups) {
 }
 assert.equal(group('palette').kind, 'required', 'palette roles are required');
 assert.equal(group('signal').kind, 'fixed', 'signal colours are fixed');
-for (const name of ['sound', 'wallpaper']) assert.equal(group(name).kind, 'optional', `${name} slots are optional`);
+for (const name of ['sound', 'wallpaper', 'assets']) assert.equal(group(name).kind, 'optional', `${name} slots are optional`);
 assert.ok(group('palette').slots.every(slot => slot.required && slot.type === 'color'), 'every palette role is a required colour');
 assert.deepEqual([...slots.values()].filter(slot => slot.required).map(slot => slot.group), group('palette').slots.map(() => 'palette'), 'only palette roles are required');
 assert.ok(group('signal').slots.every(slot => slot.fixed), 'signal colours are fixed');
 // An optional slot's default is empty, which is where its fallback applies:
 // no file, or for the wallpaper's per-output images, no output named.
 const empty = slot => slot.type === 'path' ? slot.default === '' : slot.type === 'outputPaths' && Object.keys(slot.default).length === 0;
-for (const name of ['sound', 'wallpaper']) {
+for (const name of ['sound', 'wallpaper', 'assets']) {
   const supplied = group(name).slots.filter(slot => !Object.hasOwn(slot, 'derived'));
   assert.ok(supplied.length > 0 && supplied.every(slot => slot.optional && (slot.type === 'path' || name === 'wallpaper') && empty(slot)), `every ${name} slot is optional and empty by default`);
   assert.ok(typeof contract.fallbacks[name] === 'string' && contract.fallbacks[name].length > 20, `the ${name} fallback is defined`);
@@ -196,6 +199,7 @@ function qmlLiteral(slot) {
   if (slot.type === 'colorList') return `[${slot.default.map(value => JSON.stringify(value)).join(', ')}]`;
   if (slot.type === 'weight') return contract.enums.weight[slot.default];
   if (slot.type === 'easing') return contract.enums.easing[slot.default];
+  if (slot.type === 'capitalization') return contract.enums.capitalization[slot.default];
   if (['string', 'path', 'url'].includes(slot.type)) return JSON.stringify(slot.default);
   if (slot.type === 'outputPaths') return `(${JSON.stringify(slot.default)})`;
   if (slot.type === 'curve') return JSON.stringify(slot.default);
@@ -311,6 +315,8 @@ assert.deepEqual(validate(minimal), [], 'the required slots alone make a theme')
 const defaults = resolve(minimal);
 assert.equal(defaults.wallpaper, '', 'a theme without a wallpaper keeps the configured one');
 for (const slot of group('sound').slots) assert.equal(defaults[slot.name], '', `${slot.name} is silent unless a theme supplies it`);
+for (const slot of group('assets').slots) assert.equal(defaults[slot.name], '', `${slot.name} names no file unless a theme supplies one`);
+assert.equal(defaults.panelCut, 0, 'a panel keeps its rounded corners unless a theme cuts them');
 assert.equal(defaults.radius, slots.get('radius').default, 'an omitted slot takes its default');
 assert.equal(resolve({...minimal, radius: 12}).radius, 12, 'a supplied slot wins');
 const broken = [
@@ -340,6 +346,11 @@ const broken = [
   [{...minimal, weightStrong: 600}, 'weightStrong'],
   [{...minimal, wallpaper: 'relative.jpg'}, 'wallpaper'],
   [{...minimal, soundNotification: 'ping.oga'}, 'soundNotification'],
+  [{...minimal, fontFileRegular: 'fonts/Face-Regular.ttf'}, 'fontFileRegular'],
+  [{...minimal, surfaceTexture: 'scanlines.png'}, 'surfaceTexture'],
+  [{...minimal, titleCapitalization: 'Shouting'}, 'titleCapitalization'],
+  [{...minimal, labelCapitalization: 4}, 'labelCapitalization'],
+  [{...minimal, panelTrimColor: 'neon'}, 'panelTrimColor'],
   [{...minimal, wallpaperOutputs: {'DP-1': 'relative.jpg'}}, 'wallpaperOutputs'],
   [{...minimal, wallpaperOutputs: {'DP 1': '/x.png'}}, 'wallpaperOutputs'],
   [{...minimal, wallpaperOutputs: ['/x.png']}, 'wallpaperOutputs'],

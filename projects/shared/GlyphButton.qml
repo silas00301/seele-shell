@@ -51,6 +51,8 @@ Button {
       color: button.theme.text
       font: tip.font
     }
-    background: PanelSurface { theme: button.theme }
+    // A tip is not a panel: it keeps the plain material under a theme that
+    // cuts panel corners, as the shell's own tips do.
+    background: PanelSurface { theme: button.theme; cutCorners: false }
   }
 }

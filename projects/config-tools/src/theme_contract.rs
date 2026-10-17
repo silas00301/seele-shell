@@ -37,6 +37,7 @@ struct Contract {
     slots: BTreeMap<String, Slot>,
     weights: Vec<String>,
     easings: Vec<String>,
+    capitalizations: Vec<String>,
     color: Regex,
 }
 
@@ -104,6 +105,7 @@ fn load() -> Result<Contract, String> {
         slots,
         weights: keys(&contract["enums"]["weight"]),
         easings: keys(&contract["enums"]["easing"]),
+        capitalizations: keys(&contract["enums"]["capitalization"]),
         color: Regex::new("^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$").map_err(|e| e.to_string())?,
     })
 }
@@ -142,6 +144,9 @@ impl Contract {
             }),
             "weight" => text.is_some_and(|name| self.weights.iter().any(|w| w == name)),
             "easing" => text.is_some_and(|name| self.easings.iter().any(|e| e == name)),
+            "capitalization" => {
+                text.is_some_and(|name| self.capitalizations.iter().any(|c| c == name))
+            }
             // A spline ends where the transition does, at (1, 1); one that
             // ends anywhere else would leave its property short of the target.
             "curve" => value.as_array().is_some_and(|numbers| {
@@ -363,12 +368,21 @@ mod tests {
     }
 
     #[test]
-    fn the_file_slots_are_the_sound_cues_and_the_wallpaper() {
+    fn the_file_slots_are_the_sound_cues_the_wallpaper_and_the_assets() {
         let paths = paths().unwrap();
-        assert!(paths.contains(&"wallpaper") && paths.contains(&"soundNotification"));
-        assert!(paths
-            .iter()
-            .all(|name| *name == "wallpaper" || name.starts_with("sound")));
+        for slot in [
+            "wallpaper",
+            "soundNotification",
+            "fontFileRegular",
+            "fontFileStrong",
+            "surfaceTexture",
+        ] {
+            assert!(paths.contains(&slot), "{slot}");
+        }
+        assert!(paths.iter().all(|name| *name == "wallpaper"
+            || *name == "surfaceTexture"
+            || name.starts_with("sound")
+            || name.starts_with("fontFile")));
     }
 
     #[test]
@@ -424,6 +438,15 @@ mod tests {
             ("radiusPressed", json!(8)),
             ("focusRingGap", json!(-1)),
             ("durationSpatial", json!(421)),
+            ("titleCapitalization", json!("AllUppercase")),
+            ("labelCapitalization", json!("MixedCase")),
+            ("panelCut", json!(12)),
+            ("panelTrimColor", json!("#ff3355")),
+            (
+                "fontFileRegular",
+                json!("/themes/cyberpunk/Face-Regular.ttf"),
+            ),
+            ("surfaceTexture", json!("")),
         ] {
             document[key] = value;
             assert_eq!(
@@ -483,6 +506,16 @@ mod tests {
         rejects(with("iosRed", json!("#000000")), "iosRed: fixed");
         rejects(with("sparkle", json!(true)), "sparkle: not a contract slot");
         rejects(with("easingStandard", json!("Bounce")), "easingStandard");
+        rejects(
+            with("titleCapitalization", json!("Shouting")),
+            "titleCapitalization",
+        );
+        rejects(with("labelCapitalization", json!(4)), "labelCapitalization");
+        rejects(
+            with("fontFileRegular", json!("Face-Regular.ttf")),
+            "fontFileRegular",
+        );
+        rejects(with("panelTrimColor", json!("neon")), "panelTrimColor");
         rejects(with("weightStrong", json!(600)), "weightStrong");
         rejects(with("wallpaper", json!("relative.jpg")), "wallpaper");
         for outputs in [

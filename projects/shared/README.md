@@ -51,6 +51,14 @@ behaviour"). Pass a control's press and where it landed to `HoverWash` rather
 than drawing a press of its own. `tests/tst_behaviour.qml`, run by
 `tests/palette.sh`, drives them under a preset and under Material Expressive.
 
+`PanelSurface.qml` is every panel's material. For a theme that cuts panel
+corners (`panelCut`), it loads `CutFrame.qml` in place of its rounded
+rectangle: the outline with its two corners cut, and the trim and glitch a
+theme may give it (`THEME-CONTRACT.md`, "Cut panels and capitals"), each held
+inside the frame however small it is. A theme that gives no cut never loads
+it, and a surface that is not a panel, such as `GlyphButton`'s tooltip, passes
+`cutCorners: false` and keeps the plain material.
+
 `HistoryChart.qml` renders bounded native histories without owning samples or
 policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`
 (default 60), and `maximum` (default 100). Samples occupy a fixed right-aligned

@@ -1,8 +1,8 @@
 # Theme contract
 
 One contract names every styling value the desktop shell and Seele Notes draw
-with: colours, typography, shape, spacing, sizes, materials, motion, sound and
-wallpaper. A surface reads all of them from `Shared.Theme` and writes none of
+with: colours, typography, shape, spacing, sizes, materials, motion, sound,
+wallpaper and the files a theme carries for its look. A surface reads all of them from `Shared.Theme` and writes none of
 its own, so a theme can restyle the shell without a code change.
 
 | File | Role |
@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-435 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
+447 slots in twelve groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -33,6 +33,7 @@ its own, so a theme can restyle the shell without a code change.
 | `motion` | Durations and easing curves. | |
 | `sound` | Optional cues. | optional |
 | `wallpaper` | An optional image of the theme's own, and the images the host maps per output. | optional |
+| `assets` | Optional files a theme carries for its look: its typeface, one file per weight, and a texture tiled over its surfaces. | optional |
 
 A writable property is a slot a theme may supply. A readonly one is *derived*:
 computed from the slots it names, such as `panelColor: alpha(mantle, 0.88)`, so
@@ -99,6 +100,34 @@ holds for a tap, closes the corners and spreads to cover the control; the
 switch's handle grows and overshoots on the spring; and the focus ring flares
 and settles outside the edge.
 
+## Cut panels and capitals
+
+A theme may give the shell a harder outline than rounded glass (SIL-239), and
+each part of it is a slot whose default draws exactly what the presets draw:
+
+- **Cut corners.** `panelCut` takes a panel's top left and bottom right corners
+  off at 45 degrees, that far along each edge. `PanelSurface` then lays its
+  material as `CutFrame.qml`, a `QtQuick.Shapes` outline filled with
+  `panelColor` and stroked in `panelBorder`, loaded only while the cut is
+  given, under everything the panel holds; a cut panel carries no wash or lit
+  edge, which would spill past the cuts, and its texture stops half the cut in.
+  The frame never draws outside itself: the cut takes at most a third of the
+  shorter side, and the trim and glitch only what is left of the top edge. A
+  surface that is not a panel passes `cutCorners: false` and keeps the plain
+  material, as `GlyphButton`'s tooltip does, like the shell's own tips.
+- **Trim and glitch.** On a cut panel, `panelTrim` lights the top cut and runs a
+  bar `strokeStrong` thick along the top edge from it in `panelTrimColor`, and
+  `panelGlitch` adds a slice past its end, knocked down off the edge, in
+  `panelGlitchColor`.
+- **Capitals.** `titleCapitalization` sets a panel's title (`PanelHeader`) and
+  `labelCapitalization` a section's label (`SectionLabel`), each one of Qt's
+  capitalizations by name.
+- **Typeface and texture.** The `assets` group's `fontFile…` slots load the
+  typeface `fontFamily` names, and `surfaceTexture` stands in for the grain film
+  (below).
+
+`themes/cyberpunk` gives all of them; `themes/CYBERPUNK.md` lists its values.
+
 ## Theme documents
 
 A theme is a JSON object: `id` (kebab-case), `name` and `mode` (`light` or
@@ -109,8 +138,8 @@ extensions, which are not styling: the Base16 `palette` and `terminal` colours
 the theme helper keeps for other applications, the publication's format
 `version`, and `material`, the seed and contrast a Material 3 Expressive theme
 was grown from. Types are checked: an `int` slot rejects `8.5`, a `color` slot
-rejects a name, a `weight` or `easing` slot takes a name from `enums`, and a
-`curve` slot takes whole segments of finite numbers.
+rejects a name, a `weight`, `easing` or `capitalization` slot takes a name from
+`enums`, and a `curve` slot takes whole segments of finite numbers.
 
 A `path` slot holds an absolute path or nothing. A theme folder names its own
 files relative to itself; registration resolves them before the shell sees
@@ -174,14 +203,16 @@ desktop and not only the shell:
   draw them. A folder chooses its roles itself; nothing is projected.
 - Its `id` is the folder's name. `terminal` and `version` are the helper's to
   add.
-- Its `wallpaper`, if it has one, is a complete PNG or JPEG, the formats the
-  desktop's Qt decodes without an image-format plugin, of at most the 256 MiB
-  Qt decodes one image into (four bytes a pixel, eight for a 16-bit PNG).
-  Registration decodes a PNG to its last row and walks a JPEG's markers to its
-  end, so a file that is another format, cut short or damaged is refused there
-  rather than drawn as nothing; reading the catalog rechecks the registered
-  copy's signature. The background and the lock screen escape the name into
-  the file URL, so it may hold any character a file name can.
+- Its `wallpaper` and its `surfaceTexture`, if it has them, are each a complete
+  PNG or JPEG, the formats the desktop's Qt decodes without an image-format
+  plugin, of at most the 256 MiB Qt decodes one image into (four bytes a pixel,
+  eight for a 16-bit PNG). Registration decodes a PNG to its last row and walks
+  a JPEG's markers to its end, so a file that is another format, cut short or
+  damaged is refused there rather than drawn as nothing; reading the catalog
+  rechecks the registered copy's signature. The background, the lock screen
+  and the surfaces escape the name into the file URL, so it may hold any
+  character a file name can. Each `fontFile…` is a TrueType or an OpenType
+  font, which Qt's font loader takes, refused by its first bytes otherwise.
 - It carries no `wallpaperOutputs`: output names belong to a machine, so which
   image each output shows is the host's wallpaper mapping.
 - If it records a `material` source, it is exactly the document `seele-theme
@@ -243,6 +274,16 @@ curve in.
 `soundPanelOpen`, `soundPanelClose` and `soundLevelStep` are each a file to play
 for that cue. An empty or omitted slot is silence, and silence is the fallback:
 nothing plays unless the theme supplies a sound. No surface plays one yet.
+
+**Assets.** `fontFileLight`, `fontFileRegular`, `fontFileMedium` and
+`fontFileStrong` are the typeface files a theme carries, the faces its
+`weightLight`, `weightRegular`, `weightMedium` and `weightStrong` set; the shell
+loads each one given, so the face `fontFamily` names draws on a machine that
+never installed it. `surfaceTexture` is an image tiled over every surface at
+`grainOpacity` in place of the grain film. Nothing is the fallback: an empty
+typeface file loads nothing, so `fontFamily` names a typeface installed on the
+system, and an empty texture keeps the film. A loader exists only for a file
+that is given, so switching away from a theme that carried one loads nothing.
 
 **Wallpaper.** `wallpaper` is the theme's own image. A theme without one is
 published with the configured wallpaper, the catalog's `wallpaper`, so switching
@@ -355,6 +396,7 @@ or, where the theme leaves it out, the default, so a preset that follows a
 folder theme looks exactly as it always did. The pixel baselines run every
 preset through that same path; they capture surfaces rather than the
 background, so a wallpaper changes none of them. One image per theme is SIL-235,
-images per output and per light and dark theme are SIL-236, and playing the
-sound cues is SIL-240. Each builds on these rules: the contract says
+images per output and per light and dark theme are SIL-236, a theme's own
+typeface, texture, cut panels and capitals are SIL-239, and playing the sound
+cues is SIL-240. Each builds on these rules: the contract says
 what a theme may set and what an omitted slot falls back to.
