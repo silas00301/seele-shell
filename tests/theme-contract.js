@@ -15,9 +15,10 @@
 //    shell root that shadows a slot with a value of its own.
 // 3. Theme documents are checked against the contract: every preset the
 //    shell receives today validates, and documents that break each rule fail.
-//    A derived colour marked suppliable may be supplied in place of its
+//    A derived slot marked suppliable may be supplied in place of its
 //    derivation, and an easing slot takes a Bézier curve beside it exactly
-//    when it is BezierSpline.
+//    when it is BezierSpline; a suppliable easing and its curve are supplied
+//    together or not at all.
 // 4. No styling literal is left outside the contract in the shell, its
 //    shared components or Notes: no colour literal, no colour arithmetic on a
 //    literal, no easing or weight enum, and no number bound to a geometry,
@@ -49,7 +50,7 @@ const palette = vm.runInNewContext(fs.readFileSync(path.join(projects, 'shared/P
 // `// <Section> ----` header per group, each after the comment describing it.
 function themeSlots(text) {
   const sections = new Map(contract.groups.map(group => [group.section, group]));
-  const groups = [];
+  const groups = [], known = new Map();
   let group = null, comment = [], block = '';
   for (const line of text.split('\n  function alpha(')[0].split('\n')) {
     const header = /^ {2}\/\/ ([A-Z][\w ]*?) -{5,}$/.exec(line);
@@ -81,13 +82,18 @@ function themeSlots(text) {
     else {
       // `supplied.<name> ?? <derivation>`: a derived slot a theme may supply.
       const own = new RegExp(`^supplied\\.${name} \\?\\? (.+)$`).exec(value);
-      Object.assign(slot, {type: type === 'var' ? 'colorList' : type, derived: own ? own[1] : value});
+      const derived = own ? own[1] : value;
+      // A slot derived from one other slot alone is of that slot's type, as
+      // an easing or a curve that follows the standard one is.
+      const source = /^[a-z]\w*$/.test(derived) && known.get(derived);
+      Object.assign(slot, {type: source ? source.type : type === 'var' ? 'colorList' : type, derived});
       if (own) slot.suppliable = true;
     }
     if (group.kind && !Object.hasOwn(slot, 'derived')) slot[group.kind] = true;
     if (group.kind === 'optional' && !Object.hasOwn(slot, 'derived')) slot.fallback = contract.fallbacks[group.name];
     slot.description = trailing ? trailing.charAt(0).toUpperCase() + trailing.slice(1) + '.' : block;
     group.slots.push(slot);
+    known.set(name, slot);
   }
   return groups;
 }
@@ -122,6 +128,8 @@ assert.ok(Array.isArray(contract.documents.extensions), 'documents.extensions');
 assert.ok(contract.structural && Array.isArray(contract.structural.values) && contract.structural.artwork, 'the structural values are stated');
 assert.ok(contract.members && typeof contract.members.description === 'string', 'the non-styling members are stated');
 assert.ok(Array.isArray(contract.groups) && contract.groups.length > 0, 'contract groups');
+const suppliableTypes = new Set(['color', 'int', 'real', 'easing', 'curve']);
+const suppliableGroups = new Set(['shape', 'metrics', 'material', 'motion']);
 const slots = new Map();
 for (const group of contract.groups) {
   assert.match(group.name, /^[a-z][a-z-]*$/, `group name ${group.name}`);
@@ -140,12 +148,17 @@ for (const group of contract.groups) {
     if (derived) {
       assert.ok(typeof slot.derived === 'string' && slot.derived.length > 0, `${where}: derived expression`);
       assert.ok(!slot.optional && !slot.required && !slot.fixed, `${where}: a derived slot is computed, never required, optional or fixed`);
-      assert.ok(!Object.hasOwn(slot, 'suppliable') || (slot.suppliable === true && slot.type === 'color' && group.name === 'material'), `${where}: only a material colour may be suppliable`);
+      // A theme may give a colour, a measure or a curve in place of its
+      // derivation; only styling groups have such slots.
+      assert.ok(!Object.hasOwn(slot, 'suppliable') || (slot.suppliable === true && suppliableTypes.has(slot.type) && suppliableGroups.has(group.name)), `${where}: only a colour, a number, an easing or a curve of a styling group may be suppliable`);
     } else assert.ok(!Object.hasOwn(slot, 'suppliable'), `${where}: only a derived slot is marked suppliable`);
     if (slot.type === 'curve') {
       const easing = contract.groups.flatMap(entry => entry.slots).find(other => other.name === slot.name.replace(/Curve$/, ''));
       assert.ok(slot.name.endsWith('Curve') && easing && easing.type === 'easing', `${where}: a curve sits beside the easing slot it shapes`);
-      assert.deepEqual(slot.default, [], `${where}: a curve is empty by default, for its easing's named curve`);
+      // A derived curve follows the curve of the easing its own easing
+      // follows, so the pair is always one curve and its spline.
+      if (derived) assert.ok(easing.suppliable && slot.suppliable && slot.derived === `${easing.derived}Curve`, `${where}: a derived curve is the curve of its easing's derivation, and both are suppliable`);
+      else assert.deepEqual(slot.default, [], `${where}: a curve is empty by default, for its easing's named curve`);
     }
     assert.ok(!(slot.required && slot.optional) && !(slot.fixed && (slot.required || slot.optional)), `${where}: one of required, optional and fixed at most`);
     if (slot.optional) assert.equal(slot.fallback, contract.fallbacks[group.name], `${where}: an optional slot takes its group's fallback`);
@@ -251,14 +264,22 @@ function validate(document) {
     const slot = slots.get(key);
     if (!slot) errors.push(`${key}: not a contract slot`);
     else if (Object.hasOwn(slot, 'derived') && !slot.suppliable) errors.push(`${key}: derived, so a theme cannot supply it`);
-    else if (Object.hasOwn(slot, 'derived') && !types.color.check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
+    else if (Object.hasOwn(slot, 'derived') && !types[slot.type].check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
     else if (slot.fixed) errors.push(`${key}: fixed by the contract`);
     else if (!Object.hasOwn(slot, 'derived') && !types[slot.type].check(value)) errors.push(`${key}: ${JSON.stringify(value)} is not a ${slot.type}`);
   }
-  // An easing is BezierSpline exactly when its curve is supplied.
+  // An easing is BezierSpline exactly when its curve is supplied. A
+  // suppliable pair is supplied whole, or its derivation stands for both.
   for (const slot of slots.values()) {
     if (slot.type !== 'curve') continue;
     const easing = slot.name.replace(/Curve$/, '');
+    if (Object.hasOwn(slot, 'derived')) {
+      if (Object.hasOwn(document, easing) !== Object.hasOwn(document, slot.name)) {
+        errors.push(`${slot.name}: ${easing} and ${slot.name} are supplied together`);
+        continue;
+      }
+      if (!Object.hasOwn(document, easing)) continue;
+    }
     const spline = (Object.hasOwn(document, easing) ? document[easing] : slots.get(easing).default) === 'BezierSpline';
     const curve = Object.hasOwn(document, slot.name) ? document[slot.name] : slot.default;
     if (Array.isArray(curve) && spline !== (curve.length > 0))
@@ -307,6 +328,12 @@ const broken = [
   [{...minimal, easingStandardCurve: [0.2, 0, 0, 1, 1, 1]}, 'easingStandardCurve: a curve needs'],
   [{...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1]}, 'easingStandardCurve'],
   [{...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1, 0.5, 0.5]}, 'easingStandardCurve'],
+  [{...minimal, durationSpatial: 'fast'}, 'durationSpatial'],
+  [{...minimal, radiusPressed: 7.5}, 'radiusPressed'],
+  [{...minimal, easingSpatial: 'BezierSpline'}, 'easingSpatialCurve: easingSpatial and easingSpatialCurve are supplied together'],
+  [{...minimal, easingSpatialCurve: [0.2, 0, 0, 1, 1, 1]}, 'easingSpatialCurve: easingSpatial and easingSpatialCurve are supplied together'],
+  [{...minimal, easingSpatial: 'OutBack', easingSpatialCurve: [0.2, 0, 0, 1, 1, 1]}, 'easingSpatialCurve: a curve needs'],
+  [{...minimal, easingSpatial: 'BezierSpline', easingSpatialCurve: [0.2, 0, 0, 1, 0.5, 0.5]}, 'easingSpatialCurve'],
   [{...minimal, iosRed: '#000000'}, 'iosRed: fixed'],
   [{...minimal, sparkle: true}, 'sparkle: not a contract slot'],
   [{...minimal, easingStandard: 'Bounce'}, 'easingStandard'],
@@ -334,6 +361,13 @@ assert.deepEqual({...runtime.supplied(applied, minimal)}, {}, 'a theme that supp
 assert.deepEqual({...runtime.supplied(applied, {...minimal, cardColor: '#202020', panelBorder: '#00000000', mutedText: '#ffffff'})},
   {cardColor: '#202020', panelBorder: '#00000000'}, 'supplied derived colours are applied, and only suppliable ones');
 assert.deepEqual({...runtime.supplied(applied, {...minimal, cardColor: 'ink'})}, {}, 'a supplied colour of the wrong form is not applied');
+const spring = {easingSpatial: 'BezierSpline', easingSpatialCurve: [0.2, 0, 0, 1.1, 1, 1]};
+assert.deepEqual(validate({...minimal, ...spring, radiusPressed: 8, durationSpatial: 421}), [], 'a theme may supply a derived measure, duration and spline');
+assert.deepEqual(JSON.parse(JSON.stringify(runtime.supplied(applied, {...minimal, ...spring, radiusPressed: 8, durationSpatial: 421}))),
+  {...spring, radiusPressed: 8, durationSpatial: 421}, 'supplied derived measures and splines are applied');
+assert.deepEqual({...runtime.supplied(applied, {...minimal, radiusPressed: 7.5, durationSpatial: 'fast', easingEffects: 'Bounce'})}, {}, 'a supplied measure of the wrong kind is not applied');
+for (const half of [{easingSpatial: 'BezierSpline'}, {easingSpatialCurve: [0.2, 0, 0, 1, 1, 1]}, {easingSpatial: 'OutBack', easingSpatialCurve: [0.2, 0, 0, 1, 1, 1]}])
+  assert.deepEqual({...runtime.supplied(applied, {...minimal, ...half})}, {}, `half a suppliable spline leaves its derivation: ${JSON.stringify(half)}`);
 const spline = {...minimal, easingStandard: 'BezierSpline', easingStandardCurve: [0.2, 0, 0, 1, 1, 1]};
 assert.deepEqual([runtime.values(applied, spline).easingStandard, [...runtime.values(applied, spline).easingStandardCurve]], ['BezierSpline', [0.2, 0, 0, 1, 1, 1]], 'a spline and its curve are applied together');
 for (const half of [{...minimal, easingStandard: 'BezierSpline'}, {...minimal, easingStandardCurve: [0.2, 0, 0, 1, 1, 1]},

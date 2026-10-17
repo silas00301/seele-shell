@@ -30,16 +30,11 @@ Button {
     active: button.selected
     hovered: button.hovered && button.enabled
     pressed: button.down
+    pressX: button.pressX
+    pressY: button.pressY
     // Keyboard focus is a ring, never the selected fill, so a focused action
     // cannot be mistaken for one that is on.
-    Rectangle {
-      anchors.fill: parent
-      radius: parent.radius
-      color: button.theme.clearColor
-      border.width: button.theme.hairline
-      border.color: button.visualFocus ? button.theme.accent : button.theme.alpha(button.theme.accent, 0)
-      antialiasing: true
-    }
+    FocusRing { theme: button.theme; shown: button.visualFocus }
   }
   HoverHandler { cursorShape: button.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
   ToolTip {

@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-403 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
+435 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -39,13 +39,16 @@ computed from the slots it names, such as `panelColor: alpha(mantle, 0.88)`, so
 a theme changes it through those slots. Every default reproduces the shell as it
 was drawn before themes could set more than colours.
 
-A derived colour of the `material` group is also *suppliable*: a theme may give
-its own colour in place of the derivation, as a Material theme gives its opaque
-tonal surfaces. Theme.qml reads such a slot as `supplied.<name> ?? <derivation>`,
-where `supplied` holds the derived colours the published theme gave, so a theme
-that gives none draws exactly the derivation, and the next theme that leaves
-one out gets it back. Other derived slots, such as `mutedText` or
-`colorLensSize`, cannot be supplied.
+A derived slot may also be *suppliable*: a theme may give its own value, of the
+slot's type, in place of the derivation, as a Material theme gives its opaque
+tonal surfaces, its pressed corner and its springs. Theme.qml reads such a slot
+as `supplied.<name> ?? <derivation>`, where `supplied` holds the derived slots
+the published theme gave, so a theme that gives none draws exactly the
+derivation, and the next theme that leaves one out gets it back. Only a colour,
+an `int`, a `real`, an easing or a curve of the shape, metrics, material and
+motion groups can be suppliable; other derived slots, such as `mutedText` or
+`colorLensSize`, cannot be supplied. A slot derived from one other slot alone,
+such as `easingSpatial: easingStandard`, is of that slot's type.
 
 An easing slot names one of Qt's curves, or `BezierSpline`. Beside each one is
 a `curve` slot, empty by default, holding the cubic Bézier that spline follows
@@ -53,7 +56,48 @@ as Qt's `easing.bezierCurve` reads it: six numbers a segment, ending at 1, 1, at
 most eight segments. An easing is `BezierSpline` exactly when its curve is
 given, and every animation that takes an easing slot takes its curve too, so a
 theme's spline reaches every transition; an empty curve leaves Qt's curve as
-it is, so a named easing draws exactly as before.
+it is, so a named easing draws exactly as before. A suppliable easing and its
+suppliable curve, such as `easingSpatial` and `easingSpatialCurve`, which
+follow `easingStandard` and its curve, are supplied together or not at all, so
+the pair either is the theme's or follows its derivation whole.
+
+## Component behaviour
+
+The shared controls report state and move through these slots, each of which
+defaults to what the shell did before themes could set them (SIL-238):
+
+- **State layers.** `HoverWash` is a control's state layer: the pointer's wash
+  comes and goes over `durationState`. A control that passes it `pressed`, and
+  where the press landed, gets a press ripple (`Ripple.qml`) for a theme that
+  gives `durationRipple`, shaped by the `ripple…` slots and drawn in the
+  control's own corners; with none, the control lays `pressColor` flat as
+  before.
+- **Shape.** A pressed `ActionButton` or `IconButton` closes its corners to
+  `radiusPressed` while held, which is `radius` unless a theme gives its own.
+- **Focus.** `FocusRing` is `focusRingWidth` wide, `focusRingGap` outside the
+  control's edge, in `focusRingColor`, and flares to `focusRingFlare` over
+  `durationFocusRing`. By default the gap is minus the width, so the ring is
+  the hairline on the control's own edge; where a control drew that edge as its
+  own border, it still does, and lays a `FocusRing` only for a ring outside it,
+  shown, as Material shows it, only where the keyboard put the focus. A ring
+  outside the edge that the control or an ancestor would clip, as a card or a
+  scrolled list does at its edge, lies on the control's own edge instead, so it
+  is always drawn whole.
+- **Motion.** A part of a control moving or changing shape takes
+  `durationSpatial` on `easingSpatial`; a control's own colour changing with its
+  state takes `durationEffects` on `easingEffects`. A theme gives a spring by
+  sampling it into the curve, as `seele-theme material` does.
+- **Switch.** `ControlSwitch`'s handle is `switchHandleSize`, `…OnSize` and
+  `…PressedSize` off, on and held, in the `switchHandle…` colours, and rides
+  between the centres of the track's round ends; `switchStateLayerSize` centres
+  a round state layer on it, and the track then keeps its colour.
+
+`tests/tst_behaviour.qml` drives the real controls under a preset and under
+Material Expressive Dark: the preset's slots equal what it drew before and a
+press lays its colour flat; Material's press ripples from where it landed,
+holds for a tap, closes the corners and spreads to cover the control; the
+switch's handle grows and overshoots on the spring; and the focus ring flares
+and settles outside the edge.
 
 ## Theme documents
 

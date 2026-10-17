@@ -19,7 +19,14 @@ TestCase {
     overlay: "#7f849c", subtext: "#a6adc8",
     cardColor: "#302e2e46", selectedColor: "#503e365f",
     dangerTint: "#30f38ba8", pressColor: "#60454b66",
-    cardBorder: "#40454b66", hoverColor: "#20cdd6f4"
+    cardBorder: "#40454b66", hoverColor: "#20cdd6f4",
+    // Component behaviour at a preset's defaults: a flat press, no corner
+    // change, the focus ring on the button's own edge, timed motion.
+    hairline: 1, radiusPressed: 12, durationRipple: 0, durationState: 100,
+    focusRingWidth: 1, focusRingGap: -1, focusRingFlare: 1, focusRingColor: "#cba6f7", durationFocusRing: 0,
+    durationEffects: 100, easingEffects: Easing.Linear, easingEffectsCurve: [],
+    durationSpatial: 100, easingSpatial: Easing.OutCubic, easingSpatialCurve: [],
+    easingStandard: Easing.OutCubic, easingStandardCurve: []
   })
   Shared.ActionButton { id: subject; theme: testCase.palette; x: 10; y: 10; width: 280; text: "Laptop · 2 files" }
   Shared.ActionButton { id: baseline; theme: testCase.palette; x: 330; y: 10; width: 280; text: subject.text }

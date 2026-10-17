@@ -11,19 +11,23 @@
 // suppliable, which a theme may set in place of its derivation; it is listed
 // with `derived` and no default. The wallpaper is one of them: the
 // publication names the image the host's mapping chooses for the theme, and
-// the outputs that show another one.
+// the outputs that show another one. A weight or an easing carries the names
+// it may take, since a derived one has no default to compare with.
 function slots(contract) {
   var result = []
   if (!contract || !Array.isArray(contract.groups)) return result
+  var enums = contract.enums || {}
   contract.groups.forEach(function(group) {
     if (!Array.isArray(group.slots)) return
     group.slots.forEach(function(slot) {
       if (slot.fixed) return
+      var entry = { name: slot.name, type: slot.type }
+      if (enums[slot.type]) entry.choices = Object.keys(enums[slot.type])
       if (Object.prototype.hasOwnProperty.call(slot, "derived")) {
-        if (slot.suppliable) result.push({ name: slot.name, type: slot.type, derived: true })
-        return
-      }
-      result.push({ name: slot.name, type: slot.type, value: slot.default })
+        if (!slot.suppliable) return
+        entry.derived = true
+      } else entry.value = slot.default
+      result.push(entry)
     })
   })
   return result
@@ -42,11 +46,13 @@ function curveValue(value) {
 
 function usable(slot, value) {
   if (value === undefined || value === null) return false
-  if (slot.derived) return slot.type === "color" && typeof value === "string" && colorPattern.test(value)
   if (slot.type === "curve") return curveValue(value)
+  if (slot.choices) return typeof value === "string" && slot.choices.indexOf(value) >= 0
+  if (slot.type === "int") return typeof value === "number" && Number.isInteger(value)
+  if (slot.type === "real") return typeof value === "number" && Number.isFinite(value)
+  if (slot.type === "color") return typeof value === "string" && colorPattern.test(value)
+  if (slot.derived) return false
   if (typeof value !== typeof slot.value) return false
-  if (typeof value === "number") return Number.isFinite(value)
-  if (slot.type === "color") return colorPattern.test(value)
   if (slot.type === "outputPaths") return !Array.isArray(value) && Object.keys(value).every(function(output) {
     return typeof value[output] === "string" && value[output].charAt(0) === "/"
   })
@@ -79,14 +85,26 @@ function values(slots, theme) {
   return result
 }
 
-// The derived colours `theme` supplies itself, by slot: what Theme.qml's
-// `supplied` holds, read before each derivation.
+// The derived slots `theme` supplies itself, by slot: what Theme.qml's
+// `supplied` holds, read before each derivation. A suppliable easing and its
+// curve are given together and agree, or neither is applied, so the pair
+// falls back to its derivation whole.
 function supplied(slots, theme) {
   var result = {}
   var given = theme && typeof theme === "object" && !Array.isArray(theme) ? theme : {}
   slots.forEach(function(slot) {
     if (!slot.derived || !Object.prototype.hasOwnProperty.call(given, slot.name)) return
     if (usable(slot, given[slot.name])) result[slot.name] = given[slot.name]
+  })
+  slots.forEach(function(slot) {
+    if (!slot.derived || slot.type !== "curve") return
+    var easing = slot.name.replace(/Curve$/, "")
+    var hasEasing = Object.prototype.hasOwnProperty.call(result, easing)
+    var hasCurve = Object.prototype.hasOwnProperty.call(result, slot.name)
+    if (!hasEasing && !hasCurve) return
+    if (hasEasing && hasCurve && (result[easing] === "BezierSpline") === (result[slot.name].length > 0)) return
+    delete result[easing]
+    delete result[slot.name]
   })
   return result
 }

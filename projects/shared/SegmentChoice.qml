@@ -35,11 +35,13 @@ Button {
       selected: choice.selected
       hovered: choice.hovered
       pressed: choice.down
+      pressX: choice.pressX
+      pressY: choice.pressY
     }
     FocusRing {
       theme: choice.theme
       shown: choice.visualFocus
-      radius: choice.theme.radiusSmall
+      cornerRadius: choice.theme.radiusSmall
     }
   }
 

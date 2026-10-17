@@ -101,7 +101,7 @@
   "members": {
     "description": "Theme.qml properties that are not styling values and so not slots. Each is declared after the helper functions; any other property anywhere in Theme.qml must be a slot.",
     "keyboardNavigation": "The shared keyboard navigation every surface reaches through the theme (projects/navigation).",
-    "supplied": "The derived colours the published theme supplies in place of their derivations, by slot (Contract.supplied); a suppliable slot reads it before its derivation."
+    "supplied": "The derived slots the published theme supplies in place of their derivations, by slot (Contract.supplied), easings as Qt enums; a suppliable slot reads it before its derivation."
   },
   "groups": [
     {
@@ -420,6 +420,34 @@
           "type": "int",
           "default": 3,
           "description": "The meeting planner's ribbon cells and busy blocks round a little, and the meeting being placed a little more."
+        },
+        {
+          "name": "radiusPressed",
+          "type": "int",
+          "derived": "radius",
+          "suppliable": true,
+          "description": "A pressed button closes its corners to this, unless they are already tighter, and opens them again when it is let go, on the spatial curve. It is the resting corner unless a theme gives its own, so by default nothing changes shape."
+        },
+        {
+          "name": "focusRingWidth",
+          "type": "int",
+          "derived": "hairline",
+          "suppliable": true,
+          "description": "Where the keyboard is: a ring `focusRingWidth` wide, `focusRingGap` outside the control's edge, that flares to `focusRingFlare` as it appears (`durationFocusRing`). A negative gap lays the ring inside the edge: by default it is the hairline on the control's own edge, and it does not flare."
+        },
+        {
+          "name": "focusRingGap",
+          "type": "int",
+          "derived": "-focusRingWidth",
+          "suppliable": true,
+          "description": "Where the keyboard is: a ring `focusRingWidth` wide, `focusRingGap` outside the control's edge, that flares to `focusRingFlare` as it appears (`durationFocusRing`). A negative gap lays the ring inside the edge: by default it is the hairline on the control's own edge, and it does not flare."
+        },
+        {
+          "name": "focusRingFlare",
+          "type": "int",
+          "derived": "focusRingWidth",
+          "suppliable": true,
+          "description": "Where the keyboard is: a ring `focusRingWidth` wide, `focusRingGap` outside the control's edge, that flares to `focusRingFlare` as it appears (`durationFocusRing`). A negative gap lays the ring inside the edge: by default it is the hairline on the control's own edge, and it does not flare."
         }
       ]
     },
@@ -638,6 +666,33 @@
           "type": "int",
           "default": 3,
           "description": "A switch is a pill its knob rides inside, inset on every side."
+        },
+        {
+          "name": "switchHandleSize",
+          "type": "int",
+          "derived": "switchHeight - switchKnobInset * 2",
+          "suppliable": true,
+          "description": "The handle off, on and held: a switch may grow its handle as it is set and again while it is pressed. By default the handle is one size, the pill's height inside its inset."
+        },
+        {
+          "name": "switchHandleOnSize",
+          "type": "int",
+          "derived": "switchHandleSize",
+          "suppliable": true,
+          "description": "The handle off, on and held: a switch may grow its handle as it is set and again while it is pressed. By default the handle is one size, the pill's height inside its inset."
+        },
+        {
+          "name": "switchHandlePressedSize",
+          "type": "int",
+          "derived": "switchHandleOnSize",
+          "suppliable": true,
+          "description": "The handle off, on and held: a switch may grow its handle as it is set and again while it is pressed. By default the handle is one size, the pill's height inside its inset."
+        },
+        {
+          "name": "switchStateLayerSize",
+          "type": "int",
+          "default": 0,
+          "description": "A round state layer centred on the handle reports the pointer and the press, and the track then keeps its colour. Zero draws none: the track's ring and its darkening report them instead."
         },
         {
           "name": "rowIconSize",
@@ -2305,6 +2360,84 @@
           "description": "A switch track darkens to this while pressed, rings in the accent at `switchHoverOpacity` under the pointer, and its knob is text at `switchKnobOpacity` while off."
         },
         {
+          "name": "switchHandleOff",
+          "type": "color",
+          "derived": "alpha(text, switchKnobOpacity)",
+          "suppliable": true,
+          "description": "The handle off and on, at rest and under the pointer or held."
+        },
+        {
+          "name": "switchHandleOffActive",
+          "type": "color",
+          "derived": "switchHandleOff",
+          "suppliable": true,
+          "description": "The handle off and on, at rest and under the pointer or held."
+        },
+        {
+          "name": "switchHandleOn",
+          "type": "color",
+          "derived": "crust",
+          "suppliable": true,
+          "description": "The handle off and on, at rest and under the pointer or held."
+        },
+        {
+          "name": "switchHandleOnActive",
+          "type": "color",
+          "derived": "switchHandleOn",
+          "suppliable": true,
+          "description": "The handle off and on, at rest and under the pointer or held."
+        },
+        {
+          "name": "selectedHoverColor",
+          "type": "color",
+          "derived": "hoverColor",
+          "suppliable": true,
+          "description": "The pointer over a control that is on, such as a set switch's handle."
+        },
+        {
+          "name": "focusRingColor",
+          "type": "color",
+          "derived": "accent",
+          "suppliable": true,
+          "description": "The ring that says where the keyboard is."
+        },
+        {
+          "name": "rippleOriginScale",
+          "type": "real",
+          "default": 0.2,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
+          "name": "ripplePadding",
+          "type": "int",
+          "default": 10,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
+          "name": "rippleSoftEdge",
+          "type": "int",
+          "default": 75,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
+          "name": "rippleSoftEdgeRatio",
+          "type": "real",
+          "default": 0.35,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
+          "name": "rippleFeather",
+          "type": "int",
+          "default": 70,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
+          "name": "rippleCore",
+          "type": "real",
+          "default": 0.65,
+          "description": "A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of the control's longer side where the press landed, and spreads to the centre until it passes the far corner by `ripplePadding` and a soft edge of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where that is more. Its rim fades out over `rippleFeather`, while at least `rippleCore` of its radius stays solid. It is drawn in `pressColor`."
+        },
+        {
           "name": "scrollThumbOpacity",
           "type": "real",
           "default": 0.32,
@@ -2598,6 +2731,83 @@
           "type": "curve",
           "default": [],
           "description": "The Bézier spline the pulse curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
+        },
+        {
+          "name": "durationState",
+          "type": "int",
+          "derived": "durationFast",
+          "suppliable": true,
+          "description": "A state layer -- the pointer over a control -- comes and goes over this."
+        },
+        {
+          "name": "durationEffects",
+          "type": "int",
+          "derived": "durationFast",
+          "suppliable": true,
+          "description": "A control's own colour changing with its state, set, selected or held, takes `durationEffects` on `easingEffects`. A theme may give a spring that never overshoots, sampled into the curve."
+        },
+        {
+          "name": "easingEffects",
+          "type": "easing",
+          "default": "Linear",
+          "description": "A control's own colour changing with its state, set, selected or held, takes `durationEffects` on `easingEffects`. A theme may give a spring that never overshoots, sampled into the curve."
+        },
+        {
+          "name": "easingEffectsCurve",
+          "type": "curve",
+          "default": [],
+          "description": "The Bézier spline the effects curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
+        },
+        {
+          "name": "durationSpatial",
+          "type": "int",
+          "derived": "durationFast",
+          "suppliable": true,
+          "description": "Part of a control moving or changing shape -- a switch's handle, a pressed button's corners -- takes `durationSpatial` on `easingSpatial`, by default the standard curve at the fast duration. A theme may give a spring, sampled into the curve, which may overshoot and settle."
+        },
+        {
+          "name": "easingSpatial",
+          "type": "easing",
+          "derived": "easingStandard",
+          "suppliable": true,
+          "description": "Part of a control moving or changing shape -- a switch's handle, a pressed button's corners -- takes `durationSpatial` on `easingSpatial`, by default the standard curve at the fast duration. A theme may give a spring, sampled into the curve, which may overshoot and settle."
+        },
+        {
+          "name": "easingSpatialCurve",
+          "type": "curve",
+          "derived": "easingStandardCurve",
+          "suppliable": true,
+          "description": "The Bézier spline the spatial curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
+        },
+        {
+          "name": "durationRipple",
+          "type": "int",
+          "default": 0,
+          "description": "A press grows a ripple over `durationRipple` on the standard curve, fading it in over `durationRippleIn`; it stays at least `durationRippleHold` from the press and fades out over `durationRippleOut`. Zero grows none, and a press lays its colour flat over the control instead."
+        },
+        {
+          "name": "durationRippleIn",
+          "type": "int",
+          "default": 105,
+          "description": "A press grows a ripple over `durationRipple` on the standard curve, fading it in over `durationRippleIn`; it stays at least `durationRippleHold` from the press and fades out over `durationRippleOut`. Zero grows none, and a press lays its colour flat over the control instead."
+        },
+        {
+          "name": "durationRippleHold",
+          "type": "int",
+          "default": 225,
+          "description": "A press grows a ripple over `durationRipple` on the standard curve, fading it in over `durationRippleIn`; it stays at least `durationRippleHold` from the press and fades out over `durationRippleOut`. Zero grows none, and a press lays its colour flat over the control instead."
+        },
+        {
+          "name": "durationRippleOut",
+          "type": "int",
+          "default": 375,
+          "description": "A press grows a ripple over `durationRipple` on the standard curve, fading it in over `durationRippleIn`; it stays at least `durationRippleHold` from the press and fades out over `durationRippleOut`. Zero grows none, and a press lays its colour flat over the control instead."
+        },
+        {
+          "name": "durationFocusRing",
+          "type": "int",
+          "default": 0,
+          "description": "The focus ring flares as it appears: it grows to `focusRingFlare` in the first quarter of this and settles to its width in the rest, on the standard curve. Zero shows it at once."
         }
       ]
     },
