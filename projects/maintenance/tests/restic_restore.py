@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='seele-restic-fixture-') as temporary:
     assert len(record['snapshot'])==64 and receipt.stat().st_mode & 0o777 == 0o600
     assert not list(runtime.iterdir()) and sample.read_bytes()==b'new live content'
     previous=receipt.read_bytes()
-    for changes in [dict(samples=[str(source/'missing')]),dict(host='missing'),dict(samples=[str(source/'*')]),dict(samples=[])]:
+    for changes in [dict(samples=[str(source/'missing')]),dict(host='missing'),dict(samples=[str(source/'*')]),dict(samples=[str(source/'a\\b')]),dict(samples=[])]:
         config.write_text(json.dumps(dict(cfg,**changes)))
         result=subprocess.run([str(binary),str(config)],env=environment,capture_output=True,timeout=30)
         assert result.returncode!=0 and not result.stdout and result.stderr==b'backup restore check failed\n',result

@@ -174,10 +174,15 @@ fn validate_credentials() -> Result<()> {
     }
     Ok(())
 }
+// `restore --include` is a Go filepath.Match pattern, where a backslash
+// escapes the next character, while `dump` reads the literal path. Refusing
+// pattern syntax keeps both commands naming the same file.
 fn valid_sample(path: &Path) -> bool {
     path.is_absolute()
         && path.to_str().is_some_and(|s| {
-            s.len() <= 4096 && !s.chars().any(char::is_control) && !s.contains(['*', '?', '[', ']'])
+            s.len() <= 4096
+                && !s.chars().any(char::is_control)
+                && !s.contains(['*', '?', '[', ']', '\\'])
         })
         && path
             .components()
@@ -210,7 +215,14 @@ mod tests {
     use super::*;
     #[test]
     fn samples_and_restored_paths_refuse_patterns_and_links() {
-        for sample in ["/", "relative", "/a/../b", "/a/*", "/a/file\nname"] {
+        for sample in [
+            "/",
+            "relative",
+            "/a/../b",
+            "/a/*",
+            "/a/file\nname",
+            "/home/me/a\\b",
+        ] {
             assert!(!valid_sample(Path::new(sample)));
         }
         let root = tempfile::tempdir().unwrap();
