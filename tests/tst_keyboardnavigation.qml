@@ -33,6 +33,21 @@ Item {
     Keys.onEscapePressed: escapes++
     TextField { id: ownedField; anchors.fill: parent }
   }
+  // A surface with its own cursor: it takes Home/End, and so gg/G, and draws
+  // its own selection instead of the shared ring.
+  Item {
+    id: endsOwner
+    x: 240; y: 400; width: 100; height: 40
+    visible: false
+    activeFocusOnTab: true
+    property bool keyboardRing: false
+    property int homes: 0
+    property int ends: 0
+    Keys.onPressed: event => {
+      if (event.key === Qt.Key_Home) { homes++; event.accepted = true }
+      else if (event.key === Qt.Key_End) { ends++; event.accepted = true }
+    }
+  }
   Rectangle {
     x: 20; y: 80; width: 100; height: 40
     Shared.ActionArea {
@@ -173,6 +188,24 @@ Item {
       compare(escapeOwner.escapes, 1, "an ancestor's Escape handler sees a field's unhandled Escape")
       verify(ownedField.activeFocus, "an accepted Escape does not also leave the field")
       escapeOwner.visible = false
+    }
+    function test_ends_are_offered_to_the_surface_first() {
+      endsOwner.visible = true
+      endsOwner.homes = 0
+      endsOwner.ends = 0
+      endsOwner.forceActiveFocus()
+      keyClick(Qt.Key_G)
+      keyClick(Qt.Key_G)
+      compare(endsOwner.homes, 1, "gg reaches a surface that owns Home")
+      keyClick(Qt.Key_G, Qt.ShiftModifier)
+      compare(endsOwner.ends, 1, "G reaches a surface that owns End")
+      verify(endsOwner.activeFocus, "a handled end does not move focus")
+      compare(navigation.focusItem, endsOwner)
+      verify(!navigation.indicator.shown, "keyboardRing: false keeps the shared ring off")
+      endsOwner.visible = false
+      first.forceActiveFocus()
+      keyClick(Qt.Key_L)
+      verify(navigation.indicator.shown)
     }
     function test_leave_editor() {
       query.forceActiveFocus()

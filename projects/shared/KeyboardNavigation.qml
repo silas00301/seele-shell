@@ -10,7 +10,9 @@ Navigator {
   property FocusRing indicator: FocusRing {
     parent: navigation.focusItem
     theme: navigation.theme
-    shown: navigation.focusItem !== null
+    // A surface that draws its own selection, such as the notification
+    // panel's cursor, sets keyboardRing: false so it is not ringed twice.
+    shown: navigation.focusItem !== null && navigation.focusItem.keyboardRing !== false
     z: 10000
   }
 }

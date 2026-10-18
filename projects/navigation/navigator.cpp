@@ -270,8 +270,14 @@ bool Navigator::eventFilter(QObject *object, QEvent *event) {
         list->setProperty("currentIndex", last ? list->property("count").toInt() - 1 : 0);
         focusRow(list);
       } else {
-        const auto items = targets(window);
-        if (!items.isEmpty()) focus(modifiers == Qt::ShiftModifier ? items.last() : items.first());
+        // A surface may give its own ends a meaning, as the notification
+        // panel's cursor does. Offer gg/G as Home/End first, as an unhandled
+        // arrow is offered, then fall back to the first or last control.
+        const bool last = modifiers == Qt::ShiftModifier;
+        if (!forward(window, key, last ? Qt::Key_End : Qt::Key_Home)) {
+          const auto items = targets(window);
+          if (!items.isEmpty()) focus(last ? items.last() : items.first());
+        }
       }
       prefix_.invalidate();
     } else if (!key->isAutoRepeat()) prefix_.start();
