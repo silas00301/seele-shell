@@ -193,11 +193,11 @@ FocusScope {
             font.family: panel.theme.fontFamily
             font.pixelSize: panel.theme.textBody
           }
-          MouseArea {
+          Shared.ActionArea {
             id: rowMouse
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
+            onTriggered: {
               inbox.currentIndex = row.index
               panel.toggle(row.entry.id)
             }

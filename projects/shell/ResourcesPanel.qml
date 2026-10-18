@@ -278,7 +278,7 @@ FocusScope {
               Text { id: memoryValue; width: panel.theme.levelValueWidth * 1.5; anchors.verticalCenter: parent.verticalCenter; text: panel.bytes(row.entry.rss); horizontalAlignment: Text.AlignRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
             }
             HoverHandler { id: rowHover }
-            MouseArea { id: rowMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { processes.currentIndex = row.index; panel.store.select(row.entry.id) } }
+            Shared.ActionArea { id: rowMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onTriggered: { processes.currentIndex = row.index; panel.store.select(row.entry.id) } }
           }
         }
       }

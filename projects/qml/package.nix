@@ -1,5 +1,6 @@
 { pkgs, ... }:
 let
+  navigation = import ../navigation/package.nix { inherit pkgs; };
   core = import ../../packages/core/native.nix {
     inherit pkgs;
     name = "qml-core";
@@ -22,6 +23,9 @@ pkgs.stdenv.mkDerivation {
   ];
   dontWrapQtApps = true;
   cmakeFlags = [ "-DSEELE_BOUNDARY_TEST=${../../tests/native-functions-bounds.cpp}" ];
+  postInstall = ''
+    ln -s ${navigation}/lib/qt-6/qml/Seele/Navigation "$out/lib/qt-6/qml/Seele/Navigation"
+  '';
   doCheck = true;
   checkPhase = ''
     runHook preCheck

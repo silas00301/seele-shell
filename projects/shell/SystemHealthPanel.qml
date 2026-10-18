@@ -72,14 +72,14 @@ Column {
           font.weight: healthView.selected ? panel.theme.weightStrong : panel.theme.weightRegular
         }
 
-        MouseArea {
+        Shared.ActionArea {
           id: healthViewMouse
 
           anchors.fill: parent
           enabled: !healthView.selected
           hoverEnabled: true
           cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-          onClicked: panel.tab = healthView.modelData.tab
+          onTriggered: panel.tab = healthView.modelData.tab
         }
       }
     }

@@ -413,12 +413,12 @@ FocusScope {
           }
           // A neighbour is chosen by clicking it; the centre, clicked, is
           // kept.
-          MouseArea {
+          Shared.ActionArea {
             id: sliceMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
+            onTriggered: {
               if (card.centred) panel.keep()
               else panel.store.choose(card.entry.id, true)
             }

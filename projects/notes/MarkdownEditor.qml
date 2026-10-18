@@ -94,6 +94,7 @@ Item {
 
     TextArea.flickable: TextArea {
       id: editor
+      readonly property bool keyboardEdit: true
 
       readOnly: editorRoot.readOnly
       placeholderText: editorRoot.placeholder

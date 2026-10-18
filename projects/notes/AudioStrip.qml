@@ -139,14 +139,14 @@ ColumnLayout {
               font.pixelSize: strip.theme.textStrong
             }
 
-            MouseArea {
+            Shared.ActionArea {
               id: playMouse
 
               anchors.fill: parent
               enabled: track.available && strip.player !== null && !strip.store.recording
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: strip.toggle(track.modelData)
+              onTriggered: strip.toggle(track.modelData)
             }
           }
 
@@ -201,14 +201,14 @@ ColumnLayout {
               font.pixelSize: strip.theme.textBody
             }
 
-            MouseArea {
+            Shared.ActionArea {
               id: removeMouse
 
               anchors.fill: parent
               enabled: !strip.store.recording
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onClicked: strip.removeRequested(track.modelData.name)
+              onTriggered: strip.removeRequested(track.modelData.name)
             }
           }
         }
@@ -249,6 +249,15 @@ ColumnLayout {
       }
 
       MouseArea {
+        activeFocusOnTab: enabled
+        Accessible.role: Accessible.Slider
+        Accessible.name: "Recording playback position"
+        Keys.onPressed: event => {
+          if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+          if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right) return
+          strip.seekBy(event.key === Qt.Key_Right ? 5000 : -5000)
+          event.accepted = true
+        }
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onPressed: mouse => strip.player.seek(Math.max(0, Math.min(1, mouse.x / scrubTrack.width)) * strip.span)

@@ -3,6 +3,7 @@ set -euo pipefail
 shared=${1:?shared source required}
 fixture=${2:?palette Qt fixture required}
 qt_import=${3:?Qt QML import directory required}
+native_import=${4:?Seele QML import directory required}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/projects/shared" "$work/tests" "$work/home" "$work/config"
@@ -18,4 +19,4 @@ const source=fs.readFileSync(file,'utf8').split('  FileView {')[0]
 fs.writeFileSync(file,source+'}\n');
 JS
 HOME="$work/home" XDG_CONFIG_HOME="$work/config" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-  qmltestrunner -import "$qt_import" -input "$work/tests/tst_palette.qml"
+  qmltestrunner -import "$qt_import" -import "$native_import" -input "$work/tests/tst_palette.qml"

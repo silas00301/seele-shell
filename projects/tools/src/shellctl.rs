@@ -11,6 +11,7 @@ Commands:
   agents                    Toggle the AI dashboard
   prompt                    Toggle the quick AI prompt
   themes                    Toggle the floating theme picker without closing panels
+  bar                       Toggle keyboard navigation of the menu bar
   center                    Toggle the Control Center
   transfers                 Open personal Transfers
   network-activity          Open live per-interface traffic
@@ -94,6 +95,7 @@ pub fn run(arguments: &[String]) -> Result {
         "agents" => call("toggleAgents", &[]),
         "prompt" => call("togglePrompt", &[]),
         "themes" => call("toggleThemes", &[]),
+        "bar" => call("toggleBar", &[]),
         "center" => call("toggleControl", &["control-center".into()]),
         "transfers" => call("openTransfers", &[]),
         "network-activity" => call("toggleControl", &["network-activity".into()]),

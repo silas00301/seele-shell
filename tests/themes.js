@@ -321,7 +321,7 @@ assert.match(shell, /ThemeSettingsPanel \{ theme: root; store: themeStore; width
   'Browse opens the switcher over it, from the same store');
 assert.match(shell, /if \(panel === "themes"\) \{\s*themeStore\.refresh\(\)/, 'opening the panel reads the helper again');
 const controlTile = shell.slice(shell.indexOf('component ControlTile:'), shell.indexOf('component ControlCenterGrid:'));
-assert.match(controlTile, /z: 1[\s\S]*onClicked: controlTile\.knobClicked\(\)/, 'the knob sits above the tile\'s drag area');
+assert.match(controlTile, /z: 1[\s\S]*onTriggered: controlTile\.knobClicked\(\)/, 'the knob sits above the tile\'s drag area');
 assert.match(controlTile, /enabled: controlTile\.knob/, 'other tiles have no knob');
 assert.match(shell, /function toggleThemes\(\): void \{ root\.toggleThemes\(\) \}/, 'shellctl can open it');
 assert.match(shell, /detail: themeStore\.currentName/, 'the tile names the applied theme');

@@ -260,12 +260,12 @@ FocusScope {
       Shared.HoverWash { theme: agenda.theme; hovered: rowMouse.containsMouse }
       Shared.FocusRing { theme: agenda.theme; shown: row.activeFocus }
 
-      MouseArea {
+      Shared.ActionArea {
         id: rowMouse
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: { row.forceActiveFocus(); row.toggle() }
+        onTriggered: { row.forceActiveFocus(); row.toggle() }
       }
 
       // The event's own colour, as Google has it; the text beside it stays on theme tokens.

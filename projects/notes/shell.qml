@@ -425,13 +425,13 @@ Shared.Theme {
                     Behavior on color { ColorAnimation { duration: root.durationFast } }
                   }
 
-                  MouseArea {
+                  Shared.ActionArea {
                     id: libraryViewMouse
 
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: store.setTrashView(libraryView.modelData.trash)
+                    onTriggered: store.setTrashView(libraryView.modelData.trash)
                   }
                 }
               }
@@ -528,12 +528,12 @@ Shared.Theme {
                   }
                 }
 
-                MouseArea {
+                Shared.ActionArea {
                   id: rowMouse
 
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: {
+                  onTriggered: {
                     noteList.currentIndex = row.index
                     root.chooseRow(row.index)
                   }
@@ -577,6 +577,17 @@ Shared.Theme {
 
             MouseArea {
               id: grab
+
+              activeFocusOnTab: true
+              Accessible.role: Accessible.Grip
+              Accessible.name: "Sidebar width"
+              Keys.onPressed: event => {
+                if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+                if (event.key !== Qt.Key_Left && event.key !== Qt.Key_Right) return
+                root.sidebarWidth = Math.max(root.notesSidebarMinimum, Math.min(root.notesSidebarMaximum, root.sidebarWidth + (event.key === Qt.Key_Right ? root.spaceLarge : -root.spaceLarge)))
+                store.remember(root.sidebarWidth, root.sidebarCollapsed)
+                event.accepted = true
+              }
 
               anchors.fill: parent
               anchors.margins: -root.spaceTight
@@ -657,10 +668,10 @@ Shared.Theme {
                 font.family: root.fontFamily
                 font.pixelSize: root.textCaption
 
-                MouseArea {
+                Shared.ActionArea {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.hintsShown = !root.hintsShown
+                  onTriggered: root.hintsShown = !root.hintsShown
                 }
               }
             }
@@ -684,7 +695,9 @@ Shared.Theme {
 
                 Repeater {
                   model: [
-                    "Ctrl+N new", "Ctrl+F search", "Ctrl+L list", "Esc editor",
+                    "Ctrl+N new", "Ctrl+F search", "Ctrl+L list", "Esc leave field",
+                    "h/j/k/l move", "Alt+h/j/k/l leave editor or level",
+                    "gg/G first/last", "Ctrl+d/u half page", "/ search", "i edit",
                     "Ctrl+B bold", "Ctrl+I italic", "Ctrl+E code", "Ctrl+K link",
                     "Ctrl+1…3 heading", "Ctrl+Shift+X task",
                     "Ctrl+R record", "Ctrl+P play", "Alt+←/→ seek",

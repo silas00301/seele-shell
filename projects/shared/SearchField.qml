@@ -7,6 +7,7 @@ TextField {
   id: searchField
 
   required property var theme
+  readonly property bool keyboardSearch: true
   property string glyph: "󰍉"
 
   implicitHeight: searchField.theme.controlHeight

@@ -423,12 +423,12 @@ FocusScope {
 
       Shared.HoverWash { theme: settings.theme; hovered: rowMouse.containsMouse }
       Shared.FocusRing { theme: settings.theme; shown: row.activeFocus }
-      MouseArea {
+      Shared.ActionArea {
         id: rowMouse
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: { row.forceActiveFocus(); row.toggle() }
+        onTriggered: { row.forceActiveFocus(); row.toggle() }
       }
 
       Rectangle {

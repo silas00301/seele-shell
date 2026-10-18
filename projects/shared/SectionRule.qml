@@ -74,13 +74,13 @@ Item {
     horizontalAlignment: Text.AlignRight
   }
 
-  MouseArea {
+  ActionArea {
     id: sectionRuleMouse
 
     anchors.fill: parent
     enabled: sectionRule.collapsible
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    onClicked: sectionRule.toggled()
+    onTriggered: sectionRule.toggled()
   }
 }

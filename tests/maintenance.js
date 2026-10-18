@@ -109,7 +109,7 @@ assert.doesNotMatch(panel, /onLoaded|sourceComponent:\s*cardComponent/);
 assert.match(panel, /validator:\s*IntValidator \{\s*bottom:\s*1;\s*top:\s*43200\s*\}/);
 // The finding's own head is its disclosure, so the fold is not also a button
 // beside it saying what the chevron already says.
-assert.match(panel, /onClicked: card\.toggle\(\)/);
+assert.match(panel, /onTriggered: card\.toggle\(\)/);
 // A disclosure that replaced a button keeps that button's keyboard path.
 assert.match(panel, /activeFocusOnTab: true/);
 assert.match(panel, /Keys\.onPressed: event => \{[^]*?card\.toggle\(\)/);

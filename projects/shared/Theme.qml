@@ -7,6 +7,8 @@ import Quickshell.Io
 ShellRoot {
   id: root
 
+  property KeyboardNavigation keyboardNavigation: KeyboardNavigation { theme: root }
+
   // Seele's native desktop shell.
   property color base: Palette.fallback.base
   property color mantle: Palette.fallback.mantle

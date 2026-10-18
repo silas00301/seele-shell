@@ -269,13 +269,13 @@ Column {
           Behavior on color { ColorAnimation { duration: panel.theme.durationFast } }
         }
 
-        MouseArea {
+        Shared.ActionArea {
           id: headMouse
 
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: card.toggle()
+          onTriggered: card.toggle()
         }
       }
 
