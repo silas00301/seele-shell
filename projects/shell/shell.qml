@@ -10178,8 +10178,9 @@ Shared.Theme {
   }
 
   // Themes ---------------------------------------------------------------------
-  // The Control Center panel: Light, Dark or Auto, the schedule, and which
-  // preset each mode wears. Browsing opens the floating switcher over it.
+  // The Control Center panel: Light, Dark or Auto, the schedule, and the
+  // gallery that wears a preset or gives it to either mode. Open switcher
+  // floats the switcher over it.
   Variants {
     model: Quickshell.screens
     PanelWindow {
@@ -10203,7 +10204,13 @@ Shared.Theme {
           spacing: root.panelSpacing
           Keys.onEscapePressed: root.closeOverlays()
           PanelHeader { width: parent.width; glyph: themeStore.appearanceGlyph; title: "Themes"; detail: themeStore.currentName }
-          ThemeSettingsPanel { theme: root; store: themeStore; width: parent.width; onBrowseRequested: root.toggleThemes() }
+          ThemeSettingsPanel {
+            theme: root
+            store: themeStore
+            width: parent.width
+            maximumHeight: Math.min(root.themeSettingsMaximumHeight, themeSettingsWindow.modelData.height - root.barHeight - root.panelGap * 2 - root.panelMargin * 2 - root.panelHeaderDetailHeight - root.panelSpacing)
+            onBrowseRequested: root.toggleThemes()
+          }
         }
       }
     }

@@ -71,7 +71,7 @@ const shellPatterns = {
   'fix me leaves the bar and takes focus only when opened': /namespace: "seele-shell-drift"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.Exclusive/,
   'theme picker store': /ThemeStore\s*\{\s*\n\s*id: themeStore/,
   'theme picker panel': /ThemePanel \{\s*\n\s*id: themesPanel\n[\s\S]{0,200}?store: themeStore\n/,
-  'theme settings panel': /ThemeSettingsPanel \{ theme: root; store: themeStore;/,
+  'theme settings panel': /ThemeSettingsPanel \{\n\s*theme: root\n\s*store: themeStore\n/,
   'theme picker tile': /label: "Themes"/,
   'theme picker leaves the bar and takes focus only when opened': /namespace: "seele-shell-themes"\s+WlrLayershell.keyboardFocus: visible \? WlrKeyboardFocus.Exclusive/,
   'microphone test store': /MicTestStore\s*\{\s*\n\s*id: micTest/,

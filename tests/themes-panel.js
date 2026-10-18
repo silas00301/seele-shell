@@ -23,7 +23,10 @@ try {
   fs.writeFileSync(themePath, theme + '}\n');
   fs.writeFileSync(path.join(work, 'tst_themes.qml'), fs.readFileSync(path.resolve(__dirname, 'tst_themes.qml'), 'utf8')
     .replace('property string screenshotPath: ""', 'property string screenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SCREENSHOT || ''))
-    .replace('property string settingsScreenshotPath: ""', 'property string settingsScreenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SETTINGS_SCREENSHOT || '')));
+    .replace('property string settingsScreenshotPath: ""', 'property string settingsScreenshotPath: ' + JSON.stringify(process.env.SEELE_THEMES_SETTINGS_SCREENSHOT || ''))
+    .replace('property string wallpaperPath: ""', 'property string wallpaperPath: ' + JSON.stringify(path.join(work, 'wallpaper.png'))));
+  // A real image for a preset to be linked to: the pictured fixture folder's.
+  fs.copyFileSync(path.resolve(__dirname, 'theme-folders/pictured/wallpaper.png'), path.join(work, 'wallpaper.png'));
   const result = spawnSync('qmltestrunner', ['-import', process.argv[3], '-input', path.join(work, 'tst_themes.qml')], {
     stdio: 'inherit', env: {...process.env, QT_QPA_PLATFORM: 'offscreen', QT_QUICK_BACKEND: 'software'},
   });

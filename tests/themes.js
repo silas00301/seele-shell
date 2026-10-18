@@ -200,17 +200,41 @@ state.setAppearance('auto');
 assert.deepEqual(commands.slice(-1), ['auto schedule 06:30 21:15']);
 helperAnswers({dark: 'catppuccin-mocha', light: 'rose-pine-dawn', auto: {source: 'off', lightAt: '06:30', darkAt: '21:15'}});
 
-// Use current gives the preset on screen to either mode, whatever its own.
+// The gallery gives any preset to either mode, whatever its own.
 state.selection = 'catppuccin-mocha';
 const asked = commands.length;
-state.useCurrentFor('dark');
+state.assign('dark', 'catppuccin-mocha');
 assert.equal(commands.length, asked, 'a mode already wearing it is not asked again');
-state.useCurrentFor('light');
+state.assign('light', 'catppuccin-mocha');
 assert.equal(state.slots.light, 'catppuccin-mocha', 'a dark preset may be the light theme');
+assert.equal(state.mode, 'dark', 'giving a preset to a mode does not switch to that mode');
 assert.equal(commands.at(-1), 'slot light catppuccin-mocha');
 helperAnswers({dark: 'catppuccin-mocha', light: 'catppuccin-mocha'});
-state.useCurrentFor('dusk');
-assert.equal(commands.at(-1), 'slot light catppuccin-mocha', 'only the two modes have a theme');
+state.assign('dark', 'rose-pine');
+assert.equal(commands.at(-1), 'slot dark rose-pine', 'a preset not on screen can be given too');
+helperAnswers({dark: 'rose-pine', light: 'catppuccin-mocha'});
+state.assign('dusk', 'nord');
+state.assign('light', 'not-in-the-catalog');
+assert.equal(commands.at(-1), 'slot dark rose-pine', 'only the two modes have a theme, and only a listed preset is given');
+// The linked wallpaper reaches the gallery's and the switcher's rows, and a
+// theme the helper links nothing to has none.
+state.accept({...reply, wallpapers: {'rose-pine': '/nix/store/rose.png'}});
+assert.deepEqual(state.carousel.items.map(item => item.wallpaper), ['', '', '/nix/store/rose.png', '', '']);
+state.accept(reply);
+
+// The gallery's click wears a preset as the switcher's does, but leaves no
+// highlight behind for a switcher opened later to centre on.
+state.highlighted = 'nord';
+state.settling = {op: 'pick', id: 'nord'};
+state.wear('rose-pine-dawn');
+assert.equal(state.highlighted, '', 'the gallery leaves nothing highlighted');
+assert.equal(state.settling, null, 'a move the switcher had in hand gives way');
+assert.deepEqual([state.mode, state.slots.light], ['light', 'rose-pine-dawn'], 'it becomes its own mode\'s theme and brings that mode');
+assert.equal(commands.at(-1), 'pick rose-pine-dawn');
+helperAnswers({mode: 'light', dark: 'catppuccin-mocha', light: 'rose-pine-dawn'});
+state.wear('not-in-the-catalog');
+assert.equal(commands.at(-1), 'pick rose-pine-dawn', 'only a listed preset is worn');
+state.accept(reply);
 
 // Cancel puts back mode and both themes as the picker opened, superseding
 // whatever still waited.
@@ -317,8 +341,10 @@ assert.match(tile, /onKnobClicked: themeStore\.cycleAppearance\(\)/, 'and steps 
 assert.match(tile, /onActivated: root\.toggleControl\("themes", controlGrid\.screenName\)/, 'the tile opens the Themes panel');
 assert.match(shell, /visible: root\.controlPanel === "themes"/, 'the panel is a Control Center panel');
 assert.match(shell, /namespace: "seele-shell-theme-settings"/);
-assert.match(shell, /ThemeSettingsPanel \{ theme: root; store: themeStore; width: parent\.width; onBrowseRequested: root\.toggleThemes\(\) \}/,
-  'Browse opens the switcher over it, from the same store');
+assert.match(shell, /ThemeSettingsPanel \{\n\s*theme: root\n\s*store: themeStore\n[\s\S]{0,300}?onBrowseRequested: root\.toggleThemes\(\)\n/,
+  'Open switcher floats the switcher over it, from the same store');
+assert.match(shell, /maximumHeight: Math\.min\(root\.themeSettingsMaximumHeight, themeSettingsWindow\.modelData\.height/,
+  'the gallery is bounded by the output it opens on');
 assert.match(shell, /if \(panel === "themes"\) \{\s*themeStore\.refresh\(\)/, 'opening the panel reads the helper again');
 const controlTile = shell.slice(shell.indexOf('component ControlTile:'), shell.indexOf('component ControlCenterGrid:'));
 assert.match(controlTile, /z: 1[\s\S]*onTriggered: controlTile\.knobClicked\(\)/, 'the knob sits above the tile\'s drag area');

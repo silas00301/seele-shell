@@ -455,9 +455,11 @@ ShellRoot {
   // The floating carousel is wide enough for a 16:10 preview and three
   // slices on either side of it.
   property int themesWidth: 1040
-  // The Control Center's Themes panel: a three-way segment and two theme
-  // rows with their names beside their swatches.
-  property int themeSettingsWidth: 440
+  // The Control Center's Themes panel: a three-way segment over a gallery of
+  // theme tiles three to a row.
+  property int themeSettingsWidth: 520
+  // The Themes panel stays inside this bound; its gallery scrolls within it.
+  property int themeSettingsMaximumHeight: 760
   // The clock popup with its world clocks, the calendar popup, and the bar's
   // next-event entry.
   property int clockWidth: 480
@@ -527,6 +529,10 @@ ShellRoot {
   property real themesSliceHeightRatio: 0.86
   // The Themes panel's schedule source takes this share of its row.
   property real themeScheduleShare: 0.6
+  // A Themes gallery tile is never narrower than this; a row holds as many
+  // as fit, each this much wider than tall.
+  property int themeGalleryCardMinimum: 140
+  property real themeTileAspect: 1.25
 
   // Material -----------------------------------------------------------------
   // Text needs more contrast than decorative borders and inactive glyphs.
@@ -703,6 +709,10 @@ ShellRoot {
   // The theme switcher veils its neighbours in ink, lighter under the pointer.
   property real themesVeilOpacity: 0.24
   property real themesVeilHoverOpacity: 0.06
+  // A Themes gallery tile's name sits on its theme's mantle at this strength,
+  // and a mode pin it does not wear on that mantle at this one.
+  property real themeTileShadeOpacity: 0.85
+  property real themeTilePinOpacity: 0.6
   // A finish cue falls from the bezel to this share of its strength at the
   // falloff stop, measured from the bezel on either side of the output.
   property real edgeCueFalloff: 0.42

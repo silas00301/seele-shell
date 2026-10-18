@@ -198,6 +198,22 @@ impl Wallpapers {
             .to_owned()
     }
 
+    /// The image theme `id` is linked to, to picture it where it is listed:
+    /// the one mapped to the theme, its own, or the one mapped to its light or
+    /// dark mode, as for an output nothing is mapped for. The configured
+    /// wallpaper links no theme, since every theme shows it that has nothing
+    /// else, and an output's image belongs to that output rather than to the
+    /// theme.
+    pub fn linked(&self, id: &str, light: bool, own: Option<&str>) -> Option<String> {
+        let mode = if light { &self.light } else { &self.dark };
+        self.themes
+            .get(id)
+            .and_then(|theme| theme.image.as_deref())
+            .or(own)
+            .or(mode.as_deref())
+            .map(str::to_owned)
+    }
+
     /// What the publication of theme `id` carries. An output appears only
     /// when its image differs from the one every other output draws, so a
     /// mapping that changes nothing for this theme publishes no outputs.
@@ -329,6 +345,42 @@ mod tests {
         assert_eq!(
             chosen(&desk, "pictured", false, Some("/own.png")),
             ("/own.png".into(), vec![])
+        );
+    }
+
+    #[test]
+    fn a_theme_is_linked_to_its_own_image_or_one_mapped_to_it_or_its_mode() {
+        let empty = Wallpapers::default();
+        assert_eq!(
+            empty.linked("mocha", false, None),
+            None,
+            "the configured wallpaper links no theme"
+        );
+        assert_eq!(
+            empty.linked("pictured", false, Some("/own.png")).as_deref(),
+            Some("/own.png")
+        );
+        let desk = mapping(json!({
+            "dark": "/night.png",
+            "outputs": {"DP-1": {"image": "/wide.png"}},
+            "themes": {"nord": {"image": "/fjord.png"}, "latte": {"outputs": {"DP-1": "/latte-wide.png"}}},
+        }));
+        assert_eq!(
+            desk.linked("mocha", false, None).as_deref(),
+            Some("/night.png")
+        );
+        assert_eq!(
+            desk.linked("latte", true, None),
+            None,
+            "an output's image is that output's"
+        );
+        assert_eq!(
+            desk.linked("nord", false, Some("/own.png")).as_deref(),
+            Some("/fjord.png")
+        );
+        assert_eq!(
+            desk.linked("pictured", false, Some("/own.png")).as_deref(),
+            Some("/own.png")
         );
     }
 

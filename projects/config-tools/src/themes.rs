@@ -1,6 +1,7 @@
 //! One catalog, one durable selection, and generated app-only includes.
 use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
 use crate::material;
+use crate::picture;
 use crate::theme_contract;
 use crate::theme_folder::{self, BASE16_KEYS};
 use crate::wallpapers::Wallpapers;
@@ -366,6 +367,30 @@ impl Catalog {
         }
         theme_contract::check(&selection)?;
         Ok(selection)
+    }
+    /// The image each theme is linked to, by ID, for the pickers to show it
+    /// with (`Wallpapers::linked`). The documents stay as the theme wrote
+    /// them, so this is beside them; a theme linked to nothing, or to a file
+    /// that is not there or does not start as a PNG or a JPEG, is left out.
+    /// Like every ordinary read, this checks signatures only; `check` has
+    /// already decoded each mapped image when the catalog was installed.
+    fn linked(
+        &self,
+        documents: &[serde_json::Value],
+    ) -> serde_json::Map<String, serde_json::Value> {
+        self.themes
+            .iter()
+            .zip(documents)
+            .filter_map(|(theme, document)| {
+                let own = document["wallpaper"]
+                    .as_str()
+                    .filter(|image| !image.is_empty());
+                let image = self
+                    .wallpapers
+                    .linked(&theme.id, theme.mode == "light", own)?;
+                picture::signed(Path::new(&image)).then(|| (theme.id.clone(), image.into()))
+            })
+            .collect()
     }
     fn theme(&self, id: &str) -> Result<&Theme> {
         self.themes
@@ -1144,13 +1169,15 @@ pub fn main() -> Result {
     let mode = |value: &str| Mode::parse(value).ok_or("Mode must be dark or light");
     let reply = match args.as_slice() {
         ["list"] => {
+            let documents = catalog
+                .themes
+                .iter()
+                .map(|theme| theme.document(&catalog.font_family))
+                .collect::<Result<Vec<_>>>()?;
             serde_json::json!({
                 "current": selected(&state, &catalog)?,
-                "themes": catalog
-                    .themes
-                    .iter()
-                    .map(|theme| theme.document(&catalog.font_family))
-                    .collect::<Result<Vec<_>>>()?,
+                "wallpapers": catalog.linked(&documents),
+                "themes": documents,
                 "appearance": describe(&preferences(&state, &catalog)?, now()),
             })
         }

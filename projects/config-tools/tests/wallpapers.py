@@ -95,6 +95,19 @@ with tempfile.TemporaryDirectory(prefix="seele-wallpapers-") as temporary:
     # Listing describes themes, not this host: no document carries the mapping.
     assert all("wallpaperOutputs" not in theme for theme in call("list")["themes"])
     assert all("wallpaper" not in theme for theme in call("list")["themes"][:2])
+    # Beside the documents, each theme's linked image for the pickers to show:
+    # its mode's here, and the pictured folder its own. An output's image is
+    # that output's, and the configured wallpaper links nothing.
+    assert call("list")["wallpapers"] == {"catppuccin-mocha": night, "catppuccin-latte": day, "pictured": own}
+    unmapped = dict(catalog, wallpapers={"outputs": {"DP-1": {"image": wide}}})
+    catalog_file.write_text(json.dumps(unmapped))
+    assert call("list")["wallpapers"] == {"pictured": own}
+    # A linked file that is not there yet is not offered; the theme shows
+    # without a picture rather than with a broken one.
+    broken = dict(catalog, wallpapers={"light": str(root / "not-yet.png")})
+    catalog_file.write_text(json.dumps(broken))
+    assert call("list")["wallpapers"] == {"pictured": own}
+    catalog_file.write_text(json.dumps(catalog))
     assert not state.exists()
 
     # A dark theme takes the dark images, and each output its own.

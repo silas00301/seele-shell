@@ -28,7 +28,10 @@ any publication the shell keeps its `SEELE_SHELL_WALLPAPER` selection.
 `wallpaperFor(<output name>)` is the image an output draws, and
 `Palette.outputImages` and `Palette.imageFor` give the lock screen the same
 lookup. `Wallpaper.qml` draws it for each output's desktop background and keeps
-the picture on screen until the next has loaded. Without the contract file it falls back to
+the picture on screen until the next has loaded. `ThemePicture.qml` draws the
+image a theme is linked to in the switcher and the Themes gallery, cropped and
+clipped to its tile's corners by a Canvas, so every scene graph backend draws
+it. Without the contract file it falls back to
 `Palette.assign`.
 
 Every package copies the module beside its consumer. The desktop shell and Notes

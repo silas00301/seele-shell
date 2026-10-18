@@ -4,10 +4,10 @@ import QtQuick.Controls
 import "../shared" as Shared
 
 // A carousel of palettes, after Omarchy's: the chosen preset large in the
-// middle as a small desktop drawn in its own colours, its neighbours as narrow
-// slices fading off to either side, and its name beneath. Every preset is on
-// it, and moving switches the desktop at once, so the shell around the picker
-// repaints with each step.
+// middle as a small desktop drawn in its own colours over the wallpaper it is
+// linked to, its neighbours as narrow slices fading off to either side, and
+// its name beneath. Every preset is on it, and moving switches the desktop at
+// once, so the shell around the picker repaints with each step.
 //
 // A preset chosen here becomes the theme for its own mode and brings that mode
 // with it, so the switcher needs nothing else. Light, Dark or Auto, the
@@ -55,8 +55,9 @@ FocusScope {
     elide: Text.ElideRight
   }
 
-  // A preset shown as the thing it themes: the bar, a focused terminal carrying
-  // the accent on its border the way the compositor draws one and tmux's status
+  // A preset shown as the thing it themes: its linked wallpaper, if it has
+  // one, behind the bar, a focused terminal carrying the accent on its border
+  // the way the compositor draws one and tmux's status
   // line along its foot, a notification with an accent action, a switch that is
   // on, a slider in the accent and the preset's state colours. Every colour is one of the preset's own roles;
   // every measurement is material geometry for this one scene, scaled with the
@@ -85,6 +86,19 @@ FocusScope {
     color: scene.baseColor
     antialiasing: true
     clip: true
+
+    // Decoded for the full card, so the slide from a slice repaints it
+    // rather than decoding it again.
+    Shared.ThemePicture {
+      objectName: "wallpaper"
+      anchors.fill: parent
+      path: scene.preset.wallpaper || ""
+      sourceSize: Qt.size(panel.cardWidth, panel.cardHeight)
+      topLeftRadius: scene.radius
+      topRightRadius: scene.radius
+      bottomLeftRadius: scene.radius
+      bottomRightRadius: scene.radius
+    }
 
     Rectangle {
       id: bar
@@ -279,8 +293,8 @@ FocusScope {
   }
   // theme-contract: end
 
-  // A neighbour as a narrow strip of itself: its bar, a window wearing its
-  // accent border, and its state colours stacked beneath.
+  // A neighbour as a narrow strip of itself: its wallpaper, its bar, a window
+  // wearing its accent border, and its state colours stacked beneath.
   // theme-contract: artwork -- a neighbour drawn as a strip of its own desktop, scaled with the slice
   component Slice: Rectangle {
     id: slice
@@ -289,6 +303,16 @@ FocusScope {
     color: slice.preset.base
     antialiasing: true
     clip: true
+    // The centre card's decode, which this slice becomes when it is chosen.
+    Shared.ThemePicture {
+      anchors.fill: parent
+      path: slice.preset.wallpaper || ""
+      sourceSize: Qt.size(panel.cardWidth, panel.cardHeight)
+      topLeftRadius: slice.radius
+      topRightRadius: slice.radius
+      bottomLeftRadius: slice.radius
+      bottomRightRadius: slice.radius
+    }
     Rectangle {
       width: parent.width
       height: Math.round(parent.height * 0.08)
