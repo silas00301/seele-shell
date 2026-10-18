@@ -206,4 +206,4 @@ files below this exact flake's source root and modules directory, refuses traver
 and symlink escapes, and never maps an upstream source by a coincidental suffix.
 The editor's process replaces the helper. No build, switch, snapshot, network call,
 source write or package removal is part of inspection. Tests use synthetic catalogs,
-checkouts and editors; `tests/inspect.py` exercises the actual executable.
+checkouts and editors; `tests/inspector.py` exercises the actual executable.
