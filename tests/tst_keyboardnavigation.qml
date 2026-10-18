@@ -24,6 +24,15 @@ Item {
     Shared.ActionArea { width: 100; height: 30; x: 400; y: 400 }
   }
   TextField { id: query; x: 20; y: 20; width: 200; property bool keyboardSearch: true }
+  // A card that owns Escape for the field inside it, as the weather card does.
+  Item {
+    id: escapeOwner
+    x: 20; y: 400; width: 200; height: 40
+    visible: false
+    property int escapes: 0
+    Keys.onEscapePressed: escapes++
+    TextField { id: ownedField; anchors.fill: parent }
+  }
   Rectangle {
     x: 20; y: 80; width: 100; height: 40
     Shared.ActionArea {
@@ -155,6 +164,15 @@ Item {
       keyClick(Qt.Key_I)
       keyClick("j")
       compare(query.text, "hjkl/gij")
+    }
+    function test_escape_reaches_the_owning_ancestor() {
+      escapeOwner.visible = true
+      escapeOwner.escapes = 0
+      ownedField.forceActiveFocus()
+      keyClick(Qt.Key_Escape)
+      compare(escapeOwner.escapes, 1, "an ancestor's Escape handler sees a field's unhandled Escape")
+      verify(ownedField.activeFocus, "an accepted Escape does not also leave the field")
+      escapeOwner.visible = false
     }
     function test_leave_editor() {
       query.forceActiveFocus()

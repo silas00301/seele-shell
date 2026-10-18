@@ -208,11 +208,16 @@ bool Navigator::eventFilter(QObject *object, QEvent *event) {
   if (key->key() == Qt::Key_Escape && editing) {
     // Give the field's own Keys handler first refusal: a schedule field
     // reverts its draft, a password clears, and completion dismisses itself.
-    // Deliver to the item, not the window's application-wide shortcuts.
+    // Deliver to the item, not the window's application-wide shortcuts, and
+    // propagate to its ancestors as Qt Quick's own key delivery does: a card
+    // may own Escape for the search field inside it.
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, modifiers);
     escape.setAccepted(false);
     forwarding_ = true;
-    QCoreApplication::sendEvent(current, &escape);
+    for (QPointer<QQuickItem> item = current; item && !escape.isAccepted(); item = item->parentItem()) {
+      escape.accept();
+      QCoreApplication::sendEvent(item, &escape);
+    }
     forwarding_ = false;
     if (!escape.isAccepted()) {
       auto items = targets(window);

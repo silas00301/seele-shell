@@ -18,7 +18,7 @@ keyboard handling.
 | `Enter` / `Space` | Activate the focused action; existing controls keep their own Space behavior. |
 | `Menu` / `Shift+F10` | Secondary action on a custom target that accepts right-click. |
 | `Shift+Enter` | Middle-click action when the target has one. |
-| `Escape` / `q` | Leave the current view; Escape first gives an editor its own cancel/revert behavior, otherwise leaves text entry. |
+| `Escape` / `q` | Leave the current view; Escape first reaches an editor and the controls that contain it, as Qt delivers it, so their own cancel/revert behavior wins; unhandled, it leaves text entry. |
 
 Letters remain literal while editing, and Ctrl editing shortcuts remain intact.
 Passwords, completions and draft values retain their own Escape handlers.
