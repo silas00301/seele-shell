@@ -1,5 +1,6 @@
 # Theme folder registration end to end, as the flake builds it. Every folder
-# in themes/default.nix and the example and pictured fixtures register; they
+# in themes/default.nix, the template a new theme is copied from
+# (themes/AUTHORING.md) and the example and pictured fixtures register; they
 # then list beside a preset through the real helper, the pictured folder's own
 # wallpaper is published while it is selected and the configured image again
 # once a theme without one is; and each invalid fixture fails its own build,
@@ -12,11 +13,13 @@ let
   registered = themes.entries (import ../../themes);
   example = themes.entry (fixtures + "/example");
   pictured = themes.entry (fixtures + "/pictured");
+  template = themes.entry ../../themes/template;
   folders = [
     example
     pictured
   ]
-  ++ registered;
+  ++ registered
+  ++ [ template ];
   configured = "/etc/wallpaper/wallpaper.jpg";
   preset = {
     id = "catppuccin-mocha";

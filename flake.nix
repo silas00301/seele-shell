@@ -268,6 +268,31 @@
                 '';
               }
               {
+                name = "theme-check";
+                help = "Register theme folders as the build does and measure their colours; see themes/AUTHORING.md";
+                command = ''
+                  set -e
+                  cargo build --locked -q -p seele-config-tools --bin seele-theme
+                  node tests/theme-check.js --helper target/debug/seele-theme "$@"
+                '';
+              }
+              {
+                name = "theme-preview";
+                help = "Draw one theme folder on the shell's main surfaces into /tmp/seele-theme-preview/<id>";
+                command = ''
+                  set -e
+                  if [ "$#" -ne 1 ]; then
+                    echo "usage: theme-preview <id>, a folder that themes/default.nix lists" >&2
+                    exit 2
+                  fi
+                  cargo build --locked -q -p seele-config-tools --bin seele-theme
+                  ${pkgs.python3}/bin/python3 projects/config-tools/tests/theme_folders.py target/debug/seele-theme \
+                    tests/theme-folders tests/theme-snapshots/folders.json --update
+                  theme-snapshots --only "$1" --update --baseline /tmp/seele-theme-preview
+                  echo "/tmp/seele-theme-preview/$1"
+                '';
+              }
+              {
                 name = "test-shell";
                 help = "Run the Rust, JavaScript, and QML tests";
                 command = ''
@@ -324,6 +349,7 @@
                   node tests/shell-presentation.js projects/shell/shell.qml
                   node tests/palette.js projects/shared/Palette.js projects/shared/Theme.qml projects/lock/shell.qml projects/greeter/shell.qml projects/polkit/shell.qml
                   node tests/theme-contract.js projects
+                  node tests/theme-template.js
                   bash tests/palette.sh projects/shared tests/tst_palette.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
                   bash tests/palette.sh projects/shared tests/tst_behaviour.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
                   bash tests/palette.sh projects/shared tests/tst_motion.qml ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml

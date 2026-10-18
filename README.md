@@ -19,7 +19,7 @@ necessary Qt/host bindings, and validation boundaries.
 - `projects/markdown-core/` and `projects/markdown/`: Rust Markdown parsing and Qt document binding.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
-- `themes/`: drop-in theme folders, registered one line each in `themes/default.nix`.
+- `themes/`: drop-in theme folders, registered one line each in `themes/default.nix`; `themes/AUTHORING.md` writes a new one from `themes/template/`.
 - `tests/`: package install checks and focused behavior tests.
 
 Each directory under `projects/` owns one part of the desktop. The package
@@ -34,7 +34,10 @@ materials, motion, sound and wallpaper — with shared components beside it.
 `projects/shared/THEME-CONTRACT.md` explains it; `tests/theme-contract.js`
 fails on a styling literal anywhere else. A theme beyond the Base16 presets is a
 folder under `themes/` plus one line in `themes/default.nix` (`themes/README.md`);
-the build refuses an invalid or incomplete folder and names what it broke. A
+the build refuses an invalid or incomplete folder and names what it broke.
+`themes/AUTHORING.md` takes a new theme from the `themes/template/` folder to
+the switcher, with `theme-check` and `theme-preview` in the development shell
+to measure its colours and draw it on the main surfaces. A
 folder may carry its own wallpaper, which the desktop background and the lock
 screen draw while that theme is selected; the host's Nix configuration can map
 images per output and per light or dark theme, which `seele-theme` resolves and
