@@ -1,3 +1,6 @@
+#[path = "agents_capacity.rs"]
+mod capacity;
+
 use crate::command::{
     atomic_write, epoch, exec, home, json_output, output, partial_output, process_alive,
     state_home, timestamp,
@@ -701,12 +704,7 @@ pub fn state(_arguments: &[String]) -> Result {
         .collect();
     let subscriptions: Vec<Value> = usage.iter().map(|record| {
         let id = record.get("provider").or_else(|| record.get("source")).and_then(Value::as_str).unwrap_or("unknown");
-        let mut limits = Vec::new();
-        for (name, pointer) in [("Session", "/usage/primary"), ("Weekly", "/usage/secondary"), ("Additional", "/usage/tertiary")] {
-            if let Some(value) = record.pointer(pointer).filter(|value| value.get("usedPercent").is_some()) {
-                limits.push(json!({"name":name,"usedPercent":number(value.get("usedPercent")),"resetsAt":value.get("resetsAt").and_then(Value::as_str).unwrap_or(""),"resetDescription":value.get("resetDescription").and_then(Value::as_str).unwrap_or("")}));
-            }
-        }
+        let limits = capacity::limits(record);
         json!({"id":id,"name":display_name(id),"plan":record.pointer("/usage/loginMethod").or_else(|| record.get("plan")).and_then(Value::as_str).unwrap_or(""),"source":record.get("source").and_then(Value::as_str).unwrap_or("unavailable"),"limits":limits,"credits":record.pointer("/credits/remaining").cloned().unwrap_or(Value::Null)})
     }).collect();
     let result = json!({
