@@ -18,6 +18,7 @@ const end=source.indexOf('  // Notification popups',start);
 if(start<0 || end<start) throw Error('production notification list missing');
 fs.writeFileSync(process.argv[3],`import QtQuick
 import QtTest
+import Seele.Navigation
 import "notifications.js" as Notifications
 Item {
   id: root
@@ -54,6 +55,14 @@ Item {
   }
 ${source.slice(start,end)}
   NotificationList { id: list; anchors.fill: parent }
+  // The panel's own key path with the shared navigator installed, as in the
+  // shell: Vim keys must reach the cursor rather than move focus elsewhere.
+  Navigator {}
+  Item {
+    id: surface
+    focus: true
+    Keys.onPressed: event => { if (list.handleKey(event)) event.accepted = true }
+  }
   TestCase {
     name: "NotificationCursor"
     when: windowShown
@@ -79,6 +88,21 @@ ${source.slice(start,end)}
       tryCompare(list,"cursorId","5")
       list.resetCursor()
       compare(list.cursor.id,"")
+    }
+    function test_vim_keys_reach_the_cursor_through_the_navigator() {
+      root.systemData={notifications:{items:[{id:1,app_name:"Chat"},{id:2,app_name:"Chat"},{id:4,app_name:"Mail"}],history:[]}}
+      tryCompare(list,"count",2)
+      list.resetCursor()
+      surface.forceActiveFocus()
+      keyClick(Qt.Key_J)
+      compare(list.cursor.id,"1")
+      keyClick(Qt.Key_G, Qt.ShiftModifier)
+      compare(list.cursor.id,"4")
+      keyClick(Qt.Key_G)
+      keyClick(Qt.Key_G)
+      compare(list.cursor.id,"1")
+      verify(surface.activeFocus,"the panel keeps the keyboard")
+      list.resetCursor()
     }
   }
 }

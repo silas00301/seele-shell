@@ -11710,6 +11710,8 @@ Shared.Theme {
       PanelSurface {
         id: notificationSurface
         focus: notificationWindow.visible
+        // The cursor rings the selected card; the panel itself is not ringed.
+        property bool keyboardRing: false
         Keys.onPressed: event => {
           if (event.key === Qt.Key_Escape) {
             if (notificationWindow.quietMenuOpen) notificationWindow.quietMenuOpen = false

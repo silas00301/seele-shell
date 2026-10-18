@@ -11,7 +11,7 @@ keyboard handling.
 | `h j k l` / arrows | Move in the drawn direction; a level or timeline takes Left/Right to adjust. |
 | `Alt+h/j/k/l` | Move between controls, including out of an editor or level. |
 | `Tab` / `Shift+Tab` | Walk controls in reading order. Editors retain their own Tab/indent behavior. |
-| `gg` / `G` | First / last row in a list, or first / last control in a panel. |
+| `gg` / `G` | First / last row in a list; elsewhere offered as Home / End to the focused control and its panel, then the first / last control. |
 | `Ctrl+d` / `Ctrl+u` | Move half a page through a list or scrollable outside text entry. |
 | `/` | Focus the panel's search field. |
 | `i` | Focus the primary editor (the note body in Notes), or the first editable field. |
@@ -43,7 +43,8 @@ confirmation starts on Reject. That focus permission ends with the request.
 shares `onTriggered` between pointer and keyboard activation. Set
 `activateOnPress` for an action whose pointer timing is intentionally on press.
 Use `onKeyPressed` for additional keys without replacing its activation handler.
-Mark the primary editable input with `keyboardEdit: true` when `i` should enter
+A surface that draws its own keyboard selection sets `keyboardRing: false`
+so the shared ring does not outline it as well. Mark the primary editable input with `keyboardEdit: true` when `i` should enter
 it instead of an earlier search field; `/` follows `keyboardSearch` separately.
 If the parent already handles activation, keep one tab stop on that parent;
 secondary actions still need an explicit key or a separate focusable target.
