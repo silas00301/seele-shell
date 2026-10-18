@@ -2,11 +2,15 @@ const {nativeBridge, source: nativeSource} = require("./native-functions.cjs");
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict')
 const Activity=vm.createContext({Bridge: nativeBridge()})
 vm.runInContext(nativeSource(fs.readFileSync(process.argv[2],'utf8')),Activity)
-const values=[{id:'a',consumer:'fixture',label:'Safe label',state:'running',created:10,updated:11,model:'model',attempts:1,queueDuration:0,prompt:'secret',context:'secret',result:'secret'},
+const values=[{id:'a',consumer:'fixture',label:'Safe label',state:'running',created:10,updated:11,model:'model',selectionReason:'codex_quota_available',attempts:1,queueDuration:0,prompt:'secret',context:'secret',result:'secret'},
   {id:'b',state:'queued',created:10,updated:11},{id:'c',state:'failed',created:10,updated:11},{id:'d',state:'succeeded',created:10,updated:11}]
 const rows=Activity.rows(values,12)
 assert.deepEqual(Array.from(rows,j=>j.id),['a','b','c','d'])
 assert.ok(!JSON.stringify(rows).includes('secret'))
+assert.equal(rows[0].choice,'Codex capacity available')
+assert.equal(Activity.rows([{state:'failed',model:'claude:haiku',error:'authentication_unavailable',selectionReason:'codex_quota_exhausted'}],12)[0].choice,'Codex capacity exhausted; Claude fallback')
+assert.ok(Activity.rows([{state:'failed',model:'claude:haiku',error:'authentication_unavailable'}],12)[0].connectionHelp.includes('wallet'))
+assert.equal(Activity.rows([{state:'running',selectionReason:'secret'}],12)[0].choice,'')
 assert.deepEqual(Array.from(Activity.rows(values,17),j=>j.id),['a','b','c'])
 assert.equal(Activity.indicator(rows),'failed')
 assert.equal(Activity.indicator(rows.slice(0,2)),'active')
