@@ -98,6 +98,7 @@ let
     repo-tools = ''
       python3 projects/repo-tools/tests/fingerprint.py "$out/bin/seele-fingerprint"
       python3 projects/repo-tools/tests/archive_check.py "$out/bin/seele-archive-check" ${lib.getExe pkgs._7zz-rar}
+      python3 projects/repo-tools/tests/lock_graph.py "$out/bin/seele-lock-graph"
       python3 projects/repo-tools/tests/check.py "$out/bin/seele-check"
       python3 projects/repo-tools/tests/protocol.py "$out/bin"
       python3 projects/repo-tools/tests/pi_readonly.py "$out/bin/seele-pi-jj"
