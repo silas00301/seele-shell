@@ -48,6 +48,7 @@ fn transform(input: &str, mode: &str) -> Result<String, String> {
         return Err("NUL bytes are not supported in this text workbench.".into());
     }
     let output = match mode {
+        "csv-markdown" => csv_markdown(input)?,
         "json-format" | "json-minify" => json_layout(input, mode == "json-format")?,
         "url-encode" => percent_encoding::utf8_percent_encode(input, COMPONENT).to_string(),
         "url-decode" => {
@@ -104,6 +105,118 @@ fn transform(input: &str, mode: &str) -> Result<String, String> {
     }
     if output.contains('\0') {
         return Err("Decoded text contains a NUL byte and cannot be copied safely.".into());
+    }
+    Ok(output)
+}
+
+// Strict comma-separated records; quotes may occur only at the start of a
+// field and escaped quotes are doubled. Limits are independent of byte bounds.
+fn csv_markdown(input: &str) -> Result<String, String> {
+    if input.is_empty() {
+        return Err("Enter CSV with a header row.".into());
+    }
+    let mut chars = input.chars().peekable();
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut row = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut closed = false;
+    let mut ended = false;
+    while let Some(ch) = chars.next() {
+        ended = false;
+        if quoted {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    field.push('"');
+                } else {
+                    quoted = false;
+                    closed = true;
+                }
+            } else {
+                field.push(ch);
+            }
+            continue;
+        }
+        if ch == '"' && field.is_empty() && !closed {
+            quoted = true;
+            continue;
+        }
+        if ch == ',' || ch == '\n' || ch == '\r' {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            row.push(std::mem::take(&mut field));
+            closed = false;
+            if row.len() > 64 {
+                return Err("CSV has more than 64 columns.".into());
+            }
+            if ch != ',' {
+                rows.push(std::mem::take(&mut row));
+                if rows.len() > 1000 {
+                    return Err("CSV has more than 1,000 rows.".into());
+                }
+                ended = true;
+            }
+        } else if closed || ch == '"' {
+            return Err("Malformed CSV quoting. Double quotes inside a quoted field.".into());
+        } else {
+            field.push(ch);
+        }
+    }
+    if quoted {
+        return Err("Close the quoted CSV field.".into());
+    }
+    if !ended {
+        row.push(field);
+        rows.push(row);
+    }
+    if rows.len() > 1000 || rows[0].len() > 64 {
+        return Err("CSV exceeds 1,000 rows or 64 columns.".into());
+    }
+    let width = rows[0].len();
+    if rows.iter().any(|row| row.len() != width) {
+        return Err("Every CSV row must have the same number of columns.".into());
+    }
+    fn cell(text: &str) -> String {
+        let mut output = String::new();
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '&' => output.push_str("&amp;"),
+                '<' => output.push_str("&lt;"),
+                '>' => output.push_str("&gt;"),
+                '\r' | '\n' => {
+                    if ch == '\r' && chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
+                    output.push_str("<br>");
+                }
+                '\\' | '|' | '`' | '*' | '_' | '[' | ']' | '!' | '~' => {
+                    output.push('\\');
+                    output.push(ch);
+                }
+                _ => output.push(ch),
+            }
+        }
+        output
+    }
+    let mut output = String::new();
+    for (index, row) in rows.iter().enumerate() {
+        output.push_str("| ");
+        output.push_str(
+            &row.iter()
+                .map(|value| cell(value))
+                .collect::<Vec<_>>()
+                .join(" | "),
+        );
+        output.push_str(" |\n");
+        if index == 0 {
+            output.push_str(&format!("| {} |\n", vec!["---"; width].join(" | ")));
+        }
+        if output.len() > OUTPUT {
+            return Err("Result exceeds 256 KiB. Nothing was truncated.".into());
+        }
     }
     Ok(output)
 }
@@ -200,6 +313,37 @@ fn newline(output: &mut String, depth: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn csv_quotes_tables_and_bounds() {
+        assert_eq!(
+            transform(
+                "Name,Detail\r\n\"Grüße, 🦀\",\"two\nlines and \"\"quotes\"\"\"\r\n",
+                "csv-markdown"
+            )
+            .unwrap(),
+            "| Name | Detail |\n| --- | --- |\n| Grüße, 🦀 | two<br>lines and \"quotes\" |\n"
+        );
+        assert_eq!(
+            transform("a\n<script>&|*[]\\", "csv-markdown").unwrap(),
+            "| a |\n| --- |\n| &lt;script&gt;&amp;\\|\\*\\[\\]\\\\ |\n"
+        );
+        assert!(
+            transform("a\n~~deleted~~", "csv-markdown")
+                .unwrap()
+                .contains("\\~\\~deleted\\~\\~")
+        );
+        for input in ["", "a,b\nc", "a\"b", "\"a\"x", "\"a"] {
+            assert!(transform(input, "csv-markdown").is_err(), "{input}");
+        }
+        assert!(transform(&"a\n".repeat(1001), "csv-markdown").is_err());
+        assert!(transform(&vec!["a"; 65].join(","), "csv-markdown").is_err());
+        assert_eq!(
+            transform("a,b\n,", "csv-markdown").unwrap(),
+            "| a | b |\n| --- | --- |\n|  |  |\n"
+        );
+    }
+
     #[test]
     fn unicode_roundtrips_and_strict_binary_rejection() {
         for (encode, decode) in [
