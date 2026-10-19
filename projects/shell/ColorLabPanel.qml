@@ -197,8 +197,33 @@ FocusScope {
             Shared.FocusRing { anchors.fill: parent; theme: panel.theme; shown: swatch.visualFocus; radius: panel.theme.radiusSmall }
           }
           HoverHandler { cursorShape: Qt.PointingHandCursor }
-          ToolTip.visible: hovered
-          ToolTip.text: modelData.hex + " · " + modelData.ratioText
+          // The shell's HoverTip is a Quickshell popup this panel cannot host,
+          // so the swatch tip is a Controls ToolTip drawn in the same material.
+          ToolTip {
+            id: swatchTip
+            objectName: "swatchTip"
+            visible: swatch.hovered
+            text: swatch.modelData.hex + " · " + swatch.modelData.ratioText
+            x: (swatch.width - width) / 2
+            y: swatch.height + panel.theme.spaceTight
+            padding: panel.theme.spaceSmall
+            enter: null
+            exit: null
+            contentItem: Text {
+              text: swatchTip.text
+              color: panel.theme.text
+              font.family: panel.theme.fontFamily
+              font.pixelSize: panel.theme.textLabel
+            }
+            background: Rectangle {
+              radius: panel.theme.radiusSmall
+              color: panel.theme.panelColor
+              border.color: panel.theme.panelBorder
+              border.width: panel.theme.hairline
+              Shared.SurfaceWash { theme: panel.theme; radius: panel.theme.radiusSmall - panel.theme.hairline }
+              Shared.SurfaceEdge { theme: panel.theme; radius: panel.theme.radiusSmall - panel.theme.hairline }
+            }
+          }
         }
       }
     }

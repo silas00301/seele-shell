@@ -34,6 +34,21 @@ TestCase {
     panel.focusInput()
     wait(30)
   }
+  function test_swatch_tip_uses_the_theme() {
+    var swatch = findChild(panel, "swatch50")
+    verify(swatch !== null, "Missing the 50% swatch")
+    mouseMove(swatch, swatch.width / 2, swatch.height / 2)
+    var tip = findChild(swatch, "swatchTip")
+    verify(tip !== null)
+    tryCompare(tip, "visible", true)
+    verify(tip.text.indexOf(swatch.modelData.hex) === 0)
+    compare(tip.background.color, theme.panelColor)
+    compare(tip.background.radius, theme.radiusSmall)
+    compare(tip.contentItem.color, theme.text)
+    compare(tip.contentItem.font.pixelSize, theme.textLabel)
+    mouseMove(panel, 1, 1)
+    tryCompare(tip, "visible", false)
+  }
   function test_hue_units_wrap_and_copy() {
     panel.foreground = "hsl(-0.5turn 100% 50%)"
     compare(panel.result.foreground.hex, "#00ffff")
