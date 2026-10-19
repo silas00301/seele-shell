@@ -5,7 +5,9 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -m700 "$work/production" "$work/runtime"
 cp "$sources/QuickLookImage.qml" "$work/production/"
-cp -r "$sources/shared" "$work/production/"
+shared="$sources/shared"
+[[ -d "$shared" ]] || shared="$sources/../shared"
+cp -r "$shared" "$work/production/shared"
 sed -i 's|import "../shared" as Shared|import "shared" as Shared|' "$work/production/QuickLookImage.qml"
 python3 - "$work/production/shared/Theme.qml" <<'PY'
 import re,sys

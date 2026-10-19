@@ -3,9 +3,8 @@ import "../shared" as Shared
 
 // One decoded pixel per logical display pixel. Decode remains bounded even
 // for enormous source files; this is not an unlimited-resolution image editor.
-Flickable {
+Shared.SeeleFlickable {
   id: view
-  required property var theme
   property string source: ""
   property int sourceWidth: 0
   property int sourceHeight: 0
@@ -31,8 +30,10 @@ Flickable {
       return true
     }
     if (pixelMode && event.modifiers === Qt.AltModifier) {
-      var dx = event.key === Qt.Key_Left ? -64 : event.key === Qt.Key_Right ? 64 : 0
-      var dy = event.key === Qt.Key_Up ? -64 : event.key === Qt.Key_Down ? 64 : 0
+      // A quarter of the view per press, so a step is the same share of what
+      // is visible at any panel size or theme.
+      var dx = event.key === Qt.Key_Left ? -width / 4 : event.key === Qt.Key_Right ? width / 4 : 0
+      var dy = event.key === Qt.Key_Up ? -height / 4 : event.key === Qt.Key_Down ? height / 4 : 0
       if (dx || dy) { event.accepted = true; pan(dx, dy); return true }
     }
     return false
@@ -51,14 +52,30 @@ Flickable {
     sourceSize: view.pixelMode ? Qt.size(view.sourceWidth, view.sourceHeight)
       : Qt.size(Math.max(1, Math.round(view.width)), Math.max(1, Math.round(view.height)))
   }
-  Text {
+  // A 1:1 image can be dragged; say so where the pointer is.
+  HoverHandler { cursorShape: view.pixelMode ? (view.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.ArrowCursor }
+  // The picture under it can be any colour, so the mode carries its own
+  // material, as the PDF page counter does, rather than trusting the pixels.
+  Rectangle {
+    objectName: "quickLookImageMode"
     parent: view
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    text: view.pixelMode ? "1:1 pixels · Alt + arrows pan" : view.pixelsAvailable ? "Fit · Z for 1:1" : "Fit · 1:1 unavailable for this size or format"
-    textFormat: Text.PlainText
-    color: view.theme.subtext
-    font.family: view.theme.fontFamily
-    font.pixelSize: view.theme.textCaption
+    anchors.margins: view.theme.spaceMedium
+    width: modeLabel.implicitWidth + view.theme.spaceLarge * 2
+    height: view.theme.chipHeight - view.theme.spaceTight
+    radius: view.theme.radiusSmall
+    color: view.theme.floatColor
+    border.width: view.theme.hairline
+    border.color: view.theme.panelBorder
+    Text {
+      id: modeLabel
+      anchors.centerIn: parent
+      text: view.pixelMode ? "1:1 pixels · Alt + arrows pan" : view.pixelsAvailable ? "Fit · Z for 1:1" : "Fit · 1:1 unavailable for this size or format"
+      textFormat: Text.PlainText
+      color: view.theme.subtext
+      font.family: view.theme.fontFamily
+      font.pixelSize: view.theme.textCaption
+    }
   }
 }
