@@ -30,7 +30,11 @@ let
   python =
     if name == "integrations" then pkgs.python3.withPackages (ps: [ ps.aiohttp ]) else pkgs.python3;
   runtimeDependencies = {
-    broker = [ pkgs.codex pkgs.claude-code pkgs.libsecret ];
+    broker = [
+      pkgs.codex
+      pkgs.claude-code
+      pkgs.libsecret
+    ];
     maintenance = [
       pkgs.systemd
       pkgs.openssl
@@ -61,7 +65,6 @@ let
       python3 projects/tools/tests/sensors.py "$out/bin/seele-sensors"
       python3 projects/tools/tests/resources.py "$out/bin/seele-resources"
     '';
-    maintenance = ''SEELE_TEST_RESTIC=${lib.getExe pkgs.restic} python3 projects/maintenance/tests/restic_restore.py "${rawBin}/seele-restic-test"'';
     runtime = ''python3 projects/runtime/tests/github.py "$out/bin/seele-github-status"'';
     integrations = ''
       python3 projects/integrations/tests/hermes.py "$out/bin/seele-hermes"
@@ -80,7 +83,10 @@ let
       python3 projects/config-tools/tests/inspector.py "$out/bin/seele-inspect"
       python3 projects/config-tools/tests/inputs.py "$out/bin/seele-inputs"
     '';
-    maintenance = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+    maintenance = ''
+      SEELE_TEST_RESTIC=${lib.getExe pkgs.restic} python3 projects/maintenance/tests/restic_restore.py "${rawBin}/seele-restic-test"
+    ''
+    + lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
       python3 projects/maintenance/tests/restic_files.py "${rawBin}/seele-backup-files" "${lib.getExe pkgs.restic}"
       python3 projects/maintenance/tests/restore_ui.py "${rawBin}/seele-restore-file"
     '';
@@ -162,7 +168,18 @@ pkgs.rustPlatform.buildRustPackage {
       mkdir -p "$out/libexec/seele-desktop-tools"
       mv "$out/bin/seele-record" "$out/libexec/seele-desktop-tools/"
       makeWrapper "$out/libexec/seele-desktop-tools/seele-record" "$out/bin/seele-record" \
-        --prefix PATH : "${lib.makeBinPath [ pkgs.curl pkgs.ffmpeg pkgs.hyprland pkgs.pulseaudio pkgs.slurp pkgs.wf-recorder pkgs.wl-clipboard pkgs.zenity ]}"
+        --prefix PATH : "${
+          lib.makeBinPath [
+            pkgs.curl
+            pkgs.ffmpeg
+            pkgs.hyprland
+            pkgs.pulseaudio
+            pkgs.slurp
+            pkgs.wf-recorder
+            pkgs.wl-clipboard
+            pkgs.zenity
+          ]
+        }"
     ''
     + lib.optionalString wrapped ''
       mkdir -p "${rawBin}"
@@ -172,11 +189,10 @@ pkgs.rustPlatform.buildRustPackage {
         makeWrapper "${rawBin}/$executable" "$binary" \
           --prefix PATH : "${lib.makeBinPath (runtimeDependencies.${name})}" \
           --suffix PATH : /run/current-system/sw/bin \
-          ${lib.optionalString (
-            name == "broker"
-          ) ''--set-default SEELE_BROKER_CODEX "${lib.getExe pkgs.codex}" \
-          --set-default SEELE_BROKER_CLAUDE "${lib.getExe pkgs.claude-code}" \
-          --set-default SEELE_BROKER_SECRET_TOOL "${pkgs.libsecret}/bin/secret-tool"''}
+          ${lib.optionalString (name == "broker") ''
+            --set-default SEELE_BROKER_CODEX "${lib.getExe pkgs.codex}" \
+                      --set-default SEELE_BROKER_CLAUDE "${lib.getExe pkgs.claude-code}" \
+                      --set-default SEELE_BROKER_SECRET_TOOL "${pkgs.libsecret}/bin/secret-tool"''}
       done
     '';
   doInstallCheck = builtins.hasAttr name fixtures;
