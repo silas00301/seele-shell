@@ -49,6 +49,7 @@ fn transform(input: &str, mode: &str) -> Result<String, String> {
     }
     let output = match mode {
         "csv-markdown" => csv_markdown(input)?,
+        "jwt-inspect" => jwt_inspect(input)?,
         "json-format" | "json-minify" => json_layout(input, mode == "json-format")?,
         "url-encode" => percent_encoding::utf8_percent_encode(input, COMPONENT).to_string(),
         "url-decode" => {
@@ -221,6 +222,40 @@ fn csv_markdown(input: &str) -> Result<String, String> {
     Ok(output)
 }
 
+fn jwt_inspect(input: &str) -> Result<String, String> {
+    let parts = input.trim().split('.').collect::<Vec<_>>();
+    if parts.len() != 3 || parts[0].is_empty() || parts[1].is_empty() {
+        return Err("Enter one compact JWT with header, claims and signature segments.".into());
+    }
+    if parts.iter().any(|part| {
+        !part
+            .bytes()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'-')
+    }) {
+        return Err("JWT segments must use unpadded Base64url without whitespace.".into());
+    }
+    fn object(segment: &str) -> Result<String, String> {
+        let bytes = URL_SAFE_NO_PAD
+            .decode(segment)
+            .map_err(|_| "Invalid JWT Base64url segment.")?;
+        let text = String::from_utf8(bytes).map_err(|_| "JWT JSON is not UTF-8.")?;
+        if !text.trim_start().starts_with('{') {
+            return Err("JWT header and claims must be JSON objects.".into());
+        }
+        json_layout(&text, true)
+    }
+    let header = object(parts[0])?;
+    let claims = object(parts[1])?;
+    // Decode only to validate compact serialization. Never verify a signature,
+    // fetch a key, authorize an action, or include signature bytes in the view.
+    URL_SAFE_NO_PAD
+        .decode(parts[2])
+        .map_err(|_| "Invalid JWT signature encoding.")?;
+    Ok(format!(
+        "SIGNATURE NOT VERIFIED — decoded data is untrusted.\nNo key, issuer, audience or expiry validation has been performed.\n\nHeader\n{header}\n\nClaims\n{claims}"
+    ))
+}
+
 // Validate the grammar, then lay out the original tokens. Re-serializing a
 // serde_json::Value would silently round large integers and discard duplicate
 // object keys. This preserves every number, escape, key and string exactly.
@@ -341,6 +376,36 @@ mod tests {
         assert_eq!(
             transform("a,b\n,", "csv-markdown").unwrap(),
             "| a | b |\n| --- | --- |\n|  |  |\n"
+        );
+    }
+
+    #[test]
+    fn jwt_is_local_unverified_and_preserves_claim_lexemes() {
+        let token = format!(
+            "{}.{}.AA",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(r#"{"sub":"Grüße","n":9007199254740993,"sub":"duplicate"}"#)
+        );
+        let output = transform(&token, "jwt-inspect").unwrap();
+        assert!(output.starts_with("SIGNATURE NOT VERIFIED"));
+        assert!(output.contains("9007199254740993"));
+        assert_eq!(output.matches("\"sub\"").count(), 2);
+        for token in [
+            "a.b",
+            "a.b.c.d",
+            "e30=.e30.AA",
+            "e30.e30.A",
+            "W10.e30.AA",
+            "e30.W10.AA",
+            "e30.ew.AA",
+            "e30.e30.A A",
+        ] {
+            assert!(transform(token, "jwt-inspect").is_err(), "{token}");
+        }
+        assert!(
+            transform("e30.e30.", "jwt-inspect")
+                .unwrap()
+                .contains("No key")
         );
     }
 
