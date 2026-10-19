@@ -167,6 +167,13 @@ const panels: Entry[] = [
     keywords: ["temperature", "thermal", "fan", "hwmon"],
   },
   {
+    title: "File Shelf",
+    subtitle: "Collect files and text temporarily",
+    keywords: ["shelf", "collect", "stash", "clipboard", "attach"],
+    icon: Icon.Folder,
+    args: ["shelf"],
+  },
+  {
     title: "Transfers",
     subtitle: "Send files to personal devices and view received files",
     icon: Icon.Download,
