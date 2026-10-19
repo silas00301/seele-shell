@@ -21,12 +21,15 @@ with tempfile.TemporaryDirectory() as directory:
                     except OSError:break
         try:
             pump_until(lambda:b'scratch>' in output)
-            os.write(master,b'''printf '%s\\n' "$PWD" "$fish_private_mode" "$XDG_CONFIG_HOME" > "$SCRATCH_RECEIPT"; printf test > owned; ln -s "$SCRATCH_ORIGINAL" link\r''')
+            os.write(master,b'''printf '%s\\n' "$PWD" "$fish_private_mode" "$XDG_CONFIG_HOME" > "$SCRATCH_RECEIPT"; printf test > owned; ln -s "$SCRATCH_ORIGINAL" link; command sleep 300 & ; echo $last_pid > job; disown\r''')
             pump_until(lambda:receipt.exists() and len(receipt.read_text().splitlines())>=3)
             lines=receipt.read_text().splitlines();assert len(lines)>=3,lines
             workspace=Path(lines[0]);assert workspace.parent==temps and workspace.name.startswith('seele-scratch-')
             assert lines[1] and Path(lines[2]).is_relative_to(workspace)
-            pump_until(lambda:(workspace/'owned').exists())
+            pump_until(lambda:(workspace/'owned').exists() and (workspace/'job').exists() and (workspace/'job').read_text().strip())
+            # A disowned job in its own process group must not outlive the workspace.
+            job=int((workspace/'job').read_text())
+            os.kill(job,0)
             assert workspace.stat().st_mode&0o777==0o700
             assert (workspace/'owned').stat().st_mode&0o777==0o600
             if cancel:
@@ -35,9 +38,13 @@ with tempfile.TemporaryDirectory() as directory:
             pump_until(lambda:child.poll() is not None)
             code=child.wait(timeout=5);assert code==(1 if cancel else 7),(code,output[-3000:])
             assert not workspace.exists() and not list(temps.iterdir())
+            try:
+                os.kill(job,0); alive=Path(f'/proc/{job}/stat').read_text().split(') ')[1][0]!='Z'
+            except (ProcessLookupError,FileNotFoundError): alive=False
+            if sys.platform.startswith('linux'): assert not alive,'a session job outlived the scratch workspace'
             assert original.read_text()=='preserve me' and not list(parent.iterdir())
         finally:
             if child.poll() is None: child.kill();child.wait()
             os.close(master)
     session(False);session(True)
-print('scratch: actual Fish PTY, private mode, 0700/0600 ownership, XDG isolation, caller/original preservation, exit status and SIGTERM cleanup passed')
+print('scratch: actual Fish PTY, private mode, 0700/0600 ownership, XDG isolation, caller/original preservation, exit status, SIGTERM cleanup and job termination passed')
