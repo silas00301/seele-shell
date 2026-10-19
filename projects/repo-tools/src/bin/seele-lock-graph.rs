@@ -3,7 +3,7 @@ use serde_json::{json, Map, Value};
 use std::{
     collections::{HashMap, HashSet},
     fs::OpenOptions,
-    io::Read,
+    io::{Read, Write},
     os::unix::fs::OpenOptionsExt,
     path::PathBuf,
 };
@@ -161,32 +161,42 @@ fn run() -> Result<(), &'static str> {
     }
     let lock: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid lock JSON.")?;
     let projection = graph(&lock)?;
-    if as_json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&projection).map_err(|_| "Cannot format graph.")?
-        );
-    } else {
-        println!(
-            "Root: {} · {} nodes",
-            projection["root"].as_str().unwrap(),
-            projection["nodes"].as_array().unwrap().len()
-        );
-        if projection["cyclic"] == true {
-            println!("Dependency cycle present (valid topology)");
+    // A reader such as `head` may close the pipe early; that is not an error.
+    let mut out = std::io::stdout().lock();
+    match print(&mut out, &projection, as_json) {
+        Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => {
+            Err("Cannot write the graph.")
         }
-        for edge in projection["edges"].as_array().unwrap() {
-            println!(
+        _ => Ok(()),
+    }
+}
+fn print(out: &mut impl Write, projection: &Value, as_json: bool) -> std::io::Result<()> {
+    if as_json {
+        let text = serde_json::to_string_pretty(projection).map_err(std::io::Error::other)?;
+        writeln!(out, "{text}")?;
+    } else {
+        writeln!(
+            out,
+            "Root: {} · {} nodes",
+            projection["root"].as_str().unwrap_or(""),
+            projection["nodes"].as_array().map_or(0, Vec::len)
+        )?;
+        if projection["cyclic"] == true {
+            writeln!(out, "Dependency cycle present (valid topology)")?;
+        }
+        for edge in projection["edges"].as_array().into_iter().flatten() {
+            writeln!(
+                out,
                 "{}.{} → {}{}",
-                edge["source"].as_str().unwrap(),
-                edge["input"].as_str().unwrap(),
-                edge["target"].as_str().unwrap(),
+                edge["source"].as_str().unwrap_or(""),
+                edge["input"].as_str().unwrap_or(""),
+                edge["target"].as_str().unwrap_or(""),
                 if edge["follows"] == true {
                     " (follows)"
                 } else {
                     ""
                 }
-            );
+            )?;
         }
     }
     Ok(())
