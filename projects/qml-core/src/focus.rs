@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn elapsed_and_finish_follow_pause_resume_extension() {
-        let project = |state: &Value| call("progress", &[state.clone()]).unwrap();
+        let project = |state: &Value| call("progress", std::slice::from_ref(state)).unwrap();
         assert_eq!(project(&initial())["visible"], false);
         let started = update(&initial(), "start", 1000.0, json!(25));
         let ticking = update(&started, "tick", 61000.0, Value::Null);
