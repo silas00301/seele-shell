@@ -20,6 +20,13 @@ Item {
   readonly property alias area: editor
   readonly property alias caret: editor.cursorPosition
 
+  property var statistics: ({available: false, label: ""})
+  Timer {
+    id: statisticsTimer
+    interval: 200
+    onTriggered: editorRoot.statistics = Notes.statistics(editor.text)
+  }
+  Component.onCompleted: statisticsTimer.restart()
   signal edited(string text)
 
   function load(text, keepCaret) {
@@ -29,6 +36,9 @@ Item {
     editor.text = text
     guard.reported = text
     guard.loading = false
+    // Another note's counts must never show, even for one debounce.
+    statisticsTimer.stop()
+    editorRoot.statistics = Notes.statistics(text)
     if (keepCaret) {
       editor.cursorPosition = Math.min(position, editor.length)
       flick.contentY = Math.min(offset, Math.max(0, flick.contentHeight - flick.height))
@@ -115,6 +125,9 @@ Item {
       background: Item {}
 
       onTextChanged: {
+        // Typing keeps the last counts until the debounce recomputes them, so
+        // the caption never blinks out and the column never jumps.
+        statisticsTimer.restart()
         if (guard.loading || guard.reported === text) return
         guard.reported = text
         editorRoot.edited(text)

@@ -87,6 +87,18 @@ fn when(stamp: &Value, today: &Value, midnight: Option<&Value>) -> String {
 pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
     let null = Value::Null;
     match function {
+        "statistics" => {
+            let source = text(args.first());
+            if source.len() > 2 * 1024 * 1024 {
+                return Ok(json!({"available":false,"label":"Statistics unavailable above 2 MiB"}));
+            }
+            let words = source.split_whitespace().count();
+            let characters = source.chars().count();
+            return Ok(
+                json!({"available":true,"words":words,"characters":characters,
+                "label":format!("{words} {} · {characters} {}",if words == 1 {"word"} else {"words"},if characters == 1 {"character"} else {"characters"})}),
+            );
+        }
         "filter" => {
             let query = text(args.get(1)).to_lowercase();
             let words: Vec<_> = query
@@ -361,6 +373,16 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn current_editor_statistics_count_unicode_not_utf16() {
+        let stats = |source: &str| call("statistics", &[json!(source)]).unwrap();
+        assert_eq!(stats("Grüße\u{a0}🦀\n東京")["words"], 3);
+        assert_eq!(stats("Grüße\u{a0}🦀\n東京")["characters"], 10);
+        assert_eq!(stats("e\u{301}")["characters"], 2);
+        assert_eq!(stats("")["words"], 0);
+        assert_eq!(stats("x")["label"], "1 word · 1 character");
+        assert_eq!(stats(&"x".repeat(2 * 1024 * 1024 + 1))["available"], false);
+    }
     #[test]
     fn edits_preserve_utf16_ranges_and_never_split_surrogates() {
         let command = call("wrap", &[json!("🌸 café"), json!(3), json!(7), json!("**")]).unwrap();
