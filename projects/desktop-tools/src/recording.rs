@@ -542,17 +542,6 @@ pub fn run(cancel: &AtomicUsize) -> io::Result<()> {
     share(&final_path, cancel)?;
     Ok(())
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn ranges() {
-        assert_eq!(trim_range("0|1.5", 2.0), Some((0.0, 1.5)));
-        for text in ["NaN|1", "0|inf", "-1|1", "2|1", "0|3", "0|0.01", "0; rm|1"] {
-            assert!(trim_range(text, 2.0).is_none());
-        }
-    }
-}
 fn share(path: &Path, cancel: &AtomicUsize) -> io::Result<()> {
     let file = checked(path)?;
     if dialog(&["--question","--title=Share recording?","--text=Upload this recording to 0x0.st, a public third-party host? Anyone with the secret link can view it for 24 hours. Declining keeps the local file copied.","--ok-label=Upload","--cancel-label=Keep local"],cancel)?.is_none(){return Ok(())}
@@ -612,4 +601,15 @@ fn share(path: &Path, cancel: &AtomicUsize) -> io::Result<()> {
         return Err(io::Error::other("link clipboard unavailable"));
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ranges() {
+        assert_eq!(trim_range("0|1.5", 2.0), Some((0.0, 1.5)));
+        for text in ["NaN|1", "0|inf", "-1|1", "2|1", "0|3", "0|0.01", "0; rm|1"] {
+            assert!(trim_range(text, 2.0).is_none());
+        }
+    }
 }
