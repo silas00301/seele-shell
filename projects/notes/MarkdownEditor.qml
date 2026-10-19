@@ -36,6 +36,9 @@ Item {
     editor.text = text
     guard.reported = text
     guard.loading = false
+    // Another note's counts must never show, even for one debounce.
+    statisticsTimer.stop()
+    editorRoot.statistics = Notes.statistics(text)
     if (keepCaret) {
       editor.cursorPosition = Math.min(position, editor.length)
       flick.contentY = Math.min(offset, Math.max(0, flick.contentHeight - flick.height))
@@ -122,7 +125,8 @@ Item {
       background: Item {}
 
       onTextChanged: {
-        editorRoot.statistics = ({available: false, label: ""})
+        // Typing keeps the last counts until the debounce recomputes them, so
+        // the caption never blinks out and the column never jumps.
         statisticsTimer.restart()
         if (guard.loading || guard.reported === text) return
         guard.reported = text
