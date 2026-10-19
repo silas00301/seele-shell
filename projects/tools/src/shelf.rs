@@ -378,9 +378,17 @@ pub fn run() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The shelf only accepts a private runtime directory, as XDG_RUNTIME_DIR
+    // is; a default temporary directory follows the umask instead.
+    fn private_root() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir()
+            .unwrap()
+    }
     #[test]
     fn file_batches_are_atomic_deduplicated_and_never_deleted() {
-        let root = tempfile::tempdir().unwrap();
+        let root = private_root();
         let source = root.path().join("source.txt");
         fs::write(&source, "original").unwrap();
         let mut shelf = Shelf::new(root.path(), Arc::new(AtomicUsize::new(0))).unwrap();
@@ -398,7 +406,7 @@ mod tests {
     #[test]
     fn text_and_cleanup_are_private_bounded_and_temporary() {
         use std::os::unix::fs::PermissionsExt;
-        let root = tempfile::tempdir().unwrap();
+        let root = private_root();
         let path;
         {
             let mut shelf = Shelf::new(root.path(), Arc::new(AtomicUsize::new(0))).unwrap();
@@ -416,7 +424,7 @@ mod tests {
     }
     #[test]
     fn remote_uris_and_directories_are_refused() {
-        let root = tempfile::tempdir().unwrap();
+        let root = private_root();
         let mut shelf = Shelf::new(root.path(), Arc::new(AtomicUsize::new(0))).unwrap();
         for path in [
             "file://remote.example/file".to_owned(),

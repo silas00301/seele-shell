@@ -12,6 +12,9 @@ Column {
   property int cursor: 0
   property bool firstPrefix: false
   property string notice: ""
+  // The row cursor is this panel's keyboard selection; the shared ring would
+  // also be laid inside this Column, where an anchored child breaks layout.
+  property bool keyboardRing: false
   signal closeRequested()
   Timer { id: prefixTimer; interval: 800; onTriggered: panel.firstPrefix = false }
   signal previewRequested(string path)
@@ -23,7 +26,7 @@ Column {
   }
   Keys.onPressed: event => {
     if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_D || event.key === Qt.Key_U)) {
-      move((event.key === Qt.Key_D ? 1 : -1) * Math.max(1, Math.floor(list.height / (theme.controlHeight * 3.2))))
+      move((event.key === Qt.Key_D ? 1 : -1) * Math.max(1, Math.floor(list.height / (theme.detailRowHeight + theme.spaceSmall) / 2)))
       event.accepted = true; return
     }
     if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
@@ -61,12 +64,25 @@ Column {
     Shared.ActionButton { theme: panel.theme; text: "Add files"; onClicked: picker.open() }
     Shared.ActionButton { objectName: "shelfClipboard"; theme: panel.theme; text: "Collect clipboard text"; onClicked: panel.store.send({op:"clipboard"}) }
   }
+  // One row tall when empty and at most four rows before the list scrolls.
+  readonly property int rowPitch: theme.detailRowHeight + theme.spaceSmall
   Rectangle {
-    width: parent.width; height: Math.max(panel.theme.controlHeight * 2, Math.min(list.contentHeight, panel.theme.controlHeight * 7))
-    radius: panel.theme.radius; color: panel.theme.cardColor; border.color: drop.containsDrag ? panel.theme.accent : panel.theme.cardBorder
+    width: parent.width
+    height: Math.max(panel.rowPitch + panel.theme.spaceSmall, Math.min(list.contentHeight + panel.theme.spaceSmall * 2, panel.rowPitch * 4 + panel.theme.spaceSmall))
+    radius: panel.theme.radius; color: panel.theme.cardColor
+    Shared.CardEdge { theme: panel.theme }
+    // A drag over the shelf washes and outlines it in the accent, as a hover would.
+    Shared.HoverWash { theme: panel.theme; hovered: drop.containsDrag }
+    Rectangle {
+      anchors.fill: parent; radius: parent.radius; visible: drop.containsDrag
+      color: panel.theme.alpha(panel.theme.accent, 0); border.width: panel.theme.hairline; border.color: panel.theme.accent
+    }
     Text { anchors.centerIn: parent; visible: panel.store.items.length === 0; text: "Drop files or text here"; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
-    ListView {
+    Shared.SeeleListView {
       id: list
+      theme: panel.theme
+      // The panel owns the keyboard cursor; the list only scrolls.
+      activeFocusOnTab: false; keyNavigationEnabled: false
       anchors.fill: parent; anchors.margins: panel.theme.spaceSmall; clip: true
       model: rows; spacing: panel.theme.spaceSmall
       delegate: Rectangle {
@@ -75,14 +91,16 @@ Column {
         required property string shelfId
         required property var entry
         required property int index
-        width: list.width; height: panel.theme.controlHeight * 1.6; radius: panel.theme.radius
+        width: list.width; height: panel.theme.detailRowHeight; radius: panel.theme.radius
         color: entry.selected ? panel.theme.selectedColor : panel.theme.cardColor
         Accessible.role: Accessible.CheckBox
         Accessible.name: entry.name
         Accessible.checked: entry.selected
+        border.width: panel.theme.hairline
         border.color: entry.selected ? panel.theme.accent : panel.theme.cardBorder
+        Shared.HoverWash { theme: panel.theme; hovered: rowArea.containsMouse }
         Shared.FocusRing { theme: panel.theme; shown: panel.activeFocus && panel.cursor === row.index }
-        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.entry.image && row.entry.available; source: visible ? row.entry.uri : ""; sourceSize.width: 128; sourceSize.height: 128; fillMode: Image.PreserveAspectFit; asynchronous: true }
+        Image { id: thumbnail; x: panel.theme.spaceSmall; y: panel.theme.spaceSmall; width: parent.height - panel.theme.spaceSmall * 2; height: width; visible: row.entry.image && row.entry.available; source: visible ? row.entry.uri : ""; sourceSize.width: width; sourceSize.height: height; fillMode: Image.PreserveAspectFit; asynchronous: true }
         Column {
           x: thumbnail.visible ? thumbnail.x + thumbnail.width + panel.theme.spaceSmall : panel.theme.spaceLarge
           anchors.verticalCenter: parent.verticalCenter
@@ -90,9 +108,13 @@ Column {
           Text { width: parent.width; text: row.entry.name; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: row.entry.available ? panel.theme.text : panel.theme.red; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
           Text { width: parent.width; text: !row.entry.available ? "Original file is unavailable" : row.entry.caption || Math.ceil(row.entry.bytes / 1024) + " KiB"; textFormat: Text.PlainText; elide: Text.ElideRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textCaption }
         }
-        MouseArea {
+        Shared.ActionArea {
+          id: rowArea
           anchors.fill: parent
-          onClicked: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.entry.id}) }
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          activeFocusOnTab: false // The panel's own cursor selects rows from the keyboard.
+          onTriggered: { panel.cursor = row.index; panel.forceActiveFocus(); panel.store.send({op:"select",id:row.entry.id}) }
           onDoubleClicked: if (row.entry.available) panel.previewRequested(row.entry.path)
         }
       }
