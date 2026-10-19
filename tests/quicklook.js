@@ -200,3 +200,12 @@ state.fail("Reading this file timed out")
 assert.equal(state.error, "Reading this file timed out")
 assert.equal(state.loading, false)
 console.log("Quick Look request generations, key routing, playback and dismissal passed")
+
+state.items = [{kind: "image", path: "/files/image.png", width: 2000, height: 1000}]; state.index = 0; state.active = true;
+let imageKeys = 0;
+const imageBody = {imageKey(event) { imageKeys++; return event.key === 0x5a; }};
+press(0x5a, 0, imageBody);
+assert.equal(imageKeys, 1);
+press(state.Qt.Key_Space, 0, imageBody);
+assert.equal(state.active, false);
+assert.equal(imageKeys, 1, "Space must dismiss before image handling");

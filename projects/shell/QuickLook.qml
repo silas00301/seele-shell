@@ -180,6 +180,7 @@ Scope {
       if (!event.isAutoRepeat) close()
       return
     }
+    if (body && body.imageKey !== undefined && body.imageKey(event)) return
     if (event.modifiers & Qt.ControlModifier) {
       if (event.key === Qt.Key_C && !event.isAutoRepeat) copyPath()
       return
@@ -404,23 +405,21 @@ Scope {
       Component {
         id: pictureView
         Item {
-          Image {
+          property alias pixelMode: picture.pixelMode
+          function imageKey(event) { return picture.imageKey(event) }
+          QuickLookImage {
             id: picture
             anchors.fill: parent
             anchors.margins: preview.theme.cardPadding
+            theme: preview.theme
+            sourceWidth: preview.item ? Number(preview.item.width || 0) : 0
+            sourceHeight: preview.item ? Number(preview.item.height || 0) : 0
             source: preview.item ? QuickLook.url(String(preview.item.path || "")) : ""
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-            cache: false
-            // Both dimensions bound the decode, so an enormous photograph is
-            // scaled on the way in instead of after it is already in memory.
-            sourceSize.width: Math.max(1, Math.round(width))
-            sourceSize.height: Math.max(1, Math.round(height))
           }
           Shared.EmptyState {
             anchors.fill: parent
             theme: preview.theme
-            visible: picture.status === Image.Error
+            visible: picture.failed
             glyph: "󰀦"
             title: "This image cannot be drawn"
             detail: preview.summary.detail
