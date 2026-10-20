@@ -51,5 +51,11 @@
     "osd",
     "theme-switcher",
     "theme-settings"
-  ]
+  ],
+  "folders": {
+    "example": [
+      "theme-switcher",
+      "theme-settings"
+    ]
+  }
 }

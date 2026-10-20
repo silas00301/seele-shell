@@ -7,7 +7,7 @@ native_import=${4:?Seele QML import directory required}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/projects/shared" "$work/tests" "$work/home" "$work/config"
-cp "$shared"/*.qml "$shared"/*.js "$work/projects/shared/"
+cp "$shared"/*.qml "$shared"/*.js "$shared"/theme-contract.json "$work/projects/shared/"
 cp "$fixture" "$work/tests/tst_palette.qml"
 # Quickshell's executable-only plugins cannot load in qmltestrunner. Retain
 # production palette/material bindings, replacing only config IO and ShellRoot.
@@ -18,5 +18,7 @@ const source=fs.readFileSync(file,'utf8').split('  FileView {')[0]
   .replace(/Quickshell.env\("SEELE_SHELL_WALLPAPER"\) \|\| /,'');
 fs.writeFileSync(file,source+'}\n');
 JS
+# The fixture reads the contract the way Theme.qml's FileView would.
 HOME="$work/home" XDG_CONFIG_HOME="$work/config" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+  QML_XHR_ALLOW_FILE_READ=1 \
   qmltestrunner -import "$qt_import" -import "$native_import" -input "$work/tests/tst_palette.qml"

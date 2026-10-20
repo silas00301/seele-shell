@@ -25,6 +25,12 @@ from `projects/shell/shell.qml`:
 | `theme-switcher` | the floating theme switcher |
 | `theme-settings` | the Control Center's Themes panel |
 
+A drop-in theme folder is drawn too, where a registered theme has to appear:
+`folders.json` holds the example folder (`tests/theme-folders/example`) as
+`seele-theme list` gives it once registered, and it is rendered on
+`theme-switcher` and `theme-settings` only, with the catalog it joins. The
+presets' own snapshots keep the catalog of presets they were recorded with.
+
 The launcher is Vicinae, a separate application; its colours come from the
 Stylix-generated theme that the parent flake's `checks.theme-presets` compares
 byte for byte, so it is not captured here. The theme switcher is the shell's
@@ -40,8 +46,8 @@ and each surface's whole `PanelWindow` with only its layer placement removed
 and the rest -- are staged unchanged apart from their Quickshell imports, and
 the real `Seele.Core` plugin runs the native presentation and notification
 policy. `shared/Theme.qml` loses only its config IO, as in the other Qt
-fixtures; each theme reaches it through `Palette.assign`, the path
-`theme.json` takes.
+fixtures; each theme reaches its `applyTheme`, with the slots it would read
+from `theme-contract.json`, the path `theme.json` takes.
 
 What Quickshell owns is replaced by `fixture/`: inert `Process`, `FileView`,
 `Scope`, `StdioCollector` and `SplitParser` types, and Hyprland, Mpris, the

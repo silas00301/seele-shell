@@ -1,6 +1,7 @@
 //! One catalog, one durable selection, and generated app-only includes.
 use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
 use crate::theme_contract;
+use crate::theme_folder::{self, BASE16_KEYS};
 use crate::Result;
 use seele_runtime::{
     fs::{atomic_write, private_directory, read_bounded},
@@ -28,12 +29,14 @@ pub struct Theme {
     pub vicinae_theme: PathBuf,
     #[serde(default)]
     pub assets: BTreeMap<String, PathBuf>,
+    /// A drop-in theme folder's registered `theme.json` (`theme_folder`). A
+    /// preset has none: its document is projected from its Base16 palette.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<PathBuf>,
+    /// That document, once the catalog has read and checked it.
+    #[serde(skip)]
+    supplied: Option<serde_json::Map<String, serde_json::Value>>,
 }
-
-const BASE16_KEYS: [&str; 16] = [
-    "base00", "base01", "base02", "base03", "base04", "base05", "base06", "base07", "base08",
-    "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
-];
 
 // Quiet text has to stay readable. Base16 names `base04` and `base03` for dim
 // foregrounds, but schemes disagree on how dim: Catppuccin's Base16 file puts
@@ -131,6 +134,34 @@ struct Colors<'a> {
 impl Theme {
     fn colors(&self) -> Colors<'_> {
         let p = &self.palette;
+        let terminal = [
+            "base00", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base05",
+            "base03", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base07",
+        ]
+        .map(|key| p[key].as_str());
+        // A folder chose its roles itself; the terminal keeps its Base16 colours.
+        if let Some(document) = &self.supplied {
+            let role = |name: &str| {
+                document
+                    .get(name)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+            };
+            return Colors {
+                base: role("base"),
+                mantle: role("mantle"),
+                crust: role("crust"),
+                surface: role("surface"),
+                overlay: role("overlay").to_owned(),
+                text: role("text"),
+                subtext: role("subtext").to_owned(),
+                accent: role("accent"),
+                red: role("red"),
+                green: role("green"),
+                yellow: role("yellow"),
+                terminal,
+            };
+        }
         let text = foreground(p);
         Colors {
             base: &p["base00"],
@@ -156,11 +187,7 @@ impl Theme {
             red: &p["base08"],
             green: &p["base0B"],
             yellow: &p["base0A"],
-            terminal: [
-                "base00", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base05",
-                "base03", "base08", "base0B", "base0A", "base0D", "base0E", "base0C", "base07",
-            ]
-            .map(|key| p[key].as_str()),
+            terminal,
         }
     }
     /// The preset as a document of the theme contract
@@ -171,7 +198,20 @@ impl Theme {
     /// out, so it takes the contract's default, which is the look these presets
     /// were drawn with. A document that breaks a contract rule is refused here,
     /// before any surface can be given it.
+    ///
+    /// A drop-in theme is its folder's document instead, as registered: its
+    /// own roles and every slot it supplies, the configured typeface unless it
+    /// names one, and the terminal colours of its Base16 palette.
     fn document(&self, font_family: &str) -> Result<serde_json::Value> {
+        if let Some(document) = &self.supplied {
+            let mut value = serde_json::Value::Object(document.clone());
+            if document.get("fontFamily").is_none() {
+                value["fontFamily"] = font_family.into();
+            }
+            value["terminal"] = serde_json::to_value(self.colors().terminal)?;
+            theme_contract::check(&value)?;
+            return Ok(value);
+        }
         let mut value = serde_json::to_value(self)?;
         value
             .as_object_mut()
@@ -208,7 +248,7 @@ fn valid_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
 }
 impl Catalog {
-    fn validate(&self) -> Result {
+    fn validate(&mut self) -> Result {
         if self.version != 2 || self.themes.is_empty() || self.themes.len() > 32 {
             return Err("Invalid theme catalog".into());
         }
@@ -264,6 +304,17 @@ impl Catalog {
         }
         if self.tmux_theme.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err("Tmux theme must be absolute".into());
+        }
+        for theme in &mut self.themes {
+            if let Some(path) = &theme.document {
+                theme.supplied = Some(theme_folder::load(
+                    path,
+                    &theme.id,
+                    &theme.name,
+                    &theme.mode,
+                    &theme.palette,
+                )?);
+            }
         }
         // A catalog is accepted whole or not at all: every preset has to be a
         // valid theme document as it would be published.
@@ -961,7 +1012,7 @@ fn scheduled_wake(catalog: &Catalog, state: &Path, now: i64) -> Option<i64> {
         .map(|boundary| boundary.at)
 }
 fn catalog_file() -> Result<Catalog> {
-    let catalog: Catalog = serde_json::from_slice(&read_bounded(
+    let mut catalog: Catalog = serde_json::from_slice(&read_bounded(
         &xdg("XDG_CONFIG_HOME", ".config")?.join("seele-theme/catalog.json"),
         131072,
         false,
@@ -969,15 +1020,19 @@ fn catalog_file() -> Result<Catalog> {
     catalog.validate()?;
     Ok(catalog)
 }
-const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve";
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out>";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
         println!("{USAGE}");
         return Ok(());
     }
-    let state = xdg("XDG_STATE_HOME", ".local/state")?.join("seele-theme");
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Build time: no catalog, state or desktop is involved.
+    if let ["register", id, folder, out] = args.as_slice() {
+        return theme_folder::register(id, Path::new(folder), Path::new(out));
+    }
+    let state = xdg("XDG_STATE_HOME", ".local/state")?.join("seele-theme");
     if args == ["serve"] {
         return serve(&state);
     }

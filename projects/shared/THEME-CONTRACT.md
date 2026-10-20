@@ -8,9 +8,12 @@ its own, so a theme can restyle the shell without a code change.
 | File | Role |
 | --- | --- |
 | `theme-contract.json` | The schema: every slot with its group, type, default or derivation and description; the rules a theme document follows; the fallbacks; what counts as structure rather than style. |
-| `Theme.qml` | The one implementation. Every slot is a property here, in the same order and with the same default. |
+| `Theme.qml` | The one implementation. Every slot is a property here, in the same order and with the same default. Its `applyTheme` sets every suppliable slot from a published `theme.json`. |
+| `Contract.js` | Reads the slots a theme may supply out of the JSON at run time and decides each one between the theme's value and the default. |
 | `tests/theme-contract.js` | Holds the two to each other, validates theme documents, and fails on any styling literal outside the contract. |
 | `../config-tools/src/theme_contract.rs` | The same document rules in the theme helper, which embeds this JSON and refuses a preset that breaks them. |
+| `../config-tools/src/theme_folder.rs` | Registers a drop-in theme folder at build time, and holds a registered document to the same rules whenever the catalog is read. |
+| `../../themes/` | The drop-in theme folders, one line each in `default.nix`. |
 | `tests/theme-snapshots/` | Pixel baselines of every preset (SIL-232). A refactor of the contract proves it changed nothing there. |
 
 ## Slots
@@ -91,6 +94,56 @@ list` prints them for the pinned schemes. The pixel baselines are rendered from
 exactly those documents, `tests/theme-contract.js` checks each of them and its
 `theme.json` against the contract, and `config-tools/tests/themes.py` checks
 the helper's listing, its publication and its refusals.
+
+## Theme folders
+
+A theme that is not a Base16 preset is a folder: a `theme.json` and the files it
+names. Adding one is the folder and one line in `themes/default.nix`; no shell
+code changes. `themes/README.md` describes the folder. The document is a theme
+document as above, with three more rules, because the theme reaches the whole
+desktop and not only the shell:
+
+- It carries `palette`, the sixteen Base16 colours `base00` to `base0F` as
+  lowercase `#rrggbb`, the form Stylix writes back. The flake renders the
+  theme's GTK, Qt, KDE, Zen, Spicetify, Vicinae and Neovim themes from it, and
+  the terminal colours come from it.
+- Its palette roles are opaque `#rrggbb`, as the switcher and the applications
+  draw them. A folder chooses its roles itself; nothing is projected.
+- Its `id` is the folder's name. `terminal` and `version` are the helper's to
+  add, and `wallpaper` waits until a theme's own image is drawn.
+
+A `path` slot names a file relative to the folder, such as
+`"soundNotification": "sounds/ping.oga"`. The name has to stay inside the
+folder and lead to a file of at most 16 MiB.
+
+`seele-theme register <id> <folder> <out>` runs at build time
+(`packages/core/themes.nix`). It holds the folder to the contract and these
+rules, and writes the registered copy: the document with every named file
+resolved to its absolute path there, and those files. A folder that breaks a
+rule fails that build, and the message names the folder and every rule at once:
+
+```
+Seele Themes: Invalid theme folder example:
+  palette.base0F: missing
+  missing required slot accent
+  radius: "round" is not a int
+```
+
+The flake reads a folder's name, mode and Base16 palette while it evaluates, to
+render those application themes, so it refuses a folder missing one of them
+before anything else, in the same form. The catalog entry names the registered
+`theme.json`, and the helper holds that document to the same rules, and to the
+entry's identity and palette, whenever it reads the catalog. `list` publishes
+it as it was registered, plus the configured typeface unless it names one and
+the terminal colours of its palette; the selection adds `version` and the
+configured wallpaper as for a preset.
+
+`tests/theme-folders/` holds the example folder the checks register and the
+invalid folders each check refuses. `checks.theme-folders` builds every
+registered folder and the example, lists the example beside a preset, and
+proves each invalid fixture fails its own build with its message;
+`config-tools/tests/theme_folders.py` does the same through the CLI, and the
+pixel baselines draw the example in the switcher and the Themes panel.
 
 ## Optional slots and their fallbacks
 
@@ -175,10 +228,11 @@ The greeter, lock screen and polkit agent are separate scenes that take only
 the palette, through `Palette.js`; their own dimensions are outside this
 version of the contract.
 
-The shell applies the palette roles and `fontFamily` from `theme.json`, through
-`Palette.assign`, which is everything the existing presets supply. A theme that
-supplies other slots needs the shell to apply them as well, which comes with
-the first themes that do. Registering theme folders and failing invalid ones at
-build time is SIL-234, swapping wallpapers per theme is SIL-235, and playing
-the sound cues is SIL-240. Each builds on these rules: the contract says what a
-theme may set and what an omitted slot falls back to.
+The shell applies every slot a theme may supply from `theme.json`: Theme.qml's
+`applyTheme` sets each one to the theme's value or, where the theme leaves it
+out, the default, so a preset that follows a folder theme looks exactly as it
+always did. The pixel baselines run every preset through that same path. The
+wallpaper is the exception, since the publication fills it with the configured
+image; swapping wallpapers per theme is SIL-235, and playing the sound cues is
+SIL-240. Each builds on these rules: the contract says what a theme may set and
+what an omitted slot falls back to.

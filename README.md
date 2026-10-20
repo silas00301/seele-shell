@@ -19,6 +19,7 @@ necessary Qt/host bindings, and validation boundaries.
 - `projects/markdown-core/` and `projects/markdown/`: Rust Markdown parsing and Qt document binding.
 - `projects/greeter/`, `projects/lock/`, `projects/polkit/`: standalone shell surfaces and package definitions.
 - `projects/vicinae/`: Vicinae extension source.
+- `themes/`: drop-in theme folders, registered one line each in `themes/default.nix`.
 - `tests/`: package install checks and focused behavior tests.
 
 Each directory under `projects/` owns one part of the desktop. The package
@@ -31,7 +32,9 @@ read every styling value from — palette, type, shape, spacing, sizes,
 materials, motion, sound and wallpaper — with shared components beside it.
 `projects/shared/theme-contract.json` is its schema and
 `projects/shared/THEME-CONTRACT.md` explains it; `tests/theme-contract.js`
-fails on a styling literal anywhere else. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
+fails on a styling literal anywhere else. A theme beyond the Base16 presets is a
+folder under `themes/` plus one line in `themes/default.nix` (`themes/README.md`);
+the build refuses an invalid or incomplete folder and names what it broke. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
 ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients use the same `Palette.js` fallback and
 property assignment; their existing scene dimensions and motion remain local.

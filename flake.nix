@@ -25,6 +25,11 @@
       ];
 
       flake.lib.mkNativePackage = import ./packages/core/native.nix;
+      # Drop-in theme folders: `themeFolders` is the registered list
+      # (themes/default.nix), and `mkThemes { pkgs; configTools; }` turns a
+      # folder into its checked, registered catalog entry.
+      flake.lib.themeFolders = import ./themes;
+      flake.lib.mkThemes = import ./packages/core/themes.nix;
 
       perSystem =
         { system, config, ... }:
@@ -175,6 +180,10 @@
                   ${themeSnapshots ''"$grain"''}
                   touch "$out"
                 '';
+            theme-folders = import ./packages/core/theme-folders-check.nix {
+              inherit pkgs;
+              configTools = packages.config-tools;
+            };
           };
 
           treefmt = {

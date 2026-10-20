@@ -1,5 +1,6 @@
 // @imports@
 import QtTest
+import "shared/Contract.js" as Contract
 import "shared/Palette.js" as Palette
 
 // The snapshot scene. tests/theme-snapshots.js fills the markers from the
@@ -177,6 +178,10 @@ Shared.Theme {
 
     readonly property var themes: "@themes@"
     readonly property var surfaces: "@surfaces@"
+    // A theme folder is drawn only where a registered theme has to appear.
+    readonly property var folderSurfaces: "@folderSurfaces@"
+    // What Theme.qml reads from theme-contract.json before it applies a theme.
+    readonly property var slots: Contract.slots("@contract@")
     readonly property string output: "@output@"
     readonly property var components: ({
       "bar": barSurface, "control-center": controlCenterSurface, "notifications": notificationsSurface,
@@ -187,9 +192,12 @@ Shared.Theme {
     // Root state each surface resets, so one surface's state never leaks into the next.
     readonly property var idle: ({ controlPanel: "", osdOpen: false, osdKind: "volume", themesOpen: false })
 
-    // The catalog as `seele-theme list` reports it with this theme applied.
+    // The catalog as `seele-theme list` reports it with this theme applied. A
+    // theme folder joins the presets only while it is the one drawn, so the
+    // presets' own snapshots show exactly the catalog they were recorded with.
     function catalogFor(theme) {
-      var presets = themes.filter(function(entry) { return !entry.fallback })
+      var presets = themes.filter(function(entry) { return !entry.fallback && !entry.folder })
+      if (theme.folder) presets = presets.concat([theme])
       var current = theme.fallback ? "catppuccin-mocha" : theme.id
       var mode = theme.fallback ? "dark" : theme.mode
       return {
@@ -203,8 +211,9 @@ Shared.Theme {
     }
 
     function apply(theme) {
-      // The fallback is the shell before any theme is published.
-      Palette.assign(root, theme.fallback ? Palette.fallback : theme)
+      // The fallback is the shell before any theme is published. Every other
+      // theme arrives as theme.json does, through Theme.qml's applyTheme.
+      root.applyTheme(theme.fallback ? Palette.fallback : theme, slots)
       // The store as the shell starts with this theme, rather than as an
       // earlier row left it: an emptied catalog, the published selection,
       // then the helper's list.
@@ -230,7 +239,8 @@ Shared.Theme {
       var rows = []
       for (var i = 0; i < themes.length; i++)
         for (var j = 0; j < surfaces.length; j++)
-          rows.push({ tag: themes[i].id + "/" + surfaces[j].name, theme: themes[i], surface: surfaces[j] })
+          if (!themes[i].folder || folderSurfaces.indexOf(surfaces[j].name) >= 0)
+            rows.push({ tag: themes[i].id + "/" + surfaces[j].name, theme: themes[i], surface: surfaces[j] })
       return rows
     }
 

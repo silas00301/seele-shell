@@ -23,8 +23,13 @@ let
         ]
       ) crates
       # `seele-theme` checks every theme document against the shell's own
-      # theme contract, which it embeds at build time.
-      ++ lib.optional (name == "config-tools") ../../projects/shared/theme-contract.json
+      # theme contract, which it embeds at build time, and its fixtures
+      # register the theme folders the snapshot harness renders.
+      ++ lib.optionals (name == "config-tools") [
+        ../../projects/shared/theme-contract.json
+        ../../tests/theme-folders
+        ../../tests/theme-snapshots/folders.json
+      ]
     );
   };
   tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };
@@ -81,6 +86,8 @@ let
       python3 projects/config-tools/tests/catalog.py "$out/bin/seele-portable-apps"
       python3 projects/config-tools/tests/project_text.py "$out/bin/seele-project-text"
       python3 projects/config-tools/tests/themes.py "$out/bin/seele-theme"
+      python3 projects/config-tools/tests/theme_folders.py "$out/bin/seele-theme" \
+        tests/theme-folders tests/theme-snapshots/folders.json
       python3 projects/config-tools/tests/appearance.py "$out/bin/seele-theme"
       python3 projects/config-tools/tests/build_idle.py "$out/bin/seele-theme" "$out/bin/seele-build-idle"
       python3 projects/config-tools/tests/inspector.py "$out/bin/seele-inspect"

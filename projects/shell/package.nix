@@ -198,6 +198,8 @@ pkgs.stdenvNoCC.mkDerivation {
     install -m644 ${./FocusExitRim.qml} "$out/share/seele-shell/FocusExitRim.qml"
     mkdir -p "$out/share/seele-shell/shared"
     cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-shell/shared/"
+    # Theme.qml reads the theme contract beside it to apply a published theme.
+    install -m644 ${../shared/theme-contract.json} "$out/share/seele-shell/shared/theme-contract.json"
     ${tools}/bin/seele-grain "$out/share/seele-shell/shared/grain.png"
     substituteInPlace "$out/share/seele-shell/shell.qml" \
       --replace-fail 'import "../shared" as Shared' 'import "shared" as Shared'
@@ -428,6 +430,7 @@ pkgs.stdenvNoCC.mkDerivation {
       test -s "$out/share/vicinae/extensions/seele-shell/$command.js"
     done
     test -f "$out/share/seele-shell/shared/Palette.js"
+    test -f "$out/share/seele-shell/shared/theme-contract.json"
     node ${tests}/palette.js ${../shared/Palette.js} ${../shared/Theme.qml} \
       ${../lock/shell.qml} ${../greeter/shell.qml} ${../polkit/shell.qml}
     node ${tests}/theme-contract.js ${themeContractSources}

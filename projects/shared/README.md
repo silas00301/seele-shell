@@ -9,17 +9,26 @@ contract without changing a control's material or layout. See the
 [navigation guide](../navigation/README.md) for bindings, continuous gestures,
 text-entry boundaries, packaging and real Qt checks.
 
-`Palette.js` is the sole fallback palette and theme assignment module used by
-`Theme.qml`, lock, greeter and polkit. This small JavaScript file is required by
-Qt's property binding API; it runs no services, subprocesses or background work.
+`Palette.js` is the sole fallback palette and the theme assignment module used
+by lock, greeter and polkit. This small JavaScript file is required by Qt's
+property binding API; it runs no services, subprocesses or background work.
 Palette values match the original scenes exactly. Theme assignment retains
 existing values for missing/falsy keys, skips colors unused by a scene, and only
-applies wallpaper for the lock and greeter. The main shell retains its existing
-wallpaper environment selection. Greeter identity/session settings remain owned
-by the greeter.
+applies wallpaper for the lock and greeter. Greeter identity/session settings
+remain owned by the greeter.
+
+`Theme.qml` applies a published `theme.json` itself, through `applyTheme` and
+`Contract.js`: it reads `theme-contract.json` beside it once, then sets every
+slot a theme may supply to the theme's value or, where the theme leaves one out,
+the default, so nothing an earlier theme set outlives it. The wallpaper is not
+among them: the main shell retains its existing wallpaper environment selection.
+Without the contract file it falls back to `Palette.assign`.
 
 Every package copies the module beside its consumer. The desktop shell and Notes
-copy shared QML and JavaScript assets together. Native unit/protocol tests do not
+copy shared QML and JavaScript assets together, with `theme-contract.json`.
+`tests/tst_palette.qml` also applies themes through the real contract: supplied
+slots take effect, weights and easings arrive by name, a value of the wrong kind
+leaves the default, and a later theme restores every default. Native unit/protocol tests do not
 replace Qt checks: `tests/palette.js` fixes the original fallback/property
 contract, and `tests/tst_palette.qml` compares actual Qt-rendered default and
 updated color swatches, including their alpha values. Layout, derived material

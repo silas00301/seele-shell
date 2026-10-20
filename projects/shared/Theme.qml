@@ -1,4 +1,5 @@
 import QtQuick
+import "Contract.js" as Contract
 import "Palette.js" as Palette
 import Quickshell
 import Quickshell.Io
@@ -732,16 +733,55 @@ ShellRoot {
   // through the theme. The contract lists it as a member rather than a slot.
   property KeyboardNavigation keyboardNavigation: KeyboardNavigation { theme: root }
 
+  // A published theme sets every slot a theme may supply: its own value, or
+  // the default where it leaves one out, so nothing an earlier theme set
+  // outlives it. `slots` is Contract.slots of theme-contract.json.
+  function applyTheme(theme, slots) {
+    var values = Contract.values(slots, theme)
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i], value = values[slot.name]
+      root[slot.name] = slot.type === "weight" ? Font[value] : slot.type === "easing" ? Easing[value] : value
+    }
+  }
+
+  // The contract beside this file, read before any window maps. FileView takes
+  // a filesystem path and only drops a `file://` scheme, while a resolved URL
+  // still escapes `%`, `#` and `?`, so the path is decoded here.
+  FileView {
+    id: contractFile
+    path: decodeURIComponent(Qt.resolvedUrl("theme-contract.json").toString().replace(/^file:\/\//, ""))
+    blockLoading: true
+    printErrors: false
+    readonly property var slots: {
+      try {
+        return Contract.slots(JSON.parse(text()))
+      } catch (error) {
+        return null
+      }
+    }
+  }
+
   FileView {
     id: themeFile
     path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/seele-shell/theme.json"
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
+    // The text last applied: the reload below rereads an unchanged file.
+    property string applied: ""
     onLoaded: {
       try {
-        var theme = JSON.parse(text())
-        Palette.assign(root, theme)
+        var source = text()
+        if (source === applied) return
+        var theme = JSON.parse(source)
+        if (contractFile.slots && contractFile.slots.length > 0) {
+          root.applyTheme(theme, contractFile.slots)
+        } else {
+          // Without the contract only the palette and typeface can be applied.
+          console.warn("seele-shell/theme", "theme-contract.json is unavailable; applying the palette only")
+          Palette.assign(root, theme)
+        }
+        applied = source
       } catch (error) {
         console.warn("seele-shell/theme", error)
       }

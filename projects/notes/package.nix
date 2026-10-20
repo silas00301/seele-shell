@@ -30,6 +30,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p "$out/share/seele-notes/shared" "$out/bin" "$out/libexec"
     cp ${../shared}/*.qml ${../shared}/*.js "$out/share/seele-notes/shared/"
+    install -m644 ${../shared/theme-contract.json} "$out/share/seele-notes/shared/theme-contract.json"
     ${tools}/bin/seele-grain "$out/share/seele-notes/shared/grain.png"
     install -m644 ${./shell.qml} "$out/share/seele-notes/shell.qml"
     substituteInPlace "$out/share/seele-notes/shell.qml" \

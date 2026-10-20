@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Drop-in theme folders through the real CLI: registration, the catalog, publication.
+
+Usage: python3 theme_folders.py <seele-theme> <tests/theme-folders> <tests/theme-snapshots/folders.json> [--update]
+
+Registers the example folder and every folder under invalid/, then lists and
+publishes the example from a catalog beside a preset. The snapshot harness
+renders the documents in folders.json, so they must be exactly what the helper
+lists for the registered example; --update rewrites that file instead.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+binary = str(Path(sys.argv[1]).resolve())
+folders = Path(sys.argv[2]).resolve()
+snapshot = Path(sys.argv[3]).resolve()
+update = "--update" in sys.argv[4:]
+
+# Each invalid fixture, and every line its refusal has to name.
+refusals = {
+    "incomplete": [
+        "palette.base0F: missing",
+        "missing required slot accent",
+        "missing required slot yellow",
+    ],
+    "misnamed": ['id: "example" is not the folder\'s name'],
+    "unknown-slots": [
+        'accent: "#80f2aa4c" is translucent; a palette role is an opaque #rrggbb',
+        "panelColor: derived, so a theme cannot supply it",
+        'radius: "round" is not a int',
+        "sparkle: not a contract slot",
+    ],
+    "escaping-file": ['soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'],
+}
+
+with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
+    root = Path(temporary)
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(root)}
+
+    def run(*args, environment=env):
+        return subprocess.run([binary, *args], env=environment, capture_output=True, text=True, timeout=15)
+
+    def register(folder, out, name=None):
+        return run("register", name or folder.name, str(folder), str(out))
+
+    # The example registers as it is written: it names no file of its own.
+    example = folders / "example"
+    registered = root / "registered/example"
+    result = register(example, registered)
+    assert result.returncode == 0, result.stderr
+    source = json.loads((example / "theme.json").read_text())
+    document = json.loads((registered / "theme.json").read_text())
+    assert document == source
+    assert sorted(path.name for path in registered.iterdir()) == ["theme.json"]
+
+    # Every refusal names the folder and each rule it broke, and writes nothing.
+    for name, lines in refusals.items():
+        out = root / "refused" / name
+        result = register(folders / "invalid" / name, out)
+        assert result.returncode == 1, (name, result.stdout, result.stderr)
+        message = result.stderr.splitlines()
+        assert message[0] == f"Seele Themes: Invalid theme folder {name}:", result.stderr
+        for line in lines:
+            assert f"  {line}" in message, (name, line, result.stderr)
+        assert len(message) == len(lines) + 1, (name, result.stderr)
+        assert not out.exists(), name
+    result = register(root / "missing", root / "refused/missing")
+    assert result.returncode == 1 and "  no theme.json" in result.stderr, result.stderr
+    result = run("register", "example", str(example), "relative/out")
+    assert result.returncode == 1 and "absolute path" in result.stderr, result.stderr
+
+    # A file the folder names is copied into the registered copy and named by
+    # its absolute path there; an unnamed file stays behind.
+    sounding = root / "sounding"
+    (sounding / "sounds").mkdir(parents=True)
+    (sounding / "sounds/ping.oga").write_bytes(b"OggS")
+    (sounding / "draft.txt").write_text("not named\n")
+    (sounding / "theme.json").write_text(json.dumps(dict(source, id="sounding", soundNotification="sounds/ping.oga")))
+    out = root / "registered/sounding"
+    result = register(sounding, out)
+    assert result.returncode == 0, result.stderr
+    sounded = json.loads((out / "theme.json").read_text())
+    assert sounded["soundNotification"] == str(out / "sounds/ping.oga")
+    assert (out / "sounds/ping.oga").read_bytes() == b"OggS"
+    assert not (out / "draft.txt").exists()
+
+    # The catalog names the registered document beside a preset.
+    config = root / "config"
+    (config / "seele-theme").mkdir(parents=True)
+    launcher = root / "vicinae.toml"
+    launcher.write_text('[meta]\nname = "Fixture"\nvariant = "dark"\n')
+    preset_palette = {f"base{i:02X}": f"#{i * 4096:06x}" for i in range(16)}
+    preset = dict(id="catppuccin-mocha", name="Catppuccin Mocha", mode="dark", palette=preset_palette, vicinaeTheme=str(launcher))
+    entry = dict(id="example", name=source["name"], mode=source["mode"], palette=source["palette"],
+                 vicinaeTheme=str(launcher), document=str(registered / "theme.json"))
+    catalog = dict(version=2, default="catppuccin-mocha", fontFamily="Maple Mono NF CN",
+                   wallpaper="/test/background.jpg", themes=[preset, entry], commands={})
+    catalog_env = dict(env, XDG_CONFIG_HOME=str(config), XDG_STATE_HOME=str(root / "state"))
+
+    def call(*args, ok=True):
+        (config / "seele-theme/catalog.json").write_text(json.dumps(catalog))
+        result = run(*args, environment=catalog_env)
+        assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
+        return json.loads(result.stdout) if ok else result
+
+    listed = call("list")["themes"]
+    assert [theme["id"] for theme in listed] == ["catppuccin-mocha", "example"]
+    folder = listed[1]
+    # The folder's own document, as registered, plus the configured typeface
+    # and the terminal colours of its Base16 palette. Its roles are its own.
+    assert {key: value for key, value in folder.items() if key not in ("fontFamily", "terminal")} == document
+    assert folder["fontFamily"] == "Maple Mono NF CN"
+    assert folder["terminal"][0] == source["palette"]["base00"] and folder["terminal"][15] == source["palette"]["base07"]
+    assert folder["subtext"] == source["subtext"] != source["palette"]["base04"]
+    if update:
+        snapshot.write_text(json.dumps({"themes": [folder]}, indent=2, ensure_ascii=False) + "\n")
+    else:
+        assert json.loads(snapshot.read_text()) == {"themes": [folder]}, f"{snapshot} is not what seele-theme lists: run with --update"
+
+    # Publishing it gives the shell every slot it supplies, and the
+    # applications its roles.
+    call("set", "example")
+    state = root / "state/seele-theme"
+    selection = json.loads((state / "selection.json").read_text())
+    assert selection == dict(folder, version=2, wallpaper="/test/background.jpg"), selection
+    assert selection["radius"] == 14 and selection["radiusSmall"] == 10
+    ghostty = (state / "current/ghostty").read_text()
+    assert f"background = {source['base']}\n" in ghostty and f"foreground = {source['text']}\n" in ghostty
+    assert f"set -g fish_pager_color_description {source['subtext'][1:]}\n" in (state / "current/fish.fish").read_text()
+    assert (state / "current/vicinae.toml").read_bytes() == launcher.read_bytes()
+
+    # A folder that names its own typeface keeps it.
+    named = root / "named"
+    named.mkdir()
+    (named / "theme.json").write_text(json.dumps(dict(source, id="named", fontFamily="Example Sans")))
+    assert register(named, root / "registered/named").returncode == 0
+    catalog["themes"].append(dict(entry, id="named", document=str(root / "registered/named/theme.json")))
+    assert call("list")["themes"][2]["fontFamily"] == "Example Sans"
+    catalog["themes"].pop()
+
+    # The catalog is refused whole when an entry and its document disagree,
+    # or the document is gone, naming the theme.
+    catalog["themes"][1] = dict(entry, palette=dict(source["palette"], base00="#000000"))
+    result = call("list", ok=False)
+    assert "Invalid theme document example:\n  palette: not the catalog's" in result.stderr, result.stderr
+    catalog["themes"][1] = dict(entry, document=str(root / "missing.json"))
+    result = call("list", ok=False)
+    assert "Invalid theme document example:\n  its registered document cannot be read" in result.stderr, result.stderr
+    catalog["themes"][1] = dict(entry, document="theme.json")
+    assert "must be an absolute path" in call("list", ok=False).stderr
+    catalog["themes"][1] = entry
+    assert call("current")["id"] == "example"
+
+print(f"Theme folders: the example registers, lists and publishes; {len(refusals) + 2} refusals name every broken rule")

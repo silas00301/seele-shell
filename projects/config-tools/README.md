@@ -63,6 +63,17 @@ every document, and the selection each becomes, whenever the catalog is read; a
 single invalid preset refuses the whole catalog and names the document and the
 rule it broke.
 
+A drop-in theme folder (`themes/README.md`) is a catalog entry with a
+`document`: the `theme.json` that `seele-theme register <id> <folder> <out>`
+wrote at build time. `register` reads only the folder, holds it to the contract
+and to the folder rules in `src/theme_folder.rs` (the Base16 `palette`, opaque
+roles, the folder's name as `id`, named files inside the folder), copies the
+files it names into `<out>` and resolves their names there, or exits 1 naming the
+folder and every rule it broke without writing anything. Reading the catalog
+holds each registered document to the same rules and to its entry's identity and
+palette. Its roles and every slot it supplies are published as registered; the
+terminal colours still come from its Base16 palette.
+
 The selected preset's document, with the format `version` and the configured
 wallpaper, is stored in mode-0600
 `$XDG_STATE_HOME/seele-theme/selection.json`. Private generation directories
@@ -103,6 +114,11 @@ installed executable. It covers first use, read-only listing, preservation,
 concurrent switching/activation, invalid palettes, missing generated assets,
 legacy state migration, rollback, symlink boundaries
 and exact reload arguments against fake desktop tools.
+`python3 projects/config-tools/tests/theme_folders.py target/debug/seele-theme tests/theme-folders tests/theme-snapshots/folders.json`
+registers the example and every invalid fixture folder, resolves a named file,
+lists and publishes the example beside a preset, refuses a catalog whose entry
+and document disagree, and proves `folders.json`, which the pixel baselines
+render, is what the helper lists; `--update` rewrites that file.
 
 ### Light, dark and the schedule
 

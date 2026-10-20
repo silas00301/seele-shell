@@ -11,6 +11,7 @@ pub mod inputs;
 pub mod launch;
 
 pub mod theme_contract;
+pub mod theme_folder;
 pub mod themes;
 
 pub mod inspect;
