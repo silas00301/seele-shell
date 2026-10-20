@@ -8,18 +8,18 @@ Rectangle {
   property bool busy: false
   signal toggled()
 
-  implicitWidth: 40
-  implicitHeight: 22
-  opacity: enabled ? 1 : 0.42
+  implicitWidth: control.theme.switchWidth
+  implicitHeight: control.theme.switchHeight
+  opacity: enabled ? 1 : control.theme.unavailableOpacity
   radius: height / 2
   antialiasing: true
   // Off, the track is a well cut into the surface rather than a grey pill,
   // so an unset switch is quiet and a set one is the only lit thing in the
   // row.
-  color: switchMouse.pressed ? control.theme.alpha(control.checked ? control.theme.accent : control.theme.text, 0.6) : control.checked ? control.theme.accent : control.theme.wellColor
-  border.width: 1
+  color: switchMouse.pressed ? control.theme.alpha(control.checked ? control.theme.accent : control.theme.text, control.theme.switchPressedOpacity) : control.checked ? control.theme.accent : control.theme.wellColor
+  border.width: control.theme.hairline
   border.color: control.busy ? control.theme.accent
-    : switchMouse.containsMouse ? control.theme.alpha(control.theme.accent, 0.55)
+    : switchMouse.containsMouse ? control.theme.alpha(control.theme.accent, control.theme.switchHoverOpacity)
     : control.checked ? control.theme.clearColor : control.theme.edgeLight
 
   Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
@@ -27,15 +27,15 @@ Rectangle {
 
   Rectangle {
     visible: !control.busy
-    width: parent.height - 6
+    width: parent.height - control.theme.switchKnobInset * 2
     height: width
     radius: width / 2
-    y: 3
-    x: control.checked ? control.width - width - 3 : 3
-    color: control.checked ? control.theme.crust : control.theme.alpha(control.theme.text, 0.82)
+    y: control.theme.switchKnobInset
+    x: control.checked ? control.width - width - control.theme.switchKnobInset : control.theme.switchKnobInset
+    color: control.checked ? control.theme.crust : control.theme.alpha(control.theme.text, control.theme.switchKnobOpacity)
     antialiasing: true
 
-    Behavior on x { NumberAnimation { duration: control.theme.durationFast; easing.type: Easing.OutCubic } }
+    Behavior on x { NumberAnimation { duration: control.theme.durationFast; easing.type: control.theme.easingStandard } }
     Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
   }
 
@@ -43,8 +43,8 @@ Rectangle {
     theme: control.theme
     visible: control.busy
     anchors.centerIn: parent
-    width: 16
-    height: 16
+    width: control.theme.spinnerMedium
+    height: control.theme.spinnerMedium
     spinning: visible
     color: control.checked ? control.theme.crust : control.theme.text
     font.pixelSize: control.theme.textBody

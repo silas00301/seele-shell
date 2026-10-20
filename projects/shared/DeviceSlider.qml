@@ -53,21 +53,21 @@ Slider {
   background: Rectangle {
     radius: level.theme.radius
     color: level.theme.wellColor
-    border.width: 1
-    border.color: level.activeFocus ? level.theme.accent : level.theme.alpha(level.theme.text, 0.05)
+    border.width: level.theme.hairline
+    border.color: level.activeFocus ? level.theme.accent : level.theme.wellBorder
     clip: true
     antialiasing: true
     Rectangle {
       visible: level.hasSpectrum
       anchors.fill: parent
       radius: parent.radius
-      opacity: 0.28
+      opacity: level.theme.spectrumWellOpacity
       antialiasing: true
       gradient: Gradient {
         orientation: Gradient.Horizontal
-        GradientStop { position: 0; color: level.hasSpectrum ? level.spectrum[0] : "black" }
-        GradientStop { position: 0.5; color: level.hasSpectrum ? level.spectrum[1] : "black" }
-        GradientStop { position: 1; color: level.hasSpectrum ? level.spectrum[2] : "black" }
+        GradientStop { position: 0; color: level.hasSpectrum ? level.spectrum[0] : "transparent" }
+        GradientStop { position: 0.5; color: level.hasSpectrum ? level.spectrum[1] : "transparent" }
+        GradientStop { position: 1; color: level.hasSpectrum ? level.spectrum[2] : "transparent" }
       }
     }
     Rectangle {
@@ -82,16 +82,16 @@ Slider {
       // The fill is only part of the track, so its stops are the track's
       // colours at its own start, at the track's middle, and at its end.
       gradient: level.hasSpectrum ? levelSpectrum : null
-      opacity: level.hasSpectrum ? 0.62 : 1
+      opacity: level.hasSpectrum ? level.theme.spectrumFillOpacity : 1
       Gradient {
         id: levelSpectrum
         orientation: Gradient.Horizontal
-        GradientStop { position: 0; color: level.hasSpectrum ? level.spectrumAt(0) : "black" }
+        GradientStop { position: 0; color: level.hasSpectrum ? level.spectrumAt(0) : "transparent" }
         GradientStop {
           position: Math.min(1, 0.5 * levelFill.parent.width / Math.max(1, levelFill.width))
-          color: level.hasSpectrum ? level.spectrumAt(Math.min(0.5, levelFill.width / Math.max(1, levelFill.parent.width))) : "black"
+          color: level.hasSpectrum ? level.spectrumAt(Math.min(0.5, levelFill.width / Math.max(1, levelFill.parent.width))) : "transparent"
         }
-        GradientStop { position: 1; color: level.hasSpectrum ? level.spectrumAt(levelFill.width / Math.max(1, levelFill.parent.width)) : "black" }
+        GradientStop { position: 1; color: level.hasSpectrum ? level.spectrumAt(levelFill.width / Math.max(1, levelFill.parent.width)) : "transparent" }
       }
     }
     Text {

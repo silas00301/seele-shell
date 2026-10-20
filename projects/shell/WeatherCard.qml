@@ -69,7 +69,7 @@ FocusScope {
   visible: mode !== "unavailable"
   implicitHeight: visible ? (expanded ? unfoldedHeight : foldedHeight) : 0
   height: implicitHeight
-  Behavior on height { NumberAnimation { duration: card.theme.durationNormal; easing.type: Easing.OutCubic } }
+  Behavior on height { NumberAnimation { duration: card.theme.durationNormal; easing.type: card.theme.easingStandard } }
 
   // Escape steps back out one level: the search, then the unfolded card.
   Keys.onPressed: event => {
@@ -595,7 +595,7 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: card.theme.cardPadding
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: card.theme.spaceMicro
                 Text {
                   width: parent.width
                   text: result.modelData.name
@@ -689,8 +689,8 @@ FocusScope {
             theme: card.theme
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: card.theme.chipHeight - 4
-            implicitHeight: card.theme.chipHeight - 4
+            implicitWidth: card.theme.compactButtonSize
+            implicitHeight: card.theme.compactButtonSize
             visible: card.mode !== "no-place"
             enabled: !card.status.fetching
             glyph: card.status.fetching ? "" : "󰑐"

@@ -10,11 +10,11 @@ Rectangle {
   radius: panelSurface.theme.radius
   color: panelSurface.theme.panelColor
   border.color: panelSurface.theme.panelBorder
-  border.width: 1
+  border.width: panelSurface.theme.hairline
   antialiasing: true
 
-  SurfaceWash { theme: panelSurface.theme; radius: panelSurface.theme.radius - 1 }
+  SurfaceWash { theme: panelSurface.theme; radius: panelSurface.theme.radius - panelSurface.theme.hairline }
   SurfaceEdge { theme: panelSurface.theme;}
-  SurfaceGrain { theme: panelSurface.theme; inset: 3 }
+  SurfaceGrain { theme: panelSurface.theme; inset: panelSurface.theme.grainInset }
   HoverHandler { id: panelHover }
 }

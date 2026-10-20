@@ -1,5 +1,9 @@
 # Shared Qt scene components
 
+`Theme.qml` is the theme contract's implementation and `theme-contract.json`
+its schema; see `THEME-CONTRACT.md`. A component here takes `theme` and reads
+every colour, size, opacity and duration from it.
+
 `KeyboardNavigation.qml` and `ActionArea.qml` provide the shared keyboard
 contract without changing a control's material or layout. See the
 [navigation guide](../navigation/README.md) for bindings, continuous gestures,
@@ -19,7 +23,7 @@ copy shared QML and JavaScript assets together. Native unit/protocol tests do no
 replace Qt checks: `tests/palette.js` fixes the original fallback/property
 contract, and `tests/tst_palette.qml` compares actual Qt-rendered default and
 updated color swatches, including their alpha values. Layout, derived material
-colors and motion tokens remain owned by the existing scenes.
+colors and motion tokens are slots of the theme contract in `Theme.qml`.
 
 `HistoryChart.qml` renders bounded native histories without owning samples or
 policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`

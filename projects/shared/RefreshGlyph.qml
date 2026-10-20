@@ -37,7 +37,7 @@ Item {
       var context = getContext("2d")
       context.clearRect(0, 0, width, height)
       context.beginPath()
-      context.lineWidth = Math.max(1.5, width * 0.14)
+      context.lineWidth = Math.max(refreshGlyph.theme.spinnerStrokeMinimum, width * refreshGlyph.theme.spinnerStrokeRatio)
       context.lineCap = "round"
       context.strokeStyle = refreshGlyph.color
       context.arc(width / 2, height / 2, Math.max(1, width / 2 - context.lineWidth), -Math.PI / 2, Math.PI)
@@ -47,7 +47,7 @@ Item {
     NumberAnimation on rotation {
       from: 0
       to: 360
-      duration: 720
+      duration: refreshGlyph.theme.durationSpin
       loops: Animation.Infinite
       running: activitySpinner.visible
     }

@@ -25,7 +25,7 @@ TextField {
   background: Rectangle {
     radius: searchField.theme.radius
     color: searchField.theme.wellColor
-    border.width: 1
+    border.width: searchField.theme.hairline
     border.color: searchField.activeFocus ? searchField.theme.accent : searchField.theme.cardBorder
     antialiasing: true
 

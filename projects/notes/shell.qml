@@ -484,7 +484,7 @@ Shared.Theme {
                   anchors.fill: parent
                   radius: parent.radius
                   color: "transparent"
-                  border.width: 1
+                  border.width: root.hairline
                   border.color: root.accent
                   antialiasing: true
                 }
@@ -566,7 +566,7 @@ Shared.Theme {
 
             Rectangle {
               anchors.horizontalCenter: parent.horizontalCenter
-              width: 1
+              width: root.hairline
               height: parent.height
               color: grabHover.hovered || grab.drag.active ? root.accent : root.separatorColor
 

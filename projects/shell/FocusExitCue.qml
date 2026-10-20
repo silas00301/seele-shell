@@ -24,7 +24,7 @@ Item {
       from: 0
       to: 1
       duration: cue.theme.durationFast
-      easing.type: Easing.OutCubic
+      easing.type: cue.theme.easingStandard
     }
     PauseAnimation { duration: cue.theme.durationGlance }
     NumberAnimation {
@@ -32,7 +32,7 @@ Item {
       property: "strength"
       to: 0
       duration: cue.theme.durationSettle
-      easing.type: Easing.InCubic
+      easing.type: cue.theme.easingExit
     }
   }
 }

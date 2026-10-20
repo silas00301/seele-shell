@@ -6,7 +6,7 @@ Item {
   required property var theme
   property var samples: []
   property color tint: theme.accent
-  readonly property int bars: 40
+  readonly property int bars: theme.waveformBars
 
   function push(level) {
     var value = Number(level)
@@ -29,7 +29,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         radius: width / 2
         color: waveform.tint
-        opacity: 0.35 + 0.65 * (index + 1) / waveform.bars
+        opacity: waveform.theme.waveformFloorOpacity + waveform.theme.waveformRiseOpacity * (index + 1) / waveform.bars
         Behavior on height { NumberAnimation { duration: waveform.theme.durationFast } }
       }
     }

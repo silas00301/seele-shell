@@ -26,10 +26,12 @@ definition in `projects/shell/` combines the runtime tools. The greeter, lock,
 and polkit packages use `packages/core/` directly and do not import the main
 shell.
 
-`projects/shared/Theme.qml` owns the design tokens the shell and Notes read
-from — the type ramp, weights, tracking, spacing, control heights, elevation
-fills, surface edges, and the two motion durations — with shared
-components beside it. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
+`projects/shared/Theme.qml` implements the theme contract the shell and Notes
+read every styling value from — palette, type, shape, spacing, sizes,
+materials, motion, sound and wallpaper — with shared components beside it.
+`projects/shared/theme-contract.json` is its schema and
+`projects/shared/THEME-CONTRACT.md` explains it; `tests/theme-contract.js`
+fails on a styling literal anywhere else. The shell retains thin inline aliases to those components. `CenteredGlyph.qml` keeps icon
 ink centered inside fixed wells even when the font's advance width is uneven.
 The greeter, lock, and polkit clients use the same `Palette.js` fallback and
 property assignment; their existing scene dimensions and motion remain local.

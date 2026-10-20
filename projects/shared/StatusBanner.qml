@@ -19,7 +19,7 @@ Rectangle {
     statusBannerActions.implicitHeight
   ) + statusBanner.theme.spaceMedium * 2
   radius: statusBanner.theme.radius
-  color: statusBanner.theme.alpha(statusBanner.tint, 0.14)
+  color: statusBanner.theme.alpha(statusBanner.tint, statusBanner.theme.statusFillOpacity)
   antialiasing: true
 
   CardEdge { theme: statusBanner.theme }
@@ -47,7 +47,7 @@ Rectangle {
     anchors.right: statusBannerActions.left
     anchors.rightMargin: statusBannerActions.width > 0 ? statusBanner.theme.spaceMedium : 0
     anchors.verticalCenter: parent.verticalCenter
-    spacing: 1
+    spacing: statusBanner.theme.spaceLine
 
     Text {
       width: parent.width

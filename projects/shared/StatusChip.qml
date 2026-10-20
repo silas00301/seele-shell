@@ -14,9 +14,9 @@ Rectangle {
   implicitWidth: statusChipLabel.implicitWidth + statusChip.theme.spaceMedium * 2
   implicitHeight: statusChip.theme.chipHeight
   radius: statusChip.theme.radiusSmall
-  color: statusChip.theme.alpha(statusChip.tint, 0.14)
-  border.width: 1
-  border.color: statusChip.theme.alpha(statusChip.tint, 0.24)
+  color: statusChip.theme.alpha(statusChip.tint, statusChip.theme.statusFillOpacity)
+  border.width: statusChip.theme.hairline
+  border.color: statusChip.theme.alpha(statusChip.tint, statusChip.theme.statusBorderOpacity)
   antialiasing: true
 
   Behavior on color { ColorAnimation { duration: statusChip.theme.durationFast } }

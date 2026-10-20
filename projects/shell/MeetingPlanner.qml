@@ -180,7 +180,7 @@ FocusScope {
     Rectangle {
       visible: ribbon.cells.length === 0
       anchors.fill: parent
-      radius: 2
+      radius: panel.theme.meetingCellRadius
       color: panel.theme.wellColor
     }
     Repeater {
@@ -192,12 +192,12 @@ FocusScope {
         x: modelData.from / panel.dayMinutes * ribbon.width + panel.theme.hairline / 2
         width: Math.max(1, (modelData.to - modelData.from) / panel.dayMinutes * ribbon.width - panel.theme.hairline)
         height: ribbon.height
-        radius: 2
-        color: work ? panel.theme.alpha(panel.theme.accent, 0.34)
-          : modelData.kind === "edge" ? panel.theme.alpha(panel.theme.accent, 0.13) : panel.theme.wellColor
+        radius: panel.theme.meetingCellRadius
+        color: work ? panel.theme.alpha(panel.theme.accent, panel.theme.meetingWorkOpacity)
+          : modelData.kind === "edge" ? panel.theme.alpha(panel.theme.accent, panel.theme.meetingEdgeOpacity) : panel.theme.wellColor
         Text {
           anchors.centerIn: parent
-          visible: implicitWidth + 2 <= cell.width
+          visible: implicitWidth + panel.theme.spaceMicro <= cell.width
           text: cell.modelData.day || cell.modelData.label
           textFormat: Text.PlainText
           color: cell.modelData.day ? panel.theme.accent : cell.work ? panel.theme.text : panel.theme.subtext
@@ -214,15 +214,15 @@ FocusScope {
         required property var modelData
         readonly property real from: Math.max(0, panel.position(modelData.start, ribbon.width))
         x: from + panel.theme.hairline / 2
-        width: Math.max(2, Math.min(ribbon.width, panel.position(modelData.end, ribbon.width)) - from - panel.theme.hairline)
+        width: Math.max(panel.theme.meetingBlockMinimumWidth, Math.min(ribbon.width, panel.position(modelData.end, ribbon.width)) - from - panel.theme.hairline)
         height: ribbon.height
-        radius: 2
+        radius: panel.theme.meetingCellRadius
         // Google's colours arrive as strings; Qt.alpha takes either form.
-        color: Qt.alpha(modelData.color || panel.theme.accent, 0.72)
+        color: Qt.alpha(modelData.color || panel.theme.accent, panel.theme.meetingBusyOpacity)
         clip: true
         Text {
-          anchors { fill: parent; leftMargin: 3; rightMargin: 2 }
-          visible: block.width > 24
+          anchors { fill: parent; leftMargin: panel.theme.meetingBlockTextInset; rightMargin: panel.theme.meetingBlockTextTrailing }
+          visible: block.width > panel.theme.meetingBlockTitleMinimum
           verticalAlignment: Text.AlignVCenter
           text: block.modelData.title
           textFormat: Text.PlainText
@@ -238,7 +238,7 @@ FocusScope {
       visible: panel.day.past === true || panel.day.today === true
       width: panel.day.past ? ribbon.width : Math.max(0, ribbon.nowX)
       height: ribbon.height
-      color: panel.theme.alpha(panel.theme.crust, 0.45)
+      color: panel.theme.alpha(panel.theme.crust, panel.theme.meetingPastOpacity)
     }
     Rectangle {
       visible: panel.day.today === true
@@ -248,18 +248,18 @@ FocusScope {
       color: panel.theme.red
     }
     Rectangle {
-      x: panel.position(panel.selectedStart, ribbon.width) - 1
-      y: -2
-      width: Math.max(4, panel.selectedDuration / panel.dayMinutes * ribbon.width) + 2
-      height: ribbon.height + 4
-      radius: 3
-      color: panel.theme.alpha(panel.theme.accent, 0.12)
-      border.width: 2
+      x: panel.position(panel.selectedStart, ribbon.width) - panel.theme.meetingSelectionOverhang
+      y: -panel.theme.meetingBandOverhang
+      width: Math.max(panel.theme.meetingSelectionMinimumWidth, panel.selectedDuration / panel.dayMinutes * ribbon.width) + panel.theme.meetingSelectionOverhang * 2
+      height: ribbon.height + panel.theme.meetingBandOverhang * 2
+      radius: panel.theme.meetingSelectionRadius
+      color: panel.theme.activeTint
+      border.width: panel.theme.strokeStrong
       border.color: panel.theme.accent
       antialiasing: true
       Behavior on x {
         enabled: !panel.dragging
-        NumberAnimation { duration: panel.theme.durationFast; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: panel.theme.durationFast; easing.type: panel.theme.easingStandard }
       }
     }
   }
@@ -287,7 +287,7 @@ FocusScope {
         font.family: panel.theme.fontFamily
         font.pixelSize: panel.theme.textBody
         font.weight: panel.theme.weightStrong
-        Layout.maximumWidth: zoneRow.width * 0.4
+        Layout.maximumWidth: zoneRow.width * panel.theme.meetingLabelShare
         elide: Text.ElideRight
       }
       Caption { text: zoneRow.caption; Layout.fillWidth: true }
@@ -319,7 +319,7 @@ FocusScope {
     Keys.onEnterPressed: clicked()
     onClicked: { panel.select(modelData.start); panel.takeKeys() }
     contentItem: Column {
-      spacing: 1
+      spacing: panel.theme.spaceLine
       Row {
         spacing: panel.theme.spaceSmall
         Dot { anchors.verticalCenter: parent.verticalCenter; tint: panel.fitColor(choice.modelData.fit) }
@@ -530,13 +530,13 @@ FocusScope {
       width: parent.width
       label: "ZONES"
       Repeater {
-        model: [{tint: panel.theme.alpha(panel.theme.accent, 0.34), text: "Mon–Fri 09–17"},
-          {tint: panel.theme.alpha(panel.theme.accent, 0.13), text: "07–09 · 17–20"}]
+        model: [{tint: panel.theme.alpha(panel.theme.accent, panel.theme.meetingWorkOpacity), text: "Mon–Fri 09–17"},
+          {tint: panel.theme.alpha(panel.theme.accent, panel.theme.meetingEdgeOpacity), text: "07–09 · 17–20"}]
         Row {
           id: legend
           required property var modelData
           spacing: panel.theme.spaceTight
-          Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10; height: 8; radius: 2; color: legend.modelData.tint }
+          Rectangle { anchors.verticalCenter: parent.verticalCenter; width: panel.theme.meetingLegendWidth; height: panel.theme.meetingLegendHeight; radius: panel.theme.meetingCellRadius; color: legend.modelData.tint }
           Caption { text: legend.modelData.text; color: panel.theme.overlay }
         }
       }
@@ -554,11 +554,11 @@ FocusScope {
     width: parent.width
     height: Math.max(0, Math.min(contentHeight, panel.maximumHeight - controls.implicitHeight - footer.implicitHeight - panel.theme.panelSpacing * 2))
     contentWidth: width
-    contentHeight: rows.implicitHeight + 4
+    contentHeight: rows.implicitHeight + panel.theme.meetingBandOverhang * 2
     clip: true
     Column {
       id: rows
-      y: 2
+      y: panel.theme.meetingBandOverhang
       width: zones.width
       spacing: panel.theme.spaceMedium
       ZoneRow {
@@ -589,18 +589,18 @@ FocusScope {
     Rectangle {
       visible: grid.containsMouse && !grid.pressed && panel.ready
       x: panel.position(panel.startAt(grid.mouseX, grid.width), grid.width)
-      width: Math.max(4, panel.selectedDuration / panel.dayMinutes * grid.width)
-      height: rows.implicitHeight + 4
-      radius: 3
-      color: panel.theme.alpha(panel.theme.text, 0.05)
+      width: Math.max(panel.theme.meetingSelectionMinimumWidth, panel.selectedDuration / panel.dayMinutes * grid.width)
+      height: rows.implicitHeight + panel.theme.meetingBandOverhang * 2
+      radius: panel.theme.meetingSelectionRadius
+      color: panel.theme.quietWash
       border.width: panel.theme.hairline
-      border.color: panel.theme.alpha(panel.theme.accent, 0.4)
+      border.color: panel.theme.alpha(panel.theme.accent, panel.theme.meetingHoverBorderOpacity)
     }
     MouseArea {
       id: grid
       objectName: "meetingGrid"
       width: rows.width
-      height: rows.implicitHeight + 4
+      height: rows.implicitHeight + panel.theme.meetingBandOverhang * 2
       enabled: panel.ready
       hoverEnabled: true
       preventStealing: true

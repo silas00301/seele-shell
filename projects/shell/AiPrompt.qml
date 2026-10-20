@@ -550,8 +550,8 @@ Scope {
 
       screen: modelData
       visible: true
-      implicitWidth: Math.min(640, modelData.width - prompt.theme.panelMargin * 2)
-      implicitHeight: Math.min(570, modelData.height - prompt.theme.panelMargin * 2)
+      implicitWidth: Math.min(prompt.theme.promptWidth, modelData.width - prompt.theme.panelMargin * 2)
+      implicitHeight: Math.min(prompt.theme.promptMaximumHeight, modelData.height - prompt.theme.panelMargin * 2)
       exclusionMode: ExclusionMode.Ignore
       color: "transparent"
       mask: Region {
@@ -627,15 +627,15 @@ Scope {
               width: parent.width
               // The list sits under the field, in the scroll, so every match
               // stays reachable on a short output.
-              height: 112 + (prompt.completionOpen ? completionMenu.height + prompt.theme.spaceTight : 0)
+              height: prompt.theme.promptEditorHeight + (prompt.completionOpen ? completionMenu.height + prompt.theme.spaceTight : 0)
 
               Rectangle {
                 id: promptWell
                 width: parent.width
-                height: 112
+                height: prompt.theme.promptEditorHeight
                 radius: prompt.theme.radius
                 color: prompt.theme.wellColor
-                border.width: 1
+                border.width: prompt.theme.hairline
                 border.color: promptField.activeFocus ? prompt.theme.edgeCrown : prompt.theme.cardBorder
                 antialiasing: true
 
@@ -680,14 +680,14 @@ Scope {
                 anchors.topMargin: prompt.theme.spaceTight
                 radius: prompt.theme.radius
                 color: prompt.theme.floatColor
-                border.width: 1
+                border.width: prompt.theme.hairline
                 border.color: prompt.theme.panelBorder
                 antialiasing: true
                 implicitHeight: completionList.implicitHeight + prompt.theme.spaceTight * 2
                 height: implicitHeight
 
-                Shared.SurfaceEdge { theme: prompt.theme; radius: completionMenu.radius - 1 }
-                Shared.SurfaceGrain { theme: prompt.theme; inset: 3 }
+                Shared.SurfaceEdge { theme: prompt.theme; radius: completionMenu.radius - prompt.theme.hairline }
+                Shared.SurfaceGrain { theme: prompt.theme; inset: prompt.theme.grainInset }
 
                 Column {
                   id: completionList
@@ -819,7 +819,7 @@ Scope {
                   height: Math.max(prompt.theme.rowHeight, contextText.implicitHeight + prompt.theme.cardPadding * 2)
                   radius: prompt.theme.radiusSmall
                   color: prompt.theme.rowColor
-                  border.width: 1
+                  border.width: prompt.theme.hairline
                   border.color: prompt.theme.cardBorder
                   antialiasing: true
 
@@ -873,7 +873,7 @@ Scope {
                     }
                     Image {
                       width: parent.width
-                      height: 112
+                      height: prompt.theme.promptImageHeight
                       visible: contextRow.modelData.image !== ""
                       source: visible ? "file://" + contextRow.modelData.image : ""
                       fillMode: Image.PreserveAspectFit
@@ -923,11 +923,11 @@ Scope {
 
               Rectangle {
                 width: parent.width
-                height: prompt.answer !== "" ? 190 : 86
+                height: prompt.answer !== "" ? prompt.theme.promptAnswerHeight : prompt.theme.promptIdleHeight
                 radius: prompt.theme.radius
                 color: prompt.theme.cardColor
-                border.width: 1
-                border.color: prompt.error !== "" ? prompt.theme.alpha(prompt.theme.yellow, 0.3) : prompt.theme.cardBorder
+                border.width: prompt.theme.hairline
+                border.color: prompt.error !== "" ? prompt.theme.warningBorder : prompt.theme.cardBorder
                 antialiasing: true
 
                 Row {

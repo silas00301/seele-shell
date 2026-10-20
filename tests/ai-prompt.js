@@ -69,7 +69,7 @@ assert.ok(open.indexOf("active = true") < open.indexOf('send({ command: "open"')
 for (const [feature, pattern] of Object.entries({
   "model-free resident helper": /Process\s*\{\s*id: worker\s*command: \["seele-ai-prompt-worker"\]\s*running: true/,
   "active-output pin": /prompt\.screenName === modelData\.name/,
-  "centered layer surface": /implicitWidth: Math\.min\(640,[\s\S]*WlrLayershell\.namespace: "seele-shell-prompt"/,
+  "centered layer surface": /implicitWidth: Math\.min\(prompt\.theme\.promptWidth,[\s\S]*WlrLayershell\.namespace: "seele-shell-prompt"/,
   "immediate keyboard focus": /WlrLayershell\.keyboardFocus: panelActive \? WlrKeyboardFocus\.Exclusive : WlrKeyboardFocus\.None/,
   "caret reclaimed when the compositor grants focus": /onActiveFocusChanged: if \(activeFocus && panelActive && !promptField\.activeFocus\) promptField\.forceActiveFocus\(\)/,
   "one-time clipboard permission": /Ai.has\(permissionContexts, "clip"\).*"Allow once"/,
@@ -80,7 +80,7 @@ for (const [feature, pattern] of Object.entries({
   "stale context rejection": /!acceptsContext\(String\(message\.kind \|\| ""\), Number\(message\.token \|\| 0\)\)/,
   "answer-only response card": /label: "ANSWER"/,
   "mention completion list": /id: completionMenu/,
-  "completion stays in the scroll": /height: 112 \+ \(prompt\.completionOpen \? completionMenu\.height \+ prompt\.theme\.spaceTight : 0\)/,
+  "completion stays in the scroll": /height: prompt\.theme\.promptEditorHeight \+ \(prompt\.completionOpen \? completionMenu\.height \+ prompt\.theme\.spaceTight : 0\)/,
   "completion keeps the field focused": /onClicked: \{\n\s*prompt\.acceptMention\(completionRow\.modelData\.kind\)\n\s*promptField\.forceActiveFocus\(\)/,
 })) assert.ok(pattern.test(qml), `${feature} is missing from AiPrompt.qml`)
 

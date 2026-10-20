@@ -13,7 +13,7 @@ Item {
   property color detailColor: panelHeader.theme.subtext
   default property alias trailing: panelHeaderTrailing.data
 
-  height: panelHeader.detail !== "" ? 42 : panelHeader.theme.panelHeaderHeight
+  height: panelHeader.detail !== "" ? panelHeader.theme.panelHeaderDetailHeight : panelHeader.theme.panelHeaderHeight
 
   // The panel's mark sits in a tinted well rather than loose on the
   // material. The well is what carries the weight in the row, so the glyph
@@ -25,12 +25,12 @@ Item {
 
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: panelHeader.theme.chipHeight - 2
+    width: panelHeader.theme.panelHeaderMarkSize
     height: width
     radius: panelHeader.theme.radiusSmall
-    color: panelHeader.theme.alpha(panelHeader.theme.accent, 0.1)
-    border.width: 1
-    border.color: panelHeader.theme.alpha(panelHeader.theme.accent, 0.22)
+    color: panelHeader.theme.markWell
+    border.width: panelHeader.theme.hairline
+    border.color: panelHeader.theme.markWellBorder
     antialiasing: true
 
     CenteredGlyph {
@@ -54,7 +54,7 @@ Item {
     anchors.right: panelHeaderTrailing.left
     anchors.rightMargin: panelHeaderTrailing.width > 0 ? panelHeader.theme.spaceLarge : 0
     anchors.verticalCenter: parent.verticalCenter
-    spacing: 1
+    spacing: panelHeader.theme.spaceLine
 
     Text {
       width: parent.width

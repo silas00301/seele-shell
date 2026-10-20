@@ -7,18 +7,18 @@ Rectangle {
   anchors.fill: parent
   radius: cardEdge.theme.radius
   color: "transparent"
-  border.width: 1
+  border.width: cardEdge.theme.hairline
   border.color: cardEdge.theme.cardBorder
   antialiasing: true
 
   Rectangle {
     anchors.top: parent.top
-    anchors.topMargin: 1
+    anchors.topMargin: cardEdge.theme.hairline
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.leftMargin: cardEdge.radius
     anchors.rightMargin: cardEdge.radius
-    height: 1
+    height: cardEdge.theme.hairline
     color: cardEdge.theme.edgeLight
   }
 }

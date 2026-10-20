@@ -9,7 +9,7 @@ ScrollBar {
 
   policy: ScrollBar.AsNeeded
   implicitWidth: scrollBar.theme.scrollGutter
-  padding: 2
+  padding: scrollBar.theme.scrollPadding
   opacity: popupHovered || pressed ? 1 : 0
   enabled: popupHovered || pressed
   visible: policy !== ScrollBar.AlwaysOff && (policy === ScrollBar.AlwaysOn || size < 1)
@@ -18,13 +18,13 @@ ScrollBar {
   z: 2
   // A list of every timezone would otherwise grind the handle down to a few
   // pixels.
-  minimumSize: height > 0 ? Math.min(0.5, 36 / height) : 0
+  minimumSize: height > 0 ? Math.min(scrollBar.theme.scrollThumbShareLimit, scrollBar.theme.scrollThumbMinimum / height) : 0
 
   background: Item {}
   contentItem: Rectangle {
-    implicitWidth: scrollBar.theme.scrollGutter - 4
+    implicitWidth: scrollBar.theme.scrollThumbWidth
     radius: width / 2
     opacity: 1
-    color: scrollBar.theme.alpha(scrollBar.theme.text, scrollBar.pressed ? 0.6 : 0.32)
+    color: scrollBar.theme.alpha(scrollBar.theme.text, scrollBar.pressed ? scrollBar.theme.scrollThumbPressedOpacity : scrollBar.theme.scrollThumbOpacity)
   }
 }

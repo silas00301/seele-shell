@@ -36,7 +36,7 @@ Button {
       anchors.fill: parent
       radius: parent.radius
       color: button.theme.clearColor
-      border.width: 1
+      border.width: button.theme.hairline
       border.color: button.visualFocus ? button.theme.accent : button.theme.alpha(button.theme.accent, 0)
       antialiasing: true
     }

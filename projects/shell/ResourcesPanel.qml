@@ -275,7 +275,7 @@ FocusScope {
                 Caption { text: row.entry.pid + " · " + row.entry.state }
               }
               Text { id: cpuValue; width: panel.theme.levelValueWidth; anchors.verticalCenter: parent.verticalCenter; text: panel.percent(row.entry.cpu); horizontalAlignment: Text.AlignRight; color: panel.theme.accent; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
-              Text { id: memoryValue; width: panel.theme.levelValueWidth * 1.5; anchors.verticalCenter: parent.verticalCenter; text: panel.bytes(row.entry.rss); horizontalAlignment: Text.AlignRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
+              Text { id: memoryValue; width: panel.theme.memoryValueWidth; anchors.verticalCenter: parent.verticalCenter; text: panel.bytes(row.entry.rss); horizontalAlignment: Text.AlignRight; color: panel.theme.subtext; font.family: panel.theme.fontFamily; font.pixelSize: panel.theme.textBody }
             }
             HoverHandler { id: rowHover }
             Shared.ActionArea { id: rowMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onTriggered: { processes.currentIndex = row.index; panel.store.select(row.entry.id) } }

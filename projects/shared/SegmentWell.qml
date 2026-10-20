@@ -13,14 +13,14 @@ Rectangle {
   implicitHeight: segmentWell.theme.chipHeight
   radius: segmentWell.theme.radius
   color: segmentWell.theme.wellColor
-  border.width: 1
-  border.color: segmentWell.theme.alpha(segmentWell.theme.text, 0.05)
+  border.width: segmentWell.theme.hairline
+  border.color: segmentWell.theme.wellBorder
   antialiasing: true
 
   Row {
     id: segmentWellRow
 
     anchors.fill: parent
-    anchors.margins: 2
+    anchors.margins: segmentWell.theme.segmentWellInset
   }
 }

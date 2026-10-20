@@ -3,8 +3,9 @@ import QtQuick
 Item {
   id: icon
 
-  property color tint: "white"
+  required property color tint
   property string kind: "headphones"
+  // theme-contract: artwork -- the headphone and AirPods silhouettes, drawn on their own 16-unit grid and scaled to the size the caller gives
   implicitWidth: 16
   implicitHeight: 16
 
@@ -42,4 +43,5 @@ Item {
       Rectangle { x: 11; y: 8; width: 4; height: 7; radius: 1.5; color: icon.tint }
     }
   }
+  // theme-contract: end
 }

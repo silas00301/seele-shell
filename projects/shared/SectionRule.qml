@@ -19,7 +19,7 @@ Item {
   default property alias trailing: sectionRuleTrailing.data
   signal toggled()
 
-  height: Math.max(26, sectionRuleTrailing.implicitHeight + sectionRule.theme.spaceTight)
+  height: Math.max(sectionRule.theme.sectionRuleHeight, sectionRuleTrailing.implicitHeight + sectionRule.theme.spaceTight)
 
   SectionLabel {
     theme: sectionRule.theme
@@ -63,10 +63,10 @@ Item {
     id: sectionRuleChevron
 
     visible: sectionRule.collapsible
-    width: visible ? 14 : 0
+    width: visible ? sectionRule.theme.sectionChevronWidth : 0
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    anchors.bottomMargin: -2
+    anchors.bottomMargin: -sectionRule.theme.sectionChevronDrop
     text: sectionRule.expanded ? "󰅃" : "󰅀"
     color: sectionRuleMouse.containsMouse ? sectionRule.theme.text : sectionRule.theme.overlay
     font.family: sectionRule.theme.fontFamily

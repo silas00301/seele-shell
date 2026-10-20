@@ -213,7 +213,7 @@ FocusScope {
           height: row.open ? rowDetail.implicitHeight + panel.theme.cardPadding : 0
           visible: height > 0
           clip: true
-          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: Easing.OutCubic } }
+          Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
           Column {
             id: rowDetail
             anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: panel.theme.cardPadding; rightMargin: panel.theme.cardPadding }

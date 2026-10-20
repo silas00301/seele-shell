@@ -11,6 +11,15 @@ let
   tools = import ../../packages/core/tools.nix { inherit pkgs; };
   nativeQml = import ../qml/package.nix { inherit pkgs; };
   tests = ../../tests;
+  # Every surface the theme contract covers, beside the contract itself.
+  themeContractSources = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../shell
+      ../shared
+      ../notes
+    ];
+  };
   runtime = import ../../packages/core/runtime.nix { inherit pkgs; };
   integrations = import ../../packages/core/native.nix {
     inherit pkgs;
@@ -421,6 +430,7 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/seele-shell/shared/Palette.js"
     node ${tests}/palette.js ${../shared/Palette.js} ${../shared/Theme.qml} \
       ${../lock/shell.qml} ${../greeter/shell.qml} ${../polkit/shell.qml}
+    node ${tests}/theme-contract.js ${themeContractSources}
     bash ${tests}/palette.sh "$out/share/seele-shell/shared" ${tests}/tst_palette.qml \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
     node ${tests}/auth-navigation.js ${../shared} ${nativeQml}/lib/qt-6/qml \
