@@ -238,8 +238,18 @@ function resolve(document) {
   for (const [name, slot] of slots) if (!Object.hasOwn(slot, 'derived')) resolved[name] = Object.hasOwn(document, name) && !slot.fixed ? document[name] : slot.default;
   return resolved;
 }
+// The existing presets, as `seele-theme list` publishes them (SIL-233): each
+// is a valid document, and so is the theme.json it becomes once the helper
+// adds the publication's version and the configured wallpaper. Each supplies
+// its identity, the palette roles and the typeface and nothing else, so every
+// other slot is the default the pixel baselines were recorded with.
 const published = JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-snapshots/themes.json'), 'utf8'));
-for (const theme of published.themes) assert.deepEqual(validate({...theme, fontFamily: published.fontFamily}), [], `${theme.id} is a valid theme document`);
+const presetKeys = new Set([...Object.keys(identity), ...roles, 'fontFamily', ...extensions]);
+for (const theme of published.themes) {
+  assert.deepEqual(validate(theme), [], `${theme.id} is a valid theme document`);
+  assert.deepEqual(validate({...theme, version: 2, wallpaper: palette.wallpaper}), [], `${theme.id} is a valid theme.json`);
+  assert.deepEqual(Object.keys(theme).filter(key => !presetKeys.has(key)), [], `${theme.id} supplies only its identity, palette and typeface`);
+}
 const minimal = {id: 'example', name: 'Example', mode: 'dark', ...Object.fromEntries(roles.map(name => [name, slots.get(name).default]))};
 assert.deepEqual(validate(minimal), [], 'the required slots alone make a theme');
 const defaults = resolve(minimal);

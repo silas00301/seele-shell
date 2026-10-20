@@ -1681,6 +1681,7 @@ dependencies = [
  "base64",
  "cap-std",
  "libc",
+ "regex",
  "seele-runtime",
  "serde",
  "serde_json",

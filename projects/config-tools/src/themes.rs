@@ -1,5 +1,6 @@
 //! One catalog, one durable selection, and generated app-only includes.
 use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
+use crate::theme_contract;
 use crate::Result;
 use seele_runtime::{
     fs::{atomic_write, private_directory, read_bounded},
@@ -162,7 +163,15 @@ impl Theme {
             .map(|key| p[key].as_str()),
         }
     }
-    fn display(&self) -> Result<serde_json::Value> {
+    /// The preset as a document of the theme contract
+    /// (`projects/shared/theme-contract.json`): its identity, the eleven palette
+    /// roles projected from its Base16 palette, and the configured typeface.
+    /// Its Base16 palette and terminal colours ride along as the contract's
+    /// extensions for the applications that take them. Every other slot is left
+    /// out, so it takes the contract's default, which is the look these presets
+    /// were drawn with. A document that breaks a contract rule is refused here,
+    /// before any surface can be given it.
+    fn document(&self, font_family: &str) -> Result<serde_json::Value> {
         let mut value = serde_json::to_value(self)?;
         value
             .as_object_mut()
@@ -175,6 +184,8 @@ impl Theme {
         if let serde_json::Value::Object(colors) = serde_json::to_value(self.colors())? {
             value.as_object_mut().ok_or("Invalid theme")?.extend(colors);
         }
+        value["fontFamily"] = font_family.into();
+        theme_contract::check(&value)?;
         Ok(value)
     }
 }
@@ -254,7 +265,23 @@ impl Catalog {
         if self.tmux_theme.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err("Tmux theme must be absolute".into());
         }
+        // A catalog is accepted whole or not at all: every preset has to be a
+        // valid theme document as it would be published.
+        for theme in &self.themes {
+            self.publication(theme)?;
+        }
         Ok(())
+    }
+    /// What `selection.json`, and so `seele-shell/theme.json`, carries: the
+    /// preset's document, the publication format `version` Neovim checks, and
+    /// the configured `wallpaper` the lock screen draws. No preset has an image
+    /// of its own, so that is the image the contract's wallpaper fallback names.
+    fn publication(&self, theme: &Theme) -> Result<serde_json::Value> {
+        let mut selection = theme.document(&self.font_family)?;
+        selection["version"] = 2.into();
+        selection["wallpaper"] = self.wallpaper.clone().into();
+        theme_contract::check(&selection)?;
+        Ok(selection)
     }
     fn theme(&self, id: &str) -> Result<&Theme> {
         self.themes
@@ -698,10 +725,7 @@ fn publish(catalog: &Catalog, state: &Path, id: &str, live: bool) -> Result<serd
         }
         atomic_write(&generation.path().join(destination), &content)?;
     }
-    let mut selection = theme.display()?;
-    selection["version"] = 2.into();
-    selection["fontFamily"] = catalog.font_family.clone().into();
-    selection["wallpaper"] = catalog.wallpaper.clone().into();
+    let selection = catalog.publication(theme)?;
     let current = state.join("current");
     let previous = match fs::read_link(&current) {
         Ok(p) if p.components().count() == 1 && p.to_string_lossy().starts_with(".theme-") => {
@@ -978,7 +1002,11 @@ pub fn main() -> Result {
         ["list"] => {
             serde_json::json!({
                 "current": selected(&state, &catalog)?,
-                "themes": catalog.themes.iter().map(Theme::display).collect::<Result<Vec<_>>>()?,
+                "themes": catalog
+                    .themes
+                    .iter()
+                    .map(|theme| theme.document(&catalog.font_family))
+                    .collect::<Result<Vec<_>>>()?,
                 "appearance": describe(&preferences(&state, &catalog)?, now()),
             })
         }

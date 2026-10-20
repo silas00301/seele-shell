@@ -10,6 +10,7 @@ pub mod inputs;
 
 pub mod launch;
 
+pub mod theme_contract;
 pub mod themes;
 
 pub mod inspect;

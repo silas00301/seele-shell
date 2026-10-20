@@ -66,6 +66,17 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     save()
     assert call("list")["current"] == theme["id"]
     assert not state.exists(), "Listing must not initialize state"
+    # Every preset is listed as a theme document of the contract: identity,
+    # the eleven palette roles, the typeface, and the Base16 palette and
+    # terminal colours as extensions. Nothing else, so every other slot keeps
+    # the contract's default.
+    roles = ["base", "mantle", "crust", "surface", "overlay", "text", "subtext", "accent", "red", "green", "yellow"]
+    document_keys = {"id", "name", "mode", "fontFamily", "palette", "terminal", *roles}
+    for listed, preset in zip(call("list")["themes"], catalog["themes"]):
+        assert set(listed) == document_keys, sorted(set(listed) ^ document_keys)
+        assert (listed["id"], listed["name"], listed["mode"]) == (preset["id"], preset["name"], preset["mode"])
+        assert listed["fontFamily"] == catalog["fontFamily"] and listed["palette"] == preset["palette"]
+        assert all(re.fullmatch(r"#[0-9a-f]{6}", listed[role]) for role in roles), listed
     call("set", "../../escape", ok=False)
     assert not state.exists()
     call("init")
@@ -164,6 +175,11 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     assert "*background: #eff1f5" in (state / "current/Xresources").read_text()
     assert selection["palette"] == light["palette"] and selection["mode"] == "light" and selection["version"] == 2
     assert "vicinaeTheme" not in selection and "flavor" not in selection
+    # The published theme.json is that document plus the publication's format
+    # version and the configured wallpaper.
+    assert set(selection) == document_keys | {"version", "wallpaper"}, sorted(selection)
+    assert selection["wallpaper"] == catalog["wallpaper"]
+    assert {key: selection[key] for key in document_keys} == next(t for t in call("list")["themes"] if t["id"] == light["id"])
     call("init")
     assert call("current")["id"] == light["id"], "Activation must preserve selection"
     assert len(list(state.glob(".theme-*"))) == 1
@@ -197,6 +213,17 @@ with tempfile.TemporaryDirectory(prefix="seele-themes-") as temporary:
     save(invalid); call("list", ok=False)
     invalid = copy.deepcopy(catalog); invalid["themes"][1]["vicinaeTheme"] = str(root / "missing")
     save(invalid); call("set", light["id"], ok=False)
+    # A preset the catalog's own limits allow but the theme contract refuses
+    # -- a name it cannot show, a relative wallpaper -- refuses the catalog
+    # whole, and says which document broke which rule.
+    invalid = copy.deepcopy(catalog); invalid["themes"][1]["name"] = " Flexoki Light"
+    save(invalid); refused = call("list", ok=False)
+    assert "Invalid theme document flexoki-light: name" in refused.stderr, refused.stderr
+    invalid = copy.deepcopy(catalog); invalid["themes"][1]["name"] = "F" * 70
+    save(invalid); call("set", light["id"], ok=False)
+    invalid = copy.deepcopy(catalog); invalid["wallpaper"] = "background.jpg"
+    save(invalid); refused = call("set", theme["id"], ok=False)
+    assert "wallpaper: \"background.jpg\" is not a path" in refused.stderr, refused.stderr
     assert (state / "selection.json").read_bytes() == before
     assert (state / "current").readlink() == old_link
     save()
