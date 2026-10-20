@@ -6090,12 +6090,10 @@ Shared.Theme {
       WlrLayershell.namespace: "seele-shell-background"
       color: root.base
 
-      Image {
+      // The theme's own image, or the configured wallpaper when it has none.
+      Shared.Wallpaper {
         anchors.fill: parent
-        source: "file://" + root.wallpaperImage
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        cache: true
+        path: root.wallpaperImage
       }
     }
   }

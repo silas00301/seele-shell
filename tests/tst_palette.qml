@@ -80,8 +80,9 @@ TestCase {
   function test_a_published_theme_sets_every_slot_and_leaves_nothing_behind() {
     var slots = contractSlots()
     verify(slots.length > 300, "every suppliable slot")
-    verify(slots.every(function(slot) { return slot.name !== "wallpaper" && slot.name !== "panelColor" && slot.name !== "iosRed" }),
-      "no wallpaper, derived or fixed slot")
+    verify(slots.some(function(slot) { return slot.name === "wallpaper" }), "a theme's own wallpaper")
+    verify(slots.every(function(slot) { return slot.name !== "wallpaperImage" && slot.name !== "panelColor" && slot.name !== "iosRed" }),
+      "no derived or fixed slot")
     var roles = {base:"#101820",mantle:"#0c1218",crust:"#080c10",surface:"#1c2a36",overlay:"#5c7080",text:"#e8f0f8",
       subtext:"#a8b8c8",accent:"#f2aa4c",red:"#ff6b6b",green:"#7bd88f",yellow:"#ffd866"}
     var folder = Object.assign({id:"example",name:"Example",mode:"dark",palette:{},terminal:[],version:2,
@@ -95,7 +96,8 @@ TestCase {
     compare(subject.easingStandard, Easing.OutBack)
     compare(subject.fontFamily, "Example Sans")
     compare(subject.accent, Qt.color("#f2aa4c"))
-    compare(subject.wallpaper, "", "the wallpaper is left to its consumers")
+    compare(subject.wallpaper, "/elsewhere.jpg", "a theme's own wallpaper is applied")
+    compare(subject.wallpaperImage, "/elsewhere.jpg", "and drawn")
     // A preset supplies its roles and typeface only: everything else returns
     // to the default, exactly as the contract and Theme.qml declare it.
     var preset = {id:"catppuccin-mocha",name:"Catppuccin Mocha",mode:"dark",fontFamily:"Maple Mono NF CN"}
@@ -108,9 +110,14 @@ TestCase {
     compare(subject.radius, 8)
     compare(subject.weightStrong, Font.DemiBold)
     compare(subject.easingStandard, Easing.OutCubic)
+    compare(subject.wallpaperImage, subject.configuredWallpaper, "a theme without an image keeps the configured wallpaper")
+    // The publication names the configured image for such a theme.
+    subject.applyTheme(Object.assign({}, preset, {wallpaper: Palette.fallback.wallpaper}), slots)
+    compare(subject.wallpaperImage, Palette.fallback.wallpaper)
     // A value of the wrong kind is never assigned; its default stands.
-    subject.applyTheme(Object.assign({}, folder, {radius:"round",accent:"lavender",textBody:null,easingStandard:7}), slots)
+    subject.applyTheme(Object.assign({}, folder, {radius:"round",accent:"lavender",textBody:null,easingStandard:7,wallpaper:false}), slots)
     compare(subject.radius, 8)
+    compare(subject.wallpaperImage, subject.configuredWallpaper)
     compare(subject.accent, Qt.color(Palette.fallback.accent))
     compare(subject.textBody, 11)
     compare(subject.easingStandard, Easing.OutCubic)

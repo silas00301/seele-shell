@@ -20,9 +20,12 @@ remain owned by the greeter.
 `Theme.qml` applies a published `theme.json` itself, through `applyTheme` and
 `Contract.js`: it reads `theme-contract.json` beside it once, then sets every
 slot a theme may supply to the theme's value or, where the theme leaves one out,
-the default, so nothing an earlier theme set outlives it. The wallpaper is not
-among them: the main shell retains its existing wallpaper environment selection.
-Without the contract file it falls back to `Palette.assign`.
+the default, so nothing an earlier theme set outlives it. The wallpaper is
+among them: a published theme names its own image or the configured one, and
+before any publication the shell keeps its `SEELE_SHELL_WALLPAPER` selection.
+`Wallpaper.qml` draws it for the desktop background and keeps the picture on
+screen until the next has loaded. Without the contract file it falls back to
+`Palette.assign`.
 
 Every package copies the module beside its consumer. The desktop shell and Notes
 copy shared QML and JavaScript assets together, with `theme-contract.json`.

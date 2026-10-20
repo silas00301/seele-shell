@@ -7,14 +7,14 @@
 // default. Qt owns the assignment itself.
 
 // Every slot a theme may supply, with its type and default. Derived slots are
-// computed and fixed ones belong to the contract. The wallpaper stays out: its
-// consumers opt in to it, and the publication fills it with the configured
-// image rather than a theme's own.
+// computed and fixed ones belong to the contract. The wallpaper is one of
+// them: the publication names the theme's own image, or the configured one
+// when it has none.
 function slots(contract) {
   var result = []
   if (!contract || !Array.isArray(contract.groups)) return result
   contract.groups.forEach(function(group) {
-    if (group.name === "wallpaper" || !Array.isArray(group.slots)) return
+    if (!Array.isArray(group.slots)) return
     group.slots.forEach(function(slot) {
       if (Object.prototype.hasOwnProperty.call(slot, "derived") || slot.fixed) return
       result.push({ name: slot.name, type: slot.type, value: slot.default })

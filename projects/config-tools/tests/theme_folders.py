@@ -3,8 +3,9 @@
 
 Usage: python3 theme_folders.py <seele-theme> <tests/theme-folders> <tests/theme-snapshots/folders.json> [--update]
 
-Registers the example folder and every folder under invalid/, then lists and
-publishes the example from a catalog beside a preset. The snapshot harness
+Registers the example and pictured folders and every folder under invalid/,
+then lists and publishes them from a catalog beside a preset: a theme with its
+own wallpaper publishes it, and one without keeps the configured image. The snapshot harness
 renders the documents in folders.json, so they must be exactly what the helper
 lists for the registered example; --update rewrites that file instead.
 """
@@ -35,6 +36,7 @@ refusals = {
         "sparkle: not a contract slot",
     ],
     "escaping-file": ['soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'],
+    "wallpaper-not-image": ['wallpaper: "wallpaper.png" is not a PNG or JPEG image'],
 }
 
 with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
@@ -87,6 +89,28 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     assert sounded["soundNotification"] == str(out / "sounds/ping.oga")
     assert (out / "sounds/ping.oga").read_bytes() == b"OggS"
     assert not (out / "draft.txt").exists()
+
+    # So is a theme's own wallpaper, once it is known to be a PNG or a JPEG.
+    pictured = folders / "pictured"
+    pictured_out = root / "registered/pictured"
+    result = register(pictured, pictured_out)
+    assert result.returncode == 0, result.stderr
+    pictured_source = json.loads((pictured / "theme.json").read_text())
+    assert pictured_source["wallpaper"] == "wallpaper.png"
+    pictured_document = json.loads((pictured_out / "theme.json").read_text())
+    assert pictured_document == dict(pictured_source, wallpaper=str(pictured_out / "wallpaper.png")), pictured_document
+    assert (pictured_out / "wallpaper.png").read_bytes() == (pictured / "wallpaper.png").read_bytes()
+    assert sorted(path.name for path in pictured_out.iterdir()) == ["theme.json", "wallpaper.png"]
+    # An image cut short still starts as a PNG, but Qt would draw nothing.
+    cut = root / "cut"
+    cut.mkdir()
+    image = (pictured / "wallpaper.png").read_bytes()
+    (cut / "wallpaper.png").write_bytes(image[: len(image) // 2])
+    (cut / "theme.json").write_text(json.dumps(dict(pictured_source, id="cut")))
+    result = register(cut, root / "refused/cut")
+    assert result.returncode == 1, result.stdout
+    assert '  wallpaper: "wallpaper.png" is not a complete PNG image' in result.stderr, result.stderr
+    assert not (root / "refused/cut").exists()
 
     # The catalog names the registered document beside a preset.
     config = root / "config"
@@ -155,4 +179,25 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     catalog["themes"][1] = entry
     assert call("current")["id"] == "example"
 
-print(f"Theme folders: the example registers, lists and publishes; {len(refusals) + 2} refusals name every broken rule")
+    # Switching to a theme with its own wallpaper publishes that image for the
+    # desktop and the lock screen; switching to one without, folder or preset,
+    # publishes the configured image again, so the wallpaper on screen stays.
+    catalog["themes"].append(dict(entry, id="pictured", name=pictured_source["name"],
+                                  document=str(pictured_out / "theme.json")))
+    listed = call("list")["themes"]
+    assert listed[2]["wallpaper"] == str(pictured_out / "wallpaper.png")
+    assert "wallpaper" not in listed[0] and "wallpaper" not in listed[1]
+    published = lambda: json.loads((state / "selection.json").read_text())["wallpaper"]
+    for theme, wallpaper in [("pictured", str(pictured_out / "wallpaper.png")), ("example", "/test/background.jpg"),
+                             ("pictured", str(pictured_out / "wallpaper.png")), ("catppuccin-mocha", "/test/background.jpg")]:
+        call("set", theme)
+        assert published() == wallpaper, (theme, published())
+    call("pick", "pictured")
+    assert published() == str(pictured_out / "wallpaper.png")
+    # A registered image that is no longer one refuses the catalog, naming it.
+    (pictured_out / "wallpaper.png").chmod(0o644)
+    (pictured_out / "wallpaper.png").write_text("not an image\n")
+    result = call("list", ok=False)
+    assert f'Invalid theme document pictured:\n  wallpaper: "{pictured_out / "wallpaper.png"}" is not a PNG or JPEG image' in result.stderr, result.stderr
+
+print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule")

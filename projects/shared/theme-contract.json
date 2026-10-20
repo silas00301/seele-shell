@@ -79,7 +79,7 @@
   },
   "fallbacks": {
     "sound": "Silence. An omitted or empty sound slot plays nothing.",
-    "wallpaper": "The configured wallpaper: $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg, drawn over the base colour so a missing file still leaves the palette."
+    "wallpaper": "The configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette."
   },
   "structural": {
     "description": "Numbers that describe structure rather than style, which a surface may still write: they are what any theme would want there. Anything else bound to a geometry, type, shape, material or motion property is a slot.",
@@ -2602,20 +2602,20 @@
           "type": "path",
           "default": "",
           "optional": true,
-          "fallback": "The configured wallpaper: $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg, drawn over the base colour so a missing file still leaves the palette.",
-          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "fallback": "The configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
+          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
         },
         {
           "name": "configuredWallpaper",
           "type": "string",
           "derived": "Quickshell.env(\"SEELE_SHELL_WALLPAPER\") || Palette.fallback.wallpaper",
-          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
         },
         {
           "name": "wallpaperImage",
           "type": "string",
           "derived": "wallpaper !== \"\" ? wallpaper : configuredWallpaper",
-          "description": "A theme may carry its own image, as an absolute path. Without one the shell keeps the configured wallpaper: the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
         }
       ]
     }

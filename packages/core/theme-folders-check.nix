@@ -1,7 +1,9 @@
 # Theme folder registration end to end, as the flake builds it. Every folder
-# in themes/default.nix and the example fixture register; the example then
-# lists beside a preset through the real helper; and each invalid fixture
-# fails its own build, naming the folder and what it broke.
+# in themes/default.nix and the example and pictured fixtures register; they
+# then list beside a preset through the real helper, the pictured folder's own
+# wallpaper is published while it is selected and the configured image again
+# once a theme without one is; and each invalid fixture fails its own build,
+# naming the folder and what it broke.
 { pkgs, configTools }:
 let
   lib = pkgs.lib;
@@ -9,6 +11,13 @@ let
   fixtures = ../../tests/theme-folders;
   registered = themes.entries (import ../../themes);
   example = themes.entry (fixtures + "/example");
+  pictured = themes.entry (fixtures + "/pictured");
+  folders = [
+    example
+    pictured
+  ]
+  ++ registered;
+  configured = "/etc/wallpaper/wallpaper.jpg";
   preset = {
     id = "catppuccin-mocha";
     name = "Catppuccin Mocha";
@@ -36,9 +45,9 @@ let
       version = 2;
       default = "catppuccin-mocha";
       fontFamily = "Maple Mono NF CN";
-      wallpaper = "/etc/wallpaper/wallpaper.jpg";
+      wallpaper = configured;
       commands = { };
-      themes = [ preset ] ++ map entry ([ example ] ++ registered);
+      themes = [ preset ] ++ map entry folders;
     }
   );
   # What each invalid fixture's build has to say.
@@ -47,6 +56,7 @@ let
     misnamed = ''id: "example" is not the folder's name'';
     unknown-slots = "sparkle: not a contract slot";
     escaping-file = ''soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'';
+    wallpaper-not-image = ''wallpaper: "wallpaper.png" is not a PNG or JPEG image'';
   };
   failures = lib.mapAttrs (
     name: _: pkgs.testers.testBuildFailure (themes.register (fixtures + "/invalid/${name}"))
@@ -59,12 +69,18 @@ pkgs.runCommand "seele-theme-folders-check" { nativeBuildInputs = [ pkgs.jq ]; }
   ${configTools}/bin/seele-theme list > listed.json
   test "$(jq -r '[.themes[].id] | join(" ")' listed.json)" = ${
     lib.escapeShellArg (
-      lib.concatStringsSep " " (
-        [ "catppuccin-mocha" ] ++ map (theme: theme.id) ([ example ] ++ registered)
-      )
+      lib.concatStringsSep " " ([ "catppuccin-mocha" ] ++ map (theme: theme.id) folders)
     )
   }
   test "$(jq -r '.themes[1].radius' listed.json)" = 14
+  wallpaper() {
+    ${configTools}/bin/seele-theme set "$1" > /dev/null
+    test "$(jq -r .wallpaper "$XDG_STATE_HOME/seele-theme/selection.json")" = "$2"
+  }
+  wallpaper pictured ${pictured.registered}/wallpaper.png
+  wallpaper example ${configured}
+  wallpaper pictured ${pictured.registered}/wallpaper.png
+  wallpaper catppuccin-mocha ${configured}
   ${lib.concatStrings (
     lib.mapAttrsToList (name: line: ''
       grep -qxF ${lib.escapeShellArg "Seele Themes: Invalid theme folder ${name}:"} ${failures.${name}}/testBuildFailure.log

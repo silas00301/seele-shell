@@ -465,7 +465,7 @@ ShellRoot {
         Image {
           id: wallpaperImage
           anchors.fill: parent
-          source: "file://" + root.wallpaper
+          source: "file://" + root.wallpaper.split("/").map(encodeURIComponent).join("/")
           fillMode: Image.PreserveAspectCrop
           asynchronous: true
           cache: true
