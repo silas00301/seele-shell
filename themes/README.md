@@ -41,7 +41,10 @@ example/
   most for a square image). A file Qt could not draw fails the build. While
   the theme is selected the desktop and the lock screen draw it, cropped to
   fill each output; a theme without one keeps the configured wallpaper. Use
-  only images you made or may redistribute.
+  only images you made or may redistribute. Which image each output shows, per
+  light or dark theme or for this theme in particular, is the host's wallpaper
+  mapping, declared in the parent flake's Nix (`seele.wallpaper`), because
+  output names belong to a machine; a folder cannot carry `wallpaperOutputs`.
 
 `tests/theme-folders/example` is a complete folder, and
 `tests/theme-folders/pictured` one with its own wallpaper.

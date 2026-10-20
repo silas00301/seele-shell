@@ -34,6 +34,7 @@
     "real": "A finite number: an opacity, a ratio or a fractional pixel size.",
     "string": "Text, such as a font family.",
     "path": "An absolute file path, or empty for none.",
+    "outputPaths": "An object from output names, as the compositor names them (letters, digits, `.`, `_` and `-`, at most 64), to absolute file paths; empty for none.",
     "url": "A URL resolved against the shell's own files.",
     "weight": "A font weight, by its name in `enums.weight`.",
     "easing": "An easing curve, by its name in `enums.easing`."
@@ -79,7 +80,7 @@
   },
   "fallbacks": {
     "sound": "Silence. An omitted or empty sound slot plays nothing.",
-    "wallpaper": "The configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette."
+    "wallpaper": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette."
   },
   "structural": {
     "description": "Numbers that describe structure rather than style, which a surface may still write: they are what any theme would want there. Anything else bound to a geometry, type, shape, material or motion property is a slot.",
@@ -2595,27 +2596,35 @@
       "name": "wallpaper",
       "section": "Wallpaper",
       "kind": "optional",
-      "description": "An optional image of the theme's own, and the configured wallpaper it falls back to.",
+      "description": "An optional image of the theme's own, the images the host maps to outputs and to light and dark themes, and the configured wallpaper they fall back to.",
       "slots": [
         {
           "name": "wallpaper",
           "type": "path",
           "default": "",
           "optional": true,
-          "fallback": "The configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
-          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "fallback": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
+          "description": "A theme may carry its own image, as an absolute path. The publication names the one the host's wallpaper mapping chooses: an image mapped to the theme, else its own, else the one mapped to its light or dark mode, else the configured wallpaper, so switching to a theme without an image keeps the one on screen. Before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under any of them, so a missing file still leaves the palette."
         },
         {
           "name": "configuredWallpaper",
           "type": "string",
           "derived": "Quickshell.env(\"SEELE_SHELL_WALLPAPER\") || Palette.fallback.wallpaper",
-          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "description": "A theme may carry its own image, as an absolute path. The publication names the one the host's wallpaper mapping chooses: an image mapped to the theme, else its own, else the one mapped to its light or dark mode, else the configured wallpaper, so switching to a theme without an image keeps the one on screen. Before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under any of them, so a missing file still leaves the palette."
         },
         {
           "name": "wallpaperImage",
           "type": "string",
           "derived": "wallpaper !== \"\" ? wallpaper : configuredWallpaper",
-          "description": "A theme may carry its own image, as an absolute path. A theme without one is published with the configured wallpaper, so switching to it keeps the image already on screen; before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under either, so a missing file still leaves the palette."
+          "description": "A theme may carry its own image, as an absolute path. The publication names the one the host's wallpaper mapping chooses: an image mapped to the theme, else its own, else the one mapped to its light or dark mode, else the configured wallpaper, so switching to a theme without an image keeps the one on screen. Before any theme is published the shell draws the session's SEELE_SHELL_WALLPAPER, else the system image. The background is drawn in `base` under any of them, so a missing file still leaves the palette."
+        },
+        {
+          "name": "wallpaperOutputs",
+          "type": "outputPaths",
+          "default": {},
+          "optional": true,
+          "fallback": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
+          "description": "The outputs that draw another image than `wallpaper`, by the name the compositor gives each one, such as DP-1. The host's wallpaper mapping chooses them, per output and per light or dark theme, and the publication names only outputs whose image differs; every other output, and every output when the mapping names none, draws `wallpaperImage`."
         }
       ]
     }

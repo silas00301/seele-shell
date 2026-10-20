@@ -702,15 +702,23 @@ ShellRoot {
   property string soundLevelStep: ""         // a level OSD steps
 
   // Wallpaper ----------------------------------------------------------------
-  // A theme may carry its own image, as an absolute path. A theme without one
-  // is published with the configured wallpaper, so switching to it keeps the
-  // image already on screen; before any theme is published the shell draws
-  // the session's SEELE_SHELL_WALLPAPER, else the system image. The background
-  // is drawn in `base` under either, so a missing file still leaves the
+  // A theme may carry its own image, as an absolute path. The publication
+  // names the one the host's wallpaper mapping chooses: an image mapped to the
+  // theme, else its own, else the one mapped to its light or dark mode, else
+  // the configured wallpaper, so switching to a theme without an image keeps
+  // the one on screen. Before any theme is published the shell draws the
+  // session's SEELE_SHELL_WALLPAPER, else the system image. The background is
+  // drawn in `base` under any of them, so a missing file still leaves the
   // palette.
   property string wallpaper: ""
   readonly property string configuredWallpaper: Quickshell.env("SEELE_SHELL_WALLPAPER") || Palette.fallback.wallpaper
   readonly property string wallpaperImage: wallpaper !== "" ? wallpaper : configuredWallpaper
+  // The outputs that draw another image than `wallpaper`, by the name the
+  // compositor gives each one, such as DP-1. The host's wallpaper mapping
+  // chooses them, per output and per light or dark theme, and the publication
+  // names only outputs whose image differs; every other output, and every
+  // output when the mapping names none, draws `wallpaperImage`.
+  property var wallpaperOutputs: ({})
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -729,6 +737,12 @@ ShellRoot {
 
   function hoveredColor(base) {
     return layeredColor(base, hoverColor)
+  }
+
+  // The image the output named `output` draws: its own from
+  // `wallpaperOutputs`, else `wallpaperImage`.
+  function wallpaperFor(output) {
+    return Palette.imageFor(wallpaperOutputs, output, wallpaperImage)
   }
 
   // Not a styling value: the shared keyboard navigation every surface reaches

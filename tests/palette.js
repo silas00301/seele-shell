@@ -34,4 +34,14 @@ const subset={base:golden.base,fontFamily:golden.fontFamily};
 context.assign(subset,{green:'#ffffff',base:'#123456'});
 assert.deepEqual(subset,{base:'#123456',fontFamily:golden.fontFamily});
 assert.throws(()=>context.assign(target,null));
+// Images per output (SIL-236): absolute paths by output name, nothing else.
+const outputs=context.outputImages({wallpaperOutputs:{'DP-1':'/wide.png','HDMI-A-1':'relative.png','eDP-1':7}});
+assert.deepEqual(JSON.parse(JSON.stringify(outputs)),{'DP-1':'/wide.png'});
+for (const theme of [{},null,{wallpaperOutputs:['/x.png']},{wallpaperOutputs:'/x.png'}])
+ assert.deepEqual(JSON.parse(JSON.stringify(context.outputImages(theme))),{});
+assert.equal(context.imageFor(outputs,'DP-1','/all.png'),'/wide.png');
+assert.equal(context.imageFor(outputs,'HDMI-A-1','/all.png'),'/all.png');
+assert.equal(context.imageFor(outputs,'','/all.png'),'/all.png');
+assert.equal(context.imageFor(outputs,'toString','/all.png'),'/all.png');
+assert.equal(context.imageFor({},'DP-1','/all.png'),'/all.png');
 console.log('Shared palette golden defaults, consumer bindings, partial/falsy overrides and assignment boundaries passed');

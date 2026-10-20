@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-399 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
+400 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ its own, so a theme can restyle the shell without a code change.
 | `material` | Translucent materials, edges, interaction tints, elevation, texture, withdrawal opacities. | |
 | `motion` | Durations and easing curves. | |
 | `sound` | Optional cues. | optional |
-| `wallpaper` | An optional image of the theme's own. | optional |
+| `wallpaper` | An optional image of the theme's own, and the images the host maps per output. | optional |
 
 A writable property is a slot a theme may supply. A readonly one is *derived*:
 computed from the slots it names, such as `panelColor: alpha(mantle, 0.88)`, so
@@ -52,7 +52,8 @@ rejects a name, a `weight` or `easing` slot takes a name from `enums`.
 
 A `path` slot holds an absolute path or nothing. A theme folder names its own
 files relative to itself; registration resolves them before the shell sees
-them.
+them. An `outputPaths` slot is an object from output names, as the compositor
+gives them (letters, digits, `.`, `_` and `-`, at most 64), to absolute paths.
 
 ## The existing presets
 
@@ -119,6 +120,8 @@ desktop and not only the shell:
   rather than drawn as nothing; reading the catalog rechecks the registered
   copy's signature. The background and the lock screen escape the name into
   the file URL, so it may hold any character a file name can.
+- It carries no `wallpaperOutputs`: output names belong to a machine, so which
+  image each output shows is the host's wallpaper mapping.
 
 A `path` slot names a file relative to the folder, such as
 `"soundNotification": "sounds/ping.oga"` or `"wallpaper": "wallpaper.jpg"`. The
@@ -172,14 +175,30 @@ published, or if a published one names none, the shell draws
 `/etc/wallpaper/wallpaper.jpg`. `wallpaperImage` is the one the background
 draws, over `base`, so a missing file still leaves the palette.
 
-The background draws it through `Wallpaper.qml`, which loads a new image behind
-the one on screen and shows it only once it has decoded, so a switch goes from
-one picture to the next without the bare base colour in between. The lock
-screen takes the same published `wallpaper`; the greeter runs before any user
-theme exists and keeps the system's image. `tests/tst_wallpaper.qml` drives the
-component through those switches with real image files, and
-`tests/tst_palette.qml` checks that a published theme's own image is applied and
-that one without leaves the configured wallpaper.
+The host's wallpaper mapping (SIL-236), declared in the parent flake's Nix and
+carried by the catalog, changes which image that is. `seele-theme` resolves it
+for the theme it publishes: an image mapped to that theme on an output, then to
+that theme, then the theme's own, then one mapped to the output for the theme's
+own light or dark mode, then to the output, then to that mode, then the
+configured wallpaper. `wallpaper` is what every output draws unless
+`wallpaperOutputs` names it, and the publication names an output only when its
+image differs, so a theme the mapping says nothing about publishes exactly what
+it did before. Light and dark are the theme's own mode, so a dark theme worn in
+light mode keeps a dark wallpaper. `config-tools/README.md` lists the rules the
+helper holds a mapping to.
+
+Each output's background draws `wallpaperFor(<its name>)` through
+`Wallpaper.qml`, which loads a new image behind the one on screen and shows it
+only once it has decoded, so a switch goes from one picture to the next without
+the bare base colour in between. The lock screen takes the same published
+`wallpaper` and `wallpaperOutputs`, through `Palette.imageFor`; both escape each
+path segment into the file URL. The greeter runs before any user theme exists
+and keeps the system's image.
+`tests/tst_wallpaper.qml` drives the component through those switches with real
+image files, `tests/tst_palette.qml` checks that a published theme's own image is
+applied, that one without leaves the configured wallpaper, and that each
+output's binding follows its mapped image through a mode switch, and
+`config-tools/tests/wallpapers.py` drives the mapping through the helper.
 
 ## What counts as styling
 
@@ -256,7 +275,7 @@ wallpaper included: Theme.qml's `applyTheme` sets each one to the theme's value
 or, where the theme leaves it out, the default, so a preset that follows a
 folder theme looks exactly as it always did. The pixel baselines run every
 preset through that same path; they capture surfaces rather than the
-background, so a wallpaper changes none of them. One image per theme is SIL-235;
-choosing images per monitor or per light and dark variant is SIL-236, and
-playing the sound cues is SIL-240. Each builds on these rules: the contract says
+background, so a wallpaper changes none of them. One image per theme is SIL-235,
+images per output and per light and dark theme are SIL-236, and playing the
+sound cues is SIL-240. Each builds on these rules: the contract says
 what a theme may set and what an omitted slot falls back to.
