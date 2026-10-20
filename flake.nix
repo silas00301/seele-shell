@@ -44,6 +44,13 @@
           tesseract = pkgs.tesseract5.override { enableLanguages = [ "eng" ]; };
           markdown = import ./projects/markdown/package.nix packageArgs;
           nativeQml = import ./projects/qml/package.nix packageArgs;
+          # Every theme on the shell's main surfaces against the committed
+          # pixel baselines, as the development shell and `nix flake check`
+          # both run it from the repository root.
+          themeSnapshots = grain: ''
+            QT_PLUGIN_PATH=${pkgs.qt6.qtsvg}/lib/qt-6/plugins node tests/theme-snapshots.js projects/shell \
+              ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml \
+              ${pkgs.maple-mono.NF-CN}/share/fonts/truetype ${grain}'';
           fontConfig = pkgs.makeFontsConf {
             fontDirectories = [ pkgs.maple-mono.NF-CN ];
           };
@@ -149,8 +156,26 @@
           };
 
           # Each package owns its protocol and integration checks; flake check
-          # now builds them instead of merely exposing unchecked outputs.
-          checks = packages;
+          # now builds them instead of merely exposing unchecked outputs. The
+          # theme baselines stay out of the package builds, so a rebuild never
+          # waits on a pixel comparison.
+          checks = packages // {
+            theme-snapshots =
+              pkgs.runCommand "seele-theme-snapshots"
+                {
+                  nativeBuildInputs = [
+                    pkgs.nodejs
+                    pkgs.qt6.qtdeclarative
+                  ];
+                }
+                ''
+                  grain="$PWD/grain.png"
+                  ${packages.tools}/bin/seele-grain "$grain"
+                  cd ${./.}
+                  ${themeSnapshots ''"$grain"''}
+                  touch "$out"
+                '';
+          };
 
           treefmt = {
             projectRootFile = "flake.nix";
@@ -224,6 +249,16 @@
                   + pkgs.lib.concatMapStringsSep " " (name: ".#${name}") (builtins.attrNames config.packages);
               }
               {
+                name = "theme-snapshots";
+                help = "Compare every theme on the shell's main surfaces with its pixel baselines; --update records them";
+                command = ''
+                  set -e
+                  cargo build --locked -p seele-tools --bin seele-grain
+                  target/debug/seele-grain target/theme-snapshots-grain.png
+                  ${themeSnapshots "target/theme-snapshots-grain.png"} "$@"
+                '';
+              }
+              {
                 name = "test-shell";
                 help = "Run the Rust, JavaScript, and QML tests";
                 command = ''
@@ -245,6 +280,8 @@
                   bash tests/focus-timer.sh ${quickshell}/bin/quickshell projects/shell
                   node tests/panel-layouts.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
                   node tests/control-center-layout.js projects/shell ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml
+                  target/debug/seele-grain target/theme-snapshots-grain.png
+                  ${themeSnapshots "target/theme-snapshots-grain.png"}
                   PYTHONDONTWRITEBYTECODE=1 ${
                     pkgs.python3.withPackages (ps: [ ps.aiohttp ])
                   }/bin/python3 projects/integrations/tests/home_assistant.py target/debug/seele-home-assistant
