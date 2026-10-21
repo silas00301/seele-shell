@@ -64,6 +64,7 @@ Item {
       font.family: panelHeader.theme.fontFamily
       font.pixelSize: panelHeader.theme.textTitle
       font.weight: panelHeader.theme.weightStrong
+      font.capitalization: panelHeader.theme.titleCapitalization
     }
 
     Text {

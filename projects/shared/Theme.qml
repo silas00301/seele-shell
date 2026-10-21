@@ -81,6 +81,10 @@ ShellRoot {
   property real trackingLabel: 1.4
   // A pairing code is spaced so each digit can be read off on its own.
   property int trackingCode: 4
+  // A heading may be set in capitals, as signage is: a panel's title and a
+  // section's label each take a capitalization, by default as written.
+  property int titleCapitalization: Font.MixedCase
+  property int labelCapitalization: Font.MixedCase
   // Prose that wraps over several lines is set a little open, and a glyph
   // beside wrapped text aligns to the box one line of it takes.
   property real lineHeightProse: 1.15
@@ -112,6 +116,10 @@ ShellRoot {
   readonly property int focusRingWidth: supplied.focusRingWidth ?? hairline
   readonly property int focusRingGap: supplied.focusRingGap ?? -focusRingWidth
   readonly property int focusRingFlare: supplied.focusRingFlare ?? focusRingWidth
+  // A panel may cut two corners instead of rounding them, as a machined
+  // plate is cut: its top left and bottom right are taken off at 45 degrees,
+  // this far along each edge. Zero keeps the rounded corner `radius` draws.
+  property int panelCut: 0
 
   // Spacing ------------------------------------------------------------------
   property int barSpacing: 2     // between two menu bar entries
@@ -148,6 +156,12 @@ ShellRoot {
   property int barHeight: 30          // the menu bar
   property int barItemHeight: 22      // a bar entry's pill
   property int panelHeaderHeight: 28  // a panel header with a title and no detail
+  // A cut panel's trim: the cut lit in `panelTrimColor`, and a bar
+  // `strokeStrong` thick running `panelTrim` along the top edge from it.
+  // Past its end, a glitch: a slice `panelGlitch` long knocked down off the
+  // edge, in `panelGlitchColor`. Zero draws neither.
+  property int panelTrim: 0
+  property int panelGlitch: 0
   // The three heights a chip, a button and a list row take, so a panel keeps
   // its rhythm no matter which surface assembled it. A tile or a card still
   // sizes to what it holds.
@@ -518,8 +532,10 @@ ShellRoot {
   // shows through, a quiet vertical wash gives them depth, and a fixed grain
   // film keeps a large panel from reading as flat plastic. The film is fine
   // and clumped rather than raw noise, so it carries further before it is
-  // seen: it is laid on a little heavier than a coarse one could be.
-  readonly property string grain: Qt.resolvedUrl("grain.png")
+  // seen: it is laid on a little heavier than a coarse one could be. A theme
+  // may tile its own texture there instead (`surfaceTexture`), as a file URL
+  // with its path segments escaped.
+  readonly property string grain: surfaceTexture !== "" ? "file://" + surfaceTexture.split("/").map(encodeURIComponent).join("/") : Qt.resolvedUrl("grain.png")
   property real grainOpacity: 0.07
   // The film stops this far inside a surface's edge, so the hairline stays clean.
   property int grainInset: 3
@@ -541,6 +557,10 @@ ShellRoot {
   readonly property color panelBorder: supplied.panelBorder ?? alpha(crust, 0.9)
   readonly property color edgeLight: supplied.edgeLight ?? alpha(text, 0.08)
   readonly property color edgeCrown: supplied.edgeCrown ?? alpha(text, 0.16)
+  // The trim and the glitch a cut panel carries (`panelTrim`): the accent,
+  // and red knocked out of register past it.
+  readonly property color panelTrimColor: supplied.panelTrimColor ?? accent
+  readonly property color panelGlitchColor: supplied.panelGlitchColor ?? red
   // Interaction. The pointer is reported in neutral light and the commit is
   // reported in accent, so hovering the shell does not set it glowing and a
   // press still reads as something having been asked for. `hoverColor` is a
@@ -805,6 +825,20 @@ ShellRoot {
   // output when the mapping names none, draws `wallpaperImage`.
   property var wallpaperOutputs: ({})
 
+  // Assets -------------------------------------------------------------------
+  // Files a theme carries for its look, each an absolute path. The typeface
+  // a theme names in `fontFamily` may come with it, one file for each weight
+  // the theme sets text in, so the theme draws the same on any machine; the
+  // shell loads every file it is given. An empty slot loads nothing, which is
+  // the fallback: `fontFamily` then names a typeface installed on the system.
+  property string fontFileLight: ""    // the face `weightLight` sets
+  property string fontFileRegular: ""  // the face `weightRegular` sets
+  property string fontFileMedium: ""   // the face `weightMedium` sets
+  property string fontFileStrong: ""   // the face `weightStrong` sets
+  // An image tiled over every surface at `grainOpacity` in place of the
+  // grain film, such as scanlines. Empty keeps the film.
+  property string surfaceTexture: ""
+
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
   }
@@ -847,13 +881,26 @@ ShellRoot {
     for (var i = 0; i < slots.length; i++) {
       var slot = slots[i], value = values[slot.name]
       if (slot.derived) continue
-      root[slot.name] = slot.type === "weight" ? Font[value] : slot.type === "easing" ? Easing[value] : value
+      root[slot.name] = slot.type === "weight" || slot.type === "capitalization" ? Font[value] : slot.type === "easing" ? Easing[value] : value
     }
     var supplied = Contract.supplied(slots, theme)
     for (var j = 0; j < slots.length; j++) {
       if (slots[j].type === "easing" && supplied[slots[j].name] !== undefined) supplied[slots[j].name] = Easing[supplied[slots[j].name]]
     }
     root.supplied = supplied
+  }
+
+  // The typeface files the theme carries. Only a slot that names a file
+  // gets a loader, so a theme without any loads nothing, and switching away
+  // from one never asks Qt to load an empty source. Each path is given as a
+  // file URL with its segments escaped, as the wallpaper's is, so a `%`, `#`
+  // or `?` in it names the file rather than a URL part.
+  Instantiator {
+    model: [root.fontFileLight, root.fontFileRegular, root.fontFileMedium, root.fontFileStrong].filter(function(file) { return file !== "" })
+    delegate: FontLoader {
+      required property string modelData
+      source: "file://" + modelData.split("/").map(encodeURIComponent).join("/")
+    }
   }
 
   // The contract beside this file, read before any window maps. FileView takes

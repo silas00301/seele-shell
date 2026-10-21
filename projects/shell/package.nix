@@ -435,7 +435,7 @@ pkgs.stdenvNoCC.mkDerivation {
       ${../lock/shell.qml} ${../greeter/shell.qml} ${../polkit/shell.qml}
     node ${tests}/theme-contract.js ${themeContractSources}
     bash ${tests}/palette.sh "$out/share/seele-shell/shared" ${tests}/tst_palette.qml \
-      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml
+      ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml ${../../themes}
     node ${tests}/auth-navigation.js ${../shared} ${nativeQml}/lib/qt-6/qml \
       ${../lock/shell.qml} ${../greeter/shell.qml}
     test -f "$out/share/seele-shell/shared/Wallpaper.qml"

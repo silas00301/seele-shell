@@ -78,7 +78,7 @@ TestCase {
     return slots
   }
   function qmlValue(slot, value) {
-    return slot.type === "weight" ? Font[value] : slot.type === "easing" ? Easing[value] : value
+    return slot.type === "weight" || slot.type === "capitalization" ? Font[value] : slot.type === "easing" ? Easing[value] : value
   }
   function test_a_published_theme_sets_every_slot_and_leaves_nothing_behind() {
     var slots = contractSlots()
@@ -154,6 +154,28 @@ TestCase {
 
   // Two animations that bind the same easing and curve in either order, as a
   // surface's NumberAnimation does.
+  // A cut panel's material in the subject's theme, as PanelSurface lays it,
+  // over a backdrop that shows where it draws nothing.
+  Rectangle {
+    id: panelHost
+    x: 0; y: 110; width: 120; height: 40
+    color: "#00ff00"
+    Shared.CutFrame { theme: subject }
+  }
+  // A frame much smaller than a panel, such as a tooltip's, over a backdrop
+  // wider than it: nothing of it may land on the backdrop beside it.
+  Rectangle {
+    id: narrowBackdrop
+    x: 230; y: 110; width: 200; height: 40
+    color: "#00ff00"
+    Item {
+      id: narrowHost
+      width: 48; height: 22
+      Shared.CutFrame { id: narrowFrame; theme: subject }
+    }
+  }
+  Item { id: tipHost; width: 60; height: 24 }
+  Component { id: tipSurface; Shared.PanelSurface { theme: subject; cutCorners: false } }
   NumberAnimation { id: curveFirst; easing.bezierCurve: subject.easingStandardCurve; easing.type: subject.easingStandard }
   NumberAnimation { id: typeFirst; easing.type: subject.easingStandard; easing.bezierCurve: subject.easingStandardCurve }
   function test_a_spline_easing_reaches_every_transition_in_either_order() {
@@ -218,6 +240,75 @@ TestCase {
       compare(subject.easingStandard, Easing.BezierSpline)
       compare(curveFirst.easing.type, Easing.BezierSpline)
     }
+  }
+
+  // The Cyberpunk folder (SIL-239), registered as `seele-theme register`
+  // resolves it: its own typeface loads, headings go to capitals, panels cut
+  // their corners and tile scanlines, and a preset after it takes all of
+  // that back without a warning.
+  function test_the_cyberpunk_theme_brings_its_typeface_and_cuts_its_panels() {
+    var slots = contractSlots()
+    var document = themeFolder("cyberpunk")
+    for (var slot of slots) {
+      var name = document[slot.name]
+      if (slot.type === "path" && typeof name === "string" && name !== "")
+        document[slot.name] = Qt.resolvedUrl("../themes/cyberpunk/" + name).toString().replace(/^file:\/\//, "")
+    }
+    subject.applyTheme(document, slots)
+    compare(subject.fontFamily, "Chakra Petch")
+    tryVerify(function() { return Qt.fontFamilies().indexOf("Chakra Petch") >= 0 }, 5000, "the theme's own typeface is loaded")
+    compare(subject.titleCapitalization, Font.AllUppercase)
+    compare(subject.labelCapitalization, Font.AllUppercase)
+    compare(subject.panelCut, 14)
+    compare(subject.grain, "file://" + document.surfaceTexture.split("/").map(encodeURIComponent).join("/"),
+      "scanlines stand in for the grain film, as a file URL")
+    compare(subject.panelTrimColor, Qt.color(document.panelTrimColor))
+    compare(subject.panelGlitchColor, Qt.color(document.panelGlitchColor))
+    // Inside the cuts the panel draws nothing; on its edge, the neon border;
+    // along the top, from the cut, the trim.
+    var backdrop = Qt.color("#00ff00")
+    tryVerify(function() { return Qt.colorEqual(grabImage(panelHost).pixel(3, 3), backdrop) }, 2000, "the top left corner is cut")
+    verify(Qt.colorEqual(grabImage(panelHost).pixel(116, 36), backdrop), "and so is the bottom right")
+    verify(!Qt.colorEqual(grabImage(panelHost).pixel(60, 20), backdrop), "the material fills the rest")
+    var edge = grabImage(panelHost).pixel(0, 25)
+    verify(edge.r > 0.8 && edge.g < 0.4, "the edge is the theme's border: " + edge)
+    verify(Qt.colorEqual(grabImage(panelHost).pixel(40, 1), subject.panelTrimColor), "the trim runs along the top")
+    // However small the frame, its cut, trim and glitch stay inside it.
+    for (var size of [[48, 22], [12, 8], [90, 30], [140, 30]]) {
+      narrowHost.width = size[0]
+      narrowHost.height = size[1]
+      wait(20)
+      verify(narrowFrame.cut <= Math.min(size[0], size[1]) / 3, size + ": the cut fits")
+      for (var index = 0; index < narrowFrame.children.length; index++) {
+        var part = narrowFrame.children[index]
+        if (!part.visible) continue
+        verify(part.x >= 0 && part.y >= 0 && part.x + part.width <= size[0] && part.y + part.height <= size[1],
+          size + ": part " + index + " at " + part.x + "," + part.y + " " + part.width + "x" + part.height + " stays inside")
+      }
+      var beside = grabImage(narrowBackdrop)
+      verify(Qt.colorEqual(beside.pixel(size[0] + 4, 1), backdrop) && Qt.colorEqual(beside.pixel(199, 3), backdrop),
+        size + ": nothing is drawn beside the frame")
+    }
+    narrowHost.width = 48
+    narrowHost.height = 22
+    // A tip keeps the plain material: no cut, and no frame loaded for one.
+    var tip = tipSurface.createObject(tipHost)
+    verify(!tip.cut, "a tooltip's surface is not cut")
+    compare(tip.color, subject.panelColor)
+    // Gone before the preset below brings back the grain film, which this
+    // fixture does not generate.
+    tip.destroy()
+    wait(50)
+    // A preset afterwards: rounded panels, the grain film, mixed case, and
+    // no font loader left asking for an empty file.
+    var preset = {id:"catppuccin-mocha",name:"Catppuccin Mocha",mode:"dark"}
+    for (var key of keys) preset[key] = baseline[key].toString()
+    subject.applyTheme(preset, slots)
+    compare(subject.panelCut, 0)
+    compare(subject.titleCapitalization, Font.MixedCase)
+    compare(subject.fontFileRegular, "")
+    verify(subject.grain.toString().endsWith("grain.png"), subject.grain)
+    wait(100)
   }
 
   // The host's wallpaper mapping (SIL-236): the publication names the outputs

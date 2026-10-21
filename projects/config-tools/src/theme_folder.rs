@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use std::{
     collections::BTreeMap,
     fs,
-    io::ErrorKind,
+    io::{ErrorKind, Read},
     path::{Component, Path, PathBuf},
 };
 
@@ -23,6 +23,8 @@ const DOCUMENT_LIMIT: usize = 65536;
 const FILE_LIMIT: u64 = 16 * 1024 * 1024;
 /// The contract's slot for a theme's own background image.
 const WALLPAPER: &str = "wallpaper";
+/// The contract's slot for a texture tiled over every surface.
+const SURFACE_TEXTURE: &str = "surfaceTexture";
 pub const BASE16_KEYS: [&str; 16] = [
     "base00", "base01", "base02", "base03", "base04", "base05", "base06", "base07", "base08",
     "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
@@ -38,6 +40,39 @@ fn opaque(value: &str) -> bool {
 /// the applications from, the catalog and the document are one string.
 fn base16_color(value: &str) -> bool {
     opaque(value) && !value.bytes().any(|byte| byte.is_ascii_uppercase())
+}
+
+/// Whether `file` starts as a TrueType or an OpenType font does, the
+/// typefaces Qt's font loader takes.
+fn typeface(file: &Path) -> bool {
+    let mut head = Vec::with_capacity(4);
+    if fs::File::open(file)
+        .and_then(|file| file.take(4).read_to_end(&mut head))
+        .is_err()
+    {
+        return false;
+    }
+    [&b"\0\x01\0\0"[..], b"OTTO", b"true"].contains(&head.as_slice())
+}
+
+/// Why the file a slot names cannot be used, said as a refusal goes on, or
+/// nothing: a picture the shell draws (the theme's own wallpaper or the
+/// texture tiled over its surfaces) or a typeface it loads. Registration
+/// decodes a picture completely (`thorough`); a catalog read rechecks the
+/// registered copy's signature only, as for the wallpaper. A sound is handed
+/// to whatever plays it, so its bytes are not read.
+fn fault(slot: &str, file: &Path, thorough: bool) -> Option<String> {
+    if slot == WALLPAPER || slot == SURFACE_TEXTURE {
+        if thorough {
+            picture::fault(file)
+        } else {
+            (!picture::signed(file)).then(|| "is not a PNG or JPEG image".to_owned())
+        }
+    } else if slot.starts_with("fontFile") && !typeface(file) {
+        Some("is not a TrueType or OpenType font".to_owned())
+    } else {
+        None
+    }
 }
 
 /// What a folder must hold beyond the contract's own rules, which are about
@@ -194,12 +229,11 @@ pub fn register(id: &str, folder: &Path, out: &Path) -> Result {
         if name.is_empty() {
             continue;
         }
-        let resolved = resolve(folder, &root, slot, name).and_then(|file| {
-            match (slot == WALLPAPER).then(|| picture::fault(&file)).flatten() {
+        let resolved =
+            resolve(folder, &root, slot, name).and_then(|file| match fault(slot, &file, true) {
                 Some(fault) => Err(format!("{slot}: \"{name}\" {fault}")),
                 None => Ok(file),
-            }
-        });
+            });
         match resolved {
             Ok(file) => {
                 files.insert(name.clone(), file);
@@ -276,8 +310,11 @@ pub fn load(
         if let Some(Value::String(file)) = object.get(slot) {
             if !file.is_empty() && !Path::new(file).is_file() {
                 errors.push(format!("{slot}: \"{file}\" is missing"));
-            } else if slot == WALLPAPER && !file.is_empty() && !picture::signed(Path::new(file)) {
-                errors.push(format!("{slot}: \"{file}\" is not a PNG or JPEG image"));
+            } else if let Some(fault) = (!file.is_empty())
+                .then(|| fault(slot, Path::new(file), false))
+                .flatten()
+            {
+                errors.push(format!("{slot}: \"{file}\" {fault}"));
             }
         }
     }
@@ -580,6 +617,97 @@ mod tests {
             .register()
             .unwrap_err()
             .contains("wallpaper: \"missing.png\" is not a file in the theme folder"));
+    }
+
+    const TTF: &[u8] = b"\0\x01\0\0\0\x0e\0\x80";
+    const OTF: &[u8] = b"OTTO\0\x0c\0\x80";
+
+    #[test]
+    fn a_theme_carries_its_typeface_and_its_surface_texture() {
+        let texture = png_image(4, 3);
+        let mut document = with("fontFamily", json!("Example Face"));
+        document["fontFileRegular"] = json!("fonts/Example-Regular.ttf");
+        document["fontFileStrong"] = json!("fonts/Example-Bold.otf");
+        document["surfaceTexture"] = json!("scanlines.png");
+        let folder = Folder::new(&document);
+        folder.write("fonts/Example-Regular.ttf", TTF);
+        folder.write("fonts/Example-Bold.otf", OTF);
+        folder.write("scanlines.png", &texture);
+        let registered = folder.register().unwrap();
+        for (slot, name, bytes) in [
+            ("fontFileRegular", "fonts/Example-Regular.ttf", TTF),
+            ("fontFileStrong", "fonts/Example-Bold.otf", OTF),
+            ("surfaceTexture", "scanlines.png", &texture[..]),
+        ] {
+            let copy = folder.out().join(name);
+            assert_eq!(registered[slot], json!(copy.to_str().unwrap()), "{slot}");
+            assert_eq!(fs::read(&copy).unwrap(), bytes, "{slot}");
+        }
+        let palette: BTreeMap<String, String> = serde_json::from_value(palette()).unwrap();
+        let path = folder.out().join("theme.json");
+        load(&path, "example", "Example", "dark", &palette).unwrap();
+        // Checked again whenever the catalog is read.
+        fs::write(folder.out().join("fonts/Example-Bold.otf"), &texture).unwrap();
+        fs::write(folder.out().join("scanlines.png"), b"GIF89a").unwrap();
+        let error = load(&path, "example", "Example", "dark", &palette)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("fontFileStrong: ")
+                && error.contains("is not a TrueType or OpenType font")
+                && error.contains("surfaceTexture: ")
+                && error.contains("is not a PNG or JPEG image"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_typeface_or_texture_qt_cannot_load_is_refused() {
+        let png = png_image(4, 3);
+        for (slot, name, bytes, fault) in [
+            (
+                "fontFileRegular",
+                "face.ttf",
+                &png[..],
+                "is not a TrueType or OpenType font",
+            ),
+            (
+                "fontFileLight",
+                "face.woff2",
+                &b"wOF2\0\x01\0\0"[..],
+                "is not a TrueType or OpenType font",
+            ),
+            (
+                "fontFileMedium",
+                "face.ttf",
+                b"",
+                "is not a TrueType or OpenType font",
+            ),
+            (
+                "surfaceTexture",
+                "scanlines.gif",
+                b"GIF89a",
+                "is not a PNG or JPEG image",
+            ),
+            // A texture is decoded at registration as a wallpaper is.
+            (
+                "surfaceTexture",
+                "scanlines.png",
+                &png[..png.len() / 2],
+                "is not a complete PNG image",
+            ),
+        ] {
+            let folder = Folder::new(&with(slot, json!(name)));
+            folder.write(name, bytes);
+            let error = folder.register().unwrap_err();
+            assert!(
+                error.starts_with(&format!(
+                    "Invalid theme folder example:\n  {slot}: \"{name}\" {fault}"
+                )),
+                "{error}"
+            );
+            assert!(!folder.out().exists());
+        }
     }
 
     #[test]

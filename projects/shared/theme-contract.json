@@ -39,7 +39,8 @@
     "url": "A URL resolved against the shell's own files.",
     "weight": "A font weight, by its name in `enums.weight`.",
     "easing": "An easing curve, by its name in `enums.easing`.",
-    "curve": "A cubic Bézier easing curve as Qt's easing.bezierCurve reads it: control points x1, y1, x2, y2 and the end point of each segment, six numbers a segment and at most eight segments, ending at 1, 1. Empty while its easing is a named curve; its easing is BezierSpline exactly when it is not empty."
+    "curve": "A cubic Bézier easing curve as Qt's easing.bezierCurve reads it: control points x1, y1, x2, y2 and the end point of each segment, six numbers a segment and at most eight segments, ending at 1, 1. Empty while its easing is a named curve; its easing is BezierSpline exactly when it is not empty.",
+    "capitalization": "A capitalization, by its name in `enums.capitalization`."
   },
   "enums": {
     "weight": {
@@ -79,11 +80,19 @@
       "OutBounce": "Easing.OutBounce",
       "OutElastic": "Easing.OutElastic",
       "BezierSpline": "Easing.BezierSpline"
+    },
+    "capitalization": {
+      "MixedCase": "Font.MixedCase",
+      "AllUppercase": "Font.AllUppercase",
+      "AllLowercase": "Font.AllLowercase",
+      "SmallCaps": "Font.SmallCaps",
+      "Capitalize": "Font.Capitalize"
     }
   },
   "fallbacks": {
     "sound": "Silence. An omitted or empty sound slot plays nothing.",
-    "wallpaper": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette."
+    "wallpaper": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
+    "assets": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film."
   },
   "structural": {
     "description": "Numbers that describe structure rather than style, which a surface may still write: they are what any theme would want there. Anything else bound to a geometry, type, shape, material or motion property is a slot.",
@@ -367,6 +376,18 @@
           "description": "A pairing code is spaced so each digit can be read off on its own."
         },
         {
+          "name": "titleCapitalization",
+          "type": "capitalization",
+          "default": "MixedCase",
+          "description": "A heading may be set in capitals, as signage is: a panel's title and a section's label each take a capitalization, by default as written."
+        },
+        {
+          "name": "labelCapitalization",
+          "type": "capitalization",
+          "default": "MixedCase",
+          "description": "A heading may be set in capitals, as signage is: a panel's title and a section's label each take a capitalization, by default as written."
+        },
+        {
           "name": "lineHeightProse",
           "type": "real",
           "default": 1.15,
@@ -448,6 +469,12 @@
           "derived": "focusRingWidth",
           "suppliable": true,
           "description": "Where the keyboard is: a ring `focusRingWidth` wide, `focusRingGap` outside the control's edge, that flares to `focusRingFlare` as it appears (`durationFocusRing`). A negative gap lays the ring inside the edge: by default it is the hairline on the control's own edge, and it does not flare."
+        },
+        {
+          "name": "panelCut",
+          "type": "int",
+          "default": 0,
+          "description": "A panel may cut two corners instead of rounding them, as a machined plate is cut: its top left and bottom right are taken off at 45 degrees, this far along each edge. Zero keeps the rounded corner `radius` draws."
         }
       ]
     },
@@ -612,6 +639,18 @@
           "type": "int",
           "default": 28,
           "description": "A panel header with a title and no detail."
+        },
+        {
+          "name": "panelTrim",
+          "type": "int",
+          "default": 0,
+          "description": "A cut panel's trim: the cut lit in `panelTrimColor`, and a bar `strokeStrong` thick running `panelTrim` along the top edge from it. Past its end, a glitch: a slice `panelGlitch` long knocked down off the edge, in `panelGlitchColor`. Zero draws neither."
+        },
+        {
+          "name": "panelGlitch",
+          "type": "int",
+          "default": 0,
+          "description": "A cut panel's trim: the cut lit in `panelTrimColor`, and a bar `strokeStrong` thick running `panelTrim` along the top edge from it. Past its end, a glitch: a slice `panelGlitch` long knocked down off the edge, in `panelGlitchColor`. Zero draws neither."
         },
         {
           "name": "chipHeight",
@@ -1959,14 +1998,14 @@
         {
           "name": "grain",
           "type": "string",
-          "derived": "Qt.resolvedUrl(\"grain.png\")",
-          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be."
+          "derived": "surfaceTexture !== \"\" ? \"file://\" + surfaceTexture.split(\"/\").map(encodeURIComponent).join(\"/\") : Qt.resolvedUrl(\"grain.png\")",
+          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be. A theme may tile its own texture there instead (`surfaceTexture`), as a file URL with its path segments escaped."
         },
         {
           "name": "grainOpacity",
           "type": "real",
           "default": 0.07,
-          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be."
+          "description": "Textured chrome. Surfaces stay translucent so the compositor's blur shows through, a quiet vertical wash gives them depth, and a fixed grain film keeps a large panel from reading as flat plastic. The film is fine and clumped rather than raw noise, so it carries further before it is seen: it is laid on a little heavier than a coarse one could be. A theme may tile its own texture there instead (`surfaceTexture`), as a file URL with its path segments escaped."
         },
         {
           "name": "grainInset",
@@ -2037,6 +2076,20 @@
           "derived": "alpha(text, 0.16)",
           "suppliable": true,
           "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
+        },
+        {
+          "name": "panelTrimColor",
+          "type": "color",
+          "derived": "accent",
+          "suppliable": true,
+          "description": "The trim and the glitch a cut panel carries (`panelTrim`): the accent, and red knocked out of register past it."
+        },
+        {
+          "name": "panelGlitchColor",
+          "type": "color",
+          "derived": "red",
+          "suppliable": true,
+          "description": "The trim and the glitch a cut panel carries (`panelTrim`): the accent, and red knocked out of register past it."
         },
         {
           "name": "hoverColor",
@@ -2900,6 +2953,54 @@
           "optional": true,
           "fallback": "The image the host's wallpaper mapping chooses for the theme by its light or dark mode and by output, else the configured wallpaper, which the publication names for a theme without an image of its own, so switching to it keeps the image on screen; before any theme is published, $SEELE_SHELL_WALLPAPER when the session sets it, else /etc/wallpaper/wallpaper.jpg. Either is drawn over the base colour, so a missing file still leaves the palette.",
           "description": "The outputs that draw another image than `wallpaper`, by the name the compositor gives each one, such as DP-1. The host's wallpaper mapping chooses them, per output and per light or dark theme, and the publication names only outputs whose image differs; every other output, and every output when the mapping names none, draws `wallpaperImage`."
+        }
+      ]
+    },
+    {
+      "name": "assets",
+      "section": "Assets",
+      "kind": "optional",
+      "description": "Files a theme carries for its look: the typeface it names, one file per weight, and a texture tiled over its surfaces.",
+      "slots": [
+        {
+          "name": "fontFileLight",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film.",
+          "description": "The face `weightLight` sets."
+        },
+        {
+          "name": "fontFileRegular",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film.",
+          "description": "The face `weightRegular` sets."
+        },
+        {
+          "name": "fontFileMedium",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film.",
+          "description": "The face `weightMedium` sets."
+        },
+        {
+          "name": "fontFileStrong",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film.",
+          "description": "The face `weightStrong` sets."
+        },
+        {
+          "name": "surfaceTexture",
+          "type": "path",
+          "default": "",
+          "optional": true,
+          "fallback": "Nothing loaded. An omitted or empty typeface file loads nothing, so `fontFamily` names a typeface installed on the system; an omitted or empty surface texture keeps the shell's grain film.",
+          "description": "An image tiled over every surface at `grainOpacity` in place of the grain film, such as scanlines. Empty keeps the film."
         }
       ]
     }

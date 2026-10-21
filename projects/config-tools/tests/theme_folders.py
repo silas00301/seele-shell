@@ -12,6 +12,9 @@ lists for the registered example; --update rewrites that file instead.
 The folders the shell ships, those `themes/default.nix` lists beside
 `tests/`, register, list and publish the same way, and registered.json beside
 folders.json holds them as the helper lists them, for the harness to render.
+A file a shipped folder names is listed at its registered path; registered.json
+gives it as the same file in the repository, `themes/<id>/<name>`, which the
+harness reads in its place.
 """
 import json
 import os
@@ -227,14 +230,31 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     state = root / "shipped-state/seele-theme"
     listed = call("list")["themes"][1:]
     assert [theme["id"] for theme in listed] == shipped
+    registered_root = f"{root / 'registered'}/"
+
+    def in_repository(theme):
+        """The listed document, with each registered file named where it lies in the repository."""
+        named = {}
+        for key, value in theme.items():
+            if isinstance(value, str) and value.startswith(registered_root):
+                relative = value[len(registered_root):]
+                copy = root / "registered" / relative
+                source = shipped_root / relative
+                assert source.read_bytes() == copy.read_bytes(), (key, value)
+                value = f"themes/{relative}"
+            named[key] = value
+        return named
+
+    repository = [in_repository(theme) for theme in listed]
     registered_snapshot = snapshot.parent / "registered.json"
     if update:
-        registered_snapshot.write_text(json.dumps({"themes": listed}, indent=2, ensure_ascii=False) + "\n")
+        registered_snapshot.write_text(json.dumps({"themes": repository}, indent=2, ensure_ascii=False) + "\n")
     else:
-        assert json.loads(registered_snapshot.read_text()) == {"themes": listed}, f"{registered_snapshot} is not what seele-theme lists: run with --update"
+        assert json.loads(registered_snapshot.read_text()) == {"themes": repository}, f"{registered_snapshot} is not what seele-theme lists: run with --update"
     for theme in listed:
         call("set", theme["id"])
         selection = json.loads((state / "selection.json").read_text())
-        assert selection == dict(theme, version=2, wallpaper="/test/background.jpg"), theme["id"]
+        # A folder with an image of its own publishes it; any other the configured one.
+        assert selection == dict(theme, version=2, wallpaper=theme.get("wallpaper", "/test/background.jpg")), theme["id"]
 
 print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule; {len(shipped)} shipped folders register and publish")

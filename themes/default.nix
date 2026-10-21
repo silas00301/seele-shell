@@ -5,4 +5,5 @@
 [
   ./material-expressive-dark
   ./material-expressive-light
+  ./cyberpunk
 ]

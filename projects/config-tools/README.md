@@ -69,7 +69,8 @@ wrote at build time. `register` reads only the folder, holds it to the contract
 and to the folder rules in `src/theme_folder.rs` (the Base16 `palette`, opaque
 roles, the folder's name as `id`, named files inside the folder, a `wallpaper`
 that `src/picture.rs` finds to be a complete PNG or JPEG within Qt's 256 MiB
-decode limit), copies the
+decode limit, a `surfaceTexture` held to the same, and `fontFile…` typefaces
+that start as a TrueType or an OpenType font does), copies the
 files it names into `<out>` and resolves their names there, or exits 1 naming the
 folder and every rule it broke without writing anything. Reading the catalog
 holds each registered document to the same rules and to its entry's identity and
@@ -158,8 +159,11 @@ registers the example and every invalid fixture folder, resolves a named file,
 lists and publishes the example beside a preset, refuses a catalog whose entry
 and document disagree, and proves `folders.json`, which the pixel baselines
 render, is what the helper lists. It registers, lists and publishes every
-folder `themes/default.nix` ships the same way, and proves
-`tests/theme-snapshots/registered.json` is what the helper lists for them;
+folder `themes/default.nix` ships the same way, a folder with its own
+wallpaper publishing that image, and proves
+`tests/theme-snapshots/registered.json` is what the helper lists for them,
+with each file a shipped folder names given where it lies in the repository
+(`themes/<id>/<name>`) rather than at its temporary registered path;
 `--update` rewrites both files.
 
 ### Light, dark and the schedule

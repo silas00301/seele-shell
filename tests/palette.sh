@@ -4,13 +4,16 @@ shared=${1:?shared source required}
 fixture=${2:?palette Qt fixture required}
 qt_import=${3:?Qt QML import directory required}
 native_import=${4:?Seele QML import directory required}
+# The drop-in theme folders the fixture applies, such as Material's and
+# Cyberpunk's: beside the sources by default, or named where the shared files
+# were installed without them, as the package's own check does.
+themes=${5:-$shared/../../themes}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/projects/shared" "$work/tests" "$work/home" "$work/config"
 cp "$shared"/*.qml "$shared"/*.js "$shared"/theme-contract.json "$work/projects/shared/"
 cp "$fixture" "$work/tests/tst_palette.qml"
-# The drop-in theme folders the fixture applies, such as Material's.
-if [ -d "$shared/../../themes" ]; then cp -r "$shared/../../themes" "$work/themes"; fi
+if [ -d "$themes" ]; then cp -r "$themes" "$work/themes" && chmod -R u+w "$work/themes"; fi
 # Quickshell's executable-only plugins cannot load in qmltestrunner. Retain
 # production palette/material bindings, replacing only config IO and ShellRoot.
 node - "$work/projects/shared/Theme.qml" <<'JS'
