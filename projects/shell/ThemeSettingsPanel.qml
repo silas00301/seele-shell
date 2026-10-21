@@ -132,6 +132,48 @@ FocusScope {
     }
   }
 
+  // A theme's own motion or sounds, and whether to let them through.
+  component EffectRow: Item {
+    id: effectRow
+    property string title: ""
+    property string detail: ""
+    property bool checked: false
+    signal toggled()
+    width: parent ? parent.width : 0
+    height: panel.theme.rowHeight
+    Column {
+      anchors { left: parent.left; right: effectSwitch.left; rightMargin: panel.theme.spaceMedium; verticalCenter: parent.verticalCenter }
+      spacing: panel.theme.spaceLine
+      Text {
+        width: parent.width
+        text: effectRow.title
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: panel.theme.text
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textBody
+        font.weight: panel.theme.weightMedium
+      }
+      Text {
+        width: parent.width
+        text: effectRow.detail
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: panel.theme.subtext
+        font.family: panel.theme.fontFamily
+        font.pixelSize: panel.theme.textCaption
+      }
+    }
+    Shared.ControlSwitch {
+      id: effectSwitch
+      objectName: effectRow.objectName + "Switch"
+      theme: panel.theme
+      anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+      checked: effectRow.checked
+      onToggled: effectRow.toggled()
+    }
+  }
+
   Column {
     id: content
     width: parent.width
@@ -269,6 +311,31 @@ FocusScope {
       color: panel.theme.overlay
       font.family: panel.theme.fontFamily
       font.pixelSize: panel.theme.textCaption
+    }
+
+    // Only a theme that moves or sounds has anything to offer here, so the
+    // presets' panel is as it was.
+    Shared.SectionRule {
+      theme: panel.theme
+      width: parent.width
+      visible: panel.theme.panelMotion || panel.theme.themeSounds
+      label: "Effects"
+    }
+    EffectRow {
+      objectName: "motion"
+      visible: panel.theme.panelMotion
+      title: "Motion"
+      detail: "Panel trims sweep in and their glitch flickers"
+      checked: panel.store.motion
+      onToggled: panel.store.setEffect("motion", !checked)
+    }
+    EffectRow {
+      objectName: "sound"
+      visible: panel.theme.themeSounds
+      title: "Sounds"
+      detail: "Cues for toasts, panels, levels and the focus timer"
+      checked: panel.store.sound
+      onToggled: panel.store.setEffect("sound", !checked)
     }
     Text {
       width: parent.width

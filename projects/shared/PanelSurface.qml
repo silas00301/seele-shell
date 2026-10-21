@@ -26,7 +26,7 @@ Rectangle {
     id: cutFrame
     anchors.fill: parent
     active: panelSurface.cut
-    sourceComponent: CutFrame { theme: panelSurface.theme }
+    sourceComponent: CutFrame { theme: panelSurface.theme; hovered: panelSurface.hovered }
   }
   SurfaceWash { theme: panelSurface.theme; visible: !panelSurface.cut; radius: panelSurface.theme.radius - panelSurface.theme.hairline }
   SurfaceEdge { theme: panelSurface.theme; visible: !panelSurface.cut }

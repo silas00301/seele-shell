@@ -44,6 +44,7 @@ refusals = {
     ],
     "escaping-file": ['soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'],
     "wallpaper-not-image": ['wallpaper: "wallpaper.png" is not a PNG or JPEG image'],
+    "sound-not-wave": ['soundNotification: "sounds/ping.oga" is not a WAV sound'],
     "material-drift": [
         "material: theme.json is not what its seed grows (radius: 9 here, 16 from its seed); `seele-theme material` writes it again"
     ],
@@ -89,15 +90,15 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     # its absolute path there; an unnamed file stays behind.
     sounding = root / "sounding"
     (sounding / "sounds").mkdir(parents=True)
-    (sounding / "sounds/ping.oga").write_bytes(b"OggS")
+    (sounding / "sounds/ping.wav").write_bytes(b"RIFF\x24\0\0\0WAVEfmt ")
     (sounding / "draft.txt").write_text("not named\n")
-    (sounding / "theme.json").write_text(json.dumps(dict(source, id="sounding", soundNotification="sounds/ping.oga")))
+    (sounding / "theme.json").write_text(json.dumps(dict(source, id="sounding", soundNotification="sounds/ping.wav")))
     out = root / "registered/sounding"
     result = register(sounding, out)
     assert result.returncode == 0, result.stderr
     sounded = json.loads((out / "theme.json").read_text())
-    assert sounded["soundNotification"] == str(out / "sounds/ping.oga")
-    assert (out / "sounds/ping.oga").read_bytes() == b"OggS"
+    assert sounded["soundNotification"] == str(out / "sounds/ping.wav")
+    assert (out / "sounds/ping.wav").read_bytes() == b"RIFF\x24\0\0\0WAVEfmt "
     assert not (out / "draft.txt").exists()
 
     # So is a theme's own wallpaper, once it is known to be a PNG or a JPEG.

@@ -79,6 +79,20 @@ pub struct Preferences {
     pub light: String,
     pub mode: Mode,
     pub auto: Auto,
+    /// Whether a theme that moves (SIL-240) may: its panel trims sweeping in
+    /// and its glitches flickering. On by default, so a theme looks as its
+    /// author drew it until asked otherwise; a file saved before there was a
+    /// choice reads as on.
+    #[serde(default = "on")]
+    pub motion: bool,
+    /// Whether a theme that carries interface sounds plays them. Off by
+    /// default: sound is opt-in, so a theme never makes the desktop audible
+    /// until asked to.
+    #[serde(default)]
+    pub sound: bool,
+}
+fn on() -> bool {
+    true
 }
 impl Preferences {
     pub fn slot(&self, mode: Mode) -> &str {

@@ -58,6 +58,8 @@ with tempfile.TemporaryDirectory(prefix="seele-appearance-") as temporary:
     assert (listed["mode"], listed["dark"], listed["light"]) == ("dark", "catppuccin-mocha", "catppuccin-latte"), listed
     assert listed["auto"] == {"source": "off", "lightAt": "07:00", "darkAt": "19:00"}
     assert listed["next"] is None
+    # A theme's own motion is let through and its sounds are not, until asked.
+    assert (listed["motion"], listed["sound"]) == (True, False), listed
     assert not state.exists(), "listing must not create state"
 
     # An earlier single selection is migrated into its own mode's slot.
@@ -92,6 +94,26 @@ with tempfile.TemporaryDirectory(prefix="seele-appearance-") as temporary:
     call("mode", "light")
     assert shown() == "catppuccin-latte"
 
+    # Motion and sound are saved without publishing anything: neither
+    # changes the theme, and the shell reads them from the preferences.
+    generation = os.readlink(state / "current")
+    reply = call("motion", "off")
+    assert (reply["appearance"]["motion"], saved()["motion"]) == (False, False)
+    reply = call("sound", "on")
+    assert (reply["appearance"]["sound"], saved()["sound"]) == (True, True)
+    assert os.readlink(state / "current") == generation, "an effect republishes nothing"
+    assert (shown(), saved()["mode"]) == ("catppuccin-latte", "light")
+    call("motion", "on")
+    call("sound", "off")
+    assert (saved()["motion"], saved()["sound"]) == (True, False)
+    # A file saved before there was a choice reads as motion on, sound off.
+    earlier = saved()
+    del earlier["motion"], earlier["sound"]
+    (state / "preferences.json").write_text(json.dumps(earlier))
+    listed = call("list")["appearance"]
+    assert (listed["motion"], listed["sound"]) == (True, False), listed
+    call("sound", "on")
+
     # Picking files a preset under its own mode and switches to that mode.
     call("pick", "flexoki-light")
     assert (saved()["mode"], saved()["light"], shown()) == ("light", "flexoki-light", "flexoki-light")
@@ -109,7 +131,8 @@ with tempfile.TemporaryDirectory(prefix="seele-appearance-") as temporary:
     before = saved()
     for args in [("mode", "dusk"), ("slot", "light", "missing"), ("set", "missing"), ("restore", "dark", "missing", "nord"),
                  ("auto", "schedule", "7:00", "19:00"), ("auto", "schedule", "07:00", "07:00"), ("auto", "schedule"),
-                 ("auto", "sometimes"), ("slot", "grey", "nord")]:
+                 ("auto", "sometimes"), ("slot", "grey", "nord"), ("motion", "maybe"), ("sound",),
+                 ("sound", "on", "loud")]:
         call(*args, ok=False)
     assert saved() == before
 
@@ -174,9 +197,12 @@ with tempfile.TemporaryDirectory(prefix="seele-appearance-") as temporary:
         follower.terminate()
         follower.wait(timeout=5)
 
-    # Reset returns both slots, the mode and the schedule to the defaults.
+    # Reset returns both slots, the mode, the schedule and the effects to the
+    # defaults.
+    assert saved()["sound"] is True, "sound stayed on through every step above"
     call("reset")
     assert saved() == {"version": 1, "dark": "catppuccin-mocha", "light": "catppuccin-latte", "mode": "dark",
-                       "auto": {"source": "off", "lightAt": "07:00", "darkAt": "19:00", "last": 0}}
+                       "auto": {"source": "off", "lightAt": "07:00", "darkAt": "19:00", "last": 0},
+                       "motion": True, "sound": False}
 
-print("Light and dark slots, migration, mode, restore, fixed and solar schedules, manual holds, catch-up and follow passed")
+print("Light and dark slots, migration, mode, restore, fixed and solar schedules, manual holds, catch-up, follow, motion and sound passed")

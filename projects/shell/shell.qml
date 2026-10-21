@@ -31,15 +31,28 @@ Shared.Theme {
     theme: root
   }
 
+  // The theme's interface sounds, for a theme that carries them and only once
+  // the user has asked for them.
+  ThemeSounds {
+    id: themeSounds
+    theme: root
+    quiet: root.presenting
+    panel: root.controlPanel
+    switcher: root.themesOpen
+  }
+
   FocusTimer {
     id: focusTimer
     // Completion is the exit. Pause and cancel leave the cue alone: one was
     // asked for, the other is a break. The notification stays for the inbox;
     // the rim is what can be seen without looking at the bar, including while
-    // Do Not Disturb has the toast.
+    // Do Not Disturb has the toast, and so is the theme's sound for it.
     onCompleted: {
       focusExitCue.play()
-      Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "Focus timer", "Time is up."])
+      themeSounds.play("focusDone")
+      // The theme's focusDone cue has already sounded for this, so the
+      // notification asks for silence rather than a second cue.
+      Quickshell.execDetached(["notify-send", "--app-name=Seele Shell", "--icon=appointment-soon", "--hint=boolean:suppress-sound:true", "Focus timer", "Time is up."])
     }
   }
 
@@ -1524,6 +1537,8 @@ Shared.Theme {
     root.osdScreen = root.currentScreen()
     root.osdOpen = true
     osdTimer.restart()
+    // A level stepped; headphones arriving are not a level.
+    if (kind !== "airpods") themeSounds.play("levelStep")
   }
 
   // The level arrives measured and worded by the native helper, which read it
@@ -2128,7 +2143,11 @@ Shared.Theme {
       for (var key in root.notificationUnfolded) if (present[key]) unfolded[key] = true
       root.notificationUnfolded = unfolded
     }
-    onArrived: root.notificationPopupScreen = root.currentScreen()
+    // A toast is shown; the theme's sounds decide which cue, if any, it gets.
+    onArrived: (entry, fresh) => {
+      root.notificationPopupScreen = root.currentScreen()
+      themeSounds.arrived(entry, fresh)
+    }
   }
 
   PrFocusStore {

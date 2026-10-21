@@ -398,6 +398,8 @@ impl Catalog {
             light: self.default_for(Mode::Light),
             mode: self.mode_of(&self.default).unwrap_or(Mode::Dark),
             auto: Auto::default(),
+            motion: true,
+            sound: false,
         }
     }
 }
@@ -949,7 +951,8 @@ fn now() -> i64 {
         })
 }
 /// What a picker needs to draw the light and dark controls: both slots, the
-/// mode, the schedule's settings, and what the schedule will do next.
+/// mode, the schedule's settings, what the schedule will do next, and
+/// whether a theme's own motion and sounds are let through.
 fn describe(prefs: &Preferences, now: i64) -> serde_json::Value {
     let place = appearance::place();
     let calendar = Local;
@@ -973,6 +976,8 @@ fn describe(prefs: &Preferences, now: i64) -> serde_json::Value {
             "lightAt": prefs.auto.light_at,
             "darkAt": prefs.auto.dark_at,
         },
+        "motion": prefs.motion,
+        "sound": prefs.sound,
         "place": place.map(|place| place.label),
         "sun": sun,
         "next": plan.and_then(|plan| plan.next).map(|next| serde_json::json!({
@@ -1091,7 +1096,7 @@ fn material_command(args: &[&str]) -> Result {
     Ok(())
 }
 const MATERIAL_USAGE: &str = "Use: seele-theme material tokens <#seed> [contrast] | material <#seed> <light|dark> <id> <name> [contrast]";
-const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out> | check <catalog> | material tokens <#seed> [contrast] | material <#seed> <light|dark> <id> <name> [contrast]";
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | motion <on|off> | sound <on|off> | tick | follow | init | reset | serve | register <id> <folder> <out> | check <catalog> | material tokens <#seed> [contrast] | material <#seed> <light|dark> <id> <name> [contrast]";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
@@ -1227,6 +1232,23 @@ pub fn main() -> Result {
                 if let Some(plan) = appearance::plan(&prefs.auto, &Local, place.as_ref(), now) {
                     prefs.mode = plan.mode;
                     prefs.auto.last = plan.since;
+                }
+                Ok(())
+            })?
+        }
+        // Whether a theme that moves or carries sounds may move or sound.
+        // Neither changes the theme, so nothing is published again.
+        [effect @ ("motion" | "sound"), value] => {
+            let value = match *value {
+                "on" => true,
+                "off" => false,
+                _ => return Err(USAGE.into()),
+            };
+            change(&catalog, &state, false, |prefs| {
+                if *effect == "motion" {
+                    prefs.motion = value;
+                } else {
+                    prefs.sound = value;
                 }
                 Ok(())
             })?

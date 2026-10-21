@@ -186,7 +186,10 @@ fn from_native(n: &Value, now: Option<&Value>) -> Value {
         .get("x-dunst-stack-tag")
         .filter(|v| truthy(Some(v)))
         .or_else(|| hints.get("x-canonical-private-synchronous"));
-    json!({"id":n["id"],"app_name":n["appName"],"app_icon":n["appIcon"],"desktop_entry":n["desktopEntry"],"summary":n["summary"],"body":n["body"],"action_icons":truthy(n.get("hasActionIcons")),"image":local_image(n.get("image")),"urgency":number(n.get("urgency")),"resident":truthy(n.get("resident")),"transient":truthy(n.get("transient")),"timeout":number(n.get("expireTimeout")),"time":now,"progress":if progress.is_finite() {progress.clamp(0.0,100.0)} else {-1.0},"tag":text(tag),"pinned":false})
+    // The specification's `suppress-sound`: the sender asks the server to play
+    // no sound for it, so the theme's arrival cue stays quiet.
+    let silent = hints.get("suppress-sound").and_then(Value::as_bool) == Some(true);
+    json!({"id":n["id"],"app_name":n["appName"],"app_icon":n["appIcon"],"desktop_entry":n["desktopEntry"],"summary":n["summary"],"body":n["body"],"action_icons":truthy(n.get("hasActionIcons")),"image":local_image(n.get("image")),"urgency":number(n.get("urgency")),"resident":truthy(n.get("resident")),"transient":truthy(n.get("transient")),"timeout":number(n.get("expireTimeout")),"time":now,"progress":if progress.is_finite() {progress.clamp(0.0,100.0)} else {-1.0},"tag":text(tag),"pinned":false,"silent":silent})
 }
 // A quiet period is one length being spent, so the panel is handed what it
 // should draw -- which of the three states silence is in, what is left of the
@@ -1172,6 +1175,27 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_sender_may_ask_for_silence() {
+        let native = |hints: Value| json!({"id":1,"appName":"Seele Shell","summary":"Focus timer","urgency":1,"hints":hints});
+        let now = json!(1000);
+        assert_eq!(
+            from_native(&native(json!({"suppress-sound": true})), Some(&now))["silent"],
+            json!(true)
+        );
+        for hints in [
+            json!({}),
+            json!({"suppress-sound": false}),
+            json!({"suppress-sound": null}),
+            json!({"suppress-sound": "true"}),
+        ] {
+            assert_eq!(
+                from_native(&native(hints.clone()), Some(&now))["silent"],
+                json!(false),
+                "{hints}"
+            );
+        }
+    }
     #[test]
     fn transient_focus_quiet_keeps_calendar_reminders_in_panel() {
         let mut state = new_state(1000.0).unwrap();
