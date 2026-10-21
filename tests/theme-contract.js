@@ -399,6 +399,8 @@ for (const theme of folders.themes) {
   assert.deepEqual(validate({...theme, version: 2, wallpaper: palette.wallpaper}), [], `${theme.id} is a valid theme.json`);
 }
 assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-folders/example/theme.json'), 'utf8'))), [], 'the example folder is a valid theme document');
+// The template a new theme is copied from (themes/AUTHORING.md).
+assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(__dirname, '../themes/template/theme.json'), 'utf8'))), [], 'the template folder is a valid theme document');
 const pictured = JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-folders/pictured/theme.json'), 'utf8'));
 const registeredImage = '/nix/store/registered/pictured/wallpaper.png';
 assert.deepEqual(validate({...pictured, wallpaper: registeredImage}), [], 'the pictured folder, registered, is a valid theme document');

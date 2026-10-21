@@ -131,3 +131,11 @@ jj edit <change> && nix develop -c theme-snapshots --baseline /tmp/theme-base
 
 Re-record the committed baselines only for a change whose new look is
 intended, and review every changed image.
+
+`--only <id>[,<id>...]` draws just those themes, each in the same scene and
+beside the same catalog as a full run, so they are pixel-identical to it in a
+fraction of the time. It compares only them; recording them needs a
+`--baseline` directory of their own, since the committed baselines are recorded
+whole. `theme-preview <id>` in the development shell uses it to draw a theme
+folder being written into `/tmp/seele-theme-preview/<id>`
+(`themes/AUTHORING.md`).

@@ -15,10 +15,17 @@ folders.json holds them as the helper lists them, for the harness to render.
 A file a shipped folder names is listed at its registered path; registered.json
 gives it as the same file in the repository, `themes/<id>/<name>`, which the
 harness reads in its place.
+
+`themes/template`, which no line ships, registers as written, and a copy of it
+does once its id names the new folder, as `themes/AUTHORING.md` says; so does
+the template with each JSON recipe of that guide added, a file the recipe names
+made with the first bytes its slot takes.
 """
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +34,11 @@ binary = str(Path(sys.argv[1]).resolve())
 folders = Path(sys.argv[2]).resolve()
 snapshot = Path(sys.argv[3]).resolve()
 update = "--update" in sys.argv[4:]
+
+# The first bytes a typeface and a sound a theme names are held to. An image
+# is decoded whole, so the recipes below take the pictured fixture's.
+TTF = b"\0\x01\0\0\0\x0e\0\x80"
+WAV = b"RIFF\x24\0\0\0WAVEfmt "
 
 # Each invalid fixture, and every line its refusal has to name.
 refusals = {
@@ -258,4 +270,49 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
         # A folder with an image of its own publishes it; any other the configured one.
         assert selection == dict(theme, version=2, wallpaper=theme.get("wallpaper", "/test/background.jpg")), theme["id"]
 
-print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule; {len(shipped)} shipped folders register and publish")
+    # The template a new theme starts from (themes/AUTHORING.md): no line ships
+    # it, and it registers exactly as it is written.
+    template = shipped_root / "template"
+    assert "template" not in shipped
+    template_source = json.loads((template / "theme.json").read_text())
+    result = register(template, root / "registered/template")
+    assert result.returncode == 0, result.stderr
+    assert json.loads((root / "registered/template/theme.json").read_text()) == template_source
+    # Copied to a folder of its own, it is refused until its id is that
+    # folder's name, and then registers.
+    copy = root / "copies/aurora"
+    shutil.copytree(template, copy)
+    result = register(copy, root / "refused/aurora")
+    assert result.returncode == 1, result.stderr
+    assert result.stderr.splitlines() == ["Seele Themes: Invalid theme folder aurora:", '  id: "template" is not the folder\'s name'], result.stderr
+    (copy / "theme.json").write_text(json.dumps(dict(template_source, id="aurora", name="Aurora")))
+    result = register(copy, root / "registered/aurora")
+    assert result.returncode == 0, result.stderr
+
+    # Every recipe in the guide registers as written on top of the template.
+    # A file it names is made as its slot is held to: a whole image, or a
+    # typeface or sound by its first bytes.
+    image = (folders / "pictured/wallpaper.png").read_bytes()
+    first_bytes = {"wallpaper": image, "surfaceTexture": image, "fontFile": TTF, "sound": WAV}
+    recipes = re.findall(r"^```json\n(.*?)^```$", (shipped_root / "AUTHORING.md").read_text(), re.M | re.S)
+    assert len(recipes) >= 8, len(recipes)
+    for index, text in enumerate(recipes):
+        recipe = json.loads(text)
+        folder = root / f"recipes/{index}/template"
+        folder.mkdir(parents=True)
+        for key, value in recipe.items():
+            kind = next((slot for slot in first_bytes if key.startswith(slot)), None)
+            if kind:
+                (folder / value).parent.mkdir(parents=True, exist_ok=True)
+                (folder / value).write_bytes(first_bytes[kind])
+        document = dict(template_source, **recipe)
+        (folder / "theme.json").write_text(json.dumps(document))
+        out = root / f"recipes/{index}/registered"
+        result = register(folder, out)
+        assert result.returncode == 0, (text, result.stderr)
+        written = json.loads((out / "theme.json").read_text())
+        for key, value in recipe.items():
+            expected = str(out / value) if any(key.startswith(slot) for slot in first_bytes) else value
+            assert written[key] == expected, (key, written[key], expected)
+
+print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule; {len(shipped)} shipped folders register and publish; the template, a copy of it and {len(recipes)} recipes of its guide register")

@@ -13,7 +13,7 @@ its own, so a theme can restyle the shell without a code change.
 | `tests/theme-contract.js` | Holds the two to each other, validates theme documents, and fails on any styling literal outside the contract. |
 | `../config-tools/src/theme_contract.rs` | The same document rules in the theme helper, which embeds this JSON and refuses a preset that breaks them. |
 | `../config-tools/src/theme_folder.rs` | Registers a drop-in theme folder at build time, and holds a registered document to the same rules whenever the catalog is read. |
-| `../../themes/` | The drop-in theme folders, one line each in `default.nix`. |
+| `../../themes/` | The drop-in theme folders, one line each in `default.nix`; `AUTHORING.md` writes a new one from `template/`. |
 | `tests/theme-snapshots/` | Pixel baselines of every preset (SIL-232). A refactor of the contract proves it changed nothing there. |
 
 ## Slots
@@ -280,13 +280,15 @@ as for a preset.
 
 `tests/theme-folders/` holds the example folder the checks register, the
 pictured folder that carries its own wallpaper, and the invalid folders each
-check refuses, among them a Material folder edited by hand. `checks.theme-folders` builds every registered folder and both
-fixtures, lists them beside a preset, switches between the pictured folder, the
+check refuses, among them a Material folder edited by hand. `checks.theme-folders` builds every registered folder, both
+fixtures and `themes/template`, lists them beside a preset, switches between the pictured folder, the
 example and the preset to prove which wallpaper each publishes, and proves each
 invalid fixture fails its own build with its message;
-`config-tools/tests/theme_folders.py` does the same through the CLI, and the
-pixel baselines draw the example in the switcher and the Themes panel and the
-folders the shell ships on every surface.
+`config-tools/tests/theme_folders.py` does the same through the CLI, and also
+registers a renamed copy of the template and the template with each recipe of
+`themes/AUTHORING.md` added, so the guide's recipes are known to be accepted;
+the pixel baselines draw the example in the switcher and the Themes panel and
+the folders the shell ships on every surface.
 
 ## Material 3 Expressive
 

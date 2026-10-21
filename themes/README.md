@@ -14,6 +14,11 @@ application themes from it, and adds it to the theme switcher, the Control
 Center's Themes panel and Vicinae's Seele Themes after the presets. No shell
 code changes.
 
+To write one, follow `AUTHORING.md`: copy `template/`, a complete dark theme
+that no line here ships, choose its colours, and check and look at it with
+`theme-check` and `theme-preview` in the development shell. It takes under an
+hour.
+
 ## The folder
 
 ```
@@ -60,8 +65,9 @@ example/
   mapping, declared in the parent flake's Nix (`seele.wallpaper`), because
   output names belong to a machine; a folder cannot carry `wallpaperOutputs`.
 
-`tests/theme-folders/example` is a complete folder, and
-`tests/theme-folders/pictured` one with its own wallpaper.
+`template/` is the folder to copy, `tests/theme-folders/example` is a complete
+folder the checks use, and `tests/theme-folders/pictured` one with its own
+wallpaper.
 
 ## Material 3 Expressive
 

@@ -3,7 +3,7 @@
 //
 //   node tests/theme-snapshots.js <projects/shell> <Qt QML imports> <Seele.Core QML imports> \
 //     <font directory> <grain.png> [--update] [--keep <directory>] [--catalog <seele-theme list JSON>]
-//     [--baseline <directory>]
+//     [--baseline <directory>] [--only <id>[,<id>...]]
 //
 // The production shell.qml is lifted rather than copied by hand: every root
 // property, function and inline component, and each surface's whole layer
@@ -15,7 +15,11 @@
 // committed PNGs pixel for pixel; any difference fails. `--update` rewrites the
 // baselines instead. A drop-in theme folder's document (folders.json) is
 // rendered on the two Themes surfaces, the places a registered theme has to
-// appear. See theme-snapshots/README.md.
+// appear. `--only` draws just the themes it names, each in the same scene and
+// beside the same catalog as a full run, so a theme being written can be seen
+// on every surface in seconds (themes/AUTHORING.md); it compares only those,
+// and records them only into a --baseline directory of their own. See
+// theme-snapshots/README.md.
 'use strict';
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -29,13 +33,17 @@ const assets = path.join(__dirname, 'theme-snapshots');
 
 function usage(message) {
   console.error(message);
-  console.error('usage: node tests/theme-snapshots.js <projects/shell> <qt-qml-imports> <seele-core-qml-imports> <font-dir> <grain.png> [--update] [--keep <dir>] [--catalog <file>] [--baseline <dir>]');
+  console.error('usage: node tests/theme-snapshots.js <projects/shell> <qt-qml-imports> <seele-core-qml-imports> <font-dir> <grain.png> [--update] [--keep <dir>] [--catalog <file>] [--baseline <dir>] [--only <id>[,<id>...]]');
   process.exit(2);
 }
-const positional = [], options = {update: false, keep: '', catalog: '', baseline: ''};
+const positional = [], options = {update: false, keep: '', catalog: '', baseline: '', only: []};
 for (let index = 2; index < process.argv.length; ++index) {
   const argument = process.argv[index];
   if (argument === '--update') options.update = true;
+  else if (argument === '--only') {
+    if (index + 1 >= process.argv.length) usage('--only needs theme ids');
+    options.only = process.argv[++index].split(',').filter(Boolean);
+  }
   else if (argument === '--keep' || argument === '--catalog' || argument === '--baseline') {
     if (index + 1 >= process.argv.length) usage(`${argument} needs a path`);
     options[argument.slice(2)] = path.resolve(process.argv[++index]);
@@ -51,6 +59,9 @@ const manifestPath = path.join(options.baseline || assets, 'manifest.json');
 // --update replaces a directory of earlier snapshots, never an arbitrary one.
 if (options.update && options.baseline && fs.existsSync(baselineDir) && fs.readdirSync(baselineDir).length > 0 && !fs.existsSync(manifestPath))
   usage(`${baselineDir} is not empty and holds no snapshot manifest`);
+// The committed baselines are recorded whole: a subset would drop the rest.
+if (options.update && options.only.length && !options.baseline)
+  usage('--only records into a --baseline directory of its own, never the committed baselines');
 
 // The surfaces, each one production layer window. `state` is the root state
 // the shell is in while that window is shown; `target` names the item inside
@@ -73,8 +84,9 @@ const surfaces = [
 const folderSurfaces = ['theme-switcher', 'theme-settings'];
 const surfacesOf = theme => theme.folder && !theme.shipped ? surfaces.filter(surface => folderSurfaces.includes(surface.name)) : surfaces;
 function counted() {
-  const folders = themes.filter(theme => theme.folder && !theme.shipped).length;
-  return `${themes.length - folders} themes on ${surfaces.length} surfaces and ${folders} theme folder${folders === 1 ? '' : 's'} on ${folderSurfaces.length}`;
+  const folders = drawn.filter(theme => theme.folder && !theme.shipped).length;
+  const others = drawn.length - folders;
+  return `${others} theme${others === 1 ? '' : 's'} on ${surfaces.length} surfaces and ${folders} theme folder${folders === 1 ? '' : 's'} on ${folderSurfaces.length}`;
 }
 
 // ---------------------------------------------------------------- PNG codec
@@ -291,6 +303,7 @@ function harness(shellText, scene, themes, output, contract) {
   result = replace(result, '// @surfaces@', windows);
   result = replace(result, '"@surfaces@"', JSON.stringify(surfaces.map(surface => ({name: surface.name, state: surface.state || {}}))));
   result = replace(result, '"@themes@"', JSON.stringify(themes));
+  result = replace(result, '"@only@"', JSON.stringify(options.only));
   result = replace(result, '"@folderSurfaces@"', JSON.stringify(folderSurfaces));
   result = replace(result, '"@contract@"', JSON.stringify(contract));
   result = replace(result, '"@output@"', JSON.stringify(output));
@@ -342,6 +355,11 @@ for (const theme of registeredFile.themes) for (const [key, value] of Object.ent
 const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes,
   ...registeredFile.themes.map(theme => ({...inRepository(theme), folder: true, shipped: true})),
   ...folderFile.themes.map(theme => ({...theme, folder: true}))];
+// The themes drawn: every one, or those --only names. The scene keeps them
+// all, since a theme's catalog is the presets beside it.
+const unknown = options.only.filter(id => !themes.some(theme => theme.id === id));
+if (unknown.length) usage(`--only: no theme ${unknown.join(', ')}; a folder is drawn once registered.json lists it (themes/AUTHORING.md). Known: ${themes.map(theme => theme.id).join(', ')}`);
+const drawn = options.only.length ? themes.filter(theme => options.only.includes(theme.id)) : themes;
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-theme-snapshots-'));
 try {
@@ -428,7 +446,7 @@ try {
   const config = (/^Config: (.*)$/m.exec(log) || [, 'unknown'])[1];
   const renderer = {qt: config.replace(/, by .*/, '').replace(/^Using QtTest library [^,]+, /, ''), platform: 'offscreen', backend: 'software', style: 'Fusion', text: 'unhinted greyscale'};
 
-  const expected = themes.flatMap(theme => surfacesOf(theme).map(surface => path.join(theme.id, `${surface.name}.png`))).sort();
+  const expected = drawn.flatMap(theme => surfacesOf(theme).map(surface => path.join(theme.id, `${surface.name}.png`))).sort();
   const rendered = expected.filter(file => fs.existsSync(path.join(output, file)));
   assert.deepEqual(rendered, expected, 'every theme rendered every surface');
 
@@ -438,14 +456,14 @@ try {
       fs.mkdirSync(path.dirname(path.join(baselineDir, file)), {recursive: true});
       fs.copyFileSync(path.join(output, file), path.join(baselineDir, file));
     }
-    const record = {renderer, fonts, themes: themes.filter(theme => !theme.folder).map(theme => theme.id), surfaces: surfaces.map(surface => surface.name),
-      folders: Object.fromEntries(themes.filter(theme => theme.folder).map(theme => [theme.id, surfacesOf(theme).map(surface => surface.name)]))};
+    const record = {renderer, fonts, themes: drawn.filter(theme => !theme.folder).map(theme => theme.id), surfaces: surfaces.map(surface => surface.name),
+      folders: Object.fromEntries(drawn.filter(theme => theme.folder).map(theme => [theme.id, surfacesOf(theme).map(surface => surface.name)]))};
     fs.writeFileSync(manifestPath, JSON.stringify(record, null, 2) + '\n');
     console.log(`Recorded ${expected.length} baselines: ${counted()} (${renderer.qt})`);
   } else {
     const failures = [];
     const committed = fs.existsSync(baselineDir) ? fs.readdirSync(baselineDir, {recursive: true}).filter(file => file.endsWith('.png')).sort() : [];
-    for (const file of committed.filter(file => !expected.includes(file))) failures.push(`${file}: baseline for a theme or surface that is no longer rendered`);
+    if (!options.only.length) for (const file of committed.filter(file => !expected.includes(file))) failures.push(`${file}: baseline for a theme or surface that is no longer rendered`);
     for (const file of expected) {
       const baseline = path.join(baselineDir, file);
       if (!fs.existsSync(baseline)) { failures.push(`${file}: no baseline`); continue; }

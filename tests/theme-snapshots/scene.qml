@@ -177,6 +177,8 @@ Shared.Theme {
     when: windowShown
 
     readonly property var themes: "@themes@"
+    // The ids `--only` draws, or none for every theme.
+    readonly property var only: "@only@"
     readonly property var surfaces: "@surfaces@"
     // A theme folder is drawn only where a registered theme has to appear.
     readonly property var folderSurfaces: "@folderSurfaces@"
@@ -239,7 +241,8 @@ Shared.Theme {
       var rows = []
       for (var i = 0; i < themes.length; i++)
         for (var j = 0; j < surfaces.length; j++)
-          if (!themes[i].folder || themes[i].shipped || folderSurfaces.indexOf(surfaces[j].name) >= 0)
+          if ((only.length === 0 || only.indexOf(themes[i].id) >= 0)
+              && (!themes[i].folder || themes[i].shipped || folderSurfaces.indexOf(surfaces[j].name) >= 0))
             rows.push({ tag: themes[i].id + "/" + surfaces[j].name, theme: themes[i], surface: surfaces[j] })
       return rows
     }
