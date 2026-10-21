@@ -10,6 +10,7 @@
 //! takes; a slot Material has no token for keeps its contract default.
 use super::hct::{self, Argb, TonalPalette};
 use super::scheme::{Role, Scheme};
+use super::spring::Spring;
 use crate::theme_contract;
 use serde_json::{json, Map, Value};
 
@@ -107,6 +108,34 @@ pub const STATE_DISABLED_CONTAINER: f64 = 0.12;
 /// The focus indicator's stroke and its offset outside the control.
 pub const FOCUS_THICKNESS: u32 = 3;
 pub const FOCUS_OFFSET: u32 = 2;
+/// The width the focus ring (`md-focus-ring`) flares to as it appears, over
+/// the long 4 duration: a quarter of it growing, the rest settling.
+pub const FOCUS_FLARE: u32 = 8;
+
+/// The press ripple and state layer as Material Web's `md-ripple` draws them:
+/// the hover layer's fade, the press's growth, its fade in, the least time it
+/// is shown, and its fade out, in milliseconds; then the disc it starts as, a
+/// share of the longer side, its reach past the far corner, its soft edge
+/// (at least `RIPPLE_SOFT_EDGE`, or that share of the longer side), and the
+/// gradient's feather and solid core.
+pub const STATE_LAYER_FADE: u32 = 15;
+pub const RIPPLE_GROW: u32 = 450;
+pub const RIPPLE_IN: u32 = 105;
+pub const RIPPLE_HOLD: u32 = 225;
+pub const RIPPLE_OUT: u32 = 375;
+pub const RIPPLE_ORIGIN_SCALE: f64 = 0.2;
+pub const RIPPLE_PADDING: u32 = 10;
+pub const RIPPLE_SOFT_EDGE: u32 = 75;
+pub const RIPPLE_SOFT_EDGE_RATIO: f64 = 0.35;
+pub const RIPPLE_FEATHER: u32 = 70;
+pub const RIPPLE_CORE: f64 = 0.65;
+
+/// The switch's handle unselected, selected and pressed, and the state layer
+/// centred on it.
+pub const SWITCH_HANDLE: u32 = 16;
+pub const SWITCH_HANDLE_SELECTED: u32 = 24;
+pub const SWITCH_HANDLE_PRESSED: u32 = 28;
+pub const SWITCH_STATE_LAYER: u32 = 40;
 
 /// The Expressive motion scheme's springs: damping ratio and stiffness.
 /// Spatial springs move things and may overshoot; effects springs change
@@ -138,6 +167,21 @@ pub const DURATIONS: [(&str, u32); 16] = [
     ("extraLong3", 900),
     ("extraLong4", 1000),
 ];
+/// A spring by name, as the contract's motion: its time to settle and its
+/// sampled curve.
+fn spring(name: &str) -> (u32, Vec<f64>) {
+    SPRINGS
+        .iter()
+        .find(|(token, _, _)| *token == name)
+        .map(|(_, damping, stiffness)| {
+            Spring {
+                damping: *damping,
+                stiffness: *stiffness,
+            }
+            .timed()
+        })
+        .expect("a spring token")
+}
 fn duration(name: &str) -> u32 {
     DURATIONS
         .iter()
@@ -262,11 +306,21 @@ pub fn tokens(seed: Argb, contrast: f64) -> Value {
             "dragged": STATE_DRAGGED, "disabled": STATE_DISABLED,
             "disabledContainer": STATE_DISABLED_CONTAINER,
             "focusThickness": FOCUS_THICKNESS, "focusOffset": FOCUS_OFFSET,
+            "focusFlare": FOCUS_FLARE, "layerFade": STATE_LAYER_FADE,
+            "ripple": {
+                "grow": RIPPLE_GROW, "in": RIPPLE_IN, "hold": RIPPLE_HOLD, "out": RIPPLE_OUT,
+                "originScale": RIPPLE_ORIGIN_SCALE, "padding": RIPPLE_PADDING,
+                "softEdge": RIPPLE_SOFT_EDGE, "softEdgeRatio": RIPPLE_SOFT_EDGE_RATIO,
+                "feather": RIPPLE_FEATHER, "core": RIPPLE_CORE,
+            },
         },
         "motion": {
-            "springs": SPRINGS.iter().map(|(name, damping, stiffness)| (name.to_string(), json!({
-                "damping": damping, "stiffness": stiffness,
-            }))).collect::<Map<_, _>>(),
+            "springs": SPRINGS.iter().map(|(name, damping, stiffness)| {
+                let (duration, curve) = spring(name);
+                (name.to_string(), json!({
+                    "damping": damping, "stiffness": stiffness, "duration": duration, "curve": curve,
+                }))
+            }).collect::<Map<_, _>>(),
             "durations": DURATIONS.iter().map(|(name, value)| (name.to_string(), json!(value))).collect::<Map<_, _>>(),
             "easings": EASINGS.iter().map(|(name, points)| (name.to_string(), json!(points))).collect::<Map<_, _>>(),
         },
@@ -352,6 +406,11 @@ pub fn document(seed: Argb, dark: bool, contrast: f64, id: &str, name: &str) -> 
     set("radiusSmall", json!(corner("small")));
     set("hairline", json!(1));
     set("strokeStrong", json!(FOCUS_THICKNESS));
+    // A pressed button's and icon button's container shape.
+    set("radiusPressed", json!(corner("small")));
+    set("focusRingWidth", json!(FOCUS_THICKNESS));
+    set("focusRingGap", json!(FOCUS_OFFSET));
+    set("focusRingFlare", json!(FOCUS_FLARE));
     set("meetingCellRadius", json!(corner("extraSmall")));
     set("meetingSelectionRadius", json!(corner("small")));
 
@@ -378,6 +437,10 @@ pub fn document(seed: Argb, dark: bool, contrast: f64, id: &str, name: &str) -> 
         ("switchWidth", 52),
         ("switchHeight", 32),
         ("switchKnobInset", 4), // the selected handle, 24 of 32
+        ("switchHandleSize", SWITCH_HANDLE as i64),
+        ("switchHandleOnSize", SWITCH_HANDLE_SELECTED as i64),
+        ("switchHandlePressedSize", SWITCH_HANDLE_PRESSED as i64),
+        ("switchStateLayerSize", SWITCH_STATE_LAYER as i64),
         ("rowIconSize", 24),
         ("cardGlyphWidth", 24),
         ("notificationRowHeight", 72),
@@ -440,6 +503,21 @@ pub fn document(seed: Argb, dark: bool, contrast: f64, id: &str, name: &str) -> 
     set("hoverColor", alpha(c(Role::OnSurface), STATE_HOVER));
     set("quietWash", alpha(c(Role::OnSurface), STATE_HOVER));
     set("pressColor", alpha(c(Role::Primary), STATE_PRESSED));
+    set("selectedHoverColor", alpha(c(Role::Primary), STATE_HOVER));
+    set("focusRingColor", opaque(c(Role::Secondary)));
+    // The switch's handle: outline off, on_primary on, and under the pointer
+    // or held, on_surface_variant off and the primary container on.
+    set("switchHandleOff", opaque(c(Role::Outline)));
+    set("switchHandleOffActive", opaque(c(Role::OnSurfaceVariant)));
+    set("switchHandleOn", opaque(c(Role::OnPrimary)));
+    set("switchHandleOnActive", opaque(c(Role::PrimaryContainer)));
+    // The press ripple's shape.
+    set("rippleOriginScale", json!(RIPPLE_ORIGIN_SCALE));
+    set("ripplePadding", json!(RIPPLE_PADDING));
+    set("rippleSoftEdge", json!(RIPPLE_SOFT_EDGE));
+    set("rippleSoftEdgeRatio", json!(RIPPLE_SOFT_EDGE_RATIO));
+    set("rippleFeather", json!(RIPPLE_FEATHER));
+    set("rippleCore", json!(RIPPLE_CORE));
     set("disabledOpacity", json!(STATE_DISABLED));
     set("unavailableOpacity", json!(STATE_DISABLED));
     set("readOnlyOpacity", json!(STATE_DISABLED));
@@ -501,6 +579,22 @@ pub fn document(seed: Argb, dark: bool, contrast: f64, id: &str, name: &str) -> 
     ] {
         set(slot, json!("BezierSpline"));
         set(&format!("{slot}Curve"), curve(token));
+    }
+    // Component behaviour: the state layer's fade, the press ripple, the
+    // focus ring's flare, and the Expressive scheme's fast springs, sampled:
+    // spatial for a handle travelling or a corner closing, effects for a
+    // control's colour.
+    set("durationState", json!(STATE_LAYER_FADE));
+    set("durationRipple", json!(RIPPLE_GROW));
+    set("durationRippleIn", json!(RIPPLE_IN));
+    set("durationRippleHold", json!(RIPPLE_HOLD));
+    set("durationRippleOut", json!(RIPPLE_OUT));
+    set("durationFocusRing", json!(duration("long4")));
+    for (prefix, token) in [("Spatial", "fastSpatial"), ("Effects", "fastEffects")] {
+        let (duration, curve) = spring(token);
+        set(&format!("duration{prefix}"), json!(duration));
+        set(&format!("easing{prefix}"), json!("BezierSpline"));
+        set(&format!("easing{prefix}Curve"), json!(curve));
     }
 
     // Base16, for the applications themed from it: the surfaces and their

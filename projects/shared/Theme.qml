@@ -13,8 +13,8 @@ import Quickshell.Io
 // materials, motion, sound and wallpaper from here and never writes a styling
 // number or colour of its own; tests/theme-contract.js fails on one that does.
 // A writable property is a slot a theme may supply, except the fixed signal
-// colours; a readonly one is derived from the slots it names. A derived
-// material colour reads `supplied` first, so a theme may give it outright.
+// colours; a readonly one is derived from the slots it names. A derived slot
+// that reads `supplied` first is suppliable: a theme may give it outright.
 ShellRoot {
   id: root
 
@@ -99,6 +99,19 @@ ShellRoot {
   // meeting being placed a little more.
   property int meetingCellRadius: 2
   property int meetingSelectionRadius: 3
+  // A pressed button closes its corners to this, unless they are already
+  // tighter, and opens them again when it is let go, on the spatial curve.
+  // It is the resting corner unless a theme gives its own, so by default
+  // nothing changes shape.
+  readonly property int radiusPressed: supplied.radiusPressed ?? radius
+  // Where the keyboard is: a ring `focusRingWidth` wide, `focusRingGap`
+  // outside the control's edge, that flares to `focusRingFlare` as it appears
+  // (`durationFocusRing`). A negative gap lays the ring inside the edge: by
+  // default it is the hairline on the control's own edge, and it does not
+  // flare.
+  readonly property int focusRingWidth: supplied.focusRingWidth ?? hairline
+  readonly property int focusRingGap: supplied.focusRingGap ?? -focusRingWidth
+  readonly property int focusRingFlare: supplied.focusRingFlare ?? focusRingWidth
 
   // Spacing ------------------------------------------------------------------
   property int barSpacing: 2     // between two menu bar entries
@@ -157,6 +170,16 @@ ShellRoot {
   property int switchWidth: 40
   property int switchHeight: 22
   property int switchKnobInset: 3
+  // The handle off, on and held: a switch may grow its handle as it is set
+  // and again while it is pressed. By default the handle is one size, the
+  // pill's height inside its inset.
+  readonly property int switchHandleSize: supplied.switchHandleSize ?? switchHeight - switchKnobInset * 2
+  readonly property int switchHandleOnSize: supplied.switchHandleOnSize ?? switchHandleSize
+  readonly property int switchHandlePressedSize: supplied.switchHandlePressedSize ?? switchHandleOnSize
+  // A round state layer centred on the handle reports the pointer and the
+  // press, and the track then keeps its colour. Zero draws none: the track's
+  // ring and its darkening report them instead.
+  property int switchStateLayerSize: 0
   // The square an application's own themed icon is drawn in where it leads a
   // row's title. It is sized against that title rather than against the row,
   // because it is standing in for the glyph that would otherwise be there.
@@ -608,6 +631,27 @@ ShellRoot {
   property real switchPressedOpacity: 0.6
   property real switchHoverOpacity: 0.55
   property real switchKnobOpacity: 0.82
+  // The handle off and on, at rest and under the pointer or held.
+  readonly property color switchHandleOff: supplied.switchHandleOff ?? alpha(text, switchKnobOpacity)
+  readonly property color switchHandleOffActive: supplied.switchHandleOffActive ?? switchHandleOff
+  readonly property color switchHandleOn: supplied.switchHandleOn ?? crust
+  readonly property color switchHandleOnActive: supplied.switchHandleOnActive ?? switchHandleOn
+  // The pointer over a control that is on, such as a set switch's handle.
+  readonly property color selectedHoverColor: supplied.selectedHoverColor ?? hoverColor
+  // The ring that says where the keyboard is.
+  readonly property color focusRingColor: supplied.focusRingColor ?? accent
+  // A press ripple (`durationRipple`) starts as a disc `rippleOriginScale` of
+  // the control's longer side where the press landed, and spreads to the
+  // centre until it passes the far corner by `ripplePadding` and a soft edge
+  // of `rippleSoftEdge`, or of `rippleSoftEdgeRatio` of the longer side where
+  // that is more. Its rim fades out over `rippleFeather`, while at least
+  // `rippleCore` of its radius stays solid. It is drawn in `pressColor`.
+  property real rippleOriginScale: 0.2
+  property int ripplePadding: 10
+  property int rippleSoftEdge: 75
+  property real rippleSoftEdgeRatio: 0.35
+  property int rippleFeather: 70
+  property real rippleCore: 0.65
   // The scroll handle at rest and while held.
   property real scrollThumbOpacity: 0.32
   property real scrollThumbPressedOpacity: 0.6
@@ -699,6 +743,37 @@ ShellRoot {
   // The Bézier spline the pulse curve follows when its easing is BezierSpline, as
   // Qt's easing.bezierCurve reads it; empty while it is a named curve.
   property var easingPulseCurve: []
+  // A state layer -- the pointer over a control -- comes and goes over this.
+  readonly property int durationState: supplied.durationState ?? durationFast
+  // A control's own colour changing with its state, set, selected or held,
+  // takes `durationEffects` on `easingEffects`. A theme may give a spring
+  // that never overshoots, sampled into the curve.
+  readonly property int durationEffects: supplied.durationEffects ?? durationFast
+  property int easingEffects: Easing.Linear
+  // The Bézier spline the effects curve follows when its easing is BezierSpline, as
+  // Qt's easing.bezierCurve reads it; empty while it is a named curve.
+  property var easingEffectsCurve: []
+  // Part of a control moving or changing shape -- a switch's handle, a
+  // pressed button's corners -- takes `durationSpatial` on `easingSpatial`,
+  // by default the standard curve at the fast duration. A theme may give a
+  // spring, sampled into the curve, which may overshoot and settle.
+  readonly property int durationSpatial: supplied.durationSpatial ?? durationFast
+  readonly property int easingSpatial: supplied.easingSpatial ?? easingStandard
+  // The Bézier spline the spatial curve follows when its easing is BezierSpline, as
+  // Qt's easing.bezierCurve reads it; empty while it is a named curve.
+  readonly property var easingSpatialCurve: supplied.easingSpatialCurve ?? easingStandardCurve
+  // A press grows a ripple over `durationRipple` on the standard curve, fading
+  // it in over `durationRippleIn`; it stays at least `durationRippleHold` from
+  // the press and fades out over `durationRippleOut`. Zero grows none, and a
+  // press lays its colour flat over the control instead.
+  property int durationRipple: 0
+  property int durationRippleIn: 105
+  property int durationRippleHold: 225
+  property int durationRippleOut: 375
+  // The focus ring flares as it appears: it grows to `focusRingFlare` in the
+  // first quarter of this and settles to its width in the rest, on the
+  // standard curve. Zero shows it at once.
+  property int durationFocusRing: 0
 
   // Sound --------------------------------------------------------------------
   // The cues a theme may give a sound to, each an absolute path to a file the
@@ -759,9 +834,9 @@ ShellRoot {
   // through the theme. The contract lists it as a member rather than a slot.
   property KeyboardNavigation keyboardNavigation: KeyboardNavigation { theme: root }
 
-  // The derived colours the published theme supplies itself, by slot. Each
+  // The derived slots the published theme supplies itself, by slot. Each
   // such slot reads its value here first and falls back to its derivation,
-  // so a theme that supplies none draws exactly the derived material.
+  // so a theme that supplies none draws exactly the derivation.
   property var supplied: ({})
 
   // A published theme sets every slot a theme may supply: its own value, or
@@ -774,7 +849,11 @@ ShellRoot {
       if (slot.derived) continue
       root[slot.name] = slot.type === "weight" ? Font[value] : slot.type === "easing" ? Easing[value] : value
     }
-    root.supplied = Contract.supplied(slots, theme)
+    var supplied = Contract.supplied(slots, theme)
+    for (var j = 0; j < slots.length; j++) {
+      if (slots[j].type === "easing" && supplied[slots[j].name] !== undefined) supplied[slots[j].name] = Easing[supplied[slots[j].name]]
+    }
+    root.supplied = supplied
   }
 
   // The contract beside this file, read before any window maps. FileView takes

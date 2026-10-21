@@ -22,9 +22,10 @@ enum Slot {
     Supplied(String),
     /// Computed from the slots it names.
     Derived,
-    /// Computed from the slots it names unless the theme gives a colour in
-    /// its place, as a Material theme's tonal surfaces are.
-    Suppliable,
+    /// Computed from the slots it names unless the theme gives a value of
+    /// its contract type in its place, as a Material theme's tonal surfaces
+    /// and springs are.
+    Suppliable(String),
     /// Belongs to the contract, such as the privacy indicator colours.
     Fixed,
 }
@@ -82,7 +83,7 @@ fn load() -> Result<Contract, String> {
         for slot in group["slots"].as_array().ok_or("slots")? {
             let name = slot["name"].as_str().ok_or("slot name")?.to_owned();
             let kind = if slot.get("derived").is_some() && slot["suppliable"] == true {
-                Slot::Suppliable
+                Slot::Suppliable(slot["type"].as_str().ok_or("slot type")?.to_owned())
             } else if slot.get("derived").is_some() {
                 Slot::Derived
             } else if slot["fixed"] == true {
@@ -242,24 +243,33 @@ pub fn violations(document: &Value) -> Result<Vec<String>, String> {
                 errors.push(format!("{key}: derived, so a theme cannot supply it"))
             }
             Some(Slot::Fixed) => errors.push(format!("{key}: fixed by the contract")),
-            Some(Slot::Suppliable) if !contract.is_color(value) => {
-                errors.push(format!("{key}: {value} is not a color"))
-            }
-            Some(Slot::Suppliable) => {}
-            Some(Slot::Supplied(kind)) if !contract.holds(kind, value) => {
+            Some(Slot::Suppliable(kind) | Slot::Supplied(kind)) if !contract.holds(kind, value) => {
                 errors.push(format!("{key}: {value} is not a {kind}"))
             }
-            Some(Slot::Supplied(_)) => {}
+            Some(Slot::Suppliable(_) | Slot::Supplied(_)) => {}
         }
     }
     // An easing is BezierSpline exactly when its curve is supplied, so a
-    // transition never runs on a spline it was not given.
+    // transition never runs on a spline it was not given. A suppliable easing
+    // and its curve are supplied together, or their derivation stands for
+    // both.
     for (name, slot) in &contract.slots {
-        let Slot::Supplied(kind) = slot else { continue };
+        let (Slot::Supplied(kind) | Slot::Suppliable(kind)) = slot else {
+            continue;
+        };
         if kind != "curve" {
             continue;
         }
         let easing = name.trim_end_matches("Curve");
+        if matches!(slot, Slot::Suppliable(_)) {
+            if object.contains_key(easing) != object.contains_key(name) {
+                errors.push(format!("{name}: {easing} and {name} are supplied together"));
+                continue;
+            }
+            if !object.contains_key(easing) {
+                continue;
+            }
+        }
         let spline = object
             .get(easing)
             .and_then(Value::as_str)
@@ -362,6 +372,16 @@ mod tests {
     }
 
     #[test]
+    fn a_suppliable_spline_comes_whole() {
+        let mut document = with("easingSpatial", json!("BezierSpline"));
+        document["easingSpatialCurve"] = json!([0.2, 0, 0, 1, 1, 1]);
+        assert_eq!(violations(&document).unwrap(), Vec::<String>::new());
+        document["easingSpatial"] = json!("OutCubic");
+        document["easingSpatialCurve"] = json!([]);
+        assert_eq!(violations(&document).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
     fn a_spline_easing_comes_with_its_curve() {
         let mut document = with("easingExit", json!("BezierSpline"));
         document["easingExitCurve"] = json!([0.3, 0, 0.8, 0.15, 1, 1]);
@@ -401,6 +421,9 @@ mod tests {
             ("material", json!({"seed": "#6750a4", "contrast": 0.0})),
             ("cardColor", json!("#202020")),
             ("panelBorder", json!("#00000000")),
+            ("radiusPressed", json!(8)),
+            ("focusRingGap", json!(-1)),
+            ("durationSpatial", json!(421)),
         ] {
             document[key] = value;
             assert_eq!(
@@ -441,6 +464,22 @@ mod tests {
         let mut midway = with("easingStandard", json!("BezierSpline"));
         midway["easingStandardCurve"] = json!([0.1, 0, 0.2, 0.6, 1, 1, 0.3, 0.7, 0.5, 1, 0.9, 1]);
         rejects(midway, "easingStandardCurve");
+        rejects(with("durationSpatial", json!("fast")), "durationSpatial");
+        rejects(with("radiusPressed", json!(7.5)), "radiusPressed");
+        rejects(
+            with("easingSpatial", json!("BezierSpline")),
+            "easingSpatialCurve: easingSpatial and easingSpatialCurve are supplied together",
+        );
+        rejects(
+            with("easingSpatialCurve", json!([0.2, 0, 0, 1, 1, 1])),
+            "easingSpatialCurve: easingSpatial and easingSpatialCurve are supplied together",
+        );
+        let mut named = with("easingSpatial", json!("OutBack"));
+        named["easingSpatialCurve"] = json!([0.2, 0, 0, 1, 1, 1]);
+        rejects(named, "easingSpatialCurve: a curve needs");
+        let mut short_spring = with("easingSpatial", json!("BezierSpline"));
+        short_spring["easingSpatialCurve"] = json!([0.2, 0, 0, 1, 0.5, 0.5]);
+        rejects(short_spring, "easingSpatialCurve");
         rejects(with("iosRed", json!("#000000")), "iosRed: fixed");
         rejects(with("sparkle", json!(true)), "sparkle: not a contract slot");
         rejects(with("easingStandard", json!("Bounce")), "easingStandard");

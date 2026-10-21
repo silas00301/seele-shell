@@ -7,6 +7,7 @@
 //! the seed grows. See `themes/README.md`.
 pub mod hct;
 pub mod scheme;
+pub mod spring;
 pub mod tokens;
 
 use crate::Result;

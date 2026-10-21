@@ -4310,9 +4310,11 @@ Shared.Theme {
             visible: notificationCard.collapsible
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
+            restingRadius: root.radiusSmall
             hovered: notificationCollapseMouse.containsMouse
             pressed: notificationCollapseMouse.pressed
+            pressX: notificationCollapseMouse.mouseX
+            pressY: notificationCollapseMouse.mouseY
 
             Text {
               anchors.centerIn: parent
@@ -4336,9 +4338,11 @@ Shared.Theme {
             visible: notificationCard.unfoldable
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
+            restingRadius: root.radiusSmall
             hovered: notificationUnfoldMouse.containsMouse
             pressed: notificationUnfoldMouse.pressed
+            pressX: notificationUnfoldMouse.mouseX
+            pressY: notificationUnfoldMouse.mouseY
 
             Text {
               anchors.centerIn: parent
@@ -4364,7 +4368,7 @@ Shared.Theme {
             visible: !notificationCard.history
             width: visible ? root.chipHeight - root.spaceMedium : 0
             height: parent.height
-            radius: root.radiusSmall
+            restingRadius: root.radiusSmall
             // Destructive, so the pointer is answered in red rather than in
             // neutral light: this is the one control that says what it will
             // do before it is pressed.
@@ -4374,6 +4378,8 @@ Shared.Theme {
             active: busy
             hovered: notificationDismissMouse.containsMouse
             pressed: notificationDismissMouse.pressed
+            pressX: notificationDismissMouse.mouseX
+            pressY: notificationDismissMouse.mouseY
 
             Text { visible: !parent.busy; anchors.centerIn: parent; text: "󰅖"; color: notificationDismissMouse.containsMouse ? root.red : root.subtext; font.family: root.fontFamily; font.pixelSize: root.textLabel }
             RefreshGlyph { visible: parent.busy; anchors.centerIn: parent; width: root.spinnerSmall; height: root.spinnerSmall; spinning: visible; font.pixelSize: root.textLabel }
@@ -4983,6 +4989,8 @@ Shared.Theme {
       tint: playerLevel.silent ? root.red : root.accent
       hovered: playerLevelMuteMouse.containsMouse
       pressed: playerLevelMuteMouse.pressed
+      pressX: playerLevelMuteMouse.mouseX
+      pressY: playerLevelMuteMouse.mouseY
 
       CenteredGlyph {
         anchors.fill: parent
@@ -9164,6 +9172,8 @@ Shared.Theme {
               anchors.verticalCenter: parent.verticalCenter
               hovered: githubRefreshMouse.containsMouse
               pressed: githubRefreshMouse.pressed
+              pressX: githubRefreshMouse.mouseX
+              pressY: githubRefreshMouse.mouseY
 
               RefreshGlyph {
                 anchors.centerIn: parent
@@ -11835,6 +11845,8 @@ Shared.Theme {
                 active: root.systemData.dnd || notificationWindow.quietMenuOpen
                 hovered: quietMouse.containsMouse
                 pressed: quietMouse.pressed
+                pressX: quietMouse.mouseX
+                pressY: quietMouse.mouseY
 
                 Rectangle {
                   anchors.fill: parent

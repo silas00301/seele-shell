@@ -41,6 +41,16 @@ contract, and `tests/tst_palette.qml` compares actual Qt-rendered default and
 updated color swatches, including their alpha values. Layout, derived material
 colors and motion tokens are slots of the theme contract in `Theme.qml`.
 
+`HoverWash.qml` is a control's state layer and `Ripple.qml` its press ripple,
+`FocusRing.qml` the keyboard's ring; with `ActionButton`, `GlyphButton`,
+`IconButton`, `Segment`, `ChoiceBox` and `ControlSwitch` they take their state
+timing, ripple, pressed corner, focus ring, spring curves and switch handle from
+the contract's slots, every one of which defaults to the behaviour these
+controls had before a theme could set it (`THEME-CONTRACT.md`, "Component
+behaviour"). Pass a control's press and where it landed to `HoverWash` rather
+than drawing a press of its own. `tests/tst_behaviour.qml`, run by
+`tests/palette.sh`, drives them under a preset and under Material Expressive.
+
 `HistoryChart.qml` renders bounded native histories without owning samples or
 policy. Pass `theme`, `series: [{values: [number|null], color}]`, `capacity`
 (default 60), and `maximum` (default 100). Samples occupy a fixed right-aligned

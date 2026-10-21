@@ -94,7 +94,8 @@ draws.
 ## State and selection
 
 Hover is `on_surface` at Material's hover state layer, 8%; a press is the
-primary at the pressed layer, 10%; disabled content is at 38%. Selection is
+primary at the pressed layer, 10%, grown as a ripple (below); disabled content
+is at 38%. Selection is
 `secondary_container`, activity `primary_container`, and a level's fill the
 primary container, because its label and value sit on it in the surface's
 content colour. Danger is `error_container`, with the hover and pressed layers of
@@ -163,9 +164,49 @@ standard `(0.2, 0, 0, 1)` for every eased transition, emphasized accelerate
 The Expressive motion scheme's springs are part of the token set (`seele-theme
 material tokens`), with damping ratio and stiffness: fast spatial 0.6 and 800,
 default spatial 0.8 and 380, slow spatial 0.8 and 200, and fast, default and
-slow effects 1.0 with 3800, 1600 and 800. No surface animates on a spring yet;
-that is component behaviour (SIL-238), which can sample them into the same
-`curve` slots.
+slow effects 1.0 with 3800, 1600 and 800. The controls move on the fast two,
+below.
+
+## Component behaviour
+
+Material 3 Expressive is felt as much as seen: a control reports the pointer
+with a state layer, a press with a ripple from where it landed, and moves on
+springs. The shared controls -- `ActionButton`, `GlyphButton` and
+`IconButton`, `SegmentChoice`, `ChoiceBox` and its menu, `ControlSwitch`,
+`DeviceSlider` and `FocusRing` -- do all of it through contract slots, so a
+preset, which sets none of them, behaves exactly as before.
+
+| Behaviour | Material | Slots |
+| --- | --- | --- |
+| Hover | the state layer comes and goes in 15 ms | `durationState` |
+| Press | a ripple in `pressColor`, in place of the flat press colour: it starts as a disc a fifth of the longer side at the press and spreads to the centre on the standard curve over 450 ms until it passes the far corner by 10 and a soft edge of 75 (or 0.35 of the longer side); it fades in over 105, is shown at least 225 from the press, and fades out over 375; its rim feathers over 70, at least 0.65 of its radius solid | `durationRipple`, `durationRippleIn`, `durationRippleHold`, `durationRippleOut`, `rippleOriginScale`, `ripplePadding`, `rippleSoftEdge`, `rippleSoftEdgeRatio`, `rippleFeather`, `rippleCore` |
+| Pressed shape | a button and an icon button close their corners to corner small (8) while held, on the fast spatial spring | `radiusPressed` |
+| Focus | a 3-pixel ring in `secondary`, 2 outside the control, that flares to 8 in the first quarter of long 4 (600 ms) and settles in the rest; where a clipping surface would cut it, it lies on the control's own edge, as Material Web's inward ring does | `focusRingWidth`, `focusRingGap`, `focusRingFlare`, `focusRingColor`, `durationFocusRing` |
+| Switch | the handle is 16 off, 24 on and 28 held, in `outline` and `on_primary`, and `on_surface_variant` and `primary_container` under the pointer or held; a 40-pixel state layer centred on it reports hover (`on_surface`, or `primary` once set, at 8%) and the press, and the track keeps its colour | `switchHandleSize`, `switchHandleOnSize`, `switchHandlePressedSize`, `switchStateLayerSize`, `switchHandleOff`, `switchHandleOffActive`, `switchHandleOn`, `switchHandleOnActive`, `selectedHoverColor` |
+| Spatial motion | the handle travelling and growing, a corner closing: the fast spatial spring, which overshoots by about a tenth and settles in 421 ms | `durationSpatial`, `easingSpatial`, `easingSpatialCurve` |
+| Effects motion | a control's own colour changing with its state: the fast effects spring, which never overshoots, in 150 ms | `durationEffects`, `easingEffects`, `easingEffectsCurve` |
+
+The ripple, the state layer timings, the focus ring's flare and the switch's
+handle sizes are Material Web's (`md-ripple`, `md-focus-ring`,
+`md-comp-switch`), and the pressed shape is Material Web's button and icon
+button tokens.
+
+Qt animates on a duration and an easing curve, and the contract's curve is a
+Bézier spline, so `config-tools/src/material/spring.rs` samples each spring:
+the duration is the time its distance from rest falls within a thousandth of
+its travel and stays there, and the curve is eight cubic segments, each the
+Hermite interpolant of the spring's own position and velocity at its two ends,
+with time linear inside a segment so Qt's solve for it is exact. The segments
+are shorter where the spring moves fastest, spaced as the one exponent from a
+fixed ladder that keeps the curve closest to it; the fast spatial spring is
+followed to within 0.15% of its travel, the effects spring to within 0.1%.
+`seele-theme material tokens` lists each spring's duration and curve beside its
+damping and stiffness.
+
+What is not done here: the slider keeps the shell's level track, which has no
+handle to narrow while it is dragged, and the colours of a filled button's
+state layer stay the theme's `hoverColor` and `pressColor` rather than each
+container's own content colour.
 
 ## Where the values come from
 
@@ -173,5 +214,6 @@ Colour: Material Color Utilities, `typescript/` at revision
 `dd62982dfdefdfc9232ce8d76e122fb1c6d188ae` (Apache-2.0). Type, shape,
 elevation, state and timed motion: Material Web's system tokens
 (`tokens/versions/latest`). Expressive springs: Compose Material 3's
-`ExpressiveMotionTokens`. The values are compiled into
+`ExpressiveMotionTokens`. Ripple, focus ring and switch behaviour: Material
+Web's `ripple/`, `focus/` and `md-comp-switch` (Apache-2.0). The values are compiled into
 `config-tools/src/material/tokens.rs`, each slot naming the token it takes.

@@ -27,11 +27,15 @@ ComboBox {
     font.pixelSize: choice.theme.textIcon
   }
   background: Rectangle {
+    // A ring inside the edge is the edge itself; one outside it is a ring,
+    // shown only where the keyboard put the focus.
+    readonly property bool edgeRing: choice.activeFocus && choice.theme.focusRingGap < 0
     radius: choice.theme.radiusSmall
     color: choice.theme.wellColor
-    border.width: choice.theme.hairline
-    border.color: choice.activeFocus ? choice.theme.accent : choice.theme.cardBorder
-    HoverWash { theme: choice.theme; hovered: choice.hovered && choice.enabled }
+    border.width: edgeRing ? choice.theme.focusRingWidth : choice.theme.hairline
+    border.color: edgeRing ? choice.theme.focusRingColor : choice.theme.cardBorder
+    HoverWash { theme: choice.theme; hovered: choice.hovered && choice.enabled; pressed: choice.pressed }
+    FocusRing { theme: choice.theme; shown: choice.visualFocus && choice.theme.focusRingGap >= 0 }
   }
   delegate: ItemDelegate {
     id: option
@@ -53,7 +57,7 @@ ComboBox {
     }
     background: Rectangle {
       color: option.highlighted ? choice.theme.selectedColor : choice.theme.clearColor
-      HoverWash { theme: choice.theme; hovered: option.hovered }
+      HoverWash { theme: choice.theme; hovered: option.hovered; pressed: option.down; pressX: option.pressX; pressY: option.pressY }
     }
     HoverHandler { cursorShape: Qt.PointingHandCursor }
   }

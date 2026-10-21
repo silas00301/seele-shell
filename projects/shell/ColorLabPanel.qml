@@ -194,7 +194,7 @@ FocusScope {
             color: swatch.modelData.hex; radius: panel.theme.radiusSmall
             Shared.HoverWash { theme: panel.theme; hovered: swatch.hovered }
             Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: panel.theme.spaceTight } height: panel.theme.spaceTight; radius: height / 2; visible: swatch.modelData.pass; color: panel.theme.green }
-            Shared.FocusRing { anchors.fill: parent; theme: panel.theme; shown: swatch.visualFocus; radius: panel.theme.radiusSmall }
+            Shared.FocusRing { anchors.fill: parent; theme: panel.theme; shown: swatch.visualFocus; cornerRadius: panel.theme.radiusSmall }
           }
           HoverHandler { cursorShape: Qt.PointingHandCursor }
           // The shell's HoverTip is a Quickshell popup this panel cannot host,

@@ -51,10 +51,12 @@ Slider {
     if (!event.isAutoRepeat && (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Home || event.key === Qt.Key_End)) level.committed(level.value)
   }
   background: Rectangle {
+    // A ring inside the edge is the edge itself; one outside it is a ring.
+    readonly property bool edgeRing: level.activeFocus && level.theme.focusRingGap < 0
     radius: level.theme.radius
     color: level.theme.wellColor
-    border.width: level.theme.hairline
-    border.color: level.activeFocus ? level.theme.accent : level.theme.wellBorder
+    border.width: edgeRing ? level.theme.focusRingWidth : level.theme.hairline
+    border.color: edgeRing ? level.theme.focusRingColor : level.theme.wellBorder
     clip: true
     antialiasing: true
     Rectangle {
@@ -124,6 +126,9 @@ Slider {
     var start = Qt.color(level.spectrum[0]), middle = Qt.color(level.spectrum[1]), end = Qt.color(level.spectrum[2])
     return position <= 0.5 ? level.mix(start, middle, position * 2) : level.mix(middle, end, (position - 0.5) * 2)
   }
+  // The well clips what it carries, so a ring outside it is the slider's,
+  // shown only where the keyboard put the focus.
+  FocusRing { theme: level.theme; shown: level.visualFocus && level.theme.focusRingGap >= 0; cornerRadius: level.theme.radius }
   handle: Item {}
   HoverHandler { cursorShape: level.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 }
