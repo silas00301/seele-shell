@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-451 slots in twelve groups, each a `// <Section> ----` header in `Theme.qml`:
+456 slots in twelve groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -340,6 +340,16 @@ image differs, so a theme the mapping says nothing about publishes exactly what
 it did before. Light and dark are the theme's own mode, so a dark theme worn in
 light mode keeps a dark wallpaper. `config-tools/README.md` lists the rules the
 helper holds a mapping to.
+
+The pickers show the image a theme is linked to before it is worn: the image
+mapped to that theme, else its own, else the one mapped to its mode, which
+`seele-theme list` reports beside the documents as `wallpapers`. The
+switcher's miniature desktops and the Themes gallery's tiles draw it through
+`ThemePicture.qml`, a Canvas that crops it to fill and clips it to the tile's
+corners without a shader, so the software renderer the pixel baselines use
+draws it too. A theme linked to nothing shows its `base`. A tile's name sits
+on its own `mantle` at `themeTileShadeOpacity`, in its own `text`, so it
+reads on any picture the way the theme's own panels do.
 
 Each output's background draws `wallpaperFor(<its name>)` through
 `Wallpaper.qml`, which loads a new image behind the one on screen and shows it

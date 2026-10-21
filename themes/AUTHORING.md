@@ -293,8 +293,9 @@ template's `base` at 94%); such colours may be `#aarrggbb`, with alpha first as
 Qt reads it, while the eleven roles stay opaque. `surfaceTexture` is a PNG or
 JPEG tiled over every surface at `grainOpacity` in place of the grain film.
 `wallpaper` is a PNG or JPEG of at most 16 MiB, drawn on the desktop and the
-lock screen while the theme is selected. Registration decodes it and the
-texture whole, so a damaged image, or one larger than Qt decodes (about
+lock screen while the theme is selected, and behind the theme's miniature in
+the switcher and as its tile in the Themes gallery. Registration decodes it and
+the texture whole, so a damaged image, or one larger than Qt decodes (about
 8192 × 8192), is refused. A theme without one keeps the wallpaper already
 configured, and the host's `seele.wallpaper` mapping in the
 parent flake can still choose another per output. A folder cannot carry

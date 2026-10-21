@@ -121,6 +121,22 @@ Scope {
     if (now) { settle.stop(); settling = null; send(request) }
     else { settling = request; settle.restart() }
   }
+  // The gallery's click: the preset is worn now, as the switcher's click
+  // wears it, but the gallery is not the switcher, so nothing is left
+  // highlighted there. A switcher opened later centres on what is on screen,
+  // and a move it had in hand gives way to this choice.
+  function wear(id) {
+    var preset = find(id)
+    if (!preset) return
+    highlighted = ""
+    mode = preset.mode
+    var next = Object.assign({}, slots)
+    next[preset.mode] = id
+    slots = next
+    settle.stop()
+    settling = null
+    send({ op: "pick", id: id })
+  }
   // Enter: whatever the switcher last moved to is sent now rather than after
   // the burst settles.
   function keep() {
@@ -139,7 +155,8 @@ Scope {
   }
 
   // The Control Center: Light, Dark or Auto; the schedule's source and
-  // times; and which preset each mode wears.
+  // times; and the gallery, where any preset can be worn now or given to
+  // either mode.
   function setAppearance(value) {
     if (value === appearanceChoice) return
     // The sun where the timezone names a city, the saved times otherwise.
@@ -167,13 +184,14 @@ Scope {
     store[effect] = on
     send({ op: effect, on: on })
   }
-  // Makes the preset on screen the theme for `slot`, whatever its own mode.
-  function useCurrentFor(slot) {
-    if ((slot !== "dark" && slot !== "light") || current === "" || slots[slot] === current) return
+  // The gallery's Light and Dark: makes preset `id` the theme for `slot`,
+  // whatever its own mode. Only the mode in use changes the desktop.
+  function assign(slot, id) {
+    if ((slot !== "dark" && slot !== "light") || find(id) === null || slots[slot] === id) return
     var next = Object.assign({}, slots)
-    next[slot] = current
+    next[slot] = id
     slots = next
-    send({ op: "slot", mode: slot, id: current })
+    send({ op: "slot", mode: slot, id: id })
   }
 
   function flushSettling() {

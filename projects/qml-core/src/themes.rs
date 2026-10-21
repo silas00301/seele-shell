@@ -19,6 +19,8 @@ const ROLES: [&str; 11] = [
 ];
 const MAX_THEMES: usize = 32;
 const MAX_PENDING: usize = 8;
+/// The helper never links an image by a path longer than a store path needs.
+const MAX_PATH: usize = 1024;
 
 /// `#rrggbb` and nothing else. Qt would accept a colour name or an `#aarrggbb`
 /// with a different channel order, so anything but the helper's own form is
@@ -44,8 +46,20 @@ fn mode_label(mode: &str) -> &'static str {
     if mode == "light" { "Light" } else { "Dark" }
 }
 
+/// The image a theme is linked to, as an absolute path of one plain line, or
+/// nothing. The picture escapes each segment into its `file://` URL, as the
+/// wallpaper does, so a `#` or `%` in a name is part of the path. A link is a
+/// picture beside the theme, never part of it, so one that cannot be shown
+/// leaves the theme without a picture rather than refusing the catalog.
+fn wallpaper(value: Option<&Value>) -> String {
+    let path = text(value);
+    let usable =
+        path.starts_with('/') && path.len() <= MAX_PATH && !path.chars().any(char::is_control);
+    if usable { path } else { String::new() }
+}
+
 /// One catalog entry, reduced to what a row needs and refused when incomplete.
-fn theme(value: &Value) -> Option<Value> {
+fn theme(value: &Value, wallpapers: &Value) -> Option<Value> {
     let id = text(value.get("id"));
     let name = text(value.get("name"));
     let mode = text(value.get("mode"));
@@ -57,7 +71,8 @@ fn theme(value: &Value) -> Option<Value> {
     {
         return None;
     }
-    let mut row = json!({"id": id, "name": name, "mode": mode, "modeLabel": mode_label(&mode)});
+    let picture = wallpaper(wallpapers.get(&id));
+    let mut row = json!({"id": id, "name": name, "mode": mode, "modeLabel": mode_label(&mode), "wallpaper": picture});
     let object = row.as_object_mut()?;
     for role in ROLES {
         object.insert(role.to_owned(), json!(color(value.get(role))?));
@@ -147,8 +162,11 @@ pub fn call(function: &str, args: &[Value]) -> Result<Value, String> {
             }
             let mut rows = Vec::with_capacity(themes.len());
             let mut ids = std::collections::BTreeSet::new();
+            // Each theme's linked image, beside the documents rather than in
+            // them (`seele-theme list`).
+            let wallpapers = first.get("wallpapers").unwrap_or(&Value::Null);
             for value in themes {
-                match theme(value) {
+                match theme(value, wallpapers) {
                     Some(row) if ids.insert(text(row.get("id"))) => rows.push(row),
                     _ => return Ok(json!({"ok": false, "error": "invalid"})),
                 }
@@ -350,6 +368,59 @@ mod tests {
                 .iter()
                 .all(|item| item["current"] == json!(false)),
             "nothing on screen marks nothing"
+        );
+    }
+
+    #[test]
+    fn a_theme_carries_the_image_it_is_linked_to_when_it_can_be_drawn() {
+        let mut themes = vec![
+            preset("catppuccin-mocha", "Catppuccin Mocha", "dark"),
+            preset("nord", "Nord", "dark"),
+            preset("cyberpunk", "Cyberpunk", "dark"),
+            preset("rose-pine-dawn", "Rosé Pine Dawn", "light"),
+        ];
+        // A document's own image is its look, but the pickers show the link.
+        themes[1]["wallpaper"] = json!("/nix/store/fjord.png");
+        let read = call(
+            "catalog",
+            &[json!({"current": "nord", "themes": themes, "wallpapers": {
+                "catppuccin-mocha": "/nix/store/night.png",
+                "cyberpunk": "relative.png",
+                "rose-pine-dawn": "/home/me/dawn #1 100%.png",
+                "nord": "/home/me/\nfjord.png",
+                "missing": "/nix/store/elsewhere.png",
+            }})],
+        )
+        .unwrap();
+        assert_eq!(
+            read["ok"],
+            json!(true),
+            "a link that cannot be drawn refuses nothing"
+        );
+        let pictures: Vec<String> = array(read.get("themes"))
+            .iter()
+            .map(|row| string(row.get("wallpaper")))
+            .collect();
+        assert_eq!(
+            pictures,
+            ["/nix/store/night.png", "", "", "/home/me/dawn #1 100%.png"],
+            "an absolute plain path is kept, whatever its name holds"
+        );
+        let all = carousel(&read, "nord");
+        assert_eq!(
+            all["items"][0]["wallpaper"],
+            json!("/nix/store/night.png"),
+            "the strip keeps it"
+        );
+        let unlinked = call(
+            "catalog",
+            &[json!({"current": "", "themes": [preset("nord", "Nord", "dark")]})],
+        )
+        .unwrap();
+        assert_eq!(
+            unlinked["themes"][0]["wallpaper"],
+            json!(""),
+            "an older helper links nothing"
         );
     }
 

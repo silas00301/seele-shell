@@ -210,6 +210,7 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     listed = call("list")["themes"]
     assert listed[2]["wallpaper"] == str(pictured_out / "wallpaper.png")
     assert "wallpaper" not in listed[0] and "wallpaper" not in listed[1]
+    assert call("list")["wallpapers"] == {"pictured": str(pictured_out / "wallpaper.png")}, "only the pictured folder is linked to an image"
     published = lambda: json.loads((state / "selection.json").read_text())["wallpaper"]
     for theme, wallpaper in [("pictured", str(pictured_out / "wallpaper.png")), ("example", "/test/background.jpg"),
                              ("pictured", str(pictured_out / "wallpaper.png")), ("catppuccin-mocha", "/test/background.jpg")]:

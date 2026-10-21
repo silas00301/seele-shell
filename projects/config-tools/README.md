@@ -111,6 +111,14 @@ short, damaged or over Qt's 256 MiB decode limit is refused too; the flake runs
 it on the catalog it installs. Ordinary reads, which `follow` repeats each
 minute, recheck only signatures.
 
+`list` also says which image each theme is linked to, for the switcher and the
+Themes gallery to picture it with: `wallpapers`, beside the documents rather
+than in them, maps an ID to the image mapped to that theme, else the theme's
+own, else the one mapped to its light or dark mode. The configured wallpaper
+links no theme, since every theme shows it that has nothing else, and an
+output's image belongs to that output. A theme whose link is missing or does
+not start as a PNG or a JPEG is left out, so it is shown without a picture.
+
 The selected preset's document, with the format `version`, the `wallpaper` the
 desktop and the lock screen draw on every output, and `wallpaperOutputs` naming
 only the outputs the mapping gives another image, is stored in mode-0600

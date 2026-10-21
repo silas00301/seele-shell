@@ -1689,8 +1689,14 @@
         {
           "name": "themeSettingsWidth",
           "type": "int",
-          "default": 440,
-          "description": "The Control Center's Themes panel: a three-way segment and two theme rows with their names beside their swatches."
+          "default": 520,
+          "description": "The Control Center's Themes panel: a three-way segment over a gallery of theme tiles three to a row."
+        },
+        {
+          "name": "themeSettingsMaximumHeight",
+          "type": "int",
+          "default": 760,
+          "description": "The Themes panel stays inside this bound; its gallery scrolls within it."
         },
         {
           "name": "clockWidth",
@@ -1991,6 +1997,18 @@
           "type": "real",
           "default": 0.6,
           "description": "The Themes panel's schedule source takes this share of its row."
+        },
+        {
+          "name": "themeGalleryCardMinimum",
+          "type": "int",
+          "default": 140,
+          "description": "A Themes gallery tile is never narrower than this; a row holds as many as fit, each this much wider than tall."
+        },
+        {
+          "name": "themeTileAspect",
+          "type": "real",
+          "default": 1.25,
+          "description": "A Themes gallery tile is never narrower than this; a row holds as many as fit, each this much wider than tall."
         }
       ]
     },
@@ -2601,6 +2619,18 @@
           "type": "real",
           "default": 0.06,
           "description": "The theme switcher veils its neighbours in ink, lighter under the pointer."
+        },
+        {
+          "name": "themeTileShadeOpacity",
+          "type": "real",
+          "default": 0.85,
+          "description": "A Themes gallery tile's name sits on its theme's mantle at this strength, and a mode pin it does not wear on that mantle at this one."
+        },
+        {
+          "name": "themeTilePinOpacity",
+          "type": "real",
+          "default": 0.6,
+          "description": "A Themes gallery tile's name sits on its theme's mantle at this strength, and a mode pin it does not wear on that mantle at this one."
         },
         {
           "name": "edgeCueFalloff",

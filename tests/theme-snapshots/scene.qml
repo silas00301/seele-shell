@@ -197,13 +197,18 @@ Shared.Theme {
     // The catalog as `seele-theme list` reports it with this theme applied. A
     // theme folder joins the presets only while it is the one drawn, so the
     // presets' own snapshots show exactly the catalog they were recorded with.
+    // The host maps no wallpapers here, so a theme is linked only to an image
+    // of its own.
     function catalogFor(theme) {
       var presets = themes.filter(function(entry) { return !entry.fallback && !entry.folder })
       if (theme.folder) presets = presets.concat([theme])
       var current = theme.fallback ? "catppuccin-mocha" : theme.id
       var mode = theme.fallback ? "dark" : theme.mode
+      var wallpapers = {}
+      presets.forEach(function(entry) { if (entry.wallpaper) wallpapers[entry.id] = entry.wallpaper })
       return {
         current: current,
+        wallpapers: wallpapers,
         themes: presets,
         appearance: {
           mode: mode, dark: mode === "dark" ? current : "catppuccin-mocha", light: mode === "light" ? current : "catppuccin-latte",

@@ -14,14 +14,16 @@ TestCase {
   visible: true
   property string screenshotPath: ""
   property string settingsScreenshotPath: ""
+  // A real image a theme is linked to, copied in beside this file.
+  property string wallpaperPath: ""
   width: 1100
-  height: 900
+  height: 1500
   Shared.Theme { id: theme }
 
   // An entry exactly as `themes.carousel` shapes one, with a real palette.
-  function preset(id, name, mode, colors, current) {
+  function preset(id, name, mode, colors, current, wallpaper) {
     return {
-      id: id, name: name, mode: mode, modeLabel: mode === "light" ? "Light" : "Dark",
+      id: id, name: name, mode: mode, modeLabel: mode === "light" ? "Light" : "Dark", wallpaper: wallpaper || "",
       current: current, base: colors[0], mantle: colors[1], crust: colors[0], surface: colors[2],
       overlay: colors[3], text: colors[4], subtext: colors[5], accent: colors[6],
       red: colors[7], green: colors[8], yellow: colors[9]
@@ -34,7 +36,7 @@ TestCase {
     var items = [
       preset("catppuccin-mocha", "Catppuccin Mocha", "dark", mocha, true),
       preset("catppuccin-latte", "Catppuccin Latte", "light", latte, false),
-      preset("nord", "Nord", "dark", nord, false)
+      preset("nord", "Nord", "dark", nord, false, wallpaperPath)
     ]
     for (var i = 0; i < (count || 0); i++) items.push(preset("extra-" + i, "Extra " + i, "dark", nord, false))
     return { items: items, order: items.map(function (item) { return item.id }), count: items.length }
@@ -62,6 +64,8 @@ TestCase {
     property string error: ""
     property string actionError: ""
     property string reloadPending: ""
+    property bool motion: true
+    property bool sound: false
     property var calls: []
     function record(call) { calls = calls.concat([call]) }
     function find(id) {
@@ -71,11 +75,12 @@ TestCase {
     function nameOf(id) { var found = find(id); return found ? found.name : id }
     function step(direction) { record("step " + direction) }
     function choose(id, now) { record("choose " + id + (now ? " now" : "")) }
+    function wear(id) { record("wear " + id) }
     function keep() { record("keep") }
     function cancel() { record("cancel") }
     function setAppearance(value) { record("appearance " + value) }
     function setAuto(source, lightAt, darkAt) { record(["auto", source].concat(lightAt ? [lightAt, darkAt] : []).join(" ")) }
-    function useCurrentFor(slot) { record("use " + slot) }
+    function assign(slot, id) { record("assign " + slot + " " + id) }
     function refresh() { record("refresh") }
     function failure(code) { return "" }
   }
@@ -95,6 +100,16 @@ TestCase {
     x: theme.panelMargin
     y: 440
     width: theme.themeSettingsWidth - theme.panelMargin * 2
+  }
+  // A picture on its own, for what it paints rather than where a panel puts it.
+  Rectangle {
+    id: loneHolder
+    x: 900
+    y: 1380
+    width: 100
+    height: 80
+    color: theme.crust
+    Shared.ThemePicture { id: lone; anchors.fill: parent }
   }
   SignalSpy { id: closes; target: panel; signalName: "closeRequested" }
   SignalSpy { id: browses; target: settings; signalName: "browseRequested" }
@@ -128,6 +143,8 @@ TestCase {
     fill(strip(0))
     panel.width = 1008
     panel.maximumHeight = theme.themesMaximumHeight
+    settings.maximumHeight = theme.themeSettingsMaximumHeight
+    child(settings, "gallery").contentY = 0
     panel.forceActiveFocus()
     fixture.calls = []
     closes.clear()
@@ -235,22 +252,66 @@ TestCase {
     verify(!darkAt.activeFocus && settings.activeFocus, "and hands the keyboard to the panel, whose Escape closes it")
   }
 
-  function test_each_mode_names_its_theme_and_can_take_the_current_one() {
-    compare(child(settings, "lightTheme").text, "Catppuccin Latte")
-    compare(child(settings, "darkTheme").text, "Catppuccin Mocha")
-    verify(!child(settings, "darkUseCurrent").enabled, "the dark mode already wears the preset on screen")
-    var useLight = child(settings, "lightUseCurrent")
-    verify(useLight.enabled)
-    click(useLight)
-    compare(fixture.calls, ["use light"], "a dark preset may be the light theme")
-    fixture.slots = ({ dark: "catppuccin-mocha", light: "catppuccin-mocha" })
+  function test_the_switcher_pictures_a_preset_over_its_wallpaper() {
+    fixture.focusedId = "nord"
+    var centre = child(panel, "card-nord")
+    tryCompare(centre, "width", panel.cardWidth)
+    tryVerify(function() { return child(child(centre, "scene"), "wallpaper").shown }, 2000, "the linked image is drawn behind the scene")
+    fixture.focusedId = "catppuccin-mocha"
+    var plain = child(panel, "card-catppuccin-mocha")
+    tryCompare(plain, "width", panel.cardWidth)
+    verify(!child(child(plain, "scene"), "wallpaper").shown, "a preset linked to nothing shows its base")
+  }
+
+  function test_the_gallery_shows_every_preset_with_its_modes() {
+    for (var id of ["catppuccin-mocha", "catppuccin-latte", "nord"]) verify(child(settings, "theme-" + id).visible, id + " has a tile")
+    compare(settings.columns, 3, "three tiles to a row at the panel's width")
+    var mocha = child(settings, "theme-catppuccin-mocha")
+    compare(child(mocha, "name").text, "Catppuccin Mocha")
+    verify(child(mocha, "caption").visible, "the preset on screen says so")
+    compare(child(mocha, "caption").text, "On screen")
+    verify(!child(child(settings, "theme-nord"), "caption").visible, "the rest carry their name alone")
+    verify(child(settings, "dark-catppuccin-mocha").selected && child(settings, "light-catppuccin-latte").selected,
+      "each mode's theme fills its pin on its tile")
+    verify(!child(settings, "light-catppuccin-mocha").selected && !child(settings, "dark-nord").selected)
+    compare([child(settings, "light-nord").text, child(settings, "dark-nord").text], ["󰖙", "󰖔"])
+    tryVerify(function() { return child(child(settings, "theme-nord"), "wallpaper").shown }, 2000, "a tile shows its theme's linked image")
+    verify(!child(child(settings, "theme-catppuccin-latte"), "wallpaper").shown, "and one linked to nothing its base")
+    // The name sits on the preset's own mantle, so a light theme's tile reads
+    // dark on light like the theme itself.
+    var shade = child(child(settings, "theme-catppuccin-latte"), "shade").gradient.stops[1].color
+    var mantle = Qt.color(latte[1])
+    verify(Math.abs(shade.r - mantle.r) < 0.01 && Math.abs(shade.g - mantle.g) < 0.01 && Math.abs(shade.b - mantle.b) < 0.01,
+      "the shade is the preset's mantle, not " + shade)
+    compare(shade.a, theme.themeTileShadeOpacity, 0.01)
+    // Giving a preset to the other mode changes that tile alone.
+    fixture.slots = ({ dark: "catppuccin-mocha", light: "nord" })
     wait(20)
-    compare(child(settings, "lightTheme").text, "Catppuccin Mocha")
-    verify(!useLight.enabled)
-    compare(child(settings, "darkCaption").text, "󰖔  Dark mode · in use")
-    compare(child(settings, "lightCaption").text, "󰖙  Light mode")
+    verify(child(settings, "light-nord").selected && !child(settings, "light-catppuccin-latte").selected)
+    fixture.current = "nord"
+    wait(20)
+    verify(child(child(settings, "theme-nord"), "caption").visible)
+    verify(!child(mocha, "caption").visible)
+  }
+
+  function test_a_card_wears_its_preset_or_gives_it_to_a_mode() {
+    click(child(settings, "light-nord"))
+    click(child(settings, "dark-catppuccin-latte"))
+    compare(fixture.calls, ["assign light nord", "assign dark catppuccin-latte"], "a preset of either kind may be either mode's theme")
+    fixture.calls = []
+    var wear = child(settings, "wear-nord")
+    click(wear)
+    compare(fixture.calls, ["wear nord"], "the tile wears it now, without the switcher's highlight")
+    fixture.calls = []
+    wear.forceActiveFocus(Qt.TabFocusReason)
+    keyClick(Qt.Key_Return)
+    compare(fixture.calls, ["wear nord"], "and so does Enter")
+    keyClick(Qt.Key_Tab)
+    verify(child(settings, "light-nord").activeFocus, "Tab moves on to the tile's pins")
+    keyClick(Qt.Key_Return)
+    compare(fixture.calls.slice(-1), ["assign light nord"], "and Enter on a pin gives it that mode")
     click(child(settings, "browse"))
-    compare(browses.count, 1, "Browse opens the switcher")
+    compare(browses.count, 1, "Open switcher floats the switcher")
   }
 
   function test_an_empty_catalog_offers_a_refresh() {
@@ -302,7 +363,7 @@ TestCase {
     fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "schedule", lightAt: "07:00", darkAt: "19:00" } })
     fixture.scheduleText = "Dark at 19:00 · on a schedule"
     wait(20)
-    for (var name of ["appearanceAuto", "autoSchedule", "darkAt", "browse", "lightUseCurrent", "darkUseCurrent"]) {
+    for (var name of ["appearanceAuto", "autoSchedule", "darkAt", "browse", "light-nord", "dark-nord", "wear-nord"]) {
       var control = child(settings, name)
       verify(control.visible, name + " is shown")
       var left = control.mapToItem(settings, 0, 0).x
@@ -312,6 +373,75 @@ TestCase {
     verify(child(settings, "autoSchedule").mapToItem(settings, 0, 0).y + child(settings, "autoSchedule").height <= lightAt.mapToItem(settings, 0, 0).y,
       "the times sit below their choice")
   }
+
+  function test_the_gallery_scrolls_inside_the_room_it_is_given() {
+    fill(strip(8))
+    settings.maximumHeight = 620
+    wait(20)
+    verify(settings.implicitHeight <= settings.maximumHeight + 0.5, "panel " + settings.implicitHeight + " fits " + settings.maximumHeight)
+    var gallery = child(settings, "gallery")
+    verify(gallery.contentHeight > gallery.height, "the gallery scrolls rather than growing")
+    compare(gallery.contentY, 0)
+    // A switch made elsewhere brings the preset now on screen into view.
+    fixture.current = "extra-5"
+    tryVerify(function() {
+      var shown = child(settings, "theme-extra-5").mapToItem(gallery, 0, 0).y
+      return shown >= -0.5 && shown + child(settings, "theme-extra-5").height <= gallery.height + 0.5
+    }, 1000, "the card on screen is in view")
+    fixture.current = "catppuccin-mocha"
+    wait(20)
+    compare(gallery.contentY, 0, "and the first card brings the gallery back to its top")
+    var last = child(settings, "dark-extra-7")
+    last.forceActiveFocus(Qt.TabFocusReason)
+    wait(20)
+    var card = child(settings, "theme-extra-7")
+    var top = card.mapToItem(gallery, 0, 0).y
+    verify(top >= -0.5 && top + card.height <= gallery.height + 0.5, "the keyboard brings its card into view")
+    // A narrow panel holds one card to a row rather than squeezing two.
+    settings.width = theme.themeGalleryCardMinimum + theme.spaceMedium
+    wait(20)
+    compare(settings.columns, 1)
+    settings.width = theme.themeSettingsWidth - theme.panelMargin * 2
+  }
+
+  function test_a_short_output_scrolls_the_panel_rather_than_overflowing() {
+    fill(strip(8))
+    fixture.appearance = ({ mode: "dark", place: "Berlin", auto: { source: "schedule", lightAt: "07:00", darkAt: "19:00" } })
+    fixture.scheduleText = "Dark at 19:00 · on a schedule"
+    settings.maximumHeight = 300
+    wait(20)
+    verify(settings.implicitHeight <= settings.maximumHeight + 0.5, "panel " + settings.implicitHeight + " stays inside " + settings.maximumHeight)
+    var view = child(settings, "view")
+    var gallery = child(settings, "gallery")
+    verify(view.contentHeight > view.height, "what does not fit scrolls")
+    verify(gallery.height >= settings.tileHeight - 0.5, "the gallery keeps a whole row of tiles")
+    // The keyboard reaches the last tile through both scrolls.
+    child(settings, "dark-extra-7").forceActiveFocus(Qt.TabFocusReason)
+    wait(20)
+    var tile = child(settings, "theme-extra-7")
+    var top = tile.mapToItem(view, 0, 0).y
+    verify(top >= -0.5 && top < view.height, "the focused tile is in the panel's view")
+    var inGallery = tile.mapToItem(gallery, 0, 0).y
+    verify(inGallery >= -0.5 && inGallery + tile.height <= gallery.height + 0.5, "and whole in the gallery")
+    child(settings, "view").contentY = 0
+  }
+
+  function test_a_picture_follows_the_corners_it_is_given() {
+    lone.path = wallpaperPath
+    tryVerify(function() { return lone.shown }, 2000)
+    // A Canvas grabbed alone yields none of its paint; its holder holds it.
+    var corner = function() { return grabImage(loneHolder).pixel(1, 1) }
+    lone.topLeftRadius = 0
+    waitForRendering(loneHolder)
+    var square = corner()
+    verify(!Qt.colorEqual(square, theme.crust), "a square corner is painted with the picture")
+    lone.topLeftRadius = lone.height / 2
+    tryVerify(function() { return Qt.colorEqual(corner(), theme.crust) }, 1000, "a new radius is clipped without anything else changing")
+    lone.topLeftRadius = 0
+    tryVerify(function() { return Qt.colorEqual(corner(), square) }, 1000, "and a smaller one paints the corner again")
+    lone.path = ""
+  }
+
 
   function test_both_views_render() {
     var centre = child(panel, "card-catppuccin-mocha")
