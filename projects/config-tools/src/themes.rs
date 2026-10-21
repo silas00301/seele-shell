@@ -1,5 +1,6 @@
 //! One catalog, one durable selection, and generated app-only includes.
 use crate::appearance::{self, Auto, Calendar, Local, Mode, Preferences, Source};
+use crate::material;
 use crate::theme_contract;
 use crate::theme_folder::{self, BASE16_KEYS};
 use crate::wallpapers::Wallpapers;
@@ -1054,7 +1055,43 @@ fn catalog_file() -> Result<Catalog> {
         false,
     )
 }
-const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out> | check <catalog>";
+/// `material tokens <seed> [contrast]` prints every Material 3 Expressive
+/// token the seed grows; `material <seed> <light|dark> <id> <name> [contrast]`
+/// prints the theme document a folder's `theme.json` holds.
+fn material_command(args: &[&str]) -> Result {
+    let level = |text: Option<&&str>| -> Result<f64> {
+        match text {
+            None => Ok(0.0),
+            Some(text) => material::contrast(
+                text.parse()
+                    .map_err(|_| format!("contrast: {text:?} is not a number"))?,
+            ),
+        }
+    };
+    let value = match args {
+        ["tokens", seed, rest @ ..] if rest.len() <= 1 => {
+            material::tokens::tokens(material::seed(seed)?, level(rest.first())?)
+        }
+        [seed, mode @ ("light" | "dark"), id, name, rest @ ..] if rest.len() <= 1 => {
+            material::tokens::document(
+                material::seed(seed)?,
+                *mode == "dark",
+                level(rest.first())?,
+                id,
+                name,
+            )
+        }
+        _ => return Err(MATERIAL_USAGE.into()),
+    };
+    let violations = theme_contract::violations(&value)?;
+    if value.get("id").is_some() && !violations.is_empty() {
+        return Err(format!("Invalid theme document: {}", violations.join("; ")).into());
+    }
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+const MATERIAL_USAGE: &str = "Use: seele-theme material tokens <#seed> [contrast] | material <#seed> <light|dark> <id> <name> [contrast]";
+const USAGE: &str = "Use: seele-theme list | current | set <id> | pick <id> | slot <dark|light> <id> | mode <dark|light> | restore <dark|light> <dark-id> <light-id> | auto off | auto sun | auto schedule <light HH:MM> <dark HH:MM> | tick | follow | init | reset | serve | register <id> <folder> <out> | check <catalog> | material tokens <#seed> [contrast] | material <#seed> <light|dark> <id> <name> [contrast]";
 pub fn main() -> Result {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help") {
@@ -1062,6 +1099,10 @@ pub fn main() -> Result {
         return Ok(());
     }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Authoring: Material 3 Expressive tokens and theme documents from a seed.
+    if let ["material", rest @ ..] = args.as_slice() {
+        return material_command(rest);
+    }
     // Build time: no catalog, state or desktop is involved.
     if let ["register", id, folder, out] = args.as_slice() {
         return theme_folder::register(id, Path::new(folder), Path::new(out));

@@ -2499,7 +2499,7 @@ Shared.Theme {
     color: root.wellColor
 
     Behavior on displayedRatio {
-      NumberAnimation { duration: root.durationGauge; easing.type: root.easingStandard }
+      NumberAnimation { duration: root.durationGauge; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve }
     }
 
     onDisplayedRatioChanged: gaugeCanvas.requestPaint()
@@ -4611,7 +4611,7 @@ Shared.Theme {
       height: notificationGroupColumn.implicitHeight + notificationGroup.stackReach
       clip: true
 
-      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard } }
+      Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve } }
 
       Column {
         id: notificationGroupColumn
@@ -4653,7 +4653,7 @@ Shared.Theme {
             alwaysUnfolded: notificationList.alwaysUnfolded
 
             // The card arrives with the fold rather than at the end of it.
-            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: root.easingStandard }
+            NumberAnimation on opacity { from: 0; to: 1; duration: root.durationNormal; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve }
           }
         }
       }
@@ -6182,7 +6182,7 @@ Shared.Theme {
               height: parent.height
 
               Behavior on width {
-                NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard }
+                NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve }
               }
 
               Rectangle {
@@ -6201,7 +6201,7 @@ Shared.Theme {
                 Behavior on color { ColorAnimation { duration: root.durationFast } }
 
                 Behavior on width {
-                  NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard }
+                  NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve }
                 }
 
                 Text {
@@ -6744,8 +6744,8 @@ Shared.Theme {
                   SequentialAnimation on opacity {
                     running: modelData.status === "working" || modelData.status === "input"
                     loops: Animation.Infinite
-                    NumberAnimation { from: 1; to: root.agentPulseOpacity; duration: modelData.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse }
-                    NumberAnimation { from: root.agentPulseOpacity; to: 1; duration: modelData.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse }
+                    NumberAnimation { from: 1; to: root.agentPulseOpacity; duration: modelData.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse; easing.bezierCurve: root.easingPulseCurve }
+                    NumberAnimation { from: root.agentPulseOpacity; to: 1; duration: modelData.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse; easing.bezierCurve: root.easingPulseCurve }
                   }
                 }
               }
@@ -8518,8 +8518,8 @@ Shared.Theme {
                         SequentialAnimation on opacity {
                           running: agentIndicator.status === "working" || agentIndicator.status === "input"
                           loops: Animation.Infinite
-                          NumberAnimation { from: 1; to: root.agentPulseOpacity; duration: agentIndicator.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse }
-                          NumberAnimation { from: root.agentPulseOpacity; to: 1; duration: agentIndicator.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse }
+                          NumberAnimation { from: 1; to: root.agentPulseOpacity; duration: agentIndicator.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse; easing.bezierCurve: root.easingPulseCurve }
+                          NumberAnimation { from: root.agentPulseOpacity; to: 1; duration: agentIndicator.status === "input" ? root.durationPulseFast : root.durationPulse; easing.type: root.easingPulse; easing.bezierCurve: root.easingPulseCurve }
                         }
                       }
 
@@ -12315,7 +12315,7 @@ Shared.Theme {
                 height: litraGroup.expanded ? litraCard.implicitHeight : 0
                 visible: height > 0
                 clip: true
-                Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard } }
+                Behavior on height { NumberAnimation { duration: root.durationNormal; easing.type: root.easingStandard; easing.bezierCurve: root.easingStandardCurve } }
                 Rectangle {
                   id: litraCard
                   width: parent.width

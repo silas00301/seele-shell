@@ -33,6 +33,6 @@
     "base0E": "#c792ea",
     "base0F": "#b07050"
   },
-  "panelColor": "#000000",
+  "colorLensSize": 120,
   "sparkle": true
 }

@@ -49,6 +49,16 @@ example/
 `tests/theme-folders/example` is a complete folder, and
 `tests/theme-folders/pictured` one with its own wallpaper.
 
+## Material 3 Expressive
+
+`material-expressive-light` and `material-expressive-dark` are grown from one
+seed colour by `seele-theme material <seed> <light|dark> <id> <name>
+[contrast]`, which writes the whole document: Material's colour scheme, type
+scale, corner scale, tonal elevation, state layers and timed motion, each on
+the contract slot that plays its role. Such a document records its source as
+`material`, and registration refuses it if it is not exactly what that seed
+grows. `MATERIAL.md` lists every token and the slot it reaches.
+
 ## When a folder is wrong
 
 The build that installs it fails and says why, every rule at once:
@@ -58,6 +68,13 @@ Seele Themes: Invalid theme folder example:
   palette.base0F: missing
   missing required slot accent
   radius: "round" is not a int
+```
+
+A Material folder edited by hand fails the same way, naming what differs:
+
+```
+Seele Themes: Invalid theme folder material-drift:
+  material: theme.json is not what its seed grows (radius: 9 here, 16 from its seed); `seele-theme material` writes it again
 ```
 
 `nix build .#checks.<system>.theme-folders` checks every folder listed here

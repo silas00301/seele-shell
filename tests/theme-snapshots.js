@@ -68,11 +68,12 @@ const surfaces = [
   {name: 'theme-settings', namespace: 'seele-shell-theme-settings', state: {controlPanel: 'themes'}},
 ];
 // Where a registered theme folder is drawn: in the switcher and in the
-// Control Center's Themes panel, beside every preset.
+// Control Center's Themes panel, beside every preset. A folder the shell
+// ships (registered.json) is a theme like a preset, and drawn everywhere.
 const folderSurfaces = ['theme-switcher', 'theme-settings'];
-const surfacesOf = theme => theme.folder ? surfaces.filter(surface => folderSurfaces.includes(surface.name)) : surfaces;
+const surfacesOf = theme => theme.folder && !theme.shipped ? surfaces.filter(surface => folderSurfaces.includes(surface.name)) : surfaces;
 function counted() {
-  const folders = themes.filter(theme => theme.folder).length;
+  const folders = themes.filter(theme => theme.folder && !theme.shipped).length;
   return `${themes.length - folders} themes on ${surfaces.length} surfaces and ${folders} theme folder${folders === 1 ? '' : 's'} on ${folderSurfaces.length}`;
 }
 
@@ -321,9 +322,14 @@ if (options.catalog) {
   assert.deepEqual(listed.map(shape), themeFile.themes.map(shape), 'themes.json no longer matches the installed catalog');
 }
 // Each preset is rendered from its contract document exactly as listed, and
-// so is the example theme folder, as the helper lists it once registered.
+// so are the folders the shell ships and the example theme folder, as the
+// helper lists them once registered. A folder joins the catalog only while it
+// is the one drawn, so the presets keep the catalog they were recorded with.
 const folderFile = JSON.parse(fs.readFileSync(path.join(assets, 'folders.json'), 'utf8'));
-const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes, ...folderFile.themes.map(theme => ({...theme, folder: true}))];
+const registeredFile = JSON.parse(fs.readFileSync(path.join(assets, 'registered.json'), 'utf8'));
+const themes = [{id: 'fallback', fallback: true}, ...themeFile.themes,
+  ...registeredFile.themes.map(theme => ({...theme, folder: true, shipped: true})),
+  ...folderFile.themes.map(theme => ({...theme, folder: true}))];
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'seele-theme-snapshots-'));
 try {
@@ -421,7 +427,7 @@ try {
       fs.copyFileSync(path.join(output, file), path.join(baselineDir, file));
     }
     const record = {renderer, fonts, themes: themes.filter(theme => !theme.folder).map(theme => theme.id), surfaces: surfaces.map(surface => surface.name),
-      folders: Object.fromEntries(themes.filter(theme => theme.folder).map(theme => [theme.id, folderSurfaces]))};
+      folders: Object.fromEntries(themes.filter(theme => theme.folder).map(theme => [theme.id, surfacesOf(theme).map(surface => surface.name)]))};
     fs.writeFileSync(manifestPath, JSON.stringify(record, null, 2) + '\n');
     console.log(`Recorded ${expected.length} baselines: ${counted()} (${renderer.qt})`);
   } else {

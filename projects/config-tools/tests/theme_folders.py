@@ -8,6 +8,10 @@ then lists and publishes them from a catalog beside a preset: a theme with its
 own wallpaper publishes it, and one without keeps the configured image. The snapshot harness
 renders the documents in folders.json, so they must be exactly what the helper
 lists for the registered example; --update rewrites that file instead.
+
+The folders the shell ships, those `themes/default.nix` lists beside
+`tests/`, register, list and publish the same way, and registered.json beside
+folders.json holds them as the helper lists them, for the harness to render.
 """
 import json
 import os
@@ -31,12 +35,15 @@ refusals = {
     "misnamed": ['id: "example" is not the folder\'s name'],
     "unknown-slots": [
         'accent: "#80f2aa4c" is translucent; a palette role is an opaque #rrggbb',
-        "panelColor: derived, so a theme cannot supply it",
+        "colorLensSize: derived, so a theme cannot supply it",
         'radius: "round" is not a int',
         "sparkle: not a contract slot",
     ],
     "escaping-file": ['soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'],
     "wallpaper-not-image": ['wallpaper: "wallpaper.png" is not a PNG or JPEG image'],
+    "material-drift": [
+        "material: theme.json is not what its seed grows (radius: 9 here, 16 from its seed); `seele-theme material` writes it again"
+    ],
 }
 
 with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
@@ -200,4 +207,34 @@ with tempfile.TemporaryDirectory(prefix="seele-theme-folders-") as temporary:
     result = call("list", ok=False)
     assert f'Invalid theme document pictured:\n  wallpaper: "{pictured_out / "wallpaper.png"}" is not a PNG or JPEG image' in result.stderr, result.stderr
 
-print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule")
+    # The folders the shell ships: each registers, lists after the preset in
+    # the order themes/default.nix gives, and publishes every slot it supplies.
+    shipped_root = folders.parent.parent / "themes"
+    shipped = [line.strip()[2:] for line in (shipped_root / "default.nix").read_text().splitlines()
+               if line.strip().startswith("./")]
+    entries = []
+    for name in shipped:
+        out = root / "registered" / name
+        result = register(shipped_root / name, out)
+        assert result.returncode == 0, (name, result.stderr)
+        written = json.loads((shipped_root / name / "theme.json").read_text())
+        entries.append(dict(id=name, name=written["name"], mode=written["mode"], palette=written["palette"],
+                            vicinaeTheme=str(launcher), document=str(out / "theme.json")))
+    catalog["themes"] = [preset] + entries
+    # A state of their own: the one above has selected a folder this catalog
+    # no longer lists.
+    catalog_env["XDG_STATE_HOME"] = str(root / "shipped-state")
+    state = root / "shipped-state/seele-theme"
+    listed = call("list")["themes"][1:]
+    assert [theme["id"] for theme in listed] == shipped
+    registered_snapshot = snapshot.parent / "registered.json"
+    if update:
+        registered_snapshot.write_text(json.dumps({"themes": listed}, indent=2, ensure_ascii=False) + "\n")
+    else:
+        assert json.loads(registered_snapshot.read_text()) == {"themes": listed}, f"{registered_snapshot} is not what seele-theme lists: run with --update"
+    for theme in listed:
+        call("set", theme["id"])
+        selection = json.loads((state / "selection.json").read_text())
+        assert selection == dict(theme, version=2, wallpaper="/test/background.jpg"), theme["id"]
+
+print(f"Theme folders: the example and pictured folders register, list and publish their wallpaper; {len(refusals) + 2} refusals name every broken rule; {len(shipped)} shipped folders register and publish")

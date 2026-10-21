@@ -22,6 +22,9 @@ enum Slot {
     Supplied(String),
     /// Computed from the slots it names.
     Derived,
+    /// Computed from the slots it names unless the theme gives a colour in
+    /// its place, as a Material theme's tonal surfaces are.
+    Suppliable,
     /// Belongs to the contract, such as the privacy indicator colours.
     Fixed,
 }
@@ -78,7 +81,9 @@ fn load() -> Result<Contract, String> {
     for group in contract["groups"].as_array().ok_or("groups")? {
         for slot in group["slots"].as_array().ok_or("slots")? {
             let name = slot["name"].as_str().ok_or("slot name")?.to_owned();
-            let kind = if slot.get("derived").is_some() {
+            let kind = if slot.get("derived").is_some() && slot["suppliable"] == true {
+                Slot::Suppliable
+            } else if slot.get("derived").is_some() {
                 Slot::Derived
             } else if slot["fixed"] == true {
                 Slot::Fixed
@@ -136,6 +141,19 @@ impl Contract {
             }),
             "weight" => text.is_some_and(|name| self.weights.iter().any(|w| w == name)),
             "easing" => text.is_some_and(|name| self.easings.iter().any(|e| e == name)),
+            // A spline ends where the transition does, at (1, 1); one that
+            // ends anywhere else would leave its property short of the target.
+            "curve" => value.as_array().is_some_and(|numbers| {
+                let point = |index: usize| numbers[index].as_f64();
+                numbers.len() % 6 == 0
+                    && numbers.len() <= 48
+                    && numbers
+                        .iter()
+                        .all(|number| number.as_f64().is_some_and(f64::is_finite))
+                    && (numbers.is_empty()
+                        || (point(numbers.len() - 2) == Some(1.0)
+                            && point(numbers.len() - 1) == Some(1.0)))
+            }),
             _ => false,
         }
     }
@@ -149,6 +167,21 @@ pub fn output_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// The integer defaults of the slots in `group`, in the contract's order.
+pub fn int_defaults(group: &str) -> Result<Vec<(String, i64)>, String> {
+    let contract: Value = serde_json::from_str(CONTRACT).map_err(|error| error.to_string())?;
+    let slots = contract["groups"]
+        .as_array()
+        .and_then(|groups| groups.iter().find(|entry| entry["name"] == group))
+        .and_then(|entry| entry["slots"].as_array())
+        .ok_or_else(|| format!("no contract group {group}"))?;
+    Ok(slots
+        .iter()
+        .filter(|slot| slot["type"] == "int")
+        .filter_map(|slot| Some((slot["name"].as_str()?.to_owned(), slot["default"].as_i64()?)))
+        .collect())
 }
 
 /// The required palette roles, in the contract's order.
@@ -209,10 +242,40 @@ pub fn violations(document: &Value) -> Result<Vec<String>, String> {
                 errors.push(format!("{key}: derived, so a theme cannot supply it"))
             }
             Some(Slot::Fixed) => errors.push(format!("{key}: fixed by the contract")),
+            Some(Slot::Suppliable) if !contract.is_color(value) => {
+                errors.push(format!("{key}: {value} is not a color"))
+            }
+            Some(Slot::Suppliable) => {}
             Some(Slot::Supplied(kind)) if !contract.holds(kind, value) => {
                 errors.push(format!("{key}: {value} is not a {kind}"))
             }
             Some(Slot::Supplied(_)) => {}
+        }
+    }
+    // An easing is BezierSpline exactly when its curve is supplied, so a
+    // transition never runs on a spline it was not given.
+    for (name, slot) in &contract.slots {
+        let Slot::Supplied(kind) = slot else { continue };
+        if kind != "curve" {
+            continue;
+        }
+        let easing = name.trim_end_matches("Curve");
+        let spline = object
+            .get(easing)
+            .and_then(Value::as_str)
+            .is_some_and(|easing| easing == "BezierSpline");
+        let Some(curve) = object
+            .get(name)
+            .map_or(Some(0), |curve| curve.as_array().map(Vec::len))
+        else {
+            continue;
+        };
+        if spline && curve == 0 {
+            errors.push(format!(
+                "{name}: {easing} is BezierSpline, so it needs a curve"
+            ));
+        } else if !spline && curve > 0 {
+            errors.push(format!("{name}: a curve needs {easing} to be BezierSpline"));
         }
     }
     Ok(errors)
@@ -299,6 +362,16 @@ mod tests {
     }
 
     #[test]
+    fn a_spline_easing_comes_with_its_curve() {
+        let mut document = with("easingExit", json!("BezierSpline"));
+        document["easingExitCurve"] = json!([0.3, 0, 0.8, 0.15, 1, 1]);
+        assert_eq!(violations(&document).unwrap(), Vec::<String>::new());
+        let long: Vec<f64> = [0.3, 0.0, 0.8, 0.15, 1.0, 1.0].repeat(9);
+        document["easingExitCurve"] = json!(long);
+        assert!(!violations(&document).unwrap().is_empty());
+    }
+
+    #[test]
     fn the_required_slots_alone_make_a_theme() {
         assert_eq!(violations(&minimal()).unwrap(), Vec::<String>::new());
         check(&minimal()).unwrap();
@@ -325,6 +398,9 @@ mod tests {
             ("palette", json!({"base00": "#1e1e2e"})),
             ("terminal", json!(["#1e1e2e"])),
             ("version", json!(2)),
+            ("material", json!({"seed": "#6750a4", "contrast": 0.0})),
+            ("cardColor", json!("#202020")),
+            ("panelBorder", json!("#00000000")),
         ] {
             document[key] = value;
             assert_eq!(
@@ -345,7 +421,26 @@ mod tests {
         rejects(with("radius", json!("round")), "radius");
         rejects(with("radius", json!(8.5)), "radius");
         rejects(with("accent", json!("lavender")), "accent");
-        rejects(with("panelColor", json!("#000000")), "panelColor: derived");
+        rejects(with("colorLensSize", json!(120)), "colorLensSize: derived");
+        rejects(with("mutedText", json!("#000000")), "mutedText: derived");
+        rejects(with("panelColor", json!("ink")), "panelColor");
+        rejects(
+            with("easingStandard", json!("BezierSpline")),
+            "easingStandardCurve: easingStandard is BezierSpline",
+        );
+        rejects(
+            with("easingStandardCurve", json!([0.2, 0, 0, 1, 1, 1])),
+            "easingStandardCurve: a curve needs",
+        );
+        let mut short = with("easingStandard", json!("BezierSpline"));
+        short["easingStandardCurve"] = json!([0.2, 0, 0, 1]);
+        rejects(short, "easingStandardCurve");
+        let mut unfinished = with("easingStandard", json!("BezierSpline"));
+        unfinished["easingStandardCurve"] = json!([0.2, 0, 0, 1, 0.5, 0.5]);
+        rejects(unfinished, "easingStandardCurve");
+        let mut midway = with("easingStandard", json!("BezierSpline"));
+        midway["easingStandardCurve"] = json!([0.1, 0, 0.2, 0.6, 1, 1, 0.3, 0.7, 0.5, 1, 0.9, 1]);
+        rejects(midway, "easingStandardCurve");
         rejects(with("iosRed", json!("#000000")), "iosRed: fixed");
         rejects(with("sparkle", json!(true)), "sparkle: not a contract slot");
         rejects(with("easingStandard", json!("Bounce")), "easingStandard");

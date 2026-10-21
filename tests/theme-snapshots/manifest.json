@@ -53,6 +53,30 @@
     "theme-settings"
   ],
   "folders": {
+    "material-expressive-dark": [
+      "bar",
+      "control-center",
+      "notifications",
+      "notification-center",
+      "media",
+      "audio",
+      "session",
+      "osd",
+      "theme-switcher",
+      "theme-settings"
+    ],
+    "material-expressive-light": [
+      "bar",
+      "control-center",
+      "notifications",
+      "notification-center",
+      "media",
+      "audio",
+      "session",
+      "osd",
+      "theme-switcher",
+      "theme-settings"
+    ],
     "example": [
       "theme-switcher",
       "theme-settings"

@@ -2,7 +2,7 @@
   "version": 1,
   "description": "The Seele theme contract. Every styling value the desktop shell and Seele Notes draw with is a slot here, implemented once by Theme.qml in the same order and with the same defaults; tests/theme-contract.js holds the two to each other and fails on any styling literal outside them.",
   "documents": {
-    "description": "A theme is a JSON object: its identity, then any slots it supplies by name. It must supply every required slot. Any other slot it leaves out takes its default, which reproduces the shell as it was drawn before themes could set more than colours; sound and wallpaper slots fall back as their slots say. Derived slots are computed from the slots they name and fixed slots belong to the contract, so a theme supplies neither. Keys listed in extensions are not styling and are passed through: the Base16 `palette` and `terminal` colours other applications take from a theme, and the publication format `version` they check.",
+    "description": "A theme is a JSON object: its identity, then any slots it supplies by name. It must supply every required slot. Any other slot it leaves out takes its default, which reproduces the shell as it was drawn before themes could set more than colours; sound and wallpaper slots fall back as their slots say. Derived slots are computed from the slots they name and fixed slots belong to the contract, so a theme supplies neither, except a derived colour marked suppliable, which a theme may give in place of its derivation. An easing slot is BezierSpline exactly when the theme gives the curve slot beside it. Keys listed in extensions are not styling and are passed through: the Base16 `palette` and `terminal` colours other applications take from a theme, the publication format `version` they check, and `material`, the seed and contrast a Material 3 Expressive theme was grown from, which registration grows again and compares.",
     "identity": {
       "id": {
         "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -23,7 +23,8 @@
     "extensions": [
       "palette",
       "terminal",
-      "version"
+      "version",
+      "material"
     ],
     "paths": "A path slot holds an absolute path or the empty string. A theme folder names its own files relative to itself; registration resolves them to absolute paths before the shell sees them."
   },
@@ -37,7 +38,8 @@
     "outputPaths": "An object from output names, as the compositor names them (letters, digits, `.`, `_` and `-`, at most 64), to absolute file paths; empty for none.",
     "url": "A URL resolved against the shell's own files.",
     "weight": "A font weight, by its name in `enums.weight`.",
-    "easing": "An easing curve, by its name in `enums.easing`."
+    "easing": "An easing curve, by its name in `enums.easing`.",
+    "curve": "A cubic Bézier easing curve as Qt's easing.bezierCurve reads it: control points x1, y1, x2, y2 and the end point of each segment, six numbers a segment and at most eight segments, ending at 1, 1. Empty while its easing is a named curve; its easing is BezierSpline exactly when it is not empty."
   },
   "enums": {
     "weight": {
@@ -75,7 +77,8 @@
       "OutBack": "Easing.OutBack",
       "InOutBack": "Easing.InOutBack",
       "OutBounce": "Easing.OutBounce",
-      "OutElastic": "Easing.OutElastic"
+      "OutElastic": "Easing.OutElastic",
+      "BezierSpline": "Easing.BezierSpline"
     }
   },
   "fallbacks": {
@@ -97,7 +100,8 @@
   },
   "members": {
     "description": "Theme.qml properties that are not styling values and so not slots. Each is declared after the helper functions; any other property anywhere in Theme.qml must be a slot.",
-    "keyboardNavigation": "The shared keyboard navigation every surface reaches through the theme (projects/navigation)."
+    "keyboardNavigation": "The shared keyboard navigation every surface reaches through the theme (projects/navigation).",
+    "supplied": "The derived colours the published theme supplies in place of their derivations, by slot (Contract.supplied); a suppliable slot reads it before its derivation."
   },
   "groups": [
     {
@@ -1955,258 +1959,301 @@
           "name": "panelColor",
           "type": "color",
           "derived": "alpha(mantle, 0.88)",
+          "suppliable": true,
           "description": "A panel's material: mantle, translucent."
         },
         {
           "name": "panelBorder",
           "type": "color",
           "derived": "alpha(crust, 0.9)",
+          "suppliable": true,
           "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
         },
         {
           "name": "edgeLight",
           "type": "color",
           "derived": "alpha(text, 0.08)",
+          "suppliable": true,
           "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
         },
         {
           "name": "edgeCrown",
           "type": "color",
           "derived": "alpha(text, 0.16)",
+          "suppliable": true,
           "description": "Edges. A surface is cut out of the wallpaper by a grounding ring in the palette's darkest ink, and lit again on the inside by a hairline that is brightest along the top, where light would actually land. Neither edge carries the accent: outlining every panel in lavender spends the accent on chrome, and it is worth more kept for state."
         },
         {
           "name": "hoverColor",
           "type": "color",
           "derived": "alpha(text, 0.07)",
+          "suppliable": true,
           "description": "Interaction. The pointer is reported in neutral light and the commit is reported in accent, so hovering the shell does not set it glowing and a press still reads as something having been asked for. `hoverColor` is a wash: filled controls composite it over their resting material instead of replacing that material with a nearly transparent colour."
         },
         {
           "name": "clearColor",
           "type": "color",
           "derived": "alpha(text, 0)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "clearDanger",
           "type": "color",
           "derived": "alpha(red, 0)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "pressColor",
           "type": "color",
           "derived": "alpha(accent, 0.3)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "selectedColor",
           "type": "color",
           "derived": "alpha(accent, 0.2)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "activeTint",
           "type": "color",
           "derived": "alpha(accent, 0.12)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "fillColor",
           "type": "color",
           "derived": "alpha(accent, 0.45)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "fillDanger",
           "type": "color",
           "derived": "alpha(red, 0.45)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "successColor",
           "type": "color",
           "derived": "alpha(green, 0.25)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "dangerTint",
           "type": "color",
           "derived": "alpha(red, 0.14)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "dangerColor",
           "type": "color",
           "derived": "alpha(red, 0.28)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "dangerPress",
           "type": "color",
           "derived": "alpha(red, 0.48)",
+          "suppliable": true,
           "description": "Where a tint rests on nothing at all it fades to its own colour at zero alpha rather than to `transparent`. Qt interpolates a colour channel by channel and `transparent` is black, so a tint animated against it is dragged down through grey on the way in and back up through it on the way out. The pill then reads as a smudge lifting off the strip instead of as light arriving on it."
         },
         {
           "name": "cardColor",
           "type": "color",
           "derived": "alpha(surface, 0.5)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "rowColor",
           "type": "color",
           "derived": "alpha(surface, 0.3)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "wellColor",
           "type": "color",
           "derived": "alpha(crust, 0.62)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "floatColor",
           "type": "color",
           "derived": "alpha(surface, 0.92)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "cardBorder",
           "type": "color",
           "derived": "alpha(text, 0.06)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "separatorColor",
           "type": "color",
           "derived": "alpha(text, 0.09)",
+          "suppliable": true,
           "description": "Elevation. A panel is translucent, so a card on it is a tint of the same material rather than an opaque block, a row inside that card is a lighter tint again, and a track or well is cut back to the ink. Depth then comes from how much of the wallpaper each layer still lets through instead of from a stack of flat greys. `floatColor` is the one nearly solid step, for a control that overlaps a row whose own fill moves under the pointer."
         },
         {
           "name": "wellBorder",
           "type": "color",
           "derived": "alpha(text, 0.05)",
+          "suppliable": true,
           "description": "The faint ring a well, a meter or a slider track is cut with."
         },
         {
           "name": "quietWash",
           "type": "color",
           "derived": "alpha(text, 0.05)",
+          "suppliable": true,
           "description": "The faintest wash of text: where a click would put something."
         },
         {
           "name": "badgeColor",
           "type": "color",
           "derived": "alpha(text, 0.09)",
+          "suppliable": true,
           "description": "A count badge, such as a notification stack's."
         },
         {
           "name": "knobColor",
           "type": "color",
           "derived": "alpha(crust, 0.7)",
+          "suppliable": true,
           "description": "A round control's resting fill, cut into the material."
         },
         {
           "name": "primaryControlColor",
           "type": "color",
           "derived": "alpha(accent, 0.22)",
+          "suppliable": true,
           "description": "The primary transport control's resting fill."
         },
         {
           "name": "accentRing",
           "type": "color",
           "derived": "alpha(accent, 0.55)",
+          "suppliable": true,
           "description": "A ring that says something is open or suggested."
         },
         {
           "name": "selectedRing",
           "type": "color",
           "derived": "alpha(accent, 0.5)",
+          "suppliable": true,
           "description": "A selected day that is not today is ringed at half the accent."
         },
         {
           "name": "accentEdge",
           "type": "color",
           "derived": "alpha(accent, 0.28)",
+          "suppliable": true,
           "description": "A card that stands for something deliberate is edged in the accent; one that destroys something is edged in red."
         },
         {
           "name": "dangerBorder",
           "type": "color",
           "derived": "alpha(red, 0.22)",
+          "suppliable": true,
           "description": "A card that stands for something deliberate is edged in the accent; one that destroys something is edged in red."
         },
         {
           "name": "barStripColor",
           "type": "color",
           "derived": "alpha(crust, 0.86)",
+          "suppliable": true,
           "description": "The menu bar strip is ink over the wallpaper, ruled off along its foot."
         },
         {
           "name": "barRuleColor",
           "type": "color",
           "derived": "alpha(crust, 0.85)",
+          "suppliable": true,
           "description": "The menu bar strip is ink over the wallpaper, ruled off along its foot."
         },
         {
           "name": "workspaceHoverColor",
           "type": "color",
           "derived": "alpha(accent, 0.5)",
+          "suppliable": true,
           "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
         },
         {
           "name": "workspaceOccupiedColor",
           "type": "color",
           "derived": "alpha(text, 0.16)",
+          "suppliable": true,
           "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
         },
         {
           "name": "workspaceEmptyColor",
           "type": "color",
           "derived": "alpha(text, 0.07)",
+          "suppliable": true,
           "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
         },
         {
           "name": "workspaceEmptyText",
           "type": "color",
           "derived": "alpha(text, 0.45)",
+          "suppliable": true,
           "description": "Workspace pills: under the pointer, occupied, empty, and an empty one's number."
         },
         {
           "name": "mutedBadgeColor",
           "type": "color",
           "derived": "alpha(overlay, 0.35)",
+          "suppliable": true,
           "description": "The muted microphone badge."
         },
         {
           "name": "markWell",
           "type": "color",
           "derived": "alpha(accent, 0.1)",
+          "suppliable": true,
           "description": "The tinted well a panel's or a finding's mark sits in."
         },
         {
           "name": "markWellBorder",
           "type": "color",
           "derived": "alpha(accent, 0.22)",
+          "suppliable": true,
           "description": "The tinted well a panel's or a finding's mark sits in."
         },
         {
           "name": "swatchBorder",
           "type": "color",
           "derived": "alpha(text, 0.14)",
+          "suppliable": true,
           "description": "A swatch is ringed in faint text so a base close to the panel still reads."
         },
         {
           "name": "themesSliceBorder",
           "type": "color",
           "derived": "alpha(text, 0.12)",
+          "suppliable": true,
           "description": "A neighbour in the theme switcher is ringed fainter than the centre."
         },
         {
           "name": "warningBorder",
           "type": "color",
           "derived": "alpha(yellow, 0.3)",
+          "suppliable": true,
           "description": "A field whose last attempt failed is ringed in a soft warning."
         },
         {
@@ -2499,10 +2546,22 @@
           "description": "The one curve every eased transition takes."
         },
         {
+          "name": "easingStandardCurve",
+          "type": "curve",
+          "default": [],
+          "description": "The Bézier spline the standard curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
+        },
+        {
           "name": "easingExit",
           "type": "easing",
           "default": "InCubic",
           "description": "A cue leaving the screen accelerates away instead of settling."
+        },
+        {
+          "name": "easingExitCurve",
+          "type": "curve",
+          "default": [],
+          "description": "The Bézier spline the exit curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
         },
         {
           "name": "durationSpin",
@@ -2533,6 +2592,12 @@
           "type": "easing",
           "default": "InOutQuad",
           "description": "A gauge's needle sweeps to a new reading; a busy agent pulses, faster while it waits for input."
+        },
+        {
+          "name": "easingPulseCurve",
+          "type": "curve",
+          "default": [],
+          "description": "The Bézier spline the pulse curve follows when its easing is BezierSpline, as Qt's easing.bezierCurve reads it; empty while it is a named curve."
         }
       ]
     },

@@ -35,7 +35,7 @@ Rectangle {
     color: control.checked ? control.theme.crust : control.theme.alpha(control.theme.text, control.theme.switchKnobOpacity)
     antialiasing: true
 
-    Behavior on x { NumberAnimation { duration: control.theme.durationFast; easing.type: control.theme.easingStandard } }
+    Behavior on x { NumberAnimation { duration: control.theme.durationFast; easing.type: control.theme.easingStandard; easing.bezierCurve: control.theme.easingStandardCurve } }
     Behavior on color { ColorAnimation { duration: control.theme.durationFast } }
   }
 

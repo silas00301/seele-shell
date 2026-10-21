@@ -18,7 +18,7 @@ its own, so a theme can restyle the shell without a code change.
 
 ## Slots
 
-400 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
+403 slots in eleven groups, each a `// <Section> ----` header in `Theme.qml`:
 
 | Group | What it holds | Kind |
 | --- | --- | --- |
@@ -39,6 +39,22 @@ computed from the slots it names, such as `panelColor: alpha(mantle, 0.88)`, so
 a theme changes it through those slots. Every default reproduces the shell as it
 was drawn before themes could set more than colours.
 
+A derived colour of the `material` group is also *suppliable*: a theme may give
+its own colour in place of the derivation, as a Material theme gives its opaque
+tonal surfaces. Theme.qml reads such a slot as `supplied.<name> ?? <derivation>`,
+where `supplied` holds the derived colours the published theme gave, so a theme
+that gives none draws exactly the derivation, and the next theme that leaves
+one out gets it back. Other derived slots, such as `mutedText` or
+`colorLensSize`, cannot be supplied.
+
+An easing slot names one of Qt's curves, or `BezierSpline`. Beside each one is
+a `curve` slot, empty by default, holding the cubic Bézier that spline follows
+as Qt's `easing.bezierCurve` reads it: six numbers a segment, ending at 1, 1, at
+most eight segments. An easing is `BezierSpline` exactly when its curve is
+given, and every animation that takes an easing slot takes its curve too, so a
+theme's spline reaches every transition; an empty curve leaves Qt's curve as
+it is, so a named easing draws exactly as before.
+
 ## Theme documents
 
 A theme is a JSON object: `id` (kebab-case), `name` and `mode` (`light` or
@@ -46,9 +62,11 @@ A theme is a JSON object: `id` (kebab-case), `name` and `mode` (`light` or
 roles. Anything else it leaves out takes its default. A derived or fixed slot
 cannot be supplied; neither can a key the contract does not name, except the
 extensions, which are not styling: the Base16 `palette` and `terminal` colours
-the theme helper keeps for other applications, and the publication's format
-`version`. Types are checked: an `int` slot rejects `8.5`, a `color` slot
-rejects a name, a `weight` or `easing` slot takes a name from `enums`.
+the theme helper keeps for other applications, the publication's format
+`version`, and `material`, the seed and contrast a Material 3 Expressive theme
+was grown from. Types are checked: an `int` slot rejects `8.5`, a `color` slot
+rejects a name, a `weight` or `easing` slot takes a name from `enums`, and a
+`curve` slot takes whole segments of finite numbers.
 
 A `path` slot holds an absolute path or nothing. A theme folder names its own
 files relative to itself; registration resolves them before the shell sees
@@ -122,6 +140,9 @@ desktop and not only the shell:
   the file URL, so it may hold any character a file name can.
 - It carries no `wallpaperOutputs`: output names belong to a machine, so which
   image each output shows is the host's wallpaper mapping.
+- If it records a `material` source, it is exactly the document `seele-theme
+  material` grows from that seed and contrast, slot for slot
+  (`themes/MATERIAL.md`).
 
 A `path` slot names a file relative to the folder, such as
 `"soundNotification": "sounds/ping.oga"` or `"wallpaper": "wallpaper.jpg"`. The
@@ -152,12 +173,25 @@ as for a preset.
 
 `tests/theme-folders/` holds the example folder the checks register, the
 pictured folder that carries its own wallpaper, and the invalid folders each
-check refuses. `checks.theme-folders` builds every registered folder and both
+check refuses, among them a Material folder edited by hand. `checks.theme-folders` builds every registered folder and both
 fixtures, lists them beside a preset, switches between the pictured folder, the
 example and the preset to prove which wallpaper each publishes, and proves each
 invalid fixture fails its own build with its message;
 `config-tools/tests/theme_folders.py` does the same through the CLI, and the
-pixel baselines draw the example in the switcher and the Themes panel.
+pixel baselines draw the example in the switcher and the Themes panel and the
+folders the shell ships on every surface.
+
+## Material 3 Expressive
+
+`themes/material-expressive-light` and `-dark` set every slot Material 3
+Expressive has a token for: the eleven roles and the suppliable material
+colours from a seed-grown scheme, the type ramp, corner scale, spacing on the
+4dp grid, component heights, state layers, durations and Bézier curves.
+`themes/MATERIAL.md` lists each token and the slot it reaches, and what is kept
+at its default and why. `tests/tst_palette.qml` applies both folders through
+`applyTheme` and checks every value they supply is the value the shell draws,
+and that a spline reaches an animation whichever order Qt binds its easing and
+curve in.
 
 ## Optional slots and their fallbacks
 
@@ -259,7 +293,8 @@ A shell root that declares a property with a slot's name fails the check,
 because the shell would draw its own value while the contract claimed another.
 
 `Theme.qml` also carries a few members that are not styling values, such as
-`keyboardNavigation`. They are declared after the helper functions and named in
+`keyboardNavigation`, and `supplied`, the derived colours a published theme
+gives in place of their derivations. They are declared after the helper functions and named in
 the contract's `members`; the check scans the whole file, so any other property,
 wherever it is declared, has to be a slot.
 

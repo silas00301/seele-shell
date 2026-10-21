@@ -350,7 +350,7 @@ Column {
             height: device.editing ? editorContent.implicitHeight + panel.theme.cardPadding * 2 : 0
             visible: height > 0
             clip: true
-            Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
+            Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard; easing.bezierCurve: panel.theme.easingStandardCurve } }
             Column {
               id: editorContent
               anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }
@@ -590,7 +590,7 @@ Column {
                     height: homeRow.unfolded ? levelContent.implicitHeight + panel.theme.cardPadding * 2 : 0
                     visible: height > 0
                     clip: true
-                    Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard } }
+                    Behavior on height { NumberAnimation { duration: panel.theme.durationNormal; easing.type: panel.theme.easingStandard; easing.bezierCurve: panel.theme.easingStandardCurve } }
                     Column {
                       id: levelContent
                       anchors { left: parent.left; right: parent.right; top: parent.top; margins: panel.theme.cardPadding }

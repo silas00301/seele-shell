@@ -239,7 +239,7 @@ Shared.Theme {
       var rows = []
       for (var i = 0; i < themes.length; i++)
         for (var j = 0; j < surfaces.length; j++)
-          if (!themes[i].folder || folderSurfaces.indexOf(surfaces[j].name) >= 0)
+          if (!themes[i].folder || themes[i].shipped || folderSurfaces.indexOf(surfaces[j].name) >= 0)
             rows.push({ tag: themes[i].id + "/" + surfaces[j].name, theme: themes[i], surface: surfaces[j] })
       return rows
     }

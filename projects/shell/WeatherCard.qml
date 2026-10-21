@@ -69,7 +69,7 @@ FocusScope {
   visible: mode !== "unavailable"
   implicitHeight: visible ? (expanded ? unfoldedHeight : foldedHeight) : 0
   height: implicitHeight
-  Behavior on height { NumberAnimation { duration: card.theme.durationNormal; easing.type: card.theme.easingStandard } }
+  Behavior on height { NumberAnimation { duration: card.theme.durationNormal; easing.type: card.theme.easingStandard; easing.bezierCurve: card.theme.easingStandardCurve } }
 
   // Escape steps back out one level: the search, then the unfolded card.
   Keys.onPressed: event => {

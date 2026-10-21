@@ -29,7 +29,11 @@ A drop-in theme folder is drawn too, where a registered theme has to appear:
 `folders.json` holds the example folder (`tests/theme-folders/example`) as
 `seele-theme list` gives it once registered, and it is rendered on
 `theme-switcher` and `theme-settings` only, with the catalog it joins. The
-presets' own snapshots keep the catalog of presets they were recorded with.
+folders the shell ships (`themes/default.nix`), the Material 3 Expressive light
+and dark themes, are themes like the presets and are drawn on every surface;
+`registered.json` holds them as the helper lists them. A folder joins the
+catalog only while it is the one drawn, so the presets' own snapshots keep the
+catalog of presets they were recorded with.
 
 The launcher is Vicinae, a separate application; its colours come from the
 Stylix-generated theme that the parent flake's `checks.theme-presets` compares

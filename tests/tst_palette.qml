@@ -84,8 +84,9 @@ TestCase {
     var slots = contractSlots()
     verify(slots.length > 300, "every suppliable slot")
     verify(slots.some(function(slot) { return slot.name === "wallpaper" }), "a theme's own wallpaper")
-    verify(slots.every(function(slot) { return slot.name !== "wallpaperImage" && slot.name !== "panelColor" && slot.name !== "iosRed" }),
-      "no derived or fixed slot")
+    verify(slots.every(function(slot) { return slot.name !== "wallpaperImage" && slot.name !== "mutedText" && slot.name !== "iosRed" }),
+      "no computed or fixed slot")
+    verify(slots.some(function(slot) { return slot.name === "panelColor" && slot.derived }), "a derived colour a theme may supply")
     var roles = {base:"#101820",mantle:"#0c1218",crust:"#080c10",surface:"#1c2a36",overlay:"#5c7080",text:"#e8f0f8",
       subtext:"#a8b8c8",accent:"#f2aa4c",red:"#ff6b6b",green:"#7bd88f",yellow:"#ffd866"}
     var folder = Object.assign({id:"example",name:"Example",mode:"dark",palette:{},terminal:[],version:2,
@@ -107,7 +108,9 @@ TestCase {
     for (var key of keys) preset[key] = baseline[key].toString()
     subject.applyTheme(preset, slots)
     for (var slot of slots) {
+      if (slot.derived) continue
       if (slot.type === "color") compare(subject[slot.name], Qt.color(preset[slot.name]), slot.name)
+      else if (slot.type === "curve") compare(subject[slot.name].length, 0, slot.name)
       else compare(subject[slot.name], qmlValue(slot, slot.value), slot.name)
     }
     compare(subject.radius, 8)
@@ -128,6 +131,95 @@ TestCase {
     subject.applyTheme(preset, slots)
     compare(subject.grainOpacity, 0.07)
   }
+  // A derived colour a theme supplies replaces its derivation, and the next
+  // theme that leaves it out gets the derivation back.
+  function test_a_supplied_derived_colour_replaces_its_derivation() {
+    var slots = contractSlots()
+    var theme = {id:"example",name:"Example",mode:"dark",cardColor:"#202224",panelBorder:"#00181a1c",hoverColor:"#14e6e1e5"}
+    for (var key of keys) theme[key] = baseline[key].toString()
+    subject.applyTheme(theme, slots)
+    compare(subject.cardColor, Qt.color("#202224"))
+    compare(subject.panelBorder, Qt.color("#00181a1c"))
+    compare(subject.hoverColor, Qt.color("#14e6e1e5"))
+    compare(subject.rowColor, subject.alpha(subject.surface, 0.3), "a derived colour it leaves out stays derived")
+    delete theme.cardColor
+    delete theme.panelBorder
+    delete theme.hoverColor
+    subject.applyTheme(theme, slots)
+    compare(subject.cardColor, subject.alpha(subject.surface, 0.5))
+    compare(subject.panelBorder, subject.alpha(subject.crust, 0.9))
+    subject.applyTheme(Object.assign({}, theme, {cardColor: "ink"}), slots)
+    compare(subject.cardColor, subject.alpha(subject.surface, 0.5), "a colour of the wrong form is not applied")
+  }
+
+  // Two animations that bind the same easing and curve in either order, as a
+  // surface's NumberAnimation does.
+  NumberAnimation { id: curveFirst; easing.bezierCurve: subject.easingStandardCurve; easing.type: subject.easingStandard }
+  NumberAnimation { id: typeFirst; easing.type: subject.easingStandard; easing.bezierCurve: subject.easingStandardCurve }
+  function test_a_spline_easing_reaches_every_transition_in_either_order() {
+    var slots = contractSlots()
+    var theme = {id:"example",name:"Example",mode:"dark",easingStandard:"BezierSpline",easingStandardCurve:[0.2,0,0,1,1,1]}
+    for (var key of keys) theme[key] = baseline[key].toString()
+    var plain = Object.assign({}, theme)
+    delete plain.easingStandard
+    delete plain.easingStandardCurve
+    subject.applyTheme(plain, slots)
+    for (var animation of [curveFirst, typeFirst]) {
+      compare(animation.easing.type, Easing.OutCubic, "a named curve while the theme gives none")
+    }
+    var named = curveFirst.easing.valueForProgress(0.1)
+    fuzzyCompare(named, 1 - Math.pow(0.9, 3), 1e-9)
+    subject.applyTheme(theme, slots)
+    for (var animation of [curveFirst, typeFirst]) {
+      compare(animation.easing.type, Easing.BezierSpline)
+      compare(animation.easing.bezierCurve.length, 6)
+      // Material's standard curve, cubic-bezier(0.2, 0, 0, 1), a tenth of
+      // the way in: far from where OutCubic is.
+      fuzzyCompare(animation.easing.valueForProgress(0.1), 0.1562, 0.005)
+    }
+    subject.applyTheme(plain, slots)
+    // Qt keeps a spline's points on a curve whose type moves on, but a named
+    // type computes its own curve, so they are inert.
+    for (var animation of [curveFirst, typeFirst]) {
+      compare(animation.easing.type, Easing.OutCubic, "and the named curve again after")
+      fuzzyCompare(animation.easing.valueForProgress(0.1), named, 1e-9)
+    }
+  }
+
+  // The Material 3 Expressive folders, applied as the shell applies a
+  // published theme: every value they supply is the value the shell draws.
+  function themeFolder(id) {
+    var request = new XMLHttpRequest(), document = null
+    request.onreadystatechange = function() {
+      if (request.readyState === XMLHttpRequest.DONE) document = JSON.parse(request.responseText)
+    }
+    request.open("GET", Qt.resolvedUrl("../themes/" + id + "/theme.json"))
+    request.send()
+    tryVerify(function() { return document !== null }, 5000, id + " loads")
+    return document
+  }
+  function test_a_material_theme_draws_every_surface_with_its_tokens() {
+    var slots = contractSlots()
+    for (var id of ["material-expressive-dark", "material-expressive-light"]) {
+      var document = themeFolder(id)
+      subject.applyTheme(document, slots)
+      var supplied = 0
+      for (var slot of slots) {
+        if (!Object.prototype.hasOwnProperty.call(document, slot.name)) continue
+        supplied += 1
+        var value = document[slot.name]
+        if (slot.type === "color") compare(subject[slot.name], Qt.color(value), id + " " + slot.name)
+        else if (slot.type === "curve") compare(subject[slot.name].length, value.length, id + " " + slot.name)
+        else if (slot.type === "real") fuzzyCompare(subject[slot.name], value, 1e-9, id + " " + slot.name)
+        else compare(subject[slot.name], qmlValue(slot, value), id + " " + slot.name)
+      }
+      verify(supplied > 150, id + " supplies Material's tokens")
+      compare(subject.grainOpacity, 0)
+      compare(subject.easingStandard, Easing.BezierSpline)
+      compare(curveFirst.easing.type, Easing.BezierSpline)
+    }
+  }
+
   // The host's wallpaper mapping (SIL-236): the publication names the outputs
   // that draw another image, and every other output draws the theme's.
   function test_each_output_draws_the_image_its_mapping_gives_it() {

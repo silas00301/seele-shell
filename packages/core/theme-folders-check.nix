@@ -57,6 +57,7 @@ let
     unknown-slots = "sparkle: not a contract slot";
     escaping-file = ''soundNotification: "../misnamed/theme.json" is not a path inside the theme folder'';
     wallpaper-not-image = ''wallpaper: "wallpaper.png" is not a PNG or JPEG image'';
+    material-drift = "material: theme.json is not what its seed grows (radius: 9 here, 16 from its seed); `seele-theme material` writes it again";
   };
   failures = lib.mapAttrs (
     name: _: pkgs.testers.testBuildFailure (themes.register (fixtures + "/invalid/${name}"))

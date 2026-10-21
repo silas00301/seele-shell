@@ -76,6 +76,17 @@ holds each registered document to the same rules and to its entry's identity and
 palette. Its roles and every slot it supplies are published as registered; the
 terminal colours still come from its Base16 palette.
 
+`seele-theme material <#seed> <light|dark> <id> <name> [contrast]` prints the
+theme document of a Material 3 Expressive folder, and `seele-theme material
+tokens <#seed> [contrast]` every token the seed grows (`themes/MATERIAL.md`).
+`src/material/` ports Material Color Utilities' HCT space and the 2025
+`SchemeExpressive` scheme, and holds Material's type, shape, elevation, state
+and motion tokens and their projection onto the contract. A folder whose
+document records a `material` source is registered only if it is exactly what
+that source grows. The Rust tests compare all 53 colour roles with
+`tests/material-oracle.json`, the reference library's output for 96 schemes;
+`SEELE_MATERIAL_ORACLE` names a wider listing in the same form to compare too.
+
 The catalog's optional `wallpapers` is the host's wallpaper mapping: images for
 `light` and `dark` themes, for `outputs` by the name the compositor gives each
 (`image`, `light`, `dark`), and for `themes` by ID (`image`, and `outputs` by
@@ -146,7 +157,10 @@ and exact reload arguments against fake desktop tools.
 registers the example and every invalid fixture folder, resolves a named file,
 lists and publishes the example beside a preset, refuses a catalog whose entry
 and document disagree, and proves `folders.json`, which the pixel baselines
-render, is what the helper lists; `--update` rewrites that file.
+render, is what the helper lists. It registers, lists and publishes every
+folder `themes/default.nix` ships the same way, and proves
+`tests/theme-snapshots/registered.json` is what the helper lists for them;
+`--update` rewrites both files.
 
 ### Light, dark and the schedule
 
