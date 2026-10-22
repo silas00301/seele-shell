@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory(prefix='seele-pr-workspace-') as temporary:
     (home / '.config/jj').mkdir(parents=True)
     (home / '.config/jj/config.toml').write_text(
         '[user]\nname="Fixture"\nemail="fixture@example.invalid"\n'
-        '[signing]\nbehavior="drop"\n')
+        '[signing]\nbehavior="drop"\n'
+        '[git]\ncolocate=false\n')
     tools = root / 'bin'
     tools.mkdir()
     log = root / 'gh-calls'
@@ -49,8 +50,9 @@ if sys.argv[1:3]==['pr','list']: print('[]')
     for colocated in (True, False):
         name = 'colocated' if colocated else 'separate'
         repo = root / name
-        args = ['git', 'init'] + (['--colocate'] if colocated else []) + [str(repo)]
+        args = ['git', 'init', '--colocate' if colocated else '--no-colocate', str(repo)]
         run(root, JJ, *args)
+        assert (repo / '.git').exists() == colocated
         remote = f'https://github.com/fixture/{name}.git'
         run(repo, JJ, 'git', 'remote', 'add', 'origin', remote)
         run(repo, JJ, 'bookmark', 'create', 'review')
