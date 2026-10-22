@@ -17,10 +17,11 @@ pkgs.stdenv.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
+    export QML_IMPORT_PATH="${pkgs.qt6.qtdeclarative}/lib/qt-6/qml"
     bash ${../../tests/keyboard-navigation.sh} ${../shared} \
       ${../../tests/tst_keyboardnavigation.qml} "$out/lib/qt-6/qml"
-    qmllint -I "$out/lib/qt-6/qml" \
-      ${../shared/KeyboardNavigation.qml} ${../shared/ActionArea.qml}
+    qmllint -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$out/lib/qt-6/qml" \
+      ${../shared}/KeyboardNavigation.qml ${../shared}/ActionArea.qml
     runHook postInstallCheck
   '';
   meta = {
