@@ -100,7 +100,9 @@ let
       SEELE_TEST_RESTIC=${lib.getExe pkgs.restic} python3 projects/maintenance/tests/restic_restore.py "${rawBin}/seele-restic-test"
     ''
     + lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
-      python3 projects/maintenance/tests/restic_files.py "${rawBin}/seele-backup-files" "${lib.getExe pkgs.restic}"
+      # The sandbox's filesystem root can belong to an unmapped UID. Model the
+      # privileged helper's root-owned ancestry without relaxing credential checks.
+      fakeroot python3 projects/maintenance/tests/restic_files.py "${rawBin}/seele-backup-files" "${lib.getExe pkgs.restic}"
       python3 projects/maintenance/tests/restore_ui.py "${rawBin}/seele-restore-file"
     '';
     failure-analysis = ''python3 projects/failure-analysis/tests/protocol.py "$out/bin/seele-failure-report"'';
@@ -176,7 +178,8 @@ pkgs.rustPlatform.buildRustPackage {
   ++ lib.optionals (name == "repo-tools") [
     pkgs.git
     pkgs.jujutsu
-  ];
+  ]
+  ++ lib.optionals (name == "maintenance" && pkgs.stdenv.hostPlatform.isLinux) [ pkgs.fakeroot ];
   postInstall =
     lib.optionalString (name == "qml-core") ''
       install -Dm644 projects/qml-core/include/seele-core.h "$out/include/seele-core.h"

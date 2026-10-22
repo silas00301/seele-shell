@@ -146,6 +146,8 @@ exit. The fixed helper is invoked with run0 pipe I/O and a service lifetime
 limit. No Vicinae command or persistent content cache is added.
 
 `tests/restic_files.py` runs the actual backend with a disposable encrypted
-restic repository. `tests/restore_ui.py` uses fake authentication/dialogs and the
-real file operations. The parent guide `docs/backup-files.md` owns setup,
+restic repository. The packaged fixture uses `fakeroot` to model the privileged
+helper's root-owned ancestry because a Nix sandbox may give `/` an unmapped
+owner; production credential checks remain unchanged.
+`tests/restore_ui.py` uses fake authentication/dialogs and the real file operations. The parent guide `docs/backup-files.md` owns setup,
 credential grammar, bounds and live acceptance requirements.
