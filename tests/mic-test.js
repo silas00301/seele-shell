@@ -209,6 +209,6 @@ assert.match(card, /CLIPPING/);
 assert.match(shell, /MicTestStore \{\s*\n\s*id: micTest/);
 assert.match(shell, /panelOpen: root\.controlPanel === "audio"/);
 assert.match(shell, /MicTestCard \{ theme: root; store: micTest/);
-assert.match(shell, /namespace: "seele-shell-audio"\s+WlrLayershell\.keyboardFocus: visible \? WlrKeyboardFocus\.OnDemand/);
+assert.match(shell, /namespace: "seele-shell-audio"\s+WlrLayershell\.keyboardFocus: visible \? WlrKeyboardFocus\.Exclusive : WlrKeyboardFocus\.None/);
 
 console.log('microphone test device resolution, the microphone-use gate, meter rest, device loss and panel-close discard passed');

@@ -7,7 +7,8 @@ mkdir -p "$fixture/shell" "$fixture/shared" "$fixture/Quickshell/Io"
 source="${1:-$root/projects/shell}"
 shared="${2:-$root/projects/shared}"
 cp "$source/ShelfPanel.qml" "$fixture/shell/"
-sed -i 's|import "shared" as Shared|import "../shared" as Shared|' "$fixture/shell/ShelfPanel.qml"
+# Normalize both QML and JavaScript imports from the installed layout.
+sed -i 's|import "shared|import "../shared|g' "$fixture/shell/ShelfPanel.qml"
 cp -r "$shared"/. "$fixture/shared/"
 # Render with the real theme tokens, without loading a user theme or a ShellRoot.
 python3 - "$fixture" <<'PY'
@@ -15,7 +16,7 @@ from pathlib import Path
 import sys
 root=Path(sys.argv[1]);source=(root/'shared/Theme.qml').read_text()
 source=source[:source.index('  FileView {')]+'}\n'
-source=source.replace('import Quickshell\n','').replace('import Quickshell.Io\n','').replace('ShellRoot {','QtObject {')
+source=source.replace('import Quickshell\n','').replace('import Quickshell.Io\n','').replace('ShellRoot {','Item {')
 source=source.replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ','')
 (root/'shared/TestTheme.qml').write_text(source)
 PY

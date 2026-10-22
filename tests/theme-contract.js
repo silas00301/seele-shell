@@ -2,7 +2,7 @@
 // The theme contract: every styling value the shell draws is a slot of
 // projects/shared/theme-contract.json, implemented once by Theme.qml.
 //
-//   node tests/theme-contract.js <projects directory> [--report] [--update]
+//   node tests/theme-contract.js <projects directory> [themes directory] [--report] [--update]
 //
 // Four checks, each failing loudly:
 //
@@ -41,7 +41,9 @@ const vm = require('node:vm');
 const args = process.argv.slice(2);
 const report = args.includes('--report');
 const update = args.includes('--update');
-const projects = path.resolve(args.find(argument => !argument.startsWith('--')) || 'projects');
+const [projectsPath = 'projects', themesPath = path.join(__dirname, '../themes')] = args.filter(argument => !argument.startsWith('--'));
+const projects = path.resolve(projectsPath);
+const themes = path.resolve(themesPath);
 const contractPath = path.join(projects, 'shared/theme-contract.json');
 const themePath = path.join(projects, 'shared/Theme.qml');
 const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -400,7 +402,7 @@ for (const theme of folders.themes) {
 }
 assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-folders/example/theme.json'), 'utf8'))), [], 'the example folder is a valid theme document');
 // The template a new theme is copied from (themes/AUTHORING.md).
-assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(__dirname, '../themes/template/theme.json'), 'utf8'))), [], 'the template folder is a valid theme document');
+assert.deepEqual(validate(JSON.parse(fs.readFileSync(path.join(themes, 'template/theme.json'), 'utf8'))), [], 'the template folder is a valid theme document');
 const pictured = JSON.parse(fs.readFileSync(path.join(__dirname, 'theme-folders/pictured/theme.json'), 'utf8'));
 const registeredImage = '/nix/store/registered/pictured/wallpaper.png';
 assert.deepEqual(validate({...pictured, wallpaper: registeredImage}), [], 'the pictured folder, registered, is a valid theme document');

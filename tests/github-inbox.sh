@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 root=Path(sys.argv[1]);source=(root/'shared/Theme.qml').read_text()
 source=source[:source.index('  FileView {')]+'}\n'
-source=source.replace('import Quickshell\n','').replace('import Quickshell.Io\n','').replace('ShellRoot {','QtObject {')
+source=source.replace('import Quickshell\n','').replace('import Quickshell.Io\n','').replace('ShellRoot {','Item {')
 source=source.replace('Quickshell.env("SEELE_SHELL_WALLPAPER") || ','')
 (root/'shared/TestTheme.qml').write_text(source)
 PY

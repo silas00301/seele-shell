@@ -61,7 +61,16 @@ for _ in $(seq 1 100); do
   sleep 0.05
 done
 if [[ $created != 1 ]]; then cat "$work/create.log"; exit 1; fi
-pactl set-default-sink receiver_output
+# A null sink can exist before WirePlumber publishes default-device metadata.
+selected=0
+for _ in $(seq 1 100); do
+  if pactl set-default-sink receiver_output >"$work/select.log" 2>&1; then selected=1; break; fi
+  sleep 0.05
+done
+if [[ $selected != 1 ]]; then
+  cat "$work/select.log" "$work/wireplumber.log"
+  exit 1
+fi
 source_created=0
 for _ in $(seq 1 100); do
   if pw-cli create-node adapter '{ factory.name = support.null-audio-sink node.name = bluez_input.fixture media.class = Audio/Source object.linger = true audio.position = [ FL FR ] }' >/dev/null 2>&1; then

@@ -396,8 +396,8 @@ pkgs.stdenvNoCC.mkDerivation {
   env = {
     SEELE_QML_FUNCTIONS = "${nativeQml.core}/bin/seele-qml-functions";
     SEELE_QML_BRIDGE = "${../shared/Native.js}";
-    QML_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
-    QML2_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml";
+    QML_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml:${pkgs.qt6.qtdeclarative}/lib/qt-6/qml";
+    QML2_IMPORT_PATH = "${nativeQml}/lib/qt-6/qml:${pkgs.qt6.qtdeclarative}/lib/qt-6/qml";
   };
 
   doInstallCheck = true;
@@ -435,7 +435,7 @@ pkgs.stdenvNoCC.mkDerivation {
     test -f "$out/share/seele-shell/shared/theme-contract.json"
     node ${tests}/palette.js ${../shared/Palette.js} ${../shared/Theme.qml} \
       ${../lock/shell.qml} ${../greeter/shell.qml} ${../polkit/shell.qml}
-    node ${tests}/theme-contract.js ${themeContractSources}
+    node ${tests}/theme-contract.js ${themeContractSources} ${../../themes}
     bash ${tests}/palette.sh "$out/share/seele-shell/shared" ${tests}/tst_palette.qml \
       ${pkgs.qt6.qtdeclarative}/lib/qt-6/qml ${nativeQml}/lib/qt-6/qml ${../../themes}
     node ${tests}/auth-navigation.js ${../shared} ${nativeQml}/lib/qt-6/qml \
